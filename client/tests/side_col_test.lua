@@ -29,7 +29,7 @@ end
 
 local layer = {}
 local function noop() end
-for _, name in ipairs({"arc", "disc", "flush", "frame", "outline", "quad",
+for _, name in ipairs({"arc", "disc", "flush", "frame", "halo", "outline", "quad",
                        "rect", "reset", "ring", "seg", "seg_fade", "seg_flat",
                        "skirt", "tri", "tri_fade"}) do
     layer[name] = noop

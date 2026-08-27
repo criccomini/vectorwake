@@ -31,7 +31,7 @@ end
 local rects = {}
 local layer = {n = 0}
 local function noop(self) self.n = self.n + 1 end
-for _, name in ipairs({"arc", "disc", "flush", "frame", "outline", "quad",
+for _, name in ipairs({"arc", "disc", "flush", "frame", "halo", "outline", "quad",
                        "reset", "ring", "seg", "seg_fade", "seg_flat",
                        "skirt", "tri", "tri_fade"}) do
     layer[name] = noop
@@ -397,8 +397,8 @@ ui.details = false
 -- fight it was about. What is left of it is a label under the band, in the
 -- register every other instrument here uses.
 
-frame({banner = "Sudden death"})
-local note = drawn("Sudden death")
+frame({banner = "Every rival beaten. A new run starts now"})
+local note = drawn("Every rival beaten. A new run starts now")
 check("the room's line is drawn", note ~= nil, table.concat(words(), " | "))
 if note and clock then
     check("under the band rather than over the fight",

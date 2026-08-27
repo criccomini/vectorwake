@@ -3468,10 +3468,18 @@ const PILOT_ZONE_BYTES: &[u8] = include_bytes!("../../catalog/zones/ladder/zone.
 const PILOT_MAP_BYTES: &[u8] = include_bytes!("../../catalog/zones/melee/gantry.vwmap");
 const PILOT_WORLD_SEED_LABEL: u64 = 0x0077_6f72_6c64;
 const PILOT_BOOTSTRAP_SEED_LABEL: u64 = 0x626f_6f74_7374_7261;
-/// A live tied Ladder has no overtime limit. The harness needs a finite stop
-/// for a broken or permanently passive controller, so ten regulation clocks
-/// is the prespecified censoring boundary. Any censored leg blocks
-/// certification.
+/// How far past regulation a leg is flown before the harness gives up on it.
+///
+/// A live Ladder draws at the whistle, and this rig deliberately does not:
+/// the question it is asking is which of two pilots wins when the fight is
+/// played to a finish, and stopping at the whistle would censor exactly the
+/// matchups that are hardest to call, which are the ones the ranking needs
+/// most. So the leg keeps flying and the extra time is a measurement window,
+/// not a rule the game has. Do not shorten this to match the mode.
+///
+/// It still needs a finite stop for a broken or permanently passive
+/// controller, so ten regulation clocks is the prespecified censoring
+/// boundary. Any censored leg blocks certification.
 const PILOT_OVERTIME_SAFETY_MULTIPLIER: u32 = 10;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -3589,7 +3597,7 @@ pub struct PilotFixtureManifest {
     pub mode: String,
     pub first_to: u16,
     pub regulation_ticks: u32,
-    pub sudden_death_safety_ticks: u32,
+    pub overtime_safety_ticks: u32,
     pub start_policy: String,
     pub starts_per_team: [usize; 2],
     pub start_pairs: Vec<FixtureStartPair>,
@@ -3630,7 +3638,7 @@ impl PilotFixtureManifest {
                 "the fixture is not single life".into(),
             ));
         }
-        if self.regulation_ticks == 0 || self.sudden_death_safety_ticks == 0 {
+        if self.regulation_ticks == 0 || self.overtime_safety_ticks == 0 {
             return Err(PilotCalibrationError::InvalidFixture(
                 "the fixture clock is empty".into(),
             ));
@@ -3859,7 +3867,7 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
         })
         .collect();
     let regulation_ticks = definition.arena.match_seconds.unwrap_or(180) as u32 * 100;
-    let sudden_death_safety_ticks = regulation_ticks
+    let overtime_safety_ticks = regulation_ticks
         .checked_mul(PILOT_OVERTIME_SAFETY_MULTIPLIER)
         .ok_or_else(|| {
             PilotCalibrationError::InvalidFixture("the Ladder clock overflows ticks".into())
@@ -3906,7 +3914,7 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
         mode: definition.mode.clone(),
         first_to,
         regulation_ticks,
-        sudden_death_safety_ticks,
+        overtime_safety_ticks,
         start_policy,
         starts_per_team,
         start_pairs,
@@ -3917,7 +3925,7 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
         pilot_kits,
         limitations: vec![
             "Persistent account purchases are not replayed. Both pilots use the base account entitlement ceiling recorded in this manifest.".into(),
-            "Live tied Ladder overtime has no limit. The harness censors a leg after ten additional regulation clocks, records it, and refuses certification if any leg is censored.".into(),
+            "A live Ladder draws at the whistle; this harness flies each leg to a death instead, so an undecided matchup is measured rather than censored. It censors a leg after ten additional regulation clocks, records it, and refuses certification if any leg is censored.".into(),
             "The experiment ranks bot-versus-bot performance. It does not estimate human win probability, retention, or fun.".into(),
         ],
     };
@@ -4395,7 +4403,7 @@ pub struct PilotLegResult {
     pub victim_id: Option<u32>,
     pub killer_id: Option<u32>,
     pub mutual_death: bool,
-    pub reached_sudden_death: bool,
+    pub reached_overtime: bool,
     pub censored: bool,
 }
 
@@ -4600,7 +4608,7 @@ fn pilot_leg(
     );
     let mut ticks = 0;
     let regulation_ticks = fixture.manifest.regulation_ticks;
-    let total_ticks = regulation_ticks.saturating_add(fixture.manifest.sudden_death_safety_ticks);
+    let total_ticks = regulation_ticks.saturating_add(fixture.manifest.overtime_safety_ticks);
     let mut deaths = Vec::new();
     for _ in 0..total_ticks {
         let look0 = bots[0].looks_due().then(|| ai::scan(&world, ships[0]));
@@ -4664,7 +4672,7 @@ fn pilot_leg(
             .then(|| deaths.first().and_then(|(_, killer)| pilot_id_of(*killer)))
             .flatten(),
         mutual_death,
-        reached_sudden_death: ticks > regulation_ticks,
+        reached_overtime: ticks > regulation_ticks,
         censored: deaths.is_empty(),
     }
 }
@@ -5662,9 +5670,9 @@ fn validate_leg_metadata(
             "a leg has an invalid tick count".into(),
         ));
     }
-    if leg.reached_sudden_death != (leg.ticks > regulation_ticks) {
+    if leg.reached_overtime != (leg.ticks > regulation_ticks) {
         return Err(PilotCalibrationError::InvalidDataset(
-            "a leg's sudden-death flag disagrees with its tick count".into(),
+            "a leg's overtime flag disagrees with its tick count".into(),
         ));
     }
     if leg
@@ -5892,7 +5900,7 @@ fn validate_pilot_dataset(
             let total_ticks = plan
                 .fixture
                 .regulation_ticks
-                .saturating_add(plan.fixture.sudden_death_safety_ticks);
+                .saturating_add(plan.fixture.overtime_safety_ticks);
             validate_leg_metadata(
                 &observation.first,
                 first_a,
@@ -6473,7 +6481,7 @@ mod pilot_certification_tests {
             victim_id,
             killer_id,
             mutual_death,
-            reached_sudden_death: false,
+            reached_overtime: false,
             censored: false,
         }
     }
@@ -6817,12 +6825,12 @@ mod pilot_certification_tests {
         let total_ticks = plan
             .fixture
             .regulation_ticks
-            .saturating_add(plan.fixture.sudden_death_safety_ticks);
+            .saturating_add(plan.fixture.overtime_safety_ticks);
         let leg = &mut censored.pools[0].observations[0].first;
         leg.mutual_death = false;
         leg.censored = true;
         leg.ticks = total_ticks;
-        leg.reached_sudden_death = true;
+        leg.reached_overtime = true;
         let report = analyze_pilot_calibration(&roster, &plan, &censored).expect("a report");
         assert_eq!(report.status, PilotCalibrationStatus::Uncertified);
         assert!(report

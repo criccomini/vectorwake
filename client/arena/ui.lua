@@ -409,239 +409,102 @@ M.MENU_PAD = MENU_PAD
 
 -- A count, as marks rather than as a number: it reads at a glance and never
 -- asks the eye to parse a digit.
-local function pips(x, y, n, filled, col, r, pitch)
-    r = r or 2.2 * F.scale
-    pitch = pitch or 7.5 * F.scale
-    for k = 0, n - 1 do
-        local px = x + k * pitch
-        if k < filled then
-            F.layer:disc(px, ry(y), r, 8, col)
-        else
-            F.layer:ring(px, ry(y), r, 0.9 * F.scale, 8, pal.a(col, (col[4] or 1) * 0.3))
-        end
-    end
-end
-
 -- Who is in a seat, in two marks that answer one question.
 --
--- A person wears a round helmet with a curved visor across it. A machine
--- wears a squared one with two lamps in it and an antenna over the top.
--- Drawn rather than spelled, because "AI" beside a name is two letters that
--- read as part of the name until you have learned they are not, and these
--- lists are scanned rather than read.
+-- A person wears pilot's wings. A machine wears a chip. Drawn rather than
+-- spelled, because "AI" beside a name is two letters that read as part of
+-- the name until you have learned they are not, and these lists are scanned
+-- rather than read.
 --
--- The two shells differ on purpose. They were one shell for a while, on the
--- reasoning that the games list sets a count of people beside a count of
--- machines and the pair should read as one question. It does read as one
--- question, but the round-against-square difference is what answers it at a
--- glance: curved is grown, boxed is built, and that is legible at a size
--- where a lamp is two pixels and an antenna is three. What holds the pair
--- together is the collar, the height, and the baseline, all of which they
--- still share.
+-- What these replaced was a pair of helmets: a domed shell with a visor
+-- wrapped into it, and a boxed one with two lamps and an antenna. That pair
+-- read at every size and the logic under it was sound, curved is grown and
+-- boxed is built. The objection was to the drawing. Two heads in a row of
+-- numbers are two faces looking back at the reader, and the shells carried
+-- enough detail that what separated them was a texture rather than a shape.
 --
--- Everywhere but that row each mark is alone, so each has to say what it is
--- with nothing to compare against. The box does that for the machine, and
--- the antenna over it says it twice.
+-- Badges carry the same fact with no head in them. A badge is what a seat is
+-- issued rather than what sits in it, and both of these are shapes a player
+-- already knows before the game explains anything: wings mean a pilot, a
+-- square with legs means silicon. They also part at the silhouette instead
+-- of at the detail, which is the half that survives being drawn at eleven
+-- points beside a count.
 --
--- `k` is the width of the shell. `y` is the middle of the line it sits on, so
--- a caller can hand it a row's center without knowing the height.
---
--- HELM_NECK is how far below the center the collar cuts, in radii. Both
--- shells are cut off there and sit on the same run of line, so the mark's
--- height is what it actually draws rather than a box of air around it.
-local HELM_NECK, HELM_COLLAR = 0.68, 1.26
-local HELM_TALL = 0.5 * (1 + HELM_NECK)
-
--- The collar, under either shell. `half` is the shell's own half width where
--- the cut lands; the line runs a little past it so the helmet sits in
--- something rather than ending in mid air.
-local function collar(cx, neck, half, line, col)
-    F.layer:seg(cx - half * HELM_COLLAR, ry(neck), cx + half * HELM_COLLAR, ry(neck),
-          line, col, true)
-end
-
--- A person's shell: a closed flight helmet, a crown over a longer face, with
--- nothing under it.
---
--- Two superellipses sharing a waist, which is the widest line across it and
--- where the face keeps its eyes. FACE_CROWN is the share of the height above
--- that waist, so a small one is a long face. FACE_ROUND is how square the
--- crown turns and FACE_BLUNT how the chin ends: 2 turns through the bottom,
--- less draws it towards a point. FACE_IN is the width the face gives up on
--- its way down, which is the other half of a chin and has to move with
--- FACE_BLUNT, since a blunt end on a face that has already lost its width is
--- a stub rather than a jaw.
---
--- What this replaced was a bowl of glass on a collar, cut off flat at the
--- neck. Three things were wrong with it and only the last is obvious. A true
--- circle is as wide at the mouth as at the eyes and widest exactly halfway
--- down, which no helmet built for a cockpit is. The collar was a line wider
--- than the cut it stood on, so it read as shoulders under a fishbowl. And a
--- circle with a bar across it is a diagram of a face rather than a drawing of
--- one.
-local FACE_WIDE, FACE_CROWN = 0.38, 0.38
-local FACE_ROUND, FACE_BLUNT, FACE_IN = 2.1, 2.3, 0.22
-
-local function helm(cx, cy, k, col, line)
-    local w = k
-    local h = w * HELM_TALL
-    local x0, y0 = cx - w / 2, cy - h / 2
-    line = line or pen(k, 0.11)
-    local up, down = h * FACE_CROWN, h * (1 - FACE_CROWN)
-    local waist = y0 + up
-    local half = k * FACE_WIDE
-    -- Half the shell's width at a height. Crown above the waist, face below.
-    local function hw(y)
-        local t = (y - waist) / (y < waist and up or down)
-        t = math.max(-1, math.min(1, t))
-        if t < 0 then
-            return half * (1 - (-t) ^ FACE_ROUND) ^ (1 / FACE_ROUND)
-        end
-        return half * (1 - t ^ FACE_BLUNT) ^ (1 / FACE_BLUNT)
-                    * (1 - FACE_IN * t)
-    end
-    -- One closed run, left side down and right side back up. Sampled rather
-    -- than struck, because there is no one circle to strike it from.
-    local pts, steps = {}, math.max(10, math.min(18, math.floor(k * 0.7)))
-    for i = 0, steps do
-        local y = y0 + h * i / steps
-        pts[#pts + 1] = cx - hw(y)
-        pts[#pts + 1] = ry(y)
-    end
-    for i = steps, 0, -1 do
-        local y = y0 + h * i / steps
-        pts[#pts + 1] = cx + hw(y)
-        pts[#pts + 1] = ry(y)
-    end
-    F.layer:outline(pts, line, col, true)
-    return x0, y0, w, h, waist, hw
-end
-
--- A machine's shell: the same envelope with the curve taken out of it.
---
--- Squared to the same width and the same neckline as the bowl, so the two sit
--- level in a row. Its crown is flat where the person's is domed, which is the
--- whole of the difference and all it needs to be.
---
--- Three sides and a collar rather than a closed outline. Closing it lays the
--- box's own base under the collar, and two lines of one color on one pixel
--- row is a brighter line wherever these marks draw at part alpha, which is
--- every nameplate in the arena.
---
--- The same reasoning decides the corners. A capped stroke runs half a width
--- past each end, so four capped sides overlap in four squares and light every
--- corner. The crown is capped and covers them; the sides butt into it and
--- into the collar, each drawing its own length and no more.
-local function hull_helm(cx, cy, k, col, line)
-    local w = k
-    local h = w * HELM_TALL
-    local x0, y0 = cx - w / 2, cy - h / 2
-    local r = w * 0.5
-    local mid = y0 + r
-    local neck = mid + r * HELM_NECK
-    line = line or pen(k, 0.11)
-    F.layer:seg(x0, ry(y0), x0 + w, ry(y0), line, col, true)
-    F.layer:seg(x0, ry(y0 + line / 2), x0, ry(neck - line / 2), line, col)
-    F.layer:seg(x0 + w, ry(y0 + line / 2), x0 + w, ry(neck - line / 2), line, col)
-    collar(cx, neck, w / 2, line, col)
-    return x0, y0, w, h, mid, r
-end
-
--- A bowl on a collar with a visor in it has more parts than the box it
--- replaced, and parts are what die first when a mark is drawn small. Eleven
--- points rather than nine: still a mark beside a number rather than a picture
--- in a row, and enough for the glass, the collar and the band to survive.
+-- Eleven points, kept from the helmets. It is still a mark beside a number
+-- rather than a picture in a row, and it is what the feathers need to stay
+-- three feathers instead of one wing.
 local MARK_K = 11
 
--- How high the visor sits over the waist and how far it sags under it, in
--- strokes, so the glass travels with the line rather than with the mark.
--- Against the mark it grew with the drawing, and wherever the mark went big
--- under a line held thin -- the rail -- the glass came out a slab in a column
--- of line work.
+-- Pilot's wings: a boss with three feathers off each side.
 --
--- And a ceiling on both, against the mark's own height, because the trade runs
--- the other way at the other end. The pen is 0.13 of this mark's height at
--- eleven points and 0.07 of it in the rail, so a visor cut purely in strokes
--- is twice as deep in the games list as in the menu: it filled the shell and
--- left a helmet reading as a blob with a notch in it. The ceilings are set
--- clear of what the rail draws, so the size this shape was chosen at is the
--- one neither of them touches.
-local VISOR_LIFT, VISOR_SAG = 1.5, 2.6
-local VISOR_LIFT_MAX, VISOR_SAG_MAX = 0.11, 0.19
-
--- How far the top edge bends down at the middle, as a share of the mark's
--- height. Against the mark rather than against the stroke, because the stroke
--- is held to the column in the rail and a bend cut in strokes came to under a
--- pixel there: it was drawn and could not be seen.
-local VISOR_BEND = 0.080
-
--- A person: the visor, wrapped into the shell.
+-- `cx` is the middle of the mark and `cy` the middle of the line it sits on,
+-- so a caller can hand it a row's center without knowing the height.
 --
--- Ruled along the top and sagging along the bottom, so it wraps the face
--- rather than lying across it, and it is deepest where it crosses the middle
--- of that face. It sits on the waist, which is the shell's own widest line
--- and where a face keeps its eyes.
+-- Feathers rather than a filled spread, because the gaps are what make this
+-- wings at all: solid at eleven points it is a moustache. They are struck a
+-- shade under the mark's own pen for the same reason, since a heavy pen
+-- closes the gaps it is drawn between, and the gaps are the mark.
 --
--- Everything before it was a band: struck two ways to bow apart, or bent, or
--- ruled flat. All of them read as a line drawn on a face rather than as a
--- pane set into a helmet, because a band has two edges doing the same thing
--- and glass in a shell does not. Both of these edges bow the same way and by
--- different amounts, which is what a pane wrapped round a head does.
---
--- Its ends come off the shell's own width at that height, so a narrower head
--- gets a shorter visor. That is the trade in this mark: the visor is the
--- whole of it at 26 points, and every hundredth of width the head gives up
--- comes off the part being read.
+-- Cut so the spread is exactly the mark's width. Every caller lays this out
+-- against `k` and one of them sets it beside a name, so wings that reached
+-- past what they reported would be wings that touch a call sign.
 local function pilot_mark(cx, cy, col, k, line)
     k = k or MARK_K * F.scale
-    line = line or pen(k, 0.11)
-    local w, h, waist, hw = select(3, helm(cx, cy, k, col, line))
-    local top = waist - math.min(line * VISOR_LIFT, h * VISOR_LIFT_MAX)
-    local reach = hw(top) - line * 1.1
-    local sag = math.min(line * VISOR_SAG, h * VISOR_SAG_MAX)
-    local bend, floor = h * VISOR_BEND, cy + h / 2
-    -- A strip, a quad between each pair of samples, walking the two edges
-    -- together. One fan would be fewer triangles and was what this drew until
-    -- the top edge learned to bend: a fan is struck from a single corner and
-    -- is exact only over a convex shape, and a pane with a bend in its top is
-    -- concave along that edge, so the fan filled the bend back in. The bend
-    -- was drawn and then painted over, which looks exactly like never having
-    -- been drawn.
-    local px, pty, pby
-    for i = 0, 10 do
-        local t = -1 + 2 * i / 10
-        local x = cx + reach * t
-        local ty = top + bend * (1 - t * t)
-        local by = math.min(waist + sag * (1 - t * t), floor - line)
-        if px then
-            F.layer:quad(px, ry(pty), x, ry(ty), x, ry(by), px, ry(pby), col)
-        end
-        px, pty, pby = x, ty, by
+    line = (line or pen(k, 0.11)) * 0.85
+    local function px(t) return cx + t * k end
+    local function py(t) return ry(cy + t * k) end
+    -- The boss the feathers spring from, and the only solid piece here. It
+    -- holds the middle of the mark at the size where each feather is two
+    -- pixels of line and there is nothing else to hold it.
+    F.layer:quad(px(0), py(-0.13), px(0.093), py(0.01),
+                 px(0), py(0.15), px(-0.093), py(0.01), col)
+    -- Swept back and fanned, longest on top. A rank of parallel strokes is a
+    -- chevron; what makes a wing is that the three of them disagree about
+    -- where they are going.
+    for _, s in ipairs({1, -1}) do
+        F.layer:seg(px(s * 0.102), py(-0.06), px(s * 0.500), py(-0.30),
+                    line, col, true)
+        F.layer:seg(px(s * 0.102), py(0.06), px(s * 0.463), py(-0.10),
+                    line, col, true)
+        F.layer:seg(px(s * 0.102), py(0.18), px(s * 0.389), py(0.09),
+                    line, col, true)
     end
-    return w
+    return k
 end
 
--- A machine: the boxed shell, two lamps, and the antenna over the crown.
+-- A chip: a square package with a core in it and two legs a side.
 --
 -- `x` is its left edge rather than its center, because every caller of this
 -- one is laying a row out left to right and knows where the mark starts.
 --
--- Lamps rather than a visor, and a flat crown to stand them under. The
--- antenna says the same thing a second time, which is worth the two points it
--- costs: three of this mark's four uses are solo.
+-- The legs are the mark. A square with a square in it is a button, and what
+-- says silicon is the little runs coming out of the package, so they are
+-- drawn on all four sides even at the size where each is two pixels: eight
+-- of them read as a fringe, and a fringe is enough to carry it.
+--
+-- Butted rather than capped, each leg drawing its own length and no more. A
+-- capped stroke runs half a width past each end, and eight of them would lay
+-- a second line along all four sides of the package, which at the part alpha
+-- every nameplate draws these at is a package with brighter edges than its
+-- own outline.
 local function bot_mark(x, y, col, k, line)
     k = k or MARK_K * F.scale
+    line = line or pen(k, 0.11)
     local cx = x + k / 2
-    local x0, y0, w, _, mid, r = hull_helm(cx, y, k, col, line)
-    -- The middle of the box rather than the middle of the circle it used to
-    -- be: a flat crown puts the room the dome was using back into the shell,
-    -- and lamps left where they were sat in the bottom third of it.
-    local eye = mid - r * 0.16
-    F.layer:disc(x0 + w * 0.31, ry(eye), w * 0.115, 8, col)
-    F.layer:disc(x0 + w * 0.69, ry(eye), w * 0.115, 8, col)
-    F.layer:seg(cx, ry(y0), cx, ry(y0 - r * 0.36), line or pen(k, 0.09), col, true)
-    F.layer:disc(cx, ry(y0 - r * 0.48), w * 0.11, 8, col)
-    return w
+    local function px(t) return cx + t * k end
+    local function py(t) return ry(y + t * k) end
+    local s, leg = 0.33, 0.50
+    F.layer:outline({px(-s), py(-s), px(s), py(-s),
+                     px(s), py(s), px(-s), py(s)}, line, col, true)
+    F.layer:quad(px(-0.11), py(-0.11), px(0.11), py(-0.11),
+                 px(0.11), py(0.11), px(-0.11), py(0.11), col)
+    for _, t in ipairs({-0.165, 0.165}) do
+        F.layer:seg(px(-s), py(t), px(-leg), py(t), line, col)
+        F.layer:seg(px(s), py(t), px(leg), py(t), line, col)
+        F.layer:seg(px(t), py(-s), px(t), py(-leg), line, col)
+        F.layer:seg(px(t), py(s), px(t), py(leg), line, col)
+    end
+    return k
 end
 
 
@@ -2636,26 +2499,16 @@ end
 -- So there is one mark per trigger now, and an add-on is something drawn onto
 -- it: the round you fire, wearing what it has learned.
 
--- The repel's rings, which are also the push add-on's: the same force in
--- both places, so the same mark.
+-- The two shipped charges draw through marks.charge, which is the drawing a
+-- pad's control carries on a phone: the corner and the thumb must not teach
+-- two pictures for one thing, and for a while they did, plain rings here
+-- against the pad's own pair.
 local function gl_rings(cx, cy, k, col)
-    F.layer:ring(cx, ry(cy), k * 0.36, pen(k, 0.143), 10, col)
-    F.layer:ring(cx, ry(cy), k * 0.78, pen(k, 0.129), 12,
-           pal.a(col, (col[4] or 1) * 0.5))
+    marks.charge(0, cx, ry(cy), k, col)
 end
-
--- Rounds in every direction: the burst at eight spokes, shrapnel at six.
-local function gl_spokes(n)
-    return function(cx, cy, k, col)
-        for i = 0, n - 1 do
-            local a = (i + 0.5) * 2 * math.pi / n
-            local dx, dy = math.cos(a), math.sin(a)
-            F.layer:seg(cx + dx * k * 0.3, ry(cy + dy * k * 0.3),
-                  cx + dx * k, ry(cy + dy * k), pen(k, 0.143), col)
-        end
-    end
+local function gl_burst(cx, cy, k, col)
+    marks.charge(1, cx, ry(cy), k, col)
 end
-local gl_burst = gl_spokes(8)
 
 -- The rivet: what this game charges in.
 --
@@ -2756,7 +2609,7 @@ local function status(me, charges, lift)
     -- read.
     --
     -- The count still says how many, so a row appearing is the same event as
-    -- a pip lighting and reads as one.
+    -- a circle filling and reads as one.
     local slots = {}
     for _, c in ipairs(charges or {}) do
         if (c.count or 0) > 0 then slots[#slots + 1] = c end
@@ -2831,10 +2684,17 @@ local function status(me, charges, lift)
         local gc = CHARGE_GLYPHS[slot] or gl_diamond
         gc(mid, y + rows_h / 2, 7 * z,
            pal.a(CHARGE_HUES[slot] or pal.CHARGE_COL, 0.85))
+        -- The count in the ship page's own circle grammar, pages.dot: solid
+        -- is a charge in hand, a ring is the slot a spent one leaves. The
+        -- corner used its own smaller pips for this, which was a second
+        -- drawing for the one idea the hangar already taught.
         local slot_max = math.max(1, c.max or 3)
-        pips(val + 3 * z, y + rows_h / 2, slot_max, c.count,
-             pal.CHARGE_COL, 2.7 * z, 9 * z)
-        local pw = val + 3 * z + slot_max * 9 * z
+        for p = 1, slot_max do
+            pages.dot(val + 3 * z + (p - 1) * 13 * z, y + rows_h / 2,
+                      4.5 * z, p <= (c.count or 0) and "on" or "ring",
+                      pal.CHARGE_COL)
+        end
+        local pw = val + 3 * z + (slot_max - 1) * 13 * z + 4.5 * z
         if pw > wide then wide = pw end
         -- A row per charge rather than one bracket over all of them. A
         -- repel and a burst are different things and each has a card of
@@ -4221,16 +4081,19 @@ function END.foot(o, m, x, y, w)
         local kw = text_w(string.upper(a[1]), px) + lead + 26 * F.scale
         local kx = right - kw
         local col = i == 1 and pal.FRIEND or pal.RADAR_TILE
-        local fill = i == 1 and 0.16 or 0.06
-        local edge = i == 1 and 0.95 or 0.6
+        local fill = i == 1 and 0.10 or 0.06
+        local edge = i == 1 and 0.76 or 0.6
         if a[2] == "share" then
             -- The one act on the ending, so it breathes on the clock the
-            -- PLAY NOW key breathes on, floored the same way so the trough
-            -- never reads as a key that stopped working. `F.now` is 0 under
-            -- the test harness, which keeps the layout tests still.
+            -- PLAY NOW key breathes on, but under it: the ending's zoom
+            -- already grows these keys, and PLAY NOW's full wash on top of
+            -- that made the invite the loudest thing on the board. The
+            -- floor still keeps the trough from reading as a key that
+            -- stopped working. `F.now` is 0 under the test harness, which
+            -- keeps the layout tests still.
             local breath = 0.5 + 0.5 * math.sin(F.now * 2.6)
-            fill = 0.06 + 0.12 * breath
-            edge = 0.62 + 0.38 * breath
+            fill = 0.04 + 0.06 * breath
+            edge = 0.50 + 0.26 * breath
         end
         key_box(kx, y, kw, key_h, pal.a(col, fill), pal.a(col, edge))
         local ink = pal.a(i == 1 and pal.FRIEND or pal.INK, 0.95)
@@ -5445,15 +5308,16 @@ function pages.points(v, x, y, w, h)
     M.page_room = h
 end
 
--- The friends page: a field you type a call sign into, over sections whose
--- rows carry their own buttons.
+-- The friends page: a field you type a call sign into, the adds waiting on an
+-- answer, your friends, and one key out to somebody who has never played.
 --
--- It was a plain list, and the buttons are why it is not one any more. Five
--- inputs give a row one press, so a row with two answers has to ask which,
--- and on a page where accept, ignore, join and unfriend all live that put a
--- card between every decision and the thing it decides. A pointer gets the
--- buttons; the row press still raises the card, off the same list, so a
--- d-pad loses nothing. See `menu.ask_friend`.
+-- Two rows and two grammars. A received add asks a question, so it carries
+-- its name over what it did and the two keys that answer it. A friend is not
+-- asking anything, so the row is a dot, a name, and the game they are in:
+-- solid where they are flying, hollow where they are not, which says on and
+-- off twice over and reads without color. What can be done with a friend is
+-- on the card the row raises, which is where five inputs always had to find
+-- it, and where a join names the game it would put you in.
 --
 -- The field is pinned and the sections scroll under it, the way the ship
 -- page's band stays over its kit. Whole rows only, and nothing is drawn over
@@ -5461,12 +5325,52 @@ end
 -- lays down, so a row that has slid under the field cannot be covered.
 --
 -- See docs/design/friends.md.
+
+-- How big the dot beside a friend is, and how much of the foot the invite key
+-- takes. Both hang off `pages` beside FIELD_TALL rather than standing as
+-- locals of their own: this file is at Lua's ceiling of two hundred locals in
+-- its main chunk, and a page's own measurements belong to the page anyway.
+pages.ON_R = 4
+pages.INVITE_H = 52
+
+-- The way out of a roster that can only hold people already here: a key that
+-- hands the game's own address to whatever the device shares with, which on a
+-- phone is the share sheet and on a desktop is the clipboard. It is the
+-- ending's INVITE FRIEND key in the menu's own furniture, and it is pinned at
+-- the foot rather than scrolled to, because a page with three friends on it
+-- has nothing else down there and a page with forty would bury it.
+--
+-- The line says what the press is for and never how it travels: the sheet
+-- decides that, and a key promising a text message on a machine that copies a
+-- link is a key that lied.
+function pages.invite_banner(v, x, y, w)
+    local kh = 26 * F.scale
+    local cy = y + pages.INVITE_H * F.scale / 2 + 4 * F.scale
+    hrule(x, y, w)
+    -- The word flips once the browser says the link went somewhere, which is
+    -- the only acknowledgement a copy gets: nothing else on screen moves.
+    local copied = M.share_result == "copied"
+    local label = copied and "link copied" or "invite"
+    local left = row_button(x + w, cy, kh, label, not copied,
+                            v.invite_hot == true, "invite")
+    txt("get somebody you know into the game", x, cy, 12.5 * F.scale,
+        pal.a(pal.INK, 0.8))
+    -- The browser lays a real anchor over the key: a share sheet and a
+    -- clipboard write both have to happen inside a gesture the page itself
+    -- saw, and a press routed through the engine is not one. The rectangle
+    -- travels in page points, which is what the shell lays out in.
+    M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
+        left / F.density, (cy - kh / 2) / F.density,
+        (x + w - left) / F.density, kh / F.density,
+        "vwshare:" .. v.invite)
+end
+
 function pages.friends(v, x, y, w, h, focused)
     local a = v.add or {}
     -- One question, asked of the room rather than of the device: whether a
-    -- name, its line and two buttons fit across one row. Around 470 points
-    -- they stop fitting, and the row goes to two lines with the buttons
-    -- sharing the second.
+    -- name, its line and two keys fit across one row. Around 470 points they
+    -- stop fitting, and a received add goes to two lines with the keys
+    -- sharing the second. A friend's row is one line at every width.
     local packed = w < 470 * F.scale
     local bh = pages.FIELD_TALL * F.scale
     local kh = 26 * F.scale
@@ -5474,7 +5378,7 @@ function pages.friends(v, x, y, w, h, focused)
     -- One button. Returns its left edge, so a row can lay them out from the
     -- right and stop where it stops.
     -- --- the field, pinned at the top
-    lbl("add a pilot", x, y + 8 * F.scale, pal.a(pal.DIM, 0.85))
+    lbl("add friend", x, y + 8 * F.scale, pal.a(pal.DIM, 0.85))
     local fy = y + 22 * F.scale + bh / 2
     local aw = text_w("add", 12 * F.scale) + 26 * F.scale
     local fw = math.min(300 * F.scale, w - aw - 12 * F.scale)
@@ -5536,9 +5440,22 @@ function pages.friends(v, x, y, w, h, focused)
         BAND = BAND + #hits * rh + 6 * F.scale
     end
 
-    -- --- the sections, scrolling under it
+    -- --- the sections, scrolling under it, and the key under them
     local top = y + BAND
-    local rowh = (packed and 52 or 44) * F.scale
+    -- The page's own floor: everything below it belongs to the invite key,
+    -- which is pinned there whatever the list does. No address to hand out
+    -- means no key and no floor: the page has the whole panel, rather than
+    -- fifty points of nothing under a key that could not do anything.
+    local foot = (v.invite and v.invite ~= "")
+        and pages.INVITE_H * F.scale or 0
+    local floor = y + h - foot
+    -- Two heights, because the two rows say different amounts. A received add
+    -- carries a line about when it arrived and two keys; a friend carries a
+    -- dot, a name and a game.
+    local function row_h(r)
+        if r.state == "asked" then return (packed and 52 or 44) * F.scale end
+        return 44 * F.scale
+    end
     local SECT = 24 * F.scale
     -- Laid out unscrolled and drawn shifted, so the height this page came to
     -- is a number and not that number minus wherever the finger left it.
@@ -5552,19 +5469,22 @@ function pages.friends(v, x, y, w, h, focused)
             or nil
         return SECT + (said and (#said * 15 * F.scale + 4 * F.scale) or 0)
     end
+    local tall = 0
     do
         local walk, cur = 0, nil
         for i, r in ipairs(v.rows or {}) do
             walk = walk + head_h(r)
             if i == v.sel and not a.on then cur = walk end
-            walk = walk + rowh
+            walk = walk + row_h(r)
+            tall = math.max(tall, row_h(r))
         end
-        follow_cursor(cur, rowh, y + h - top, focused)
+        follow_cursor(cur, tall, floor - top, focused)
     end
     local dy = M.page_scroll
-    local seen = function(t) return t >= top and t + rowh <= y + h end
+    local seen = function(t, rh) return t >= top and t + rh <= floor end
 
     for i, r in ipairs(v.rows or {}) do
+        local rowh = row_h(r)
         if r.sect then
             -- Wrapped to the room the panel has, and measured before the head
             -- is placed so a sentence that took two lines does not draw the
@@ -5575,7 +5495,7 @@ function pages.friends(v, x, y, w, h, focused)
                             w - 10 * F.scale) or nil
             local sh = head_h(r)
             local hy = at - dy
-            if hy >= top and hy + sh <= y + h then
+            if hy >= top and hy + sh <= floor then
                 hrule(x, hy + SECT * 0.42, w)
                 lbl(r.sect, x, hy + SECT * 0.82)
                 if r.sect_note then
@@ -5600,7 +5520,7 @@ function pages.friends(v, x, y, w, h, focused)
         end
         local ry0 = at - dy
         at = at + rowh
-        if seen(ry0) then
+        if seen(ry0, rowh) then
             -- Nothing in the list is the cursor while the field above has
             -- it. Two lit things on one page is a page that cannot say where
             -- a press would go.
@@ -5608,39 +5528,50 @@ function pages.friends(v, x, y, w, h, focused)
             if hot then LIT.field(ry0, rowh, LIT.CURSOR) end
             local cy = ry0 + rowh / 2
             local col = pal.a(pal.INK, r.dim and 0.6 or (hot and 1 or 0.9))
-            -- The buttons first, from the right, because the name is what
-            -- gives way when a row runs out of width.
-            local edge = x + w - 8 * F.scale
-            for k = #(r.acts or {}), 1, -1 do
-                local act = r.acts[k]
-                edge = row_button(edge, cy, kh, act.label, act.go,
-                              v.friend_hot == i and v.friend_hot_act == k,
-                              "friend_act", i, k) - 8 * F.scale
-            end
-            if packed then
-                txt(r.label or "?", x, ry0 + rowh * 0.28, 15 * F.scale, col,
-                    nil, MENU_FONT, true)
-                if r.detail and r.detail ~= "" then
-                    txt(r.detail, x, ry0 + rowh * 0.72, 11.5 * F.scale,
-                        pal.a(r.state == "flying" and pal.FRIEND or pal.DIM,
-                              0.95))
+            if r.state == "asked" then
+                -- An add that is asking something: the keys first, from the
+                -- right, because the name is what gives way when a row runs
+                -- out of width.
+                local edge = x + w - 8 * F.scale
+                for k = #(r.acts or {}), 1, -1 do
+                    local act = r.acts[k]
+                    edge = row_button(edge, cy, kh, act.label, act.go,
+                                  v.friend_hot == i and v.friend_hot_act == k,
+                                  "friend_act", i, k) - 8 * F.scale
+                end
+                if packed then
+                    txt(r.label or "?", x, ry0 + rowh * 0.28, 15 * F.scale,
+                        col, nil, MENU_FONT, true)
+                    txt(r.detail or "", x, ry0 + rowh * 0.72, 11.5 * F.scale,
+                        pal.a(pal.DIM, 0.95))
+                else
+                    txt(r.label or "?", x, cy - 8 * F.scale, 16 * F.scale, col,
+                        nil, MENU_FONT, true)
+                    txt(r.detail or "", x, cy + 10 * F.scale, 11.5 * F.scale,
+                        pal.a(pal.DIM, 0.95))
                 end
             else
-                txt(r.label or "?", x, cy, 16 * F.scale, col, nil, MENU_FONT,
-                    true)
+                -- A friend: the dot, the name, and the game. Solid where they
+                -- are flying and hollow where they are not, so the row says it
+                -- in a mark before it says it in a word, and says it at all on
+                -- a screen where the two greens are one grey.
+                local on = r.state == "flying"
+                local dx = x + pages.ON_R * F.scale
+                if on then
+                    F.layer:disc(dx, ry(cy), pages.ON_R * F.scale, 10,
+                                 pal.ONLINE)
+                else
+                    F.layer:ring(dx, ry(cy), pages.ON_R * F.scale,
+                                 1.3 * F.scale, 10, pal.a(pal.DIM, 0.7))
+                end
+                txt(r.label or "?", x + 19 * F.scale, cy, 16 * F.scale,
+                    pal.a(pal.INK, hot and 1 or (on and 0.95 or 0.75)),
+                    nil, MENU_FONT, true)
+                -- Against the far edge, where the eye is not reading names,
+                -- and raw: a game keeps the capitals the games list gave it.
                 if r.detail and r.detail ~= "" then
-                    -- A friend in a game gets the dot the mocks give them,
-                    -- which is the one mark on this page that says "now".
-                    local dx = x + math.min(190 * F.scale,
-                                            w * 0.34) + 4 * F.scale
-                    if r.state == "flying" then
-                        rect(dx, cy - 3 * F.scale, 6 * F.scale, 6 * F.scale,
-                             pal.FRIEND)
-                        dx = dx + 13 * F.scale
-                    end
-                    txt(r.detail, dx, cy, 11.5 * F.scale,
-                        pal.a(r.state == "flying" and pal.FRIEND or pal.DIM,
-                              0.95))
+                    txt(r.detail, x + w, cy, 11.5 * F.scale,
+                        pal.a(pal.DIM, 0.95), "right", nil, true)
                 end
             end
             -- The row itself, after its buttons, so a press on one of them
@@ -5655,17 +5586,30 @@ function pages.friends(v, x, y, w, h, focused)
 
     -- Nothing at all, which is a different page from a page with one empty
     -- section on it. Under the field rather than instead of it: the field is
-    -- how somebody with no friends gets their first one.
+    -- how somebody with no friends gets their first one, and the key at the
+    -- foot is how they get one who has never played.
     if #(v.rows or {}) == 0 and v.empty then
-        empty_state(x, top, w, h - BAND, v.empty)
+        empty_state(x, top, w, floor - top, v.empty)
     end
 
-    M.page_extent = (at - top) + BAND + 16 * F.scale
-    M.page_room = h
-    if M.page_extent > h then
-        local track = h - BAND
+    if foot > 0 then pages.invite_banner(v, x, floor, w) end
+
+    -- The room the list has is the room above the key, so a page that would
+    -- have just fitted scrolls rather than running its last row under it.
+    --
+    -- No breathing room past the last row: the key at the foot is the
+    -- breathing room now, and sixteen points of nothing under the list is
+    -- sixteen points the scroll has to travel and cannot show. On a window
+    -- short enough to hold one row that was the difference between reaching
+    -- the last name and stopping two points above it, since a row that does
+    -- not fit whole is not drawn at all.
+    local room = floor - y
+    M.page_extent = (at - top) + BAND
+    M.page_room = room
+    if M.page_extent > room then
+        local track = floor - top
         local bar = math.max(30 * F.scale, track * track / M.page_extent)
-        local pos = (M.page_scroll / math.max(1, M.page_extent - h))
+        local pos = (M.page_scroll / math.max(1, M.page_extent - room))
                     * (track - bar)
         local bx = x + w - 3 * F.scale
         rect(bx, top, 3 * F.scale, track, pal.a(pal.DIM, 0.12))

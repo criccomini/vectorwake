@@ -675,6 +675,57 @@ int ShrapCount(lua_State* L) {
     return 1;
 }
 
+// The volley a pull throws: how many rounds leave, and how far apart.
+//
+// Same argument as ShrapCount above, and the same fault it was written to
+// fix. The corner and the pads draw every round a trigger fires at the angle
+// it fires it, and the alternative was the two spreads copied into the
+// drawing as constants. The baseline opens a pair seven and a half degrees
+// and a fan fifteen, adds one round a rung, and ships every gun pattern at
+// one round; a zone is free to disagree with all three, and the drawing
+// would have gone on saying what the baseline said.
+//
+// Read the way `compose` in sim.c reads it, off the pattern the rung
+// actually fires. Both numbers come back in the core's own units, spacing
+// included: heading units at 65536 to the turn, the way the pattern holds
+// it, so this does no arithmetic of its own and the drawing converts to the
+// unit it draws in. A count of zero means there is no pattern there to ask
+// about, and a spacing of zero on a count above one is the scatter
+// encoding, which is a roll rather than an angle and nothing a still mark
+// can show.
+int SprayShape(lua_State* L) {
+    int cls = (int)luaL_checkinteger(L, 1);
+    int t = (int)luaL_checkinteger(L, 2);
+    int lvl = (int)luaL_checkinteger(L, 3);
+    int n = (int)luaL_checkinteger(L, 4);
+    if (cls < 0 || cls >= g_cfg.class_count || t < 0 || t >= SIM_TRIG_COUNT
+        || lvl < 0 || lvl >= SIM_MAX_RUNGS) {
+        lua_pushinteger(L, 0);
+        lua_pushnumber(L, 0);
+        return 2;
+    }
+    uint8_t pat = g_cfg.classes[cls].trigger[t][lvl];
+    if (pat == SIM_NO_PATTERN || pat >= g_cfg.pattern_count) {
+        lua_pushinteger(L, 0);
+        lua_pushnumber(L, 0);
+        return 2;
+    }
+    const sim_fire_pattern* p = &g_cfg.patterns[pat];
+    int32_t count = p->count ? p->count : 1;
+    uint16_t spacing = p->spacing;
+    if (n > 0) {
+        count += n * g_cfg.mod_step[SIM_MOD_MULTI];
+        if (count > 255) count = 255;
+        // A pattern that already fans keeps its own angle; one that does not
+        // gets the pair's spacing at one rung and the zone's fan above it.
+        if (spacing == 0)
+            spacing = (n == 1) ? g_cfg.mod_pair_spread : g_cfg.mod_spread;
+    }
+    lua_pushinteger(L, count);
+    lua_pushinteger(L, spacing);
+    return 2;
+}
+
 // Which rung of the tech tree fires this spec, learned from the ladders. A
 // spec deliberately carries no level -- it says what a projectile does, not
 // where it came from -- but every hull's trigger ladder says which rung each
@@ -1151,6 +1202,7 @@ const luaL_reg kFunctions[] = {
     {"spec_life", SpecLife},
     {"spec_level", SpecLevel},
     {"shrap_count", ShrapCount},
+    {"spray_shape", SprayShape},
     {"charge_spec", ChargeSpec},
     {"tick", Tick},
     {"weapon_count", WeaponCount},

@@ -390,32 +390,244 @@ local function lcg(s)
     return (s * 48271) % 2147483647
 end
 
--- Eight brightnesses per layer, made once. A star's alpha used to be a fresh
--- {r,g,b,a} per star per frame -- three hundred and fifty tables a frame,
--- twenty thousand a second, all of them garbage -- and at a pixel and a half
--- across nobody can tell an eighth of a step of alpha from a sixteenth.
+-- Eight brightnesses per layer in four colors, made once. A star's alpha used
+-- to be a fresh {r,g,b,a} per star per frame, three hundred and fifty tables a
+-- frame and twenty thousand a second, all of them garbage, and at a pixel and
+-- a half across nobody can tell an eighth of a step of alpha from a sixteenth.
+--
+-- The four colors are temperature. A field drawn in one hue at three
+-- brightnesses reads as a texture, and the same field with blue-white, white,
+-- amber and a rare ember in it reads as stars. Each one is scaled to the
+-- luminance its layer already had, so the sky gains variety without gaining
+-- volume: distance still says how bright a star is, and temperature only says
+-- what color it is while being that bright.
 local STAR_SHADES = 8
+local TEMP_COLS = {
+    pal.rgb(0x9fbcff), pal.rgb(0xf2f5ff), pal.rgb(0xffd08a), pal.rgb(0xff9a52),
+}
+-- Which temperature a star draws at, hashed. Weighted toward the two neutral
+-- ones, because a sky split evenly four ways is confetti.
+local TEMP_PICK = {1, 2, 1, 2, 2, 3, 1, 2, 1, 1, 2, 3, 1, 2, 4, 2}
+-- The warm two draw a touch larger. At a pixel across, hue on its own does not
+-- survive, and an amber star the size of its neighbors is a gray one.
+local TEMP_FAT = {0, 0, 0.4, 0.6}
+
+local function luma(c)
+    return 0.299 * c[1] + 0.587 * c[2] + 0.114 * c[3]
+end
+
 for _, L in ipairs(STARS) do
     L.shade = {}
-    for i = 1, STAR_SHADES do
-        L.shade[i] = pal.a(L.col, 0.45 + (i - 1) / (STAR_SHADES - 1) * 0.55)
+    L.fat = TEMP_FAT
+    for t = 1, #TEMP_COLS do
+        local src = TEMP_COLS[t]
+        local k = luma(L.col) / luma(src)
+        local ramp = {}
+        for i = 1, STAR_SHADES do
+            local a = 0.45 + (i - 1) / (STAR_SHADES - 1) * 0.55
+            ramp[i] = {src[1] * k, src[2] * k, src[3] * k, a}
+        end
+        L.shade[t] = ramp
     end
     L.bloom = pal.a(L.col, 0.30)
 end
 
--- Nebulae: the layer behind the layers. A few enormous, extremely faint
--- radial fades drifting at the deepest parallax, whose whole job is making
--- the black feel like a volume instead of a ceiling. Alpha stays under a
--- twelfth, because identity.md's line is that the background never competes
--- with a projectile, and a nebula that reads as an object has changed genre.
--- The same hashed-cell scheme as the stars, so nothing is stored and a map
--- twice the size costs the same.
+-- One near star in this many is close enough to burn: a four-point cross of
+-- the kind a lens puts on a bright point, in that star's own color. Rare on
+-- purpose. Two or three on a screen is a sky with something in it, and a
+-- dozen is a christmas tree.
+local SPARKLE = 31
+local SPARKLE_ARM = 9
+
+-- Clouds: the layer behind the layers, whose whole job is making the black
+-- feel like a volume instead of a ceiling. Extremely faint, drifting at nearly
+-- the deepest parallax, on the same hashed-cell scheme as the stars, so
+-- nothing is stored and a map twice the size costs the same.
+--
+-- A cloud is a run of knots along a hashed direction with a streamer off the
+-- end, rather than the single round fade this started as. The round one read
+-- as a circle the moment it was bright enough to see at all, which is the
+-- reading identity.md rules out: a nebula that reads as an object has changed
+-- genre. Strung out, the same light reads as distance instead.
+--
+-- The alphas below are per knot and the knots overlap, so the brightest place
+-- in a cloud is worth about twice one of them. That total is what has to stay
+-- under a projectile's notice, not the number written here.
 local NEBULA = {k = 0.12, cell = 720, fill = 9}
+local NEB_KNOTS = 5
 local NEB_COLS = {
-    pal.a(pal.rgb(0x2b4268), 0.070),
-    pal.a(pal.rgb(0x4a306e), 0.055),
-    pal.a(pal.rgb(0x1d4a5a), 0.060),
+    pal.a(pal.rgb(0x2b4268), 0.075),
+    pal.a(pal.rgb(0x4a306e), 0.060),
+    pal.a(pal.rgb(0x1d4a5a), 0.068),
 }
+
+-- The band: a river of fine grain and dust filaments along one diagonal of the
+-- sky. The camera never rotates in this game, so the sky is allowed an axis,
+-- and an axis is a compass nobody has to be handed.
+--
+-- Grain is a layer of its own rather than a density bump in the far one,
+-- because one star per cell is the whole scheme and a milky band needs finer
+-- cells than the far layer has. It is the most expensive thing in the sky, and
+-- the loop below pays for it only inside the band: a cell further than its own
+-- width from the axis is dropped before it is hashed, which is most of them.
+--
+-- What the whole sky costs, measured in plain Lua at 1280 by 800: 0.63 ms a
+-- frame against 0.20 before any of this, and 870 crossings into the core to
+-- ask what is behind a star against 445. Four percent of a frame at sixty,
+-- which is the price of the thing and worth knowing before adding to it.
+-- The half width is in screen pixels rather than world ones, because that is
+-- what it means: a band this game can see is one that ends somewhere inside
+-- the window, with plain sky on both sides of it. Eight hundred looked
+-- reasonable written down and put the whole view inside the band, which reads
+-- as a starfield somebody turned the density up on rather than as a band.
+local BAND = {k = 0.14, cell = 28, size = 1.2, fill = 13, half = 380}
+local BAND_SHADE = {}
+for i = 1, STAR_SHADES do
+    BAND_SHADE[i] = pal.a(pal.rgb(0xd8d2c6),
+                          0.09 + (i - 1) / (STAR_SHADES - 1) * 0.27)
+end
+local BAND_FILS = {k = 0.14, cell = 520, fill = 6, knots = 3}
+local BAND_FIL_COLS = {
+    pal.a(pal.rgb(0x6b5a8c), 0.045),
+    pal.a(pal.rgb(0x3d5a80), 0.040),
+}
+
+-- Dust: the nearest layer of all, and the only one that answers to speed.
+-- Motes are dots while the camera is still and streaks while it is moving,
+-- drawn along its own motion, which is the one thing in the sky that says how
+-- fast you are going. Sparse on purpose, because this close to the arena plane
+-- a thick field of it would read as traffic.
+local DUST = {k = 0.86, cell = 240, size = 1.6, fill = 3}
+local DUST_COL = pal.a(pal.rgb(0xbcd4f0), 0.42)
+-- What counts as moving, in pixels of camera travel per frame, and what a
+-- frame of travel is worth as a streak.
+local DUST_MOVE = 1.1
+local DUST_SMEAR = 3.5
+-- Past this the camera did not fly, it teleported: a respawn, a map change, an
+-- eye moving to another hull. Smearing that would draw one frame of white rain
+-- across the screen.
+local DUST_JUMP = 140
+
+-- A floor under the black: two enormous, barely-there fades anchored to the
+-- map itself, at the shallowest parallax anything here uses. The cheapest idea
+-- in this file and the one that does the most work. Without it the space
+-- between clouds is a flat ceiling; with it the whole field has a bottom.
+local GRAD_K = 0.04
+local GRAD_R = {2400, 2100}
+local GRAD_COLS = {
+    pal.a(pal.rgb(0x16305a), 0.15),
+    pal.a(pal.rgb(0x3a2a5e), 0.11),
+    pal.a(pal.rgb(0x143f4e), 0.13),
+    pal.a(pal.rgb(0x241d4a), 0.12),
+}
+
+-- Set pieces: a sun and a comet, one of each per map.
+--
+-- They sit at middling depth rather than out with the band, and that choice is
+-- what makes them worth having. A match room is a hundred and sixty tiles
+-- across, so anything drawn at the band's depth moves a couple of hundred
+-- pixels while you cross the entire map: it would be wallpaper in one corner
+-- of the screen for three minutes. At these depths they arrive and leave as
+-- you fly, which is what lets a side be told to regroup under the comet.
+--
+-- Both are drawn on the glow layer, additively, and both are dim. A sun that
+-- competes with a bolt for attention is a bug wearing a costume, and this one
+-- has the whole screen and all three minutes to be noticed in.
+local SUN = {k = 0.26, core = 10, mid = 40, wide = 118, flare = 150}
+local SUN_CORE = pal.a(pal.rgb(0xfff4e0), 0.50)
+local SUN_MID = pal.a(pal.rgb(0xffe6bc), 0.13)
+local SUN_WIDE = pal.a(pal.rgb(0xffd7a0), 0.06)
+local SUN_FLARE = pal.a(pal.rgb(0xffeac6), 0.18)
+local COMET = {k = 0.40, head = 4, tail = 280}
+local COMET_HEAD = pal.a(pal.rgb(0xe4f4ff), 0.75)
+local COMET_GLOW = pal.rgb(0xbfe4ff)
+local COMET_TAIL = pal.a(pal.rgb(0x9fd4ff), 1)
+local COMET_CORE = pal.a(pal.rgb(0xdff2ff), 1)
+
+-- The sky belongs to the map. Everything here that is not hashed from its own
+-- position is placed from the map's name instead: the band's angle and where
+-- it runs, which two fades wash the black and where they sit, and where the
+-- two set pieces are anchored. So a room has a sky of its own, and has the
+-- same one every time it is played.
+local sky = {
+    seeded = nil,
+    cx = 512 * TILE, cy = 512 * TILE,
+    nx = 0, ny = 1, ux = 1, uy = 0, off = 0,
+    grad = {}, sun_x = 0, sun_y = 0, comet_x = 0, comet_y = 0,
+}
+
+local function name_seed(name)
+    local h = 977
+    for i = 1, #name do
+        h = (h * 31 + string.byte(name, i)) % 2147483647
+    end
+    return h % 2147483646 + 1
+end
+
+-- Called by the arena when the map changes, and once for the menu, whose empty
+-- name is a map like any other as far as this is concerned.
+function M.sky_seed(name)
+    name = name or ""
+    sky.seeded = name
+    local tw, th = 1024, 1024
+    if sim and sim.map_size then
+        local w, h = sim.map_size()
+        if w and w > 0 then tw = w end
+        if h and h > 0 then th = h end
+    end
+    sky.cx, sky.cy = tw * TILE / 2, th * TILE / 2
+
+    local s = lcg(name_seed(name))
+    -- Never square on: an axis along the screen reads as a seam in the
+    -- drawing rather than as something in the distance.
+    local ang = 0.42 + (s % 1000) / 1000 * 2.28
+    sky.nx, sky.ny = -math.sin(ang), math.cos(ang)
+    sky.ux, sky.uy = math.cos(ang), math.sin(ang)
+    -- Where the axis runs, as a distance out from the middle of the map along
+    -- its own normal. Wide, because this is a world distance and the band is
+    -- drawn at a seventh of the camera's rate: seven thousand pixels of it is
+    -- about a thousand on screen, which is the difference between a map whose
+    -- band lies across the top of the window and one whose band cuts the
+    -- middle.
+    s = lcg(s)
+    sky.off = (s % 7000) - 3500
+
+    sky.grad = {}
+    for i = 1, 2 do
+        s = lcg(s)
+        local a = s / 2147483647 * math.pi * 2
+        s = lcg(s)
+        local d = 320 + (s % 460)
+        s = lcg(s)
+        sky.grad[i] = {
+            ox = math.cos(a) * d, oy = math.sin(a) * d,
+            r = GRAD_R[i], col = GRAD_COLS[s % #GRAD_COLS + 1],
+        }
+    end
+
+    -- How far a set piece is thrown from the middle of the map, in world
+    -- pixels rather than as a share of the map. What matters is where a piece
+    -- lands on the screen, and that is this distance times the depth it is
+    -- drawn at, which has nothing to do with how big the room is. Both of
+    -- these put their piece a little past the edge of a laptop's view when the
+    -- camera is in the middle of the map, so you fly toward them to see them
+    -- and they are never parked over the fight.
+    s = lcg(s)
+    local reach = 1900 + (s % 600)
+    s = lcg(s)
+    local a = s / 2147483647 * math.pi * 2
+    sky.sun_x = sky.cx + math.cos(a) * reach
+    sky.sun_y = sky.cy + math.sin(a) * reach
+    -- The comet is thrown to the far side of the middle from the sun, which
+    -- keeps the two of them out of one corner and gives the tail room to point
+    -- somewhere other than off the same edge.
+    s = lcg(s)
+    local far = 1300 + (s % 500)
+    s = lcg(s)
+    local b = a + math.pi + (s / 2147483647 - 0.5) * 1.5
+    sky.comet_x = sky.cx + math.cos(b) * far
+    sky.comet_y = sky.cy + math.sin(b) * far
+end
 
 -- What a star costs where it is drawn: a rect on the fill layer, and on the
 -- near layer sometimes an eight-segment halo on the glow layer. Published
@@ -424,7 +636,16 @@ local NEB_COLS = {
 local STAR_VERTS = 6
 local HALO_SEGS = 8
 local HALO_VERTS = HALO_SEGS * 3
-M.STAR_VERTS, M.HALO_SEGS = STAR_VERTS, HALO_SEGS
+-- The two wide fades, the gradient and the sun's outer skirts, are drawn round
+-- rather than octagonal: at a couple of thousand pixels across, eight segments
+-- is a visible polygon.
+local WIDE_SEGS = 24
+local WIDE_VERTS = WIDE_SEGS * 3
+-- A tapered segment is four triangles and a bloom is six, both fixed by
+-- vec.lua rather than by anything here.
+local SEG_VERTS = 12
+local BLOOM_VERTS = 18
+M.STAR_VERTS, M.HALO_SEGS, M.WIDE_SEGS = STAR_VERTS, HALO_SEGS, WIDE_SEGS
 
 -- Room for everything in the world that is not a star, in vertices, on each
 -- of the two per-frame layers.
@@ -448,42 +669,89 @@ local GLOW_FIGHT = 40960
 -- allocate a new buffer on every frame of the drag.
 local BUDGET_STEP = 1024
 
--- The most a frame of starfield can ask for at this view size, in vertices,
--- on the fill layer and on the glow layer.
+-- How many cells of this size a view this wide can touch. `floor(u + d) -
+-- floor(u)` is at most `floor(d) + 1` whatever `u` is, so the count holds
+-- wherever the camera happens to sit inside a cell.
+local function cell_count(hw, hh, cell)
+    return (math.floor(2 * hw / cell) + 2) * (math.floor(2 * hh / cell) + 2)
+end
+
+-- How many cells of this size a stripe of this half width can touch inside a
+-- view this big. The band is the only thing in the sky that is not everywhere,
+-- and pricing it as though it were reserves nearly three times what it draws
+-- on a large window.
+--
+-- Cells are disjoint squares of area c squared, and every one whose center
+-- falls inside the stripe lies wholly inside that stripe grown by half a cell
+-- diagonal, inside a view grown the same way. So the grown stripe's area over
+-- the cell's area is a bound rather than an estimate: a stripe crossing a
+-- rectangle is at most as long as the rectangle's diagonal.
+-- The view is rounded up to whole cells before the diagonal is taken, which
+-- keeps this a step function of the window the way the cell counts already
+-- are. Left continuous, a single pixel of drag moves the answer, and a budget
+-- that moves on every pixel is a buffer allocated on every frame of a drag.
+local function stripe_cells(hw, hh, cell, half)
+    local wide = 2 * (half + cell) + 1.5 * cell
+    local dx = math.ceil(2 * hw / cell) * cell + 1.5 * cell
+    local dy = math.ceil(2 * hh / cell) * cell + 1.5 * cell
+    local long = math.sqrt(dx * dx + dy * dy)
+    local n = math.ceil(wide * long / (cell * cell))
+    local all = cell_count(hw, hh, cell)
+    return n < all and n or all
+end
+
+-- The most a frame of sky can ask for at this view size, in vertices, on the
+-- fill layer and on the glow layer.
 --
 -- This is a bound rather than a measurement, and deliberately so: a capacity
 -- that is short does not report anything, it just stops drawing, which is the
 -- bug this exists to prevent. So the worst case is taken at face value. Every
--- cell in range carries a star and every near star blooms, which overshoots
--- the real count by about a third on the fill layer and by a lot on the glow
--- one, where a bloom is one star in seventeen. Tightening the glow figure
--- would buy back a few hundred vertices at a laptop's size, against a fight
--- allowance of twenty-four thousand, in exchange for a margin somebody has to
--- keep measuring. The bound as written can be read off the table above, so it
--- moves when the table does.
+-- cell in range carries a star, every near star blooms and burns, and the band
+-- covers the whole window at full density.
 --
--- `floor(u + d) - floor(u)` is at most `floor(d) + 1` whatever `u` is, so the
--- cell counts hold wherever the camera happens to sit inside a cell.
+-- That last one is the loosest and it is not loose by choice: the band is a
+-- stripe sixteen hundred pixels wide, which is wider than the diagonal of most
+-- windows, so there is a camera position that really does put the whole view
+-- inside it. What no camera position does is fill every cell of it, and the
+-- density falls off toward the edges besides, so the drawing typically comes
+-- in at about half of what is reserved here. The reservation is memory rather
+-- than a frame's work, which is the trade this has always made.
 function M.star_cost(hw, hh)
     local f, g = 0, 0
-    -- The nebula layer, priced like the rest: every cell carrying one.
-    local nc = (math.floor(2 * hw / NEBULA.cell) + 2) *
-               (math.floor(2 * hh / NEBULA.cell) + 2)
-    f = f + nc * HALO_VERTS
+    -- The two washes under everything.
+    f = f + 2 * WIDE_VERTS
+    -- Clouds, priced with every cell carrying one.
+    f = f + cell_count(hw, hh, NEBULA.cell) * (NEB_KNOTS * HALO_VERTS + SEG_VERTS)
+    -- The band: grain, then the filaments strung through it. Both are gated on
+    -- the same stripe by the drawing, so both are priced by it here.
+    f = f + stripe_cells(hw, hh, BAND.cell, BAND.half) * STAR_VERTS
+    f = f + stripe_cells(hw, hh, BAND_FILS.cell, BAND.half)
+            * BAND_FILS.knots * HALO_VERTS
     for li = 1, #STARS do
         local L = STARS[li]
-        local cells = (math.floor(2 * hw / L.cell) + 2) *
-                      (math.floor(2 * hh / L.cell) + 2)
-        f = f + cells * STAR_VERTS
-        if L.k > 0.5 then g = g + cells * HALO_VERTS end
+        local n = cell_count(hw, hh, L.cell)
+        f = f + n * STAR_VERTS
+        if L.k > 0.5 then
+            -- A bloom for every one of them, and a burn as well: both are
+            -- rationed by a hash the bound cannot see.
+            g = g + n * (HALO_VERTS + 4 * SEG_VERTS + BLOOM_VERTS)
+        end
     end
+    -- Dust lands on the fill layer standing still and on the glow layer under
+    -- way, and the bound has to hold either way round.
+    local nd = cell_count(hw, hh, DUST.cell)
+    f = f + nd * STAR_VERTS
+    g = g + nd * SEG_VERTS
+    -- The sun and the comet, which cost the same wherever the camera is.
+    g = g + HALO_VERTS + 2 * WIDE_VERTS + 4 * SEG_VERTS
+    g = g + HALO_VERTS + BLOOM_VERTS + 2 * SEG_VERTS
     return f, g
 end
 
 -- What the two per-frame world layers should hold for a view this size.
 --
 -- The camera holds a fixed zoom per decision 13, so the window decides how
--- much world is on screen and therefore how many stars are in it. A capacity
+-- much world is on screen and therefore how much sky is in it. A capacity
 -- picked for one window is wrong for every other one, and wrong in the
 -- direction that loses geometry: at 6144 vertices the far and middle layers
 -- alone fill the buffer somewhere around 2100 points of width, and the near
@@ -491,12 +759,12 @@ end
 -- a question of how much of the field is behind rock at that moment, which
 -- changes as you fly, so they flicker.
 --
--- Growth is linear in the window's area and the constant is small. At 28
--- bytes a vertex the fill layer runs about 200 kB a frame on a laptop and 860
--- kB on a 4K window, while the glow layer barely moves, since what fills it is
--- the fight rather than the sky. That is a fair price on a machine driving 4K,
--- and the reason there is no ceiling here the way there is on the terrain
--- window, whose cost is the square of its half-width in tiles.
+-- Growth is linear in the window's area and the constant is no longer small:
+-- the band and the clouds together ask for more than the three star layers
+-- do. At 28 bytes a vertex the fill layer reserves about half a megabyte on a
+-- laptop and a little over two on a 4K window, against a few hundred kilobytes
+-- of it written on a typical frame. That is a real price for a sky, and it is
+-- the one being paid deliberately.
 local function step(n)
     return math.ceil(n / BUDGET_STEP) * BUDGET_STEP
 end
@@ -506,16 +774,39 @@ function M.world_budget(hw, hh)
     return step(f + FILL_FIGHT), step(g + GLOW_FIGHT)
 end
 
+-- How fast the camera is travelling, smoothed, in pixels of the last frame.
+-- Only the dust reads it, and only to know how long to draw itself.
+local dust_vx, dust_vy, dust_lx, dust_ly = 0, 0, nil, nil
+
 function M.stars(fill, glow, cam_x, cam_y, hw, hh)
+    if not sky.seeded then M.sky_seed("") end
+
+    if dust_lx then
+        local dx, dy = cam_x - dust_lx, cam_y - dust_ly
+        if dx * dx + dy * dy > DUST_JUMP * DUST_JUMP then dx, dy = 0, 0 end
+        dust_vx = dust_vx * 0.82 + dx * 0.18
+        dust_vy = dust_vy * 0.82 + dy * 0.18
+    end
+    dust_lx, dust_ly = cam_x, cam_y
+
+    -- Two washes, anchored to the map and barely moving against it.
+    do
+        local ox = sky.cx * GRAD_K + cam_x * (1 - GRAD_K)
+        local oy = sky.cy * GRAD_K + cam_y * (1 - GRAD_K)
+        for i = 1, #sky.grad do
+            local G = sky.grad[i]
+            fill:halo(G.ox + ox, G.oy + oy, G.r, WIDE_SEGS, G.col)
+        end
+    end
+
+    -- Clouds.
     do
         local L = NEBULA
         local c = L.cell
         local ox, oy = cam_x * (1 - L.k), cam_y * (1 - L.k)
         local bx, by = cam_x * L.k, cam_y * L.k
-        local i0, i1 = math.floor((bx - hw) / c), math.floor((bx + hw) / c)
-        local j0, j1 = math.floor((by - hh) / c), math.floor((by + hh) / c)
-        for j = j0, j1 do
-            for i = i0, i1 do
+        for j = math.floor((by - hh) / c), math.floor((by + hh) / c) do
+            for i = math.floor((bx - hw) / c), math.floor((bx + hw) / c) do
                 local s = lcg((i * 7907 + j * 15551 + 977) % 2147483646 + 1)
                 if s % 16 < L.fill then
                     s = lcg(s)
@@ -523,12 +814,143 @@ function M.stars(fill, glow, cam_x, cam_y, hw, hh)
                     s = lcg(s)
                     local py = (j + s / 2147483647) * c + oy
                     s = lcg(s)
-                    fill:halo(px, py, 150 + (s % 160), HALO_SEGS,
-                              NEB_COLS[s % #NEB_COLS + 1])
+                    local r = 150 + (s % 160)
+                    s = lcg(s)
+                    local a = s / 2147483647 * math.pi * 2
+                    local wx, wy = math.cos(a), math.sin(a)
+                    -- Knots down the middle of the run, biggest in the
+                    -- middle, so a cloud has a body rather than an end.
+                    local edge = (NEB_KNOTS - 1) / 2
+                    for q = 0, NEB_KNOTS - 1 do
+                        local d = q - edge
+                        local w = d < 0 and -d or d
+                        fill:halo(px + wx * r * 0.78 * d,
+                                  py + wy * r * 0.78 * d,
+                                  r * (1 - w * 0.17), HALO_SEGS,
+                                  NEB_COLS[(s + q) % #NEB_COLS + 1])
+                    end
+                    -- And a streamer running on off the end of it.
+                    local tx = px + wx * r * (edge * 0.78 + 0.5)
+                    local ty = py + wy * r * (edge * 0.78 + 0.5)
+                    fill:seg_fade(tx, ty, tx + wx * r * 2.1, ty + wy * r * 2.1,
+                                  r * 0.5, r * 0.08, 0.55, 0,
+                                  NEB_COLS[s % #NEB_COLS + 1])
                 end
             end
         end
     end
+
+    -- The band, and where its axis runs in each of its two layers. The axis is
+    -- fixed to the map, so it drifts against the camera at the layer's own
+    -- rate exactly as everything drawn on that layer does.
+    local nx, ny = sky.nx, sky.ny
+    local bcx = sky.cx + nx * sky.off
+    local bcy = sky.cy + ny * sky.off
+    do
+        local L = BAND_FILS
+        local c = L.cell
+        local ox, oy = cam_x * (1 - L.k), cam_y * (1 - L.k)
+        local bx, by = cam_x * L.k, cam_y * L.k
+        local ax = bcx * L.k + cam_x * (1 - L.k)
+        local ay = bcy * L.k + cam_y * (1 - L.k)
+        local edge = BAND.half + c
+        for j = math.floor((by - hh) / c), math.floor((by + hh) / c) do
+            for i = math.floor((bx - hw) / c), math.floor((bx + hw) / c) do
+                local d = (i * c + c * 0.5 + ox - ax) * nx
+                        + (j * c + c * 0.5 + oy - ay) * ny
+                if d < 0 then d = -d end
+                if d < edge then
+                    local s = lcg((i * 5323 + j * 12889 + 431) % 2147483646 + 1)
+                    if s % 16 < L.fill then
+                        s = lcg(s)
+                        local px = (i + s / 2147483647) * c + ox
+                        s = lcg(s)
+                        local py = (j + s / 2147483647) * c + oy
+                        s = lcg(s)
+                        local r = 130 + (s % 120)
+                        local col = BAND_FIL_COLS[s % #BAND_FIL_COLS + 1]
+                        for q = -1, 1 do
+                            fill:halo(px + sky.ux * r * 0.9 * q,
+                                      py + sky.uy * r * 0.9 * q,
+                                      r * (1 - 0.25 * q * q), HALO_SEGS, col)
+                        end
+                    end
+                end
+            end
+        end
+
+        L = BAND
+        c = L.cell
+        ox, oy = cam_x * (1 - L.k), cam_y * (1 - L.k)
+        bx, by = cam_x * L.k, cam_y * L.k
+        ax = bcx * L.k + cam_x * (1 - L.k)
+        ay = bcy * L.k + cam_y * (1 - L.k)
+        edge = L.half + c
+        local half = L.half
+        local size = L.size
+        for j = math.floor((by - hh) / c), math.floor((by + hh) / c) do
+            for i = math.floor((bx - hw) / c), math.floor((bx + hw) / c) do
+                local d = (i * c + c * 0.5 + ox - ax) * nx
+                        + (j * c + c * 0.5 + oy - ay) * ny
+                if d < 0 then d = -d end
+                -- Most cells die here, before they are hashed and before the
+                -- core is asked what is behind them.
+                if d < edge then
+                    local w = 1 - (d / half) * (d / half)
+                    -- Density falls off across the band and so does
+                    -- brightness: a cell at the rim can only reach the dimmest
+                    -- shades, which is what keeps the edge from being an edge.
+                    local top = math.floor(w * STAR_SHADES)
+                    if top >= 1 then
+                        local s = lcg((i * 3181 + j * 7351 + 89)
+                                      % 2147483646 + 1)
+                        if s % 16 < L.fill * w then
+                            s = lcg(s)
+                            local px = (i + s / 2147483647) * c + ox
+                            s = lcg(s)
+                            local py = (j + s / 2147483647) * c + oy
+                            if not sim.solid(math.floor(px / TILE),
+                                             math.floor(py / TILE)) then
+                                s = lcg(s)
+                                fill:rect(px, py, size, size,
+                                          BAND_SHADE[s % top + 1])
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- The sun and the comet. Both are anchored in the map and drawn at their
+    -- own depth, so a hull flying toward one closes on it.
+    local sx = sky.sun_x * SUN.k + cam_x * (1 - SUN.k)
+    local sy = sky.sun_y * SUN.k + cam_y * (1 - SUN.k)
+    local cx = sky.comet_x * COMET.k + cam_x * (1 - COMET.k)
+    local cy = sky.comet_y * COMET.k + cam_y * (1 - COMET.k)
+    glow:halo(sx, sy, SUN.core, HALO_SEGS, SUN_CORE)
+    glow:halo(sx, sy, SUN.mid, WIDE_SEGS, SUN_MID)
+    glow:halo(sx, sy, SUN.wide, WIDE_SEGS, SUN_WIDE)
+    local fl = SUN.flare
+    glow:seg_fade(sx - fl, sy, sx, sy, 0.5, 2.0, 0, 0.5, SUN_FLARE)
+    glow:seg_fade(sx + fl, sy, sx, sy, 0.5, 2.0, 0, 0.5, SUN_FLARE)
+    glow:seg_fade(sx, sy - fl * 0.42, sx, sy, 0.5, 1.5, 0, 0.36, SUN_FLARE)
+    glow:seg_fade(sx, sy + fl * 0.42, sx, sy, 0.5, 1.5, 0, 0.36, SUN_FLARE)
+    -- A tail is blown off a sun, so it is drawn away from this one rather than
+    -- along any course of the comet's own. The two sit at different depths and
+    -- drift against each other, which means the angle is worth recomputing
+    -- every frame rather than seeding once.
+    local dx, dy = cx - sx, cy - sy
+    local d = math.sqrt(dx * dx + dy * dy)
+    if d < 1 then d = 1 end
+    dx, dy = dx / d, dy / d
+    glow:halo(cx, cy, COMET.head, HALO_SEGS, COMET_HEAD)
+    glow:bloom(cx, cy, 20, 0.28, COMET_GLOW)
+    glow:seg_fade(cx + dx * COMET.tail, cy + dy * COMET.tail, cx, cy,
+                  1, 8, 0, 0.12, COMET_TAIL)
+    glow:seg_fade(cx + dx * COMET.tail * 0.62, cy + dy * COMET.tail * 0.62,
+                  cx, cy, 0.5, 3, 0, 0.3, COMET_CORE)
+
     for li = 1, #STARS do
         local L = STARS[li]
         local c = L.cell
@@ -538,7 +960,7 @@ function M.stars(fill, glow, cam_x, cam_y, hw, hh)
         local bx, by = cam_x * L.k, cam_y * L.k
         local i0, i1 = math.floor((bx - hw) / c), math.floor((bx + hw) / c)
         local j0, j1 = math.floor((by - hh) / c), math.floor((by + hh) / c)
-        local size, shade = L.size, L.shade
+        local size, shade, fat = L.size, L.shade, L.fat
         local bloom = L.k > 0.5 and L.bloom or nil
         for j = j0, j1 do
             for i = i0, i1 do
@@ -552,13 +974,64 @@ function M.stars(fill, glow, cam_x, cam_y, hw, hh)
                     -- wall interiors live in a layer under this one.
                     if not sim.solid(math.floor(px / TILE), math.floor(py / TILE)) then
                         s = lcg(s)
-                        fill:rect(px, py, size, size,
-                                  shade[s % STAR_SHADES + 1])
+                        local t = TEMP_PICK[s % 16 + 1]
+                        local sz = size + fat[t]
+                        fill:rect(px, py, sz, sz,
+                                  shade[t][s % STAR_SHADES + 1])
                         -- One in a while is close enough to bloom. Additive,
                         -- so it reads as light rather than a bigger dot.
                         if bloom and s % 17 == 0 then
-                            glow:halo(px + size / 2, py + size / 2, 5,
+                            glow:halo(px + sz / 2, py + sz / 2, 5,
                                       HALO_SEGS, bloom)
+                        end
+                        -- Rarer still, one burns: the four-point cross a lens
+                        -- puts on anything bright enough, in that star's own
+                        -- color rather than in white.
+                        if bloom and s % SPARKLE == 0 then
+                            local col = shade[t][STAR_SHADES]
+                            local arm = SPARKLE_ARM
+                            glow:seg_fade(px - arm, py, px, py,
+                                          0.3, 1.2, 0, 0.55, col)
+                            glow:seg_fade(px + arm, py, px, py,
+                                          0.3, 1.2, 0, 0.55, col)
+                            glow:seg_fade(px, py - arm, px, py,
+                                          0.3, 1.2, 0, 0.55, col)
+                            glow:seg_fade(px, py + arm, px, py,
+                                          0.3, 1.2, 0, 0.55, col)
+                            glow:bloom(px, py, 7, 0.35, col)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Dust, nearest of everything and drawn last.
+    do
+        local L = DUST
+        local c = L.cell
+        local ox, oy = cam_x * (1 - L.k), cam_y * (1 - L.k)
+        local bx, by = cam_x * L.k, cam_y * L.k
+        local vx = dust_vx * L.k * DUST_SMEAR
+        local vy = dust_vy * L.k * DUST_SMEAR
+        local moving = dust_vx * dust_vx + dust_vy * dust_vy
+                       > DUST_MOVE * DUST_MOVE
+        local size = L.size
+        for j = math.floor((by - hh) / c), math.floor((by + hh) / c) do
+            for i = math.floor((bx - hw) / c), math.floor((bx + hw) / c) do
+                local s = lcg((i * 6199 + j * 10711 + 3517) % 2147483646 + 1)
+                if s % 16 < L.fill then
+                    s = lcg(s)
+                    local px = (i + s / 2147483647) * c + ox
+                    s = lcg(s)
+                    local py = (j + s / 2147483647) * c + oy
+                    if not sim.solid(math.floor(px / TILE),
+                                     math.floor(py / TILE)) then
+                        if moving then
+                            glow:seg_fade(px - vx, py - vy, px, py,
+                                          0.4, size, 0, 0.4, DUST_COL)
+                        else
+                            fill:rect(px, py, size, size, DUST_COL)
                         end
                     end
                 end

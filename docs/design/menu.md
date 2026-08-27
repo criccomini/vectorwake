@@ -215,9 +215,10 @@ vectorwake
 │             spend on them. A rung you do not own is dim with its price on
 │             the end of the row; pressing the row reads it and buys it.
 │             Slots, never strength: see match-game.md
-├ friends     a field you type a call sign into, who is waiting on you, who
-│             is on, the room you are in, and everybody who ever added you.
-│             See friends.md
+├ friends     a field you type a call sign into, the adds waiting on an
+│             answer, and your friends: a green dot and the game they are
+│             in, or a hollow one. A key at the foot invites somebody who
+│             has never played. See friends.md
 ├ settings    sound · music · frames · fullscreen · bindings · about
 └ pilot       who you are and the way to keep it: the name large with a NEW
               NAME key beside it, the career as bare totals under a ship-page
@@ -241,7 +242,7 @@ vectorwake
 in a match
 ├ play        the same list, because the way out of the game you are in is a
 │             button on that game's own row
-├ friends     the people you are flying with, and who else is on
+├ friends     the same page: who is on, and who is waiting on an answer
 └ settings    the same page, because sound and fullscreen are needed there
 ```
 
@@ -328,11 +329,11 @@ as and the x is the whole of that row.
 
 ## Behind it, the sky the game is played under
 
-The home screen's ground is the arena's own starfield: three parallax layers
-and the nebula behind them, drifting slowly and diagonally because nothing is
-looking at anything. It is the same routine the game draws its sky with, so
-the screen a stranger lands on is made of the thing they are about to be
-inside.
+The home screen's ground is the arena's own sky: three parallax layers of star,
+the clouds and the band behind them, a sun and a comet somewhere out at the
+rim, all of it drifting slowly and diagonally because nothing is looking at
+anything. It is the same routine the game draws its sky with, so the screen a
+stranger lands on is made of the thing they are about to be inside.
 
 A hull used to cross it on a closed loop, trailing a wake, on the argument
 that a text column in the middle of an empty field carried nothing. What it
@@ -602,10 +603,12 @@ anything. What a player saw during that was a gray progress bar on black: a page
 that has not started.
 
 Now the page starts without the engine. `client/tools/single_file.py` draws the
-same starfield, same three depths, same colors, same cell hash, in plain canvas
-2D, with the wordmark over it and one hairline of progress under that. When the
-engine's first real frame is on screen it fades out, into the same starfield
-drawn by the engine with the menu over it.
+stars, same three depths, same density, same four temperatures, same cell hash,
+in plain canvas 2D, with the wordmark over it and one hairline of progress under
+that. When the engine's first real frame is on screen it fades out, into the
+same sky drawn by the engine with the menu over it. What the loader does not
+draw is everything behind the stars, the clouds and the band and the set pieces,
+which arrive with that first frame.
 
 The hand-off is triggered by the game, from `arena.script`, not by the loader.
 "The runtime initialized" is seconds before "there is something on screen", and

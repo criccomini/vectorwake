@@ -6,7 +6,8 @@
 -- (far enough to have a floor), before (with the banner the server used to
 -- send), ending and duel-ending (a room at the whistle), landing (the front end,
 -- watched from the stands), waiting (what the loader hands off to before a
--- room answers). Rasterize with any browser:
+-- room answers), loadout (a loaded hull with charges in hand, for the corner
+-- stack). Rasterize with any browser:
 --
 --     chromium --headless --screenshot=out.png --window-size=1280,800 out.svg
 --
@@ -65,10 +66,17 @@ function layer:seg_flat(x1, y1, x2, y2, w, col)
     shapes[#shapes + 1] = {k = "seg", x1 = x1, y1 = y1, x2 = x2, y2 = y2,
                            w = w, col = col, cap = "butt"}
 end
+-- Kept whole rather than averaged: the weapon marks are made of these now,
+-- and a fade drawn as a uniform line reads as a bar where the player sees a
+-- streak. The writer below builds the tapered quad with a gradient along it,
+-- which is what the mesh actually is.
 function layer:seg_fade(x1, y1, x2, y2, w1, w2, a1, a2, col)
-    shapes[#shapes + 1] = {k = "seg", x1 = x1, y1 = y1, x2 = x2, y2 = y2,
-                           w = (w1 + w2) / 2, col = col, cap = "round",
-                           fade = (a1 + a2) / 2}
+    shapes[#shapes + 1] = {k = "fade", x1 = x1, y1 = y1, x2 = x2, y2 = y2,
+                           w1 = w1, w2 = w2, a1 = a1, a2 = a2, col = col}
+end
+-- Solid at the center, gone at the rim: a radial gradient.
+function layer:halo(x, y, r, _, col)
+    shapes[#shapes + 1] = {k = "halo", x = x, y = y, r = r, col = col}
 end
 function layer:skirt(x1, y1, x2, y2, dx, dy, a, col)
     shapes[#shapes + 1] = {k = "skirt", x1 = x1, y1 = y1, x2 = x2, y2 = y2,
@@ -121,12 +129,37 @@ _G.sim = {
     end,
     ship_bounty = function(i) return i == 0 and 5 or 2 end,
     ship_up = function() return 2 end,
-    ship_level = function() return 1 end,
+    ship_level = function(_, t)
+        if scenario == "loadout" then return t == 0 and 2 or 1 end
+        return 1
+    end,
     ship_charge = function() return 0 end,
-    ship_mod = function() return 0 end,
-    ship_multi_off = function() return 0 end,
+    -- The loadout frame flies what most of the shipped hulls actually hold:
+    -- the gun two rungs up wearing a fan and a bounce, the bomb a rung up
+    -- wearing a fuse and fragments.
+    ship_mod = function(_, t, i)
+        if scenario ~= "loadout" then return 0 end
+        local mods = {[0] = {[0] = 2, [1] = 1}, [1] = {[2] = 2, [3] = 2}}
+        return (mods[t] or {})[i] or 0
+    end,
+    -- False, not 0: a number is truthy in Lua, and the marks read this as
+    -- "the fan is declined" and dim it.
+    ship_multi_off = function() return false end,
+    shrap_count = function(n)
+        if n <= 0 then return 0 end
+        return 2 ^ math.min(n, 3)
+    end,
+    -- What a pull throws, which a zone owns rather than the drawing: the
+    -- baseline's round a rung, a pair at seven and a half degrees and the
+    -- fan at fifteen.
+    spray_shape = function(_, _, _, n)
+        if n <= 0 then return 1, 0 end
+        return n + 1, (n == 1) and (65536 / 48) or (65536 / 24)
+    end,
     ship_vel = function() return 0, 0 end,
     has_trigger = function() return true end,
+    TRIG_GUN = 0,
+    TRIG_BOMB = 1,
     tick = function() return 4242 end,
     weapon_count = function() return 0 end,
     flag_count = function() return 0 end,
@@ -297,7 +330,10 @@ ui.hud({
                  or {[0] = "Pilot", [1] = "Rival"},
     feed = {},
     hurt = 0,
-    charges = {},
+    charges = scenario == "loadout"
+        and {{name = "repel", short = "RPL", count = 2, max = 3},
+             {name = "burst", short = "BST", count = 1, max = 2}}
+        or {},
     cam_x = 3000, cam_y = 3000,
     half_w = W / 2, half_h = H / 2,
     banner = banner,
@@ -315,6 +351,7 @@ ui.finish()
 -- --- out --------------------------------------------------------------------
 
 local o = {}
+local nfade = 0
 local function w(s) o[#o + 1] = s end
 local function esc(s)
     s = string.gsub(s, "&", "&amp;")
@@ -368,6 +405,44 @@ for _, s in ipairs(shapes) do
                             .. 'stroke-linejoin="round"/>',
                             table.concat(pts, " "), c, a, s.w or 1))
         end
+    elseif s.k == "fade" then
+        -- The tapered quad the mesh builds, with the alpha ramp along it.
+        local dx, dy = s.x2 - s.x1, s.y2 - s.y1
+        local l = math.sqrt(dx * dx + dy * dy)
+        if l > 1e-6 then
+            local nx, ny = -dy / l, dx / l
+            nfade = nfade + 1
+            local cc = s.col or {1, 1, 1, 1}
+            local function ch(v)
+                return math.max(0, math.min(255, math.floor((v or 0) * 255 + 0.5)))
+            end
+            w(string.format(
+                '<defs><linearGradient id="fade%d" '
+                .. 'gradientUnits="userSpaceOnUse" x1="%.2f" y1="%.2f" '
+                .. 'x2="%.2f" y2="%.2f">'
+                .. '<stop offset="0" stop-color="rgba(%d,%d,%d,%.3f)"/>'
+                .. '<stop offset="1" stop-color="rgba(%d,%d,%d,%.3f)"/>'
+                .. '</linearGradient></defs>',
+                nfade, s.x1, fy(s.y1), s.x2, fy(s.y2),
+                ch(cc[1]), ch(cc[2]), ch(cc[3]), (cc[4] or 1) * (s.a1 or 1),
+                ch(cc[1]), ch(cc[2]), ch(cc[3]), (cc[4] or 1) * (s.a2 or 1)))
+            w(string.format(
+                '<polygon points="%.2f,%.2f %.2f,%.2f %.2f,%.2f %.2f,%.2f" '
+                .. 'fill="url(#fade%d)"/>',
+                s.x1 + nx * s.w1 / 2, fy(s.y1 + ny * s.w1 / 2),
+                s.x2 + nx * s.w2 / 2, fy(s.y2 + ny * s.w2 / 2),
+                s.x2 - nx * s.w2 / 2, fy(s.y2 - ny * s.w2 / 2),
+                s.x1 - nx * s.w1 / 2, fy(s.y1 - ny * s.w1 / 2), nfade))
+        end
+    elseif s.k == "halo" then
+        nfade = nfade + 1
+        w(string.format(
+            '<defs><radialGradient id="fade%d">'
+            .. '<stop offset="0" stop-color="%s" stop-opacity="%.3f"/>'
+            .. '<stop offset="1" stop-color="%s" stop-opacity="0"/>'
+            .. '</radialGradient></defs>'
+            .. '<circle cx="%.2f" cy="%.2f" r="%.2f" fill="url(#fade%d)"/>',
+            nfade, c, a, c, s.x, fy(s.y), s.r, nfade))
     elseif s.k == "disc" then
         w(string.format('<circle cx="%.2f" cy="%.2f" r="%.2f" fill="%s" '
                         .. 'fill-opacity="%.3f"/>', s.x, fy(s.y), s.r, c, a))

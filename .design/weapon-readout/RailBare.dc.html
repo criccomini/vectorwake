@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600&amp;family=Noto+Sans+Mono:wght@400;500;700&amp;display=swap">
+  <style>
+*{box-sizing:border-box}
+body{margin:0;background:#05070c;color:#dfe9f5;
+  font-family:"Chakra Petch","Segoe UI",system-ui,sans-serif}
+a{color:#4fd6ff}a:hover{color:#8ee6ff}
+.lbl{font-family:"DejaVu Sans Mono","Noto Sans Mono",ui-monospace,monospace;
+  font-size:9px;text-transform:uppercase;letter-spacing:.13em;color:#6c7a90}
+</style>
+</helmet>
+<div style="position:relative;width:400px;height:300px;overflow:hidden;background-color:#05070c;background-image:
+   radial-gradient(circle 1.3px at 300px 60px,#93a9c8 0 1.3px,transparent 1.3px),
+   radial-gradient(circle 1px at 120px 150px,#4a6089 0 1px,transparent 1px),
+   radial-gradient(circle .9px at 330px 220px,#2a3a58 0 .9px,transparent .9px)">
+<svg width="400" height="300" style="position:absolute;inset:0"><defs>
+<linearGradient id="railfade" x1="0" y1="1" x2="0" y2="0">
+  <stop offset="0" stop-color="rgba(63,88,120,0.75)"/>
+  <stop offset="1" stop-color="rgba(63,88,120,0)"/>
+</linearGradient>
+<filter id="cellglow" x="-80%" y="-80%" width="260%" height="260%">
+  <feGaussianBlur stdDeviation="2.2" result="b"/>
+  <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+</filter>
+<filter id="soft" x="-120%" y="-120%" width="340%" height="340%">
+  <feGaussianBlur stdDeviation="1.6"/>
+</filter>
+<filter id="softer" x="-160%" y="-160%" width="420%" height="420%">
+  <feGaussianBlur stdDeviation="3.4"/>
+</filter>
+</defs><path d="M86 280 L36 280 L30 274 L30 180" fill="none" stroke="rgba(63,88,120,0.75)" stroke-width="1.6"/><rect x="29.2" y="144" width="1.6" height="36" fill="url(#railfade)"/><path d="M30 206 L39.08 206" stroke="rgba(63,88,120,0.9)" stroke-width="1.6" fill="none"/><path d="M30 250 L47.72 250" stroke="rgba(63,88,120,0.9)" stroke-width="1.6" fill="none"/><path d="M30 184 L35 184" stroke="rgba(63,88,120,0.35)" stroke-width="1.2" fill="none"/><path d="M30 228 L35 228" stroke="rgba(63,88,120,0.35)" stroke-width="1.2" fill="none"/><path d="M30 272 L35 272" stroke="rgba(63,88,120,0.35)" stroke-width="1.2" fill="none"/><path d="M41.08 206 L66.28 206" stroke="rgba(98,204,53,0.9)" stroke-width="1.35" fill="none"/><circle cx="66.28" cy="206" r="3.06" fill="rgba(98,204,53,0.9)"/><circle cx="58" cy="250" r="8.28" fill="none" stroke="rgba(98,204,53,0.9)" stroke-width="2.2"/><circle cx="58" cy="250" r="6.12" fill="rgba(98,204,53,0.9)"/></svg>
+</div>
+</x-dc>
+
+</body>
+</html>
