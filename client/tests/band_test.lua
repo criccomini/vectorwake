@@ -241,7 +241,7 @@ end
 -- off the row on a phone, which put it through the radar instead and cost the
 -- row the alignment it is for.
 --
--- The link bars used to be the right end of this row and are in the menu's
+-- The link meter used to be the right end of this row and is in the menu's
 -- head now, so what is left up here is the key, the band and, on a monitor,
 -- the tile readout.
 --
@@ -258,8 +258,10 @@ local function row_shares_a_center(where, pos_on_row)
               table.concat(words(), " | "))
         return
     end
-    check("and the link bars are not on it on " .. where,
-          drawn("LINK") == nil, "LINK is still in the corner")
+    -- The link meter draws four bars and no caption, so what says it is not
+    -- up here is the box it would publish over itself.
+    check("and the link meter is not on it on " .. where,
+          box("debug") == nil, "the meter is still in the corner")
     local mid = key.y + key.h / 2
     local off = math.max(math.abs(down(tick) - mid),
                          pos_on_row and math.abs(down(pos) - mid) or 0)

@@ -99,16 +99,9 @@ for _, r in ipairs(rows()) do
         expected[spec[2]] = true
     end
 end
--- From the first row's name downward, which is the list and nothing above it.
--- The panel's head stands over this page and every other one, and what it
--- carries (the call sign, the link bars) is furniture rather than a row.
--- `state.text` counts up from the foot, so "below the first name" is the
--- smaller y.
 local extra = {}
 for _, t in ipairs(words) do
-    if duel and t.y <= duel.y and not expected[t.s] then
-        extra[#extra + 1] = t.s
-    end
+    if not expected[t.s] then extra[#extra + 1] = t.s end
 end
 check("and the row is those two things and nothing else",
       #extra == 0, table.concat(extra, ", "))

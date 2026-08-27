@@ -3646,7 +3646,7 @@ local function debug_hud(o, top)
         txt(l[2], cx + colw - 10 * F.scale, ly + rowh / 2, size,
             pal.a(pal.INK, 0.9), "right")
     end
-    -- The way out is the thing itself. What opens this is the LINK bars in
+    -- The way out is the thing itself. What opens this is the link meter in
     -- the menu's head, which is a fine place to keep a switch nobody needs
     -- and a poor place to look for one: the readout lands under the dial with
     -- the panel that opened it shut over the top of it, and a player who has
@@ -7079,10 +7079,10 @@ end
 
 -- How good the line is, to the left of the account button in the head.
 --
--- Four bars from the connection's smoothed quality, with the word beside
--- them. It replaces "online  err 0.0 / 1 px", which was the client's own
--- debugging left on a player's screen: nobody flying has ever made a decision
--- on a prediction error in pixels.
+-- Four bars from the connection's smoothed quality and nothing else. It
+-- replaces "online  err 0.0 / 1 px", which was the client's own debugging left
+-- on a player's screen: nobody flying has ever made a decision on a prediction
+-- error in pixels.
 --
 -- It stood in the top right of the arena for a long time, above the dial. That
 -- corner belongs to the dial, and a connection is not a thing that happens in
@@ -7093,6 +7093,11 @@ end
 -- the moment the game stutters, which is a moment somebody opens the menu
 -- anyway.
 --
+-- The word LINK stood beside them until now, in the register every group on
+-- every page is labeled in. A rising staircase of bars is the one instrument
+-- on a phone that needs no caption, and captioning it put four letters on the
+-- head of every page of the menu to say what the drawing already said.
+--
 -- `right` is the edge to hang it off, which is the account button's left, and
 -- `mid` is the line that button is centered on. `floor` is the far end of what
 -- the near side of the row is already holding. All three come from the caller
@@ -7101,48 +7106,60 @@ end
 --
 -- Returns the left edge it reached, the way `pages.corner` does, so anything
 -- put in this row later knows where the row already ends.
+--
+-- `LINK_W` is the block of bars and `LINK_OVER` is how far past it the press
+-- box may reach on the right before it is into the account button's clearance.
+-- The box grows leftward from there to a whole target, which is the only
+-- direction it has: see the press below.
+pages.LINK_W, pages.LINK_OVER = 22, 4
+
 function pages.link(q, right, mid, floor)
-    local px = LBL_PX * F.scale
-    local left = right - 34 * F.scale - text_w("LINK", px) - 6 * F.scale
-    -- Nothing at all, where the row has nowhere to put it. A call sign runs to
-    -- twenty four characters and the button carrying it grows with it, so on a
-    -- phone the longest one leaves this cluster standing over the x at the
-    -- other end of the head. `M.pick` answers on publish order and the head
-    -- publishes before the page does, so what that costs is not a crowded row:
-    -- it is the way out of the menu, taken by a readout. The band across the
-    -- top of the arena drops a side's name for the same reason and by the same
-    -- rule, and this is a readout rather than a name.
-    if left < floor then return right end
+    -- Nothing at all, where the row has nowhere to put it. The account button
+    -- grows with the call sign on it and a window narrower than a phone shrinks
+    -- the column under both, so a long enough name in a small enough window
+    -- leaves this standing over the x at the other end of the head. `M.pick`
+    -- answers on publish order and the head publishes before the page does, so
+    -- what that would cost is not a crowded row: it is the way out of the menu,
+    -- taken by a readout. The band across the top of the arena drops a side's
+    -- name under the same pressure, and a name says more than this does.
+    --
+    -- Asked of the bars themselves rather than of the box around them. The box
+    -- is a fingertip wide and the drawing is a third of that, so asking it of
+    -- the box would drop the readout on an ordinary phone the first time
+    -- somebody registered a long call sign, over room only the press wanted.
+    if right - pages.LINK_W * F.scale < floor then return right end
+    -- What is left of the target once the floor has had its say. The bars are
+    -- inside it either way, since the line above is what guarantees that.
+    local left = math.max(right + (pages.LINK_OVER - M.TARGET) * F.scale, floor)
     -- The bars are one block on the row rather than four things each centered
     -- on it. A meter is a staircase standing on a floor, so the floor is what
     -- gets placed: the tallest bar is centered and the rest rest on its line.
+    -- The block ends on `right`, since with the word gone that edge is the
+    -- only thing holding it to the row.
     local tall = (3 + 3 * 2.6) * F.scale
     local foot = mid + tall / 2
     for k = 0, 3 do
         local bh = (3 + k * 2.6) * F.scale
-        local bx = right - (26 - k * 6) * F.scale
+        local bx = right - (pages.LINK_W - k * 6) * F.scale
         rect(bx, foot - bh, 4 * F.scale, bh,
              k < q and pal.a(pal.PAID, 0.85) or pal.a(pal.DIM, 0.22))
     end
-    -- The register every group on every page is labeled in, since that is
-    -- what this is now: a small word naming the thing drawn beside it.
-    lbl("LINK", right - 34 * F.scale, mid, pal.a(pal.DIM, 0.8), "right", px)
-    -- Pointing at this one names nothing. Four bars labeled LINK beside a
-    -- millisecond count are already a sentence about the connection, and a
-    -- word saying so is the interface reading its own label back.
-    -- The bars are the readout a player wants and the whole of it. Everything
-    -- behind them is for whoever is working on this, so it hides behind the
-    -- one thing on screen that is already about the connection.
+    -- Everything behind the bars is for whoever is working on this, so it hides
+    -- behind the one thing on screen that is already about the connection.
     --
-    -- What answers that press is the whole cluster: the word, the bars, and
-    -- the head's full height around them. It was 46 by 20 points hung off the
-    -- right edge of the screen, which covered the bars and the last quarter of
-    -- the word beside them, so three quarters of the only thing on screen
-    -- labeled LINK did nothing when pressed. A cluster this small is under
-    -- what a fingertip is owed either way, and `M.pick` is what makes up the
-    -- difference.
-    local kh = pages.HEAD_KEY * F.scale
-    hit(left, mid - kh / 2, right - left + 6 * F.scale, kh, "debug")
+    -- A whole `M.TARGET` square, which is not how the rest of this interface
+    -- sizes a small control. Everywhere else a control keeps the shape the
+    -- design gives it and `M.pick` makes up the difference, because a press
+    -- that lands on nothing falls through to a near-miss pass that reaches the
+    -- closest box. Inside the menu it never lands on nothing: the column
+    -- publishes one box over the whole of itself so the gaps between rows are
+    -- not a way out, an exact hit on that box beats the near-miss pass before
+    -- it runs, and a thumb two points wide of these bars was answered by the
+    -- panel. So the box is the target rather than the drawing, grown leftward
+    -- because the right is the account button's clearance, and cut short there
+    -- only by the way out at the other end of the head.
+    hit(left, mid - M.TARGET * F.scale / 2,
+        right + pages.LINK_OVER * F.scale - left, M.TARGET * F.scale, "debug")
     return left
 end
 
@@ -7574,7 +7591,7 @@ function M.menu(v)
     -- the menu key had at the same inset, and it is drawn below with the page
     -- rather than here. The readout is told where that ends so it can stand
     -- down rather than be laid over it.
-    pages.link(v.link_bars or 4, head_end - 10 * F.scale, logo_y,
+    pages.link(v.link_bars or 4, head_end - 12 * F.scale, logo_y,
                dx + margin + (KEY_H + KEY_GAP) * F.scale)
     -- The x is at the other end of it, drawn below with the page it belongs
     -- to. Nothing between them: the wordmark sat there on every page of the

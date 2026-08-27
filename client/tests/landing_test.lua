@@ -313,11 +313,12 @@ do
           word("PYLON") ~= nil and word("CAISSON") ~= nil,
           "a name is missing")
     check("and both figures", word("3") ~= nil and word("5") ~= nil)
-    -- And the other end of the row is empty. The link bars stood in that
-    -- corner until they went into the menu's head, which is the whole reason
-    -- the band has the width it has here.
-    check("and nothing in the far corner of the row", word("LINK") == nil,
-          "the link bars are still on the landing")
+    -- And the other end of the row is empty. The link meter stood in that
+    -- corner until it went into the menu's head, which is the whole reason the
+    -- band has the width it has here. It draws no caption, so what answers
+    -- for it is the box it would publish over its bars.
+    check("and nothing in the far corner of the row", box("debug") == nil,
+          "the link meter is still on the landing")
 
     -- The band is the control, so the press that opens the roster is on the
     -- band rather than in the corner beside the way into the menu.

@@ -149,7 +149,22 @@ local function rail_boxes()
     return out
 end
 
-local function press(x, y) local r = ui.pick(x, y) return r and r.action end
+-- `touching` is the third argument the real client passes for a finger rather
+-- than a pointer, and it is what turns on the near-miss pass in `M.pick`.
+local function press(x, y, touching)
+    local r = ui.pick(x, y, touching)
+    return r and r.action
+end
+
+-- One word of the frame, or nil. Used to prove an absence: the meter in the
+-- head draws no caption, and this is how the test says so.
+local function word_at(s)
+    local st = package.loaded["arena.state"]
+    for k = 1, st.n do
+        if st.text[k].s == s then return st.text[k] end
+    end
+    return nil
+end
 
 -- The measure the whole layout is written in. A window narrower than this
 -- gives the column everything it has, which is what a phone held upright
@@ -250,33 +265,45 @@ check("and a press on the column's own ground is not",
 -- than about the fight, like the call sign it now sits beside, so it moved
 -- into the head of the panel that carries the rest of them.
 --
--- Three things are worth pinning. It is on the head's line and inside the
--- column, at every window, because a readout hung off the drawer's right edge
--- would be drawn over the fight. It is to the left of the account button
+-- Four bars and no caption, which is what makes the measurements below the
+-- whole of what says it is there: no word is drawn, so a test that reads the
+-- frame's text cannot see this at all. What it reads instead is the meter's
+-- own rectangles and the box published over them.
+--
+-- Three things are worth pinning. The block is on the head's line and inside
+-- the column, at every window, because a readout hung off the drawer's right
+-- edge would be drawn over the fight. It is to the left of the account button
 -- rather than through it, because both are laid out from the same end and
 -- neither is told about the other, which is exactly how the tab row and this
--- same button once ran into each other. And the box it publishes covers the
--- whole cluster, since the old one took the bars and the last quarter of the
--- word and left most of the label dead.
+-- same button once ran into each other. And the box covers every bar, since
+-- the old one on the arena's corner took the bars and the last quarter of the
+-- word beside them and left most of itself dead.
+
+-- The meter's own rectangles: four narrow ones standing on the head's line.
+-- Kept in the order they were drawn, which is shortest bar first.
+local function bar_rects(h, switch)
+    local out = {}
+    for _, r in ipairs(rects) do
+        local top = h - (r.y + r.h)
+        if r.w < 8 and top >= switch.y - 0.01 and top < switch.y + switch.h then
+            out[#out + 1] = {x = r.x, w = r.w, top = top, h = r.h}
+        end
+    end
+    return out
+end
 
 for _, shape in ipairs(SHAPES) do
     local name, w, h = shape[1], shape[2], shape[3]
-    local st = page(w, h)
-    local word
-    for k = 1, st.n do
-        if st.text[k].s == "LINK" then word = st.text[k] end
-    end
+    page(w, h)
     local switch, acct = box("debug"), box("pilot_page")
-    check(name .. " draws the link readout in the head",
-          word ~= nil and switch ~= nil, "no LINK")
-    if word and switch and acct then
-        -- On the button's own line: the word is right-pivoted and stored
-        -- bottom-up, so it is flipped back through the window's height.
-        check(name .. " keeps it on the account button's line",
-              math.abs((h - word.y) - (acct.y + acct.h / 2)) < 1,
-              string.format("word at %.1f, button mid %.1f",
-                            h - word.y, acct.y + acct.h / 2))
-        check(name .. " puts it to the left of the account button",
+    check(name .. " publishes the meter's press in the head",
+          switch ~= nil, "no box")
+    if switch and acct then
+        local bars = bar_rects(h, switch)
+        check(name .. " draws four bars and no caption",
+              #bars == 4 and word_at("LINK") == nil,
+              #bars .. " bars, caption " .. tostring(word_at("LINK") ~= nil))
+        check(name .. " puts them to the left of the account button",
               switch.x + switch.w <= acct.x + 0.01,
               string.format("cluster ends %.1f, button starts %.1f",
                             switch.x + switch.w, acct.x))
@@ -287,30 +314,49 @@ for _, shape in ipairs(SHAPES) do
               switch.x >= -0.01 and switch.x + switch.w <= dock + 0.01,
               string.format("%.1f..%.1f of %d", switch.x,
                             switch.x + switch.w, dock))
-        -- And the press covers what it looks like: the word, and the four
-        -- bars beside it.
-        local wx1 = word.x
-        local wx0 = word.x - #word.s * word.px * (1233 / 2048)
-        check(name .. " covers the whole word with its press",
-              wx0 >= switch.x - 0.01 and wx1 <= switch.x + switch.w + 0.01,
-              string.format("word %.1f..%.1f, box %.1f..%.1f",
-                            wx0, wx1, switch.x, switch.x + switch.w))
-        -- The meter's own rectangles: four narrow ones on the head's line,
-        -- between the word and the button.
-        local bars = 0
-        for _, r in ipairs(rects) do
-            local top = h - (r.y + r.h)
-            if r.w < 8 and r.x > wx1 and r.x < acct.x
-                and top >= switch.y - 0.01 and top < switch.y + switch.h then
-                bars = bars + 1
-                check(name .. " has a bar at " .. math.floor(r.x)
-                          .. " inside the press",
-                      r.x >= switch.x - 0.01
-                          and r.x + r.w <= switch.x + switch.w + 0.01)
-            end
+        for i, b in ipairs(bars) do
+            check(string.format("%s has bar %d inside the press", name, i),
+                  b.x >= switch.x - 0.01
+                      and b.x + b.w <= switch.x + switch.w + 0.01,
+                  string.format("bar %.1f..%.1f, box %.1f..%.1f",
+                                b.x, b.x + b.w, switch.x,
+                                switch.x + switch.w))
         end
-        check(name .. " draws all four bars", bars == 4, bars .. " bars")
+        -- A staircase, and one standing on the button's own line: the
+        -- rectangles rise left to right and share a foot, and that foot is
+        -- placed so the tallest is centered on the row.
+        if #bars == 4 then
+            local rising = true
+            for i = 2, 4 do
+                if bars[i].h <= bars[i - 1].h then rising = false end
+                if math.abs((bars[i].top + bars[i].h)
+                            - (bars[1].top + bars[1].h)) > 0.01 then
+                    rising = false
+                end
+            end
+            check(name .. " draws them as a staircase on one foot", rising,
+                  "the bars do not rise from a shared floor")
+            local tall = bars[4]
+            check(name .. " centers the tallest on the button's line",
+                  math.abs((tall.top + tall.h / 2)
+                           - (acct.y + acct.h / 2)) < 1,
+                  string.format("bar mid %.1f, button mid %.1f",
+                                tall.top + tall.h / 2, acct.y + acct.h / 2))
+        end
     end
+end
+
+-- How many bars are lit is the reading, so it has to follow the count it is
+-- handed rather than always drawing a full meter.
+do
+    local function lit(bars)
+        page(1440, 810, {link_bars = bars})
+        local switch = box("debug")
+        return switch and #bar_rects(810, switch) or 0
+    end
+    check("every rung of the meter is drawn whatever the count",
+          lit(1) == 4 and lit(4) == 4,
+          "a dim bar went missing")
 end
 
 -- A press on it is the way into the numbers behind it, which is the one thing
@@ -319,49 +365,91 @@ do
     page(1440, 810)
     local switch = box("debug")
     if switch then
-        check("a press on the cluster reaches the debug readout",
+        check("a press on the bars reaches the debug readout",
               press(switch.x + switch.w / 2, switch.y + switch.h / 2)
                   == "debug",
               tostring(press(switch.x + switch.w / 2,
                              switch.y + switch.h / 2)))
+        -- And it is a fingertip rather than the drawing. Twenty two points of
+        -- bars is well under what a thumb is owed, and the near-miss pass that
+        -- covers every other small control in this interface cannot help here:
+        -- the column publishes one box over the whole of itself, an exact hit
+        -- beats a near miss, so a press wide of these bars is answered by the
+        -- panel rather than falling through to them. The box has to be the
+        -- target itself.
+        check("the box is a whole target, not the size of the bars",
+              switch.w >= ui.TARGET - 0.01 and switch.h >= ui.TARGET - 0.01,
+              string.format("%.1fx%.1f against %d",
+                            switch.w, switch.h, ui.TARGET))
+        check("and a press just wide of the bars lands on it",
+              press(switch.x + 2, switch.y + switch.h / 2) == "debug",
+              tostring(press(switch.x + 2, switch.y + switch.h / 2)))
     end
 end
 
--- A call sign runs to twenty four characters and the button carrying it grows
--- with it, so on a phone the longest one leaves nothing between that button
--- and the x at the other end of the head. The readout goes rather than being
--- laid over the way out: `M.pick` answers on publish order and the head
--- publishes before the page does, so a cluster reaching that square would take
--- the presses meant for it and strand a player inside the menu.
+-- The account button grows with the call sign on it and a window narrower than
+-- a phone shrinks the column under both, so a long enough name in a small
+-- enough window leaves nothing between that button and the x at the other end
+-- of the head. The readout goes rather than being laid over the way out:
+-- `M.pick` answers on publish order and the head publishes before the page
+-- does, so a cluster reaching that square would take the presses meant for it
+-- and strand a player inside the menu.
+--
+-- 350 points is narrower than a phone held upright, which is the point: the
+-- rule is about the collision rather than about a device, and the width is
+-- chosen to force one while the account button itself still clears the x. A
+-- wider column keeps the meter and gives up part of its press box instead,
+-- which the case below is about.
 do
-    local st = page(390, 844, {pilot = {name = string.rep("W", 24),
-                                        rivets = 310}})
-    local word
-    for k = 1, st.n do
-        if st.text[k].s == "LINK" then word = st.text[k] end
-    end
-    check("the longest call sign leaves no room and the readout goes",
-          word == nil and box("debug") == nil,
-          "the readout is still drawn")
+    page(350, 700, {pilot = {name = string.rep("W", 24), rivets = 310}})
+    local switch = box("debug")
+    check("a column too narrow for both leaves the meter out",
+          switch == nil, "the meter is still drawn")
     local x = box("close")
     check("and the way out is what a press on that square reaches",
           x ~= nil and press(x.x + x.w / 2, x.y + x.h / 2) == "close",
           x and tostring(press(x.x + x.w / 2, x.y + x.h / 2)) or "no x")
 end
 
--- A head with no account button has nothing for the readout to sit inside, so
--- it takes the end of the row itself rather than hanging off a control that
--- was not drawn. `false` rather than nil: the view is merged with `pairs`, and
--- a nil never reaches it to clear anything.
+-- Between those two there is a band where the bars fit and a whole fingertip
+-- does not, and there the box gives up its left rather than the readout giving
+-- up the row: a phone at its own measure with the longest call sign anybody can
+-- register. What must hold is that the box still covers every bar and still
+-- stops short of the x, since a press box over the way out is the thing this
+-- whole rule exists to prevent.
 do
-    local st = page(1440, 810, {pilot = false})
-    local word
-    for k = 1, st.n do
-        if st.text[k].s == "LINK" then word = st.text[k] end
+    local h = 844
+    page(390, h, {pilot = {name = string.rep("W", 24), rivets = 310}})
+    local switch, x = box("debug"), box("close")
+    check("the longest call sign on a phone keeps the meter",
+          switch ~= nil, "the meter went")
+    if switch and x then
+        local bars = bar_rects(h, switch)
+        check("with every bar still inside its press", #bars == 4, #bars)
+        for i, b in ipairs(bars) do
+            check("bar " .. i .. " is covered on a crowded head",
+                  b.x >= switch.x - 0.01
+                      and b.x + b.w <= switch.x + switch.w + 0.01)
+        end
+        check("and the press stops short of the way out",
+              switch.x >= x.x + x.w,
+              string.format("box starts %.1f, the x ends %.1f",
+                            switch.x, x.x + x.w))
+        check("so that square is still the way out",
+              press(x.x + x.w / 2, x.y + x.h / 2) == "close",
+              tostring(press(x.x + x.w / 2, x.y + x.h / 2)))
     end
+end
+
+-- A head with no account button has nothing for the meter to sit inside, so it
+-- takes the end of the row itself rather than hanging off a control that was
+-- not drawn. `false` rather than nil: the view is merged with `pairs`, and a
+-- nil never reaches it to clear anything.
+do
+    page(1440, 810, {pilot = false})
     local switch = box("debug")
-    check("a head with no account button still carries the readout",
-          word ~= nil and switch ~= nil, "no LINK")
+    check("a head with no account button still carries the meter",
+          switch ~= nil, "no meter")
     check("and there is no button for it to run into",
           box("pilot_page") == nil, "a call sign was drawn")
     if switch then

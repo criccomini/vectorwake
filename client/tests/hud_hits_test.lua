@@ -228,8 +228,8 @@ check("the sweep found ships to press on", tested > 0)
 
 -- --- the debug readout closes itself ---------------------------------------
 
--- What opens it is the LINK bars, which are in the menu's head: the panel that
--- carries the switch is shut over the readout the moment the readout appears,
+-- What opens it is the link meter in the menu's head: the panel that carries
+-- the switch is shut over the readout the moment the readout appears,
 -- and it lands under the dial besides. So the panel itself has to be the way
 -- out, or a player who opened it has nothing to press but a control they have
 -- to reopen a menu to reach. See dock_test.lua for the switch end of this.

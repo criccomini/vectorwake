@@ -208,8 +208,10 @@ end
 -- answer differs by window: a phone held sideways has the drawer over the
 -- clock band and nowhere near the dial.
 --
--- The link bars are the other way round now. They are in the panel's own head,
--- so they arrive with it whatever the window and leave with it again.
+-- The link meter is the other way round now. It is in the panel's own head, so
+-- it arrives with the panel whatever the window and leaves with it again. It
+-- draws four bars and no caption, so it is asked about by its press box rather
+-- than by the words of the frame.
 
 do
     local SEATS = {}
@@ -238,9 +240,17 @@ do
         ui.finish()
         local said = {}
         for i = 1, state.n do said[#said + 1] = state.text[i].s end
-        return table.concat(said, "|")
+        -- The words of the frame, and whether the link meter is in it. The
+        -- meter draws four rectangles and no caption, so unlike everything
+        -- else this file asks about, it cannot be read out of the text. Its
+        -- press box is the one thing it publishes under a name.
+        local meter = false
+        for _, r in ipairs(ui.hits) do
+            if r.action == "debug" then meter = true end
+        end
+        return {words = table.concat(said, "|"), meter = meter}
     end
-    local function has(s, word) return s:find(word, 1, true) ~= nil end
+    local function has(f, word) return f.words:find(word, 1, true) ~= nil end
 
     -- Shut, open and settled, then shut and settled again.
     local function sweep(w, h)
@@ -254,15 +264,15 @@ do
         for _, at in ipairs({2.61, 2.70, 2.90, 3.20}) do
             hud_frame(w, h, at, false)
         end
-        return before, during, hud_frame(w, h, 3.50, false)
+        return before, during, (hud_frame(w, h, 3.50, false))
     end
 
     -- A phone held upright: the drawer is the window, so the band goes.
     local before, during, after = sweep(390, 844)
     check("upright, the clock band is there before the drawer",
-          has(before, "2:49"), before)
-    check("and gone under it", not has(during, "2:49"), during)
-    check("and back once it has left", has(after, "2:49"), after)
+          has(before, "2:49"), before.words)
+    check("and gone under it", not has(during, "2:49"), during.words)
+    check("and back once it has left", has(after, "2:49"), after.words)
 
     -- Sideways: the drawer is 390 of 844. It reaches the band, which grows
     -- outward from the middle with the scores and the ratings, and it does not
@@ -270,7 +280,7 @@ do
     before, during, after = sweep(844, 390)
     check("sideways, the drawer covers the clock band",
           has(before, "2:49") and not has(during, "2:49")
-              and has(after, "2:49"), during)
+              and has(after, "2:49"), during.words)
 
     -- And the link bars, at every one of those windows: nowhere while the
     -- panel is shut, and in its head while it is open. They are the panel's
@@ -278,17 +288,17 @@ do
     -- them.
     for _, size in ipairs({{390, 844}, {844, 390}, {1440, 810}}) do
         before, during, after = sweep(size[1], size[2])
-        check(string.format("%dx%d has no link bars without the menu",
+        check(string.format("%dx%d has no link meter without the menu",
                             size[1], size[2]),
-              not has(before, "LINK") and not has(after, "LINK"), before)
-        check("and carries them in the panel's head with it",
-              has(during, "LINK"), during)
+              not before.meter and not after.meter, "the arena still has one")
+        check("and carries it in the panel's head with it", during.meter,
+              "the panel came up without it")
     end
 
     -- A monitor: the drawer is 390 of 1440 and reaches neither instrument.
     during = select(2, sweep(1440, 810))
     check("a monitor keeps the clock band, the drawer being nowhere near it",
-          has(during, "2:49"), during)
+          has(during, "2:49"), during.words)
 end
 
 -- --- and the screen with no room behind it stands its key down too ---------
