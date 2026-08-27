@@ -4863,7 +4863,10 @@ mod ladder_wire_tests {
         // Header, scores, artifact, status byte, six u32 of progression, the
         // first-to, the leg count and the window size, then a leg for each
         // call sign in the window.
-        assert_eq!(message.len(), 16 + 1 + 6 * 4 + 2 + 4 + 1 + (4 + 12) + (4 + 10));
+        assert_eq!(
+            message.len(),
+            16 + 1 + 6 * 4 + 2 + 4 + 1 + (4 + 12) + (4 + 10)
+        );
         assert_eq!(message[0], S2C_MATCH);
         assert_eq!(message[1], 6, "artifact and Ladder are present");
         assert_eq!(message[2], 0x50);

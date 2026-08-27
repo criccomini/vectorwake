@@ -4358,3 +4358,56 @@ out rather than what the mode does with the answer.
 
 **Reconsider if:** the window turns out to be long enough to draw fights that
 were not trades, at which point the length is wrong rather than the rule.
+
+## 91. The duel has no save points, and every run starts at the bottom
+
+**Status:** accepted
+
+**Decision:** a Ladder run always opens on the first rung, and a loss drops
+`ladder_loss_drop` rungs with nothing under it but the bottom. The checkpoint
+is gone: from the progression, from the wire, from the zone file, and from the
+`ladder_progress` table. A new session no longer resumes anywhere. Clearing the
+whole roster also starts the next run at the bottom rather than at a floor.
+
+What stays durable is the record. Best rung is still kept per account per zone,
+still carried in the token, and still filed at a whistle. It is a number about
+a climb rather than a place to resume one, which is the difference that makes
+it worth keeping.
+
+**Why:** asked for, after the floor did something nobody designed. Rungs were
+banked at every fifth, and the roster has eight, so a climb produced exactly
+one save point, five rungs up, which is precisely `ladder_loss_drop` below the
+top. Every loss from rungs six, seven and eight therefore landed on rung six.
+The upper third of the ladder collapsed into two opponents a climber met
+alternately for as long as they kept playing, and the loss penalty was
+arithmetically free exactly where the fights were hardest.
+
+The session rule compounded it. `restore_ladder` reopened a run at the saved
+floor, so a player who had banked rung six started there every evening,
+for ever, whatever they did in between. The two names were not a bad run. They
+were the whole game from then on.
+
+That could have been fixed by moving the interval, and moving it would have
+bought one number that happens not to collide with the drop on a roster of this
+size. The floor is the part that does not survive the question of what it is
+for: on a ladder short enough to clear in an evening, a save point is a way of
+not playing most of it.
+
+**Cost:** a run is a sitting now, and a pilot who reached rung seven last night
+fights Kestrel tonight. The first rungs are the ones a good player beats
+without thinking, so every session opens with fights that are not in doubt. The
+record is what carries their evening across, and it is a number the board does
+not yet draw, which is the obvious next thing to look at.
+
+Losing three in a row from the middle of the ladder now walks a run all the way
+down, where before it stopped. That is the drop doing what it says.
+
+The Ladder body is four bytes shorter, so `CLIENT_PROTOCOL` moves to 27 and a
+stale tab is refused rather than reading the leg count and the whole run log
+from the wrong offset. The catalog goes to 33 for the key that left the zone
+file, and `ladder_progress` drops its column on the next boot.
+
+**Reconsider if:** opening at the bottom reads as busywork rather than as a
+warm-up, at which point the answer is a shorter run to the interesting rungs,
+not a floor. Or if the roster grows past what one sitting can clear, which is
+the condition under which resuming somewhere was a real idea.
