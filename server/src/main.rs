@@ -970,10 +970,7 @@ async fn main() {
         "the provisional anchor"
     };
     println!("seeded {} bot ratings from {seed_source}", ladder.len());
-    println!(
-        "zone \"{}\": {}",
-        watcher.current.name, watcher.current.description
-    );
+    println!("zone \"{}\"", watcher.current.name);
     // The command line wins over the zone file, so an operator can move a
     // zone to another port without editing its configuration.
     let addr = addr_arg.unwrap_or_else(|| watcher.current.listen.clone());
@@ -1555,7 +1552,7 @@ mod tests {
         let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
 
         let mut stale = wire_zone(1, 2, 8);
-        stale.zone_toml = "description = \"a zone for tests\"\nchannel_delay_ticks = 500\n".into();
+        stale.zone_toml = "label = \"a zone for tests\"\nchannel_delay_ticks = 500\n".into();
         z.take_catalog(
             fleet::WireCatalog {
                 version: 23,
@@ -1597,7 +1594,6 @@ mod tests {
     fn wire_zone(rooms: u32, target: u32, cap: u32) -> fleet::WireZone {
         fleet::WireZone {
             name: "testzone".into(),
-            description: "a zone for tests".into(),
             mode: "arena".into(),
             max_ships: 64,
             max_players: cap,
@@ -1609,7 +1605,7 @@ mod tests {
             map_names: vec!["proving".into()],
             // A zone's name lives in the catalog that references it, never in the
             // zone's own file, so there is one place a name can be.
-            zone_toml: "description = \"a zone for tests\"\n".into(),
+            zone_toml: "label = \"a zone for tests\"\n".into(),
         }
     }
 
@@ -1639,7 +1635,7 @@ mod tests {
         def.max_ships = 2;
         def.bot_fill = 1.0;
         def.admission = "claimed".into();
-        def.zone_toml = "description = \"test Ladder\"\n\
+        def.zone_toml = "label = \"test Ladder\"\n\
                          teams = [\"Pilot\", \"Rival\"]\n\
                          max_teams = 2\n\
                          max_humans_per_team = 1\n\
@@ -2996,8 +2992,7 @@ mod tests {
         def.max_ships = 2;
         def.bot_fill = 1.0;
         def.zone_toml =
-            "description = \"test Ladder\"\n[arena]\nintermission_seconds = 1\nspawn_radius = 0\n"
-                .into();
+            "label = \"test Ladder\"\n[arena]\nintermission_seconds = 1\nspawn_radius = 0\n".into();
         let drydock = std::fs::read("../catalog/zones/melee/drydock.vwmap")
             .expect("Drydock ships with Ladder");
         def.maps_b64 = vec![fleet::b64(&drydock)];
@@ -4259,7 +4254,7 @@ mod tests {
         ];
         def.map_names = vec!["proving".into(), "the pit".into()];
         def.zone_toml = format!(
-            "description = \"a match zone\"\nteams = [\"Pylon\", \"Caisson\"]\n\
+            "label = \"a match zone\"\nteams = [\"Pylon\", \"Caisson\"]\n\
              [arena]\nmatch_seconds = {match_seconds}\n\
              intermission_seconds = {intermission_seconds}\n"
         );
@@ -4394,7 +4389,7 @@ mod tests {
             fleet::b64(&sim::World::new(1).packed_map()),
             fleet::b64(&sim::World::with_map(1, sim::build_pit).packed_map()),
         ];
-        def.zone_toml = "description = \"a match zone\"\nmax_ships = 8\n\
+        def.zone_toml = "label = \"a match zone\"\nmax_ships = 8\n\
                          teams = [\"Pylon\", \"Caisson\"]\n\
                          [arena]\nmatch_seconds = 1\nintermission_seconds = 1\n\
                          respawn_delay = 123\nbounty_base = 7\n"
@@ -7556,12 +7551,12 @@ mod tests {
     #[test]
     fn a_joining_player_is_told_the_zone_they_picked() {
         // Not the local file's name: this process is serving a catalog zone, and
-        // the name in the browse list is the name they chose from.
+        // the name in the browse list is the name they chose from. The name is
+        // the whole message, since a zone has no sentence to send after it.
         let z = serving(1, 6, 16);
         let msg = z.zone_msg();
         let text = String::from_utf8_lossy(&msg[1..]).to_string();
-        assert!(text.starts_with("testzone\n"), "{text:?}");
-        assert!(text.contains("a zone for tests"), "{text:?}");
+        assert_eq!(text, "testzone", "{text:?}");
     }
 
     #[test]

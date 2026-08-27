@@ -476,7 +476,6 @@ pub struct WireStaff {
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct WireZone {
     pub name: String,
-    pub description: String,
     pub mode: String,
     pub max_ships: u8,
     pub max_players: u32,

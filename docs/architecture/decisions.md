@@ -3235,7 +3235,8 @@ page and `/pilots` need one shape.
 
 ## 71. A game row states its format, and the catalog states the words
 
-**Status:** accepted
+**Status:** accepted, amended by
+[decision 81](#81-a-game-row-is-a-name-and-its-format)
 
 **Decision:** every row of the games list carries a format strip under its
 sentence: three label-over-value stacks reading TEAMS, TIME and SCORING,
@@ -3831,3 +3832,42 @@ strip of nothing for a rare step under a sentence somebody just caused.
 **Reconsider if:** the two bands on the friends page prove to be one too many
 in a real hand, at which point the invite is the one that gives way, since the
 empty state above it already offers the same act in words.
+
+---
+
+## 81. A game row is a name and its format
+
+**Status:** accepted
+
+**Decision:** the games list drops the sentence under each name. A row is the
+game's name with the format strip under it, TEAMS, TIME and SCORING in the
+words the catalog states, and nothing else. The strip moves up into the line
+the sentence held and the row is 70 points tall rather than 86, with the same
+seven points of air over the name and under the values that it had before.
+
+The sentence is gone from the wire and from the zone files with it.
+`ZoneDef::description` and `BrowseZone::description` are deleted, so is the
+copy `WireZone` carried to every arena, and `S2C_ZONE` is the zone's name with
+nothing after it. `ZoneConfig::description` goes too, since a local zone
+file's sentence existed to fill that same second line. Catalog v32.
+
+**Why:** Chris asked for the two descriptions to go, and what they said the
+strip already says. "Every win is a harder rival; one death ends the streak"
+sat over TEAMS 1 v 1, TIME one life, SCORING streak. "The longer your run, the
+bigger the bounty on you" sat over 4 v 4, 3:00, kills. Decision 71 put the
+strip under the sentence and rewrote both sentences to carry what the numbers
+could not, which kept two answers to one question on every row, and the
+sentence is the answer nobody has to read.
+
+Nothing else read the string. The client dropped the second line of `S2C_ZONE`
+at both places it draws a zone, the debug readout and the head of the rooms
+panel, so the games list was the only surface it ever reached.
+
+**Cost:** a zone can no longer say anything its mode's `format` arm has no
+words for. A flag zone scoring something that is not kills gets three stacks
+that do not describe it and no sentence to say so. Decision 71 already names
+that fix: fields in zone.toml as overrides rather than a longer match arm.
+
+**Reconsider if:** two games arrive whose strips read alike and play
+differently. Telling those apart is what a sentence is for, and the row has
+the room for one.

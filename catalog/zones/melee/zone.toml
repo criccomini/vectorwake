@@ -11,9 +11,6 @@
 # a match is three minutes rather than an evening.
 
 label = "Team Battle"
-# The format strip beside this carries the numbers (teams, clock, scoring),
-# so the sentence carries the one rule the numbers cannot: the bounty.
-description = "the longer your run, the bigger the bounty on you"
 
 # The clock and the score are the mode's; kills are what it counts.
 mode = "melee"

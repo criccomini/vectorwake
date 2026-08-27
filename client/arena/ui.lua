@@ -3596,11 +3596,12 @@ local function debug_hud(o, top)
     rect(x, y, w, h, pal.a(pal.BG, 0.78))
     vrule(x, y, h, pal.a(pal.PAID, 0.8))
     txt("DEBUG", x + 10 * F.scale, y + 15 * F.scale, size, pal.a(pal.PAID, 0.9))
-    -- The zone's name and nothing else. The wire sends the description on a
-    -- second line of the same message, and a sentence about the game is not a
-    -- diagnostic: it wrapped the header in prose that never changes while the
-    -- numbers under it do.
-    txt((o.zone or ""):match("^[^\n]*"), x + w - 10 * F.scale, y + 15 * F.scale, size,
+    -- The zone's name, which is the whole of what the wire says about a game
+    -- now. It carried a sentence on a second line of the same message for as
+    -- long as a zone had one, and this dropped it: a description that never
+    -- changes is not a diagnostic, and it wrapped the header in prose while
+    -- the numbers under it moved.
+    txt(o.zone or "", x + w - 10 * F.scale, y + 15 * F.scale, size,
         pal.a(pal.DIM, 0.8), "right")
     for n, l in ipairs(lines) do
         local c = math.floor((n - 1) / per)
@@ -4483,7 +4484,7 @@ function M.hud(o)
 
     -- One panel in this column at a time. The rooms list stands in the
     -- scoreboard's slot, so whichever is up is the one drawn.
-    M.zone_name = (o.zone or ""):match("^[^\n]*")
+    M.zone_name = o.zone or ""
     -- The rooms list keeps the left column, under the key that opens it. The
     -- board is its own column now, under the band, so the two no longer stand
     -- in one slot and neither has to put the other away.
@@ -6251,32 +6252,33 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
     -- ones you can: one nothing is serving yet, and one with no seat left.
     if r.waiting or r.full then col = pal.a(col, 0.6) end
     -- A row carrying a sentence of its own gives it the lower half and takes
-    -- the upper for everything else. The games are the list that wants it:
-    -- choosing between three of them is reading three sentences, and one at a
-    -- time at the foot of the panel, a screen away from the name it belongs
-    -- to, is not reading them.
+    -- the upper for everything else. The rows that set a value are the ones
+    -- that want it: a shelf item or a control is a name whose meaning is not
+    -- in the name, and the line under it is where that meaning goes.
     -- A sentence of its own needs two lines of room. A list long enough to
     -- squeeze its rows has neither, and drew the note over the label rather
     -- than dropping it: the shelf's descriptions landed on top of the names
     -- they described.
     local note = (h >= 44 * F.scale) and r.note or nil
-    -- A row carrying a sentence is a row about a thing you are choosing
-    -- between rather than a value you are setting, and the mocks set those
-    -- names half again as large: it is the name that is being read, and the
-    -- sentence under it is the reading.
+    -- The format strip, where the row carries one and the list gave it the
+    -- room. It is the whole of the row under the name: a game had a sentence
+    -- between the two until the strip made it a second answer to a question
+    -- the stacks already answer, and no row carries both.
+    local strip = (h >= 58 * F.scale) and r.specs or nil
+    -- A row you are choosing between, rather than one setting a value, sets
+    -- its name half again as large, which is how the mocks draw both: it is
+    -- the name that is being read, and what is under it is the reading.
     --
     -- Declared under `note` rather than over it, which is the whole of what
     -- was wrong here: read above its own `local`, `note` is a global, a
     -- global is nil, and the larger size this chooses never once applied.
     -- That is the bug .luacheckrc exists to catch, and it caught this one.
     local size = (M.compact and 17 or 18) * F.scale
-    if note and h >= 44 * F.scale then size = (M.compact and 19 or 21) * F.scale end
-    -- The format strip, where the row carries one and the list gave it the
-    -- third line of room. Everything moves up to make that room: the name
-    -- takes the top, the sentence the middle, the stacks the foot.
-    local strip = (h >= 74 * F.scale) and r.specs or nil
+    if (note or strip) and h >= 44 * F.scale then
+        size = (M.compact and 19 or 21) * F.scale
+    end
     local ly = note and (y + h * 0.36) or (y + h / 2)
-    if strip then ly = y + h * 0.20 end
+    if strip then ly = y + h * 0.25 end
     -- Drawn here unless the detail turns out not to fit beside it, in which
     -- case the pair is laid out as two lines below and this one is skipped.
     --
@@ -6300,7 +6302,7 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
         -- sentence takes two grows into the room the list gave it, evenly,
         -- rather than hanging off the top of the gap.
         local lines = pages.note_lines(note, w, r)
-        local ny = y + h * (strip and 0.42 or 0.68)
+        local ny = y + h * 0.68
             - (#lines - 1) * pages.NOTE_LINE * F.scale / 2
         for _, line in ipairs(lines) do
             txt(line, tx, ny, pages.NOTE_PX * F.scale,
@@ -6317,6 +6319,11 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
         -- their authored case, since "4 v 4" is data rather than a
         -- sentence, and a row nothing is serving dims its facts with the
         -- rest of itself.
+        --
+        -- About seven points of air over the name and seven under the
+        -- values, which is what the row had when a sentence sat between
+        -- them: it lost a line, so the two that are left closed up rather
+        -- than spreading into the gap.
         local dimmed = (r.waiting or r.full) and 0.6 or 1
         local sx2 = tx
         local right = x + w
@@ -6330,12 +6337,12 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
             local at2 = sx2 + (si > 1 and 15 * F.scale or 0)
             if at2 + sw2 > right then break end
             if si > 1 then
-                F.layer:seg(sx2, ry(y + h * 0.58), sx2, ry(y + h * 0.92),
+                F.layer:seg(sx2, ry(y + h * 0.49), sx2, ry(y + h * 0.90),
                             1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.45), true)
             end
-            lbl(s[1], at2, y + h * 0.66,
+            lbl(s[1], at2, y + h * 0.59,
                 pal.a(pal.DIM, (hot and 1 or 0.85) * dimmed))
-            txt(s[2], at2, y + h * 0.84, 13 * F.scale,
+            txt(s[2], at2, y + h * 0.81, 13 * F.scale,
                 pal.a(pal.INK, (sel and 0.95 or 0.8) * dimmed), nil, nil, true)
             sx2 = at2 + sw2 + 15 * F.scale
         end
@@ -7748,9 +7755,9 @@ function M.menu(v)
         for _, r in ipairs(v.rows) do
             if r.note then noted = true break end
         end
-        -- And a third line of room where a row carries its format strip:
-        -- name, sentence, and the stacks under both. One height for the
-        -- whole list, as above, so the games read down the same columns.
+        -- And a second line of room where a row carries its format strip:
+        -- the name, and the stacks under it. One height for the whole list,
+        -- as above, so the games read down the same columns.
         local specced = false
         for _, r in ipairs(v.rows) do
             if r.specs then specced = true break end
@@ -7777,7 +7784,7 @@ function M.menu(v)
             if r.sect then heads = heads + 1 end
         end
         local SECT = 24 * F.scale
-        local rowh = math.min((wrapped_extra + (specced and 86 or noted and 58
+        local rowh = math.min((wrapped_extra + (specced and 70 or noted and 58
                                or (M.compact and 46 or 40))) * F.scale,
                               math.max(30 * F.scale,
                                        (room - heads * SECT)
