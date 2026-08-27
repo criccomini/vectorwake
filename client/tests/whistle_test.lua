@@ -164,25 +164,36 @@ check("the round that killed them still lands", #net.snap_blasts == 1,
       "queued " .. #net.snap_blasts)
 drain()
 
--- The same bomb reborn a couple of ticks away, which reconciliation does
--- whenever the corrected world fires a held key on a different tick than the
--- prediction did. That is not a round ending on something, and drawing it
--- put a detonation at the muzzle while the bomb flew on to its real one.
-next_air = {1005}
-deliver(snapshot(1005))
-drain()
+-- A bomb only the prediction has fired, which the corrected world then fires
+-- a couple of ticks later: the tick a held key fires on hangs on cooldown,
+-- energy and the proximity safety, and a snapshot can change any of them.
+-- No snapshot ever carried the first birth, so nothing the zone knew about
+-- ended, and drawing it put a detonation at the muzzle while the bomb flew
+-- on to its real one.
+air = {1005}
 next_air = {1007}
 deliver(snapshot(1010))
-check("a bomb reborn a tick or two away does not go off",
+check("a bomb reborn under correction does not go off",
       #net.snap_blasts == 0, "queued " .. #net.snap_blasts)
 drain()
 
--- But a bomb that really landed still detonates beside a newer one of the
--- same kind: the bomb clock holds two births at least BombFireDelay apart,
--- so a twin outside the replay window is a different round.
-next_air = {1200}
-deliver(snapshot(1210))
-check("a bomb that landed still lands beside a newer one",
+-- The same when the corrected world refuses the shot altogether: a round
+-- the zone never saw cannot have landed on anything.
+air = {1012}
+next_air = {}
+deliver(snapshot(1015))
+check("a bomb the correction takes back does not go off",
+      #net.snap_blasts == 0, "queued " .. #net.snap_blasts)
+drain()
+
+-- But once a snapshot has carried the round, the zone has spoken for it, and
+-- its disappearance is a real ending however young it is.
+next_air = {1016}
+deliver(snapshot(1020))
+drain()
+next_air = {}
+deliver(snapshot(1025))
+check("a bomb a snapshot vouched for still lands",
       #net.snap_blasts == 1, "queued " .. #net.snap_blasts)
 
 if fails > 0 then os.exit(1) end

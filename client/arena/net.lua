@@ -269,6 +269,12 @@ local settings_generation = 0
 -- life that ended harmless after the transition.
 local lifecycle = 0
 local have_snapshot = false
+-- The rounds the zone itself has spoken for: every key `born_key` below
+-- gives a weapon in an applied snapshot body, replaced wholesale each time
+-- one is applied. Taken before the replay runs, because the replay adds
+-- predicted rounds and prediction vouching for itself is the hole this
+-- exists to close. See `harvest_world` for what it gates.
+local confirmed = {}
 M.join_progress = 0
 
 local on_lost_cb = nil
@@ -478,6 +484,7 @@ local function hangup()
     M.comings = {}
     M.snap_deaths = {}
     M.snap_blasts = {}
+    confirmed = {}
 end
 
 local function lost(why)
@@ -897,35 +904,20 @@ end
 -- already spent. Written once because it has to agree with itself across the
 -- unpack, and a formula copied four times is a formula with four chances to
 -- be edited three times.
-local function born_tick(tick, spec, life)
-    return (tick - (sim.spec_life(spec) - life)) % 65536
-end
-
 local function born_key(tick, spec, life, owner)
-    return owner * 16777216 + spec * 65536 + born_tick(tick, spec, life)
+    return owner * 16777216 + spec * 65536
+        + (tick - (sim.spec_life(spec) - life)) % 65536
 end
 
--- Is this vanished round one of those, wearing a different birth tick?
---
--- Reconciliation can move a round's birth. The tick a held bomb key fires on
--- hangs on the cooldown, the energy bar, a freeze stall and, for a proximity
--- bomb, the safety's read of where the enemy hulls are, and any of those can
--- differ between the prediction that fired it and the corrected world that
--- fires it again. When one does, the same bomb is reborn a tick or two away,
--- its name above no longer matches, and the harvest below used to read that
--- as the round ending on something: a detonation drawn at the muzzle while
--- the bomb flew on to its real one. Two rounds of the same owner and spec
--- can never really be born this close together, because the bomb clock holds
--- them at least BombFireDelay apart and the replay window is shorter, so a
--- near-twin still in the air is this round and not news.
-local function retimed(w, births)
-    if not births then return false end
-    for _, b in ipairs(births) do
-        local d = (b - w.born) % 65536
-        if d > 32768 then d = 65536 - d end
-        if d <= REPLAY_MAX_TICKS then return true end
+-- What `confirmed` above holds, read fresh from a just-applied snapshot.
+local function confirm_world()
+    local seen = {}
+    local tick = sim.tick()
+    for i = 0, sim.weapon_count() - 1 do
+        local _, _, spec, _, _, _, life, owner = sim.weapon_at(i)
+        seen[born_key(tick, spec, life, owner)] = true
     end
-    return false
+    return seen
 end
 
 -- What the client believes, held across a snapshot that is about to replace
@@ -948,8 +940,7 @@ local function capture_world()
     for i = 0, sim.weapon_count() - 1 do
         local wx, wy, spec, _, _, _, life, owner = sim.weapon_at(i)
         flying[born_key(tick, spec, life, owner)] =
-            {x = wx, y = wy, spec = spec, life = life, owner = owner,
-             born = born_tick(tick, spec, life)}
+            {x = wx, y = wy, spec = spec, life = life, owner = owner}
     end
     return {alive = alive, deaths = deaths, vx = vx, vy = vy, x = x, y = y,
             heading = heading, flying = flying}
@@ -1001,6 +992,18 @@ end
 -- really did land on the closing tick is silenced with the rest, which is the
 -- side of that trade worth being on: the alternative is a podium going up
 -- over the last round of the match flashing one more time.
+--
+-- And only rounds the zone has spoken for. A round that has existed in
+-- nothing but this client's prediction can vanish for a plainer reason than
+-- ending on something: the corrected world fired it on a different tick than
+-- the prediction did, because the tick a held key fires on hangs on the
+-- cooldown, the energy bar, a freeze stall and the proximity safety's read
+-- of remote hulls, and a snapshot can change any of them. Or it refused the
+-- shot altogether. Either way the only authority that could have ended the
+-- round never knew it existed, so its disappearance is a correction, not a
+-- detonation. It used to be drawn as one anyway: a blast at the muzzle while
+-- the bomb, reborn a tick away under a name this diff did not recognize,
+-- flew on to its real one.
 local function harvest_world(before)
     local benched = false
     for i = 0, sim.ship_count() - 1 do
@@ -1017,18 +1020,12 @@ local function harvest_world(before)
     if benched then return end
     local flying = before.flying
     local tick = sim.tick()
-    local births = {}
     for i = 0, sim.weapon_count() - 1 do
         local _, _, spec, _, _, _, life, owner = sim.weapon_at(i)
         flying[born_key(tick, spec, life, owner)] = nil
-        local id = owner * 256 + spec
-        local b = births[id]
-        if not b then b = {} births[id] = b end
-        b[#b + 1] = born_tick(tick, spec, life)
     end
-    for _, w in pairs(flying) do
-        if w.life > 20 and sim.spec_blast(w.spec) > 0
-            and not retimed(w, births[w.owner * 256 + w.spec]) then
+    for k, w in pairs(flying) do
+        if w.life > 20 and sim.spec_blast(w.spec) > 0 and confirmed[k] then
             M.snap_blasts[#M.snap_blasts + 1] = w
         end
     end
@@ -1059,6 +1056,7 @@ local function adopt_lifecycle(epoch, watching, subject)
         M.stats.input_margin, M.stats.rtt, M.stats.lead = 0, 0, 0
         snap_tick = 0
         have_snapshot = false
+        confirmed = {}
     elseif watching ~= M.watching then
         -- One lifecycle cannot describe two presence states. The newer
         -- authoritative snapshot or welcome will carry another generation.
@@ -1155,6 +1153,7 @@ local function on_snapshot(s)
         -- Kills and detonations the free-run never lived through still owe
         -- their light and noise; a watcher is here for the explosions.
         harvest_world(before)
+        confirmed = confirm_world()
         publish_timed_events()
         predicted_tick = sim.tick()
         return
@@ -1208,6 +1207,10 @@ local function on_snapshot(s)
     note_snapshot(sent, seq)
     snap_tick = sent
     have_snapshot = true
+    -- Read off the body alone, before the replay below mixes prediction back
+    -- in, and adopted only after the harvest has judged this snapshot against
+    -- the confirmations the previous ones made.
+    local spoken_for = confirm_world()
     M.stats.snaps = M.stats.snaps + 1
     transport:prove()
     resolve_predicted_deaths(sent)
@@ -1279,6 +1282,7 @@ local function on_snapshot(s)
     end
 
     harvest_world(before)
+    confirmed = spoken_for
     publish_timed_events()
 
     local reconciled_x, reconciled_y =
@@ -1405,6 +1409,10 @@ local function on_message(s)
         else
             settings_generation = epoch
             M.settings_epoch = M.settings_epoch + 1
+            -- Spec numbers can move with the settings, and these keys carry
+            -- one. Everything cached about what a weapon is goes; so do the
+            -- confirmations naming them.
+            confirmed = {}
         end
     elseif kind == S2C_WELCOME then
         -- Which of this connection's two lives it is in: a ship, or 255 for
