@@ -1,17 +1,29 @@
 -- Render pipeline.
 --
--- Five passes, and the order is the whole design:
+-- Seven passes, and the order is the whole design:
 --
---   vwbg    world, alpha      wall interiors, built once per map
---   vwfill  world, alpha      the starfield, and the dark inside of a hull
---   vwglow  world, additive   every bright thing: outlines, bolts, blasts
---   vwui    screen, alpha     panels, bars, radar
---   gui     screen            text, and only text
+--   vwsky      world, alpha      the sky: stars, clouds, the band
+--   vwskyglow  world, additive   what the sky puts out: the sun, a comet
+--   vwbg       world, alpha      wall interiors, built once per map
+--   vwfill     world, alpha      the dark inside of a hull
+--   vwglow     world, additive   every bright thing: outlines, bolts, blasts
+--   vwui       screen, alpha     panels, bars, radar
+--   gui        screen            text, and only text
 --
--- Additive is what makes the glow layer read as light rather than paint:
+-- Additive is what makes the glow layers read as light rather than paint:
 -- overlapping bolts brighten instead of stacking, and because addition does
 -- not care about order, the static wall edges can share that pass with the
 -- per-frame geometry at no cost.
+--
+-- The sky goes first because it is behind the map, and it was not always. It
+-- used to share the fill layer with everything else, over the wall interiors,
+-- and each star asked the core whether it stood on a solid tile so it could
+-- take itself out of the drawing. That works for a star and cannot work for a
+-- sun: a set piece two hundred pixels across is over a wall and behind it at
+-- the same time, and no single answer about one point covers it. Drawn under
+-- the map, the wall occludes the sky because it is in front of it, which also
+-- costs nothing per star and clips to the wall's real edge rather than to the
+-- tile the wall is standing in.
 --
 -- The camera holds a fixed zoom. A bigger window shows more of the arena
 -- rather than the same arena drawn larger, which is what the original did and
@@ -27,6 +39,8 @@ local zoom = require("render.zoom")
 local ZOOM = sys.get_config_number("vectorwake.zoom", 1.0)
 
 function init(self)
+    self.sky_pred = render.predicate({"vwsky"})
+    self.skyglow_pred = render.predicate({"vwskyglow"})
     self.bg_pred = render.predicate({"vwbg"})
     self.fill_pred = render.predicate({"vwfill"})
     self.glow_pred = render.predicate({"vwglow"})
@@ -101,6 +115,14 @@ function update(self)
 
     -- The fragment shader writes premultiplied color, so ordinary
     -- compositing takes ONE as the source factor, not SRC_ALPHA.
+    render.set_blend_func(graphics.BLEND_FACTOR_ONE,
+                          graphics.BLEND_FACTOR_ONE_MINUS_SRC_ALPHA)
+    render.draw(self.sky_pred)
+    render.set_blend_func(graphics.BLEND_FACTOR_ONE, graphics.BLEND_FACTOR_ONE)
+    render.draw(self.skyglow_pred)
+
+    -- And the map over the top of it, which is what makes a wall a hole in
+    -- the sky rather than a pane of glass with stars behind it.
     render.set_blend_func(graphics.BLEND_FACTOR_ONE,
                           graphics.BLEND_FACTOR_ONE_MINUS_SRC_ALPHA)
     render.draw(self.bg_pred)

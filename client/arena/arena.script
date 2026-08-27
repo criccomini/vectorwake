@@ -1118,17 +1118,20 @@ function init(self)
         -- one.
         bg = vec.layer("#bg", TUNE.STATIC_SEED),
         bgglow = vec.layer("#bgglow", TUNE.STATIC_SEED),
+        -- The sky, which is drawn under the map: see the render script's
+        -- pass order. How much of it is on screen is a property of the window
+        -- rather than of the build, so these two are resized to the view when
+        -- the viewport message arrives, from world.sky_budget. The figures
+        -- here are the opening guess for the frames before one does.
+        sky = vec.layer("#sky", 16384),
+        skyglow = vec.layer("#skyglow", 6144),
         -- These three go up every frame, whole, however little of them is
         -- used, so the headroom is bandwidth spent on nothing, and these are
         -- sized against what a heavy frame actually measures (fill 2.8k, glow
         -- 3.8k, ui 2.1k) with room to spare rather than by an order of
-        -- magnitude.
-        --
-        -- The two world layers are then resized to the window, because half of
-        -- what they hold is starfield and how much of that is on screen is a
-        -- property of the window rather than of the build: see
-        -- world.world_budget, and the viewport message that applies it. These
-        -- are the opening guess for the frames before one arrives.
+        -- magnitude. Unlike the sky they do not follow the window: what fills
+        -- them is the fight, and how much of that there is belongs to the
+        -- room.
         fill = vec.layer("#fill", 6144),
         -- Raised from 8192 with the detailed hulls. A hull costs up to 780
         -- vertices where the old outline and spine cost 134, so the old
@@ -1756,14 +1759,19 @@ function update(self, dt)
 
     -- --- the world -------------------------------------------------------
     local fill, glow = layers.fill, layers.glow
+    local sky, skyglow = layers.sky, layers.skyglow
     fill:reset()
     glow:reset()
+    sky:reset()
+    skyglow:reset()
 
-    -- Stars first, and into the per-frame layer: they move against the
-    -- camera, so they cannot live in the mesh the walls are baked into. They
-    -- are the whole of the home screen's backdrop and the bottom of the
-    -- arena's, which is one routine either way.
-    world.stars(fill, glow, cx + sx, cy + sy, self.hw, self.hh)
+    -- The sky first, and into layers of its own: they move against the camera,
+    -- so they cannot live in the mesh the walls are baked into, and the render
+    -- script draws them under the map so a wall is a hole in the sky rather
+    -- than a pane of glass with stars behind it. It is the whole of the home
+    -- screen's backdrop and the bottom of the arena's, which is one routine
+    -- either way.
+    world.stars(sky, skyglow, cx + sx, cy + sy, self.hw, self.hh)
 
     -- Nothing over the starfield on the home screen. A hull used to cross it
     -- on a closed loop, trailing a wake, on the argument that a text column in
@@ -2020,6 +2028,8 @@ function update(self, dt)
         sfx.loop("thrust", false)
     end
 
+    sky:flush()
+    skyglow:flush()
     fill:flush()
     glow:flush()
 
@@ -2782,10 +2792,15 @@ function on_message(self, message_id, message)
             -- buffer swapped in here is filled before anything reads it. A
             -- capacity that has not changed is a no-op, and they move in
             -- steps, so dragging a window edge does not allocate per frame.
-            local fill_cap, glow_cap = world.world_budget(message.hw,
+            --
+            -- Only the sky follows the window. What the other two hold is
+            -- hulls, bolts and blasts, and how many of those are on screen is
+            -- a property of the room rather than of the window, so they are
+            -- sized once where they are made.
+            local sky_cap, skyglow_cap = world.sky_budget(message.hw,
                                                           message.hh)
-            layers.fill:resize(fill_cap)
-            layers.glow:resize(glow_cap)
+            layers.sky:resize(sky_cap)
+            layers.skyglow:resize(skyglow_cap)
             -- The window the terrain has to cover, and the room the two
             -- static layers need to hold it. Both follow the view: see
             -- TUNE.STATIC_STEP.

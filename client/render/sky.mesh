@@ -1,0 +1,4 @@
+material: "/render/vw_sky.material"
+vertices: "/render/sky.buffer"
+primitive_type: PRIMITIVE_TRIANGLES
+position_stream: "position"

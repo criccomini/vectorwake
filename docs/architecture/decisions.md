@@ -3728,6 +3728,10 @@ map, which is wallpaper in the corner of the screen for three minutes. At a
 quarter and two fifths of the camera's rate they arrive and leave as you fly,
 which is what lets a side be told to regroup under the comet.
 
+The sky draws under the map, in two passes of its own that the render script
+puts before the wall interiors. That is where its occlusion comes from: a wall
+interior is opaque and is drawn on top, so the sky behind it is not there.
+
 **Why:** the old field was correct and boring. It had real depth in it, from
 parallax that costs nothing to store, and nothing to look at: a flat sprinkle
 over a flat black, the same in every room of every zone. The constraint that
@@ -3738,13 +3742,24 @@ there. So the clouds stay faint enough to read as distance, the sun is dim and
 thrown far enough out to sit at the rim of the view instead of over the fight,
 and the band's grain is no brighter than the far stars already were.
 
+That pass order is a correction rather than the original plan. The sky shipped
+sharing the fill layer with everything else, over the wall interiors, and each
+star asked the core whether it stood on a solid tile so it could take itself
+out of the drawing. That works for a star and cannot work for a sun: two
+hundred pixels of set piece is over a wall and behind it at the same time, and
+no single answer about its center covers that, so the sun and the comet drew
+straight over the map. Under the map the question does not come up, the clip is
+to the wall's real edge rather than to the tile it stands in, and the eight
+hundred and seventy crossings into the core the culling cost every frame are
+gone with it.
+
 The band is the one that had to be argued with twice. Written with a half
 width of eight hundred pixels it put the whole window inside itself, which
 draws as a starfield with the density turned up rather than as a band; it
 needs to end somewhere inside the window, with plain sky on both sides. And it
-is the expensive part: the whole sky costs 0.63 ms a frame in plain Lua at
+is the expensive part: the whole sky costs 0.52 ms a frame in plain Lua at
 1280 by 800 against 0.20 before, and reserves about half a megabyte of vertex
-buffer on a laptop against two hundred kilobytes. Four percent of a frame at
+buffer on a laptop against two hundred kilobytes. Three percent of a frame at
 sixty is a fair price for the room looking like somewhere.
 
 **Reconsider if:** a zone wants a sky of its own rather than one derived from

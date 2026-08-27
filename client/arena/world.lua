@@ -372,6 +372,14 @@ end
 -- They were world-locked and built once before this, on the reasoning that a
 -- parallax layer would slide against the terrain and read as a bug. It reads
 -- as distance, which is the entire reason to have stars at all.
+--
+-- All of it draws into the two sky layers, which the render script puts under
+-- the map rather than over it. That is where the occlusion comes from: a wall
+-- interior is opaque and is drawn on top, so the sky behind it is simply not
+-- there. Every star used to ask the core whether it stood on a solid tile and
+-- take itself out of the drawing if it did, which worked for a star and could
+-- not work for a sun. Two hundred pixels of set piece is over a wall and
+-- behind it at once, and no single answer about its center covers that.
 
 local STARS = {
     -- depth, cell size in world px, star size, color, how many cells in
@@ -471,10 +479,11 @@ local NEB_COLS = {
 -- the loop below pays for it only inside the band: a cell further than its own
 -- width from the axis is dropped before it is hashed, which is most of them.
 --
--- What the whole sky costs, measured in plain Lua at 1280 by 800: 0.63 ms a
--- frame against 0.20 before any of this, and 870 crossings into the core to
--- ask what is behind a star against 445. Four percent of a frame at sixty,
--- which is the price of the thing and worth knowing before adding to it.
+-- What the whole sky costs, measured in plain Lua at 1280 by 800: 0.52 ms a
+-- frame against 0.20 before any of this, and no crossings into the core at
+-- all against the 445 the old field spent asking what was behind each star.
+-- Three percent of a frame at sixty, which is the price of the thing and
+-- worth knowing before adding to it.
 -- The half width is in screen pixels rather than world ones, because that is
 -- what it means: a band this game can see is one that ends somewhere inside
 -- the window, with plain sky on both sides of it. Eight hundred looked
@@ -748,30 +757,38 @@ function M.star_cost(hw, hh)
     return f, g
 end
 
--- What the two per-frame world layers should hold for a view this size.
+-- What the two sky layers should hold for a view this size.
 --
 -- The camera holds a fixed zoom per decision 13, so the window decides how
 -- much world is on screen and therefore how much sky is in it. A capacity
 -- picked for one window is wrong for every other one, and wrong in the
 -- direction that loses geometry: at 6144 vertices the far and middle layers
 -- alone fill the buffer somewhere around 2100 points of width, and the near
--- stars, the big bright ones, stop being drawn. Whether they come back is then
--- a question of how much of the field is behind rock at that moment, which
--- changes as you fly, so they flicker.
+-- stars, the big bright ones, stop being drawn. Whether they come back is
+-- then a question of where the camera is sitting, which changes as you fly,
+-- so they flicker.
 --
 -- Growth is linear in the window's area and the constant is no longer small:
 -- the band and the clouds together ask for more than the three star layers
--- do. At 28 bytes a vertex the fill layer reserves about half a megabyte on a
--- laptop and a little over two on a 4K window, against a few hundred kilobytes
--- of it written on a typical frame. That is a real price for a sky, and it is
--- the one being paid deliberately.
+-- do. At 28 bytes a vertex the sky reserves about half a megabyte on a laptop
+-- and a little over two on a 4K window, against a few hundred kilobytes of it
+-- written on a typical frame. That is a real price for a sky and it is the
+-- one being paid deliberately.
 local function step(n)
     return math.ceil(n / BUDGET_STEP) * BUDGET_STEP
 end
 
-function M.world_budget(hw, hh)
+function M.sky_budget(hw, hh)
     local f, g = M.star_cost(hw, hh)
-    return step(f + FILL_FIGHT), step(g + GLOW_FIGHT)
+    return step(f), step(g)
+end
+
+-- And what the two per-frame world layers should hold, which is a different
+-- question with a shorter answer. What fills them is hulls, bolts and blasts,
+-- and how many of those are on screen is a property of the room rather than
+-- of the window, so this takes no measurements and never moves.
+function M.fight_budget()
+    return step(FILL_FIGHT), step(GLOW_FIGHT)
 end
 
 -- How fast the camera is travelling, smoothed, in pixels of the last frame.
@@ -909,12 +926,9 @@ function M.stars(fill, glow, cam_x, cam_y, hw, hh)
                             local px = (i + s / 2147483647) * c + ox
                             s = lcg(s)
                             local py = (j + s / 2147483647) * c + oy
-                            if not sim.solid(math.floor(px / TILE),
-                                             math.floor(py / TILE)) then
-                                s = lcg(s)
-                                fill:rect(px, py, size, size,
-                                          BAND_SHADE[s % top + 1])
-                            end
+                            s = lcg(s)
+                            fill:rect(px, py, size, size,
+                                      BAND_SHADE[s % top + 1])
                         end
                     end
                 end
@@ -970,36 +984,30 @@ function M.stars(fill, glow, cam_x, cam_y, hw, hh)
                     local px = (i + s / 2147483647) * c + ox
                     s = lcg(s)
                     local py = (j + s / 2147483647) * c + oy
-                    -- A star behind rock is a star shining through it: the
-                    -- wall interiors live in a layer under this one.
-                    if not sim.solid(math.floor(px / TILE), math.floor(py / TILE)) then
-                        s = lcg(s)
-                        local t = TEMP_PICK[s % 16 + 1]
-                        local sz = size + fat[t]
-                        fill:rect(px, py, sz, sz,
-                                  shade[t][s % STAR_SHADES + 1])
-                        -- One in a while is close enough to bloom. Additive,
-                        -- so it reads as light rather than a bigger dot.
-                        if bloom and s % 17 == 0 then
-                            glow:halo(px + sz / 2, py + sz / 2, 5,
-                                      HALO_SEGS, bloom)
-                        end
-                        -- Rarer still, one burns: the four-point cross a lens
-                        -- puts on anything bright enough, in that star's own
-                        -- color rather than in white.
-                        if bloom and s % SPARKLE == 0 then
-                            local col = shade[t][STAR_SHADES]
-                            local arm = SPARKLE_ARM
-                            glow:seg_fade(px - arm, py, px, py,
-                                          0.3, 1.2, 0, 0.55, col)
-                            glow:seg_fade(px + arm, py, px, py,
-                                          0.3, 1.2, 0, 0.55, col)
-                            glow:seg_fade(px, py - arm, px, py,
-                                          0.3, 1.2, 0, 0.55, col)
-                            glow:seg_fade(px, py + arm, px, py,
-                                          0.3, 1.2, 0, 0.55, col)
-                            glow:bloom(px, py, 7, 0.35, col)
-                        end
+                    s = lcg(s)
+                    local t = TEMP_PICK[s % 16 + 1]
+                    local sz = size + fat[t]
+                    fill:rect(px, py, sz, sz, shade[t][s % STAR_SHADES + 1])
+                    -- One in a while is close enough to bloom. Additive, so
+                    -- it reads as light rather than a bigger dot.
+                    if bloom and s % 17 == 0 then
+                        glow:halo(px + sz / 2, py + sz / 2, 5, HALO_SEGS, bloom)
+                    end
+                    -- Rarer still, one burns: the four-point cross a lens
+                    -- puts on anything bright enough, in that star's own
+                    -- color rather than in white.
+                    if bloom and s % SPARKLE == 0 then
+                        local col = shade[t][STAR_SHADES]
+                        local arm = SPARKLE_ARM
+                        glow:seg_fade(px - arm, py, px, py,
+                                      0.3, 1.2, 0, 0.55, col)
+                        glow:seg_fade(px + arm, py, px, py,
+                                      0.3, 1.2, 0, 0.55, col)
+                        glow:seg_fade(px, py - arm, px, py,
+                                      0.3, 1.2, 0, 0.55, col)
+                        glow:seg_fade(px, py + arm, px, py,
+                                      0.3, 1.2, 0, 0.55, col)
+                        glow:bloom(px, py, 7, 0.35, col)
                     end
                 end
             end
@@ -1025,14 +1033,11 @@ function M.stars(fill, glow, cam_x, cam_y, hw, hh)
                     local px = (i + s / 2147483647) * c + ox
                     s = lcg(s)
                     local py = (j + s / 2147483647) * c + oy
-                    if not sim.solid(math.floor(px / TILE),
-                                     math.floor(py / TILE)) then
-                        if moving then
-                            glow:seg_fade(px - vx, py - vy, px, py,
-                                          0.4, size, 0, 0.4, DUST_COL)
-                        else
-                            fill:rect(px, py, size, size, DUST_COL)
-                        end
+                    if moving then
+                        glow:seg_fade(px - vx, py - vy, px, py,
+                                      0.4, size, 0, 0.4, DUST_COL)
+                    else
+                        fill:rect(px, py, size, size, DUST_COL)
                     end
                 end
             end
