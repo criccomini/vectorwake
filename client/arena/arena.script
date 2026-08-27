@@ -507,6 +507,9 @@ local function shut_panels()
     ui.help = false
     ui.rooms_open = false
     ui.room_ask = nil
+    -- The landing's open list is a panel like the rest: the drawer coming up
+    -- stands it down rather than leaving it to reappear underneath.
+    ui.land_open = nil
 end
 
 local function toggle_menu()
@@ -823,6 +826,7 @@ local function leave_world()
     ui.help_prompt = false
     ui.map = false
     ui.room_ask = nil
+    ui.land_open = nil
 end
 
 -- Everything that ends a session: a leave, a drop, a give-up on a join.
@@ -2088,6 +2092,29 @@ function update(self, dt)
         if watching then hud_me = e end
         if hud_me and sim.ship_private and not sim.ship_private(hud_me) then hud_me = nil end
         local artifact = net.match and net.match.artifact or nil
+        -- The landing's three stops: who you are, where you are going, what
+        -- you arrive as. Built only while the stands are up, from the same
+        -- places the drawer reads: the games off the directory with their
+        -- one-line formats, the builds off the account with sitting out as
+        -- the last row, the call sign off the menu.
+        local land = nil
+        if self.attract then
+            local at = self.attract_zone or menu.zone
+            local zones = {}
+            for _, zr in ipairs(directory.rows) do
+                local fmt = zr.teams or ""
+                if zr.time and zr.time ~= "" then
+                    fmt = fmt ~= "" and (fmt .. " · " .. zr.time) or zr.time
+                end
+                zones[#zones + 1] = {label = zr.name, zone = zr.zone,
+                                     live = zr.live,
+                                     format = fmt ~= "" and fmt or nil,
+                                     here = zr.zone == at}
+            end
+            land = {name = menu.name, zone = directory.label_of(at),
+                    ship = menu.landing_ship(), zones = zones,
+                    ships = menu.landing_ships()}
+        end
         ui.hud({
             me = hud_me,
             -- Watching, and what of: a particular hull, or the room's own
@@ -2105,6 +2132,8 @@ function update(self, dt)
             -- the key that gets you in, and the corner drops TAKE SEAT because
             -- PLAY NOW is that key.
             landing = self.attract or nil,
+            -- What the stops say and what their lists hold, built above.
+            land = land,
             -- The call sign belongs to this connection even while the camera
             -- belongs to a watched pilot. The roster uses it to mark this
             -- watcher's own row instead of marking the camera subject as us.
@@ -2250,6 +2279,8 @@ end
 -- Into a game: everything a join tears down and dials, shared by the row a
 -- player presses and the rejoin the client makes when its identity moves.
 function session.enter(self, address, zone_name, wt, room, watch, instance)
+    -- A real join supersedes anything the landing's zone stop asked for.
+    self.land_zone = nil
     -- Whatever we were in, we are leaving.
     --
     -- The rooms panel is the one thing left standing. Moving room is the one
@@ -2339,6 +2370,19 @@ function session.attract_tick(self, dt)
     -- deployment's own first zone.
     local want = (menu.open and menu.sel.play)
         and directory.rows[menu.sel.play] or nil
+    -- The landing's zone stop names a game the same way the games list's
+    -- cursor does, and stands down once the stands are showing it: kept
+    -- longer, every later refresh of the list would drag the glass back to
+    -- a choice already served.
+    if self.land_zone and self.attract
+       and self.attract_zone == self.land_zone then
+        self.land_zone = nil
+    end
+    if not want and self.land_zone then
+        for _, row in ipairs(directory.rows) do
+            if row.zone == self.land_zone then want = row end
+        end
+    end
     if self.attract then
         -- The list turned to another game: what is on screen should be what
         -- the key would join, so re-dial at once rather than waiting out a
@@ -2398,12 +2442,11 @@ function session.deploy(self)
             if row.zone == self.attract_zone then menu.chosen = row end
         end
     end
-    -- This key means fly, whatever the ship page's eighth cell was last set
-    -- to. That cell used to answer "what will you arrive as" from a screen
-    -- where you were nothing; from the stands the answer is already watching,
-    -- so a remembered "arrive as a watcher" would make the one key on the
-    -- landing do nothing anybody could see.
-    menu.spectate = false
+    -- The key does what the ship stop above it says. It used to force a
+    -- remembered "arrive as a watcher" off, because that choice lived on a
+    -- page nobody could see from here and made the one key on the landing do
+    -- nothing anybody could notice; the stop now says SPECTATE out loud
+    -- right over the key, so the press means what the screen shows.
     apply_menu(self, "join")
     sfx.ui("ui_go")
 end
@@ -2706,6 +2749,9 @@ function apply_menu(self, act)
     -- do here but let go of the seat this client is holding. `menu.await`
     -- carries which game, and the panel goes when a room answers to it.
     if act == "want_zone" then
+        -- A press in the drawer's list supersedes whatever the landing's
+        -- zone stop last asked for.
+        self.land_zone = nil
         if self.online and not self.attract then
             menu.note = nil
             go_home(self, true)
@@ -2743,8 +2789,12 @@ function apply_menu(self, act)
     if act == "leave" or act == "cancel" then
         -- The backdrop is not a place you are, so escape at home has nothing
         -- to leave: tearing it down here would blink the battle out and the
-        -- attract loop would dial it right back.
-        if self.attract then return end
+        -- attract loop would dial it right back. What it can put away is a
+        -- stop's open list, which is the nearest thing to a panel up here.
+        if self.attract then
+            ui.land_open = nil
+            return
+        end
         if self.online then
             menu.note = nil
             go_home(self)
@@ -2931,7 +2981,62 @@ function on_input(self, action_id, action)
             end
             -- The landing's one key. See session.deploy.
             if r.action == "play_now" then
+                ui.land_open = nil
                 session.deploy(self)
+                return true
+            end
+            -- The landing's stops. Account is a door rather than a list: the
+            -- drawer already has the page that answers who you are, so the
+            -- press opens it there.
+            if r.action == "land_account" then
+                ui.land_open = nil
+                menu.show("pilot")
+                shut_panels()
+                sfx.ui("ui_go")
+                return true
+            end
+            -- Zone and ship open their lists in place, and the same press
+            -- again puts one away, like every other toggle here.
+            if r.action == "land_zone" or r.action == "land_ship" then
+                local which = r.action == "land_zone" and "zone" or "ship"
+                ui.land_open = ui.land_open ~= which and which or nil
+                sfx.ui("ui_move")
+                return true
+            end
+            -- The backdrop behind an open list: a press outside it puts the
+            -- list away instead of pulling a trigger.
+            if r.action == "land_shut" then
+                ui.land_open = nil
+                sfx.ui("ui_move")
+                return true
+            end
+            -- A game picked from the zone stop's list. The stands re-dial to
+            -- it at once, so the fight behind the glass becomes the one the
+            -- key would join; PLAY NOW stays the press that commits.
+            if r.action == "land_pick_zone" then
+                ui.land_open = nil
+                local zone = r.value
+                if zone and zone ~= ""
+                   and zone ~= (self.attract_zone or menu.zone) then
+                    self.land_zone = zone
+                    if self.attract then session.attract_drop(self) end
+                    self.attract_wait = 0
+                end
+                sfx.ui("ui_go")
+                return true
+            end
+            -- A build picked from the ship stop's list, or sitting out. Both
+            -- run the acts the drawer's own rows run, so the choice reaches
+            -- the account and the join exactly as it would from there.
+            if r.action == "land_pick_ship" then
+                ui.land_open = nil
+                if r.value == "spectate" then
+                    apply_menu(self, "spectate")
+                else
+                    local act = menu.pick_profile(r.value)
+                    if act then apply_menu(self, act) end
+                end
+                sfx.ui("ui_go")
                 return true
             end
             if r.action == "keep_pilot" then

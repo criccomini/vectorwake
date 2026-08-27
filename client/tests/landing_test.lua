@@ -1,11 +1,15 @@
--- The landing: the game itself, with the name and one key over the foot.
+-- The landing: the game itself, with the name, the stops and one key over
+-- the foot.
 --
 --     lua5.1 client/tests/landing_test.lua
 --
 -- Opening the client puts you in the stands of a real room, so the front end
--- is the watcher's HUD rather than a panel describing a game. What is added to
--- it is a lockup and a PLAY NOW key, in that order up the screen, and what is
--- taken away is the TAKE SEAT chip, because PLAY NOW is that key.
+-- is the watcher's HUD rather than a panel describing a game. What is added
+-- to it is a lockup, three stops (account, zone, ship) and a PLAY NOW key,
+-- in that order up the screen, and what is taken away is the TAKE SEAT chip,
+-- because PLAY NOW is that key. The zone and ship stops open lists in place;
+-- account opens the drawer on the pilot page, so its press leaves this file
+-- at the arena's door.
 --
 -- These run the real `M.hud` against a stubbed engine on four windows. The
 -- questions are the ones a hand at a mouse would ask: can I press it, is it on
@@ -97,6 +101,24 @@ local state = package.loaded["arena.state"]
 -- flip filed type into the space hit boxes are published in.
 local H
 
+-- What the arena hands the landing's stops: the pilot, the games with their
+-- one-line formats, and the builds with sitting out as the last row.
+local LAND = {
+    name = "Vesper 412",
+    zone = "Team Battle",
+    ship = "Gunner",
+    zones = {
+        {label = "Team Battle", zone = "melee", live = true,
+         format = "4v4", here = true},
+        {label = "Duel", zone = "ladder", live = true, format = "1v1"},
+    },
+    ships = {
+        {label = "Gunner", value = 1, here = true},
+        {label = "Bomber", value = 2},
+        {label = "spectate", value = "spectate"},
+    },
+}
+
 -- One frame of the landing, or of an ordinary watch when `o.landing` is false:
 -- the two differ in exactly the two things this file is about.
 local function frame(w, h, o)
@@ -107,12 +129,15 @@ local function frame(w, h, o)
     -- The scoreboard is off unless a check asks for it, the way it is off
     -- until a player presses PLAYERS.
     ui.details = o.details or false
+    -- Which stop's list is down, the way the arena leaves it between frames.
+    ui.land_open = o.land_open or nil
     ui.begin(layer, w, h, o.density or 1, false, 0)
     ui.hud({
         me = 0,
         -- A watcher's HUD: the camera stands behind a hull that is not yours.
         watch = {subject = 0},
         landing = o.landing ~= false or nil,
+        land = (o.landing ~= false) and (o.land or LAND) or nil,
         side = 0,
         viewer_name = "you",
         menu_open = o.menu_open or false,
@@ -202,20 +227,50 @@ for _, s in ipairs(SHAPES) do
     end
     local name = word("vectorwake")
     check(shape .. " says what the game is", name ~= nil, "no wordmark")
-    -- The name sits over the key rather than in a corner: a stranger's eye
-    -- ends on the pulsing thing at the foot, and the name has to be where that
-    -- look lands. This is placement A of the three that were drawn.
+    -- The name sits over the column rather than in a corner: a stranger's
+    -- eye ends on the pulsing thing at the foot, climbs the stops, and the
+    -- name has to be where that look ends. Placement A of the three drawn
+    -- for decision 61, with the stops of .design/start-flow between.
     if name and key then
         check(shape .. " puts the name above the key",
               name.y < key.y,
               string.format("name at %.0f, key top %.0f", name.y, key.y))
-        check(shape .. " keeps the name with the key",
-              key.y - name.y < 60,
-              string.format("%.0f apart", key.y - name.y))
         check(shape .. " sets the name on the key's own middle",
               math.abs(name.x - (key.x + key.w / 2)) < key.w / 2,
               string.format("name at %.0f, key middle %.0f",
                             name.x, key.x + key.w / 2))
+    end
+    -- The three stops, in the order you would say them: who you are, where
+    -- you are going, what you arrive as, then the key that commits.
+    local acct, zone, ship =
+        box("land_account"), box("land_zone"), box("land_ship")
+    check(shape .. " publishes the three stops",
+          acct ~= nil and zone ~= nil and ship ~= nil, "a stop is missing")
+    if key and acct and zone and ship then
+        check(shape .. " stacks the stops over the key in saying order",
+              acct.y < zone.y and zone.y < ship.y
+              and ship.y + ship.h <= key.y + 1,
+              string.format("account %.0f zone %.0f ship %.0f key %.0f",
+                            acct.y, zone.y, ship.y, key.y))
+        for _, b in ipairs({acct, zone, ship}) do
+            check(shape .. " gives a stop the key's own width",
+                  math.abs(b.w - key.w) < 1 and math.abs(b.x - key.x) < 1,
+                  string.format("%.0f wide at %.0f against %.0f at %.0f",
+                                b.w, b.x, key.w, key.x))
+        end
+        check(shape .. " presses a stop where it is drawn",
+              press(zone.x + zone.w / 2, zone.y + zone.h / 2) == "land_zone")
+        if name then
+            check(shape .. " keeps the name with the stack",
+                  name.y < acct.y and acct.y - name.y < 60,
+                  string.format("name at %.0f, stack top %.0f",
+                                name.y, acct.y))
+        end
+        -- The stops say their answers, in the case the HUD sets everything.
+        check(shape .. " says who you are", word("VESPER 412") ~= nil)
+        check(shape .. " says where you are going",
+              word("TEAM BATTLE") ~= nil)
+        check(shape .. " says what you arrive as", word("GUNNER") ~= nil)
     end
 end
 
@@ -279,6 +334,55 @@ end
 -- and a chip in the corner offering the same act is the offer made twice.
 check("the landing carries no TAKE SEAT chip",
       box("take_seat") == nil)
+
+-- --- a stop's list opens over the glass -------------------------------------
+--
+-- Zone and ship drop their lists in place, upward so the key stays clear. A
+-- row's press beats the stop behind it, open sky puts the list away instead
+-- of pulling a trigger, and PLAY NOW answers through all of it: it is the
+-- press that commits, whatever else is open.
+do
+    frame(1440, 810, {land_open = "zone"})
+    local pick
+    for _, r in ipairs(ui.hits) do
+        if r.action == "land_pick_zone" and r.value == "ladder" then
+            pick = r
+        end
+    end
+    check("the zone list offers the other game", pick ~= nil,
+          "no row for the second zone")
+    check("and says its name", word("DUEL") ~= nil)
+    check("and its format beside it", word("1V1") ~= nil)
+    if pick then
+        check("a press on the row is the pick",
+              press(pick.x + 5, pick.y + pick.h / 2) == "land_pick_zone")
+        local key = box("play_now")
+        check("the list stays clear of the key",
+              key and pick.y + pick.h <= key.y,
+              "a row is over PLAY NOW")
+        check("open sky puts the list away",
+              press(400, 300) == "land_shut",
+              "landed on " .. tostring(press(400, 300)))
+        check("and PLAY NOW still answers",
+              key and press(key.x + key.w / 2, key.y + key.h / 2)
+                  == "play_now")
+    end
+
+    frame(1440, 810, {land_open = "ship"})
+    check("the ship list is the builds by name", word("BOMBER") ~= nil)
+    check("with sitting out as an answer", word("SPECTATE") ~= nil)
+    local spec
+    for _, r in ipairs(ui.hits) do
+        if r.action == "land_pick_ship" and r.value == "spectate" then
+            spec = r
+        end
+    end
+    check("and sitting out can be pressed", spec ~= nil)
+    -- No hull is named anywhere in it: which hull a build rides is the
+    -- hangar's business.
+    check("and no hull is named in it",
+          word("APEX") == nil and word("WEDGE") == nil)
+end
 
 -- --- a phone's top row -----------------------------------------------------
 --
@@ -487,6 +591,9 @@ end
 frame(1440, 810, {menu_open = true})
 check("an open menu takes the key off the landing",
       box("play_now") == nil)
+check("and the stops with it",
+      box("land_account") == nil and box("land_zone") == nil
+      and box("land_ship") == nil)
 
 -- --- the field of play is still the trigger ---------------------------------
 

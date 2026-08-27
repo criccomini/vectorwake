@@ -453,11 +453,6 @@ def stop_row(label, value, w, h, px=12, lit=False, style=""):
             f'{caret()}</span></div>')
 
 
-def guest_tag(px=9):
-    return (f'<span class="dim" style="font-family:var(--mono);'
-            f'font-size:{px}px;letter-spacing:.1em">GUEST</span>')
-
-
 def drop_rows(rows, w, row_h, px, style):
     """An open list over the glass. rows: (html, state) where state is
     "cursor", "here", "rule" (a separator line) or None."""
@@ -507,8 +502,7 @@ def ship_rows(px=12):
 def account_rows(px=12):
     """A guest's account menu: who you are, then what claiming buys. The
     sign up row wears the offer green the invite band uses (decision 80)."""
-    head = (f'<span style="color:var(--ink)">{NAME.upper()}</span>'
-            f'<span style="margin-left:auto">{guest_tag()}</span>')
+    head = f'<span style="color:var(--ink)">{NAME.upper()}</span>' 
     return [
         (head, None),
         ("", "rule"),
@@ -558,8 +552,7 @@ def column(form, open_list=None):
     stops = [
         ("SHIP", SHIP.upper()),
         ("ZONE", ZONE.upper()),
-        ("ACCOUNT", f'{NAME.upper()}<span style="margin-left:6px">'
-                    f'</span>{guest_tag()}'),
+        ("ACCOUNT", NAME.upper()),
     ]
     bottoms = {}
     y = 22 + kh + 12
