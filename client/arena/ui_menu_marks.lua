@@ -46,7 +46,7 @@ function M.new(context)
     end
 
     local function mark_pilot(cx, cy, r, col)
-        -- The same helmet the games list counts people with, so the stop a player
+        -- The same wings the games list counts people with, so the stop a player
         -- opens to change their call sign wears the mark that stands for them
         -- everywhere else.
         --
@@ -59,13 +59,24 @@ function M.new(context)
         pilot_mark(cx, cy, col, r * 1.6, RAIL_PEN * F.scale)
     end
 
-    -- Two helmets, one behind the other: people rather than a person. The single
-    -- helmet already stands for you, at the far end of this row beside your name,
-    -- so the stop about everybody else cannot wear the same mark.
+    -- Two badges, pinned one over the other: people rather than a person. The
+    -- single pair of wings already stands for you, at the far end of this row
+    -- beside your name, so the stop about everybody else cannot wear the same
+    -- mark.
+    --
+    -- Stacked rather than set side by side, and that is the wings' own shape
+    -- deciding it. Two helmets stood beside each other because a helmet is
+    -- taller than it is wide and a step across separated them. Wings are twice
+    -- as wide as they are tall, so the same step left two spreads crossing
+    -- through each other and reading as one wide tangle. Clear air between them
+    -- is above and below, which is also how badges sit on a uniform.
+    --
+    -- Smaller than the single stop's, because two of these have to fit the
+    -- height one of them was sized against.
     local function mark_friends(cx, cy, r, col)
-        pilot_mark(cx - r * 0.46, cy - r * 0.16, pal.a(col, 0.55), r * 1.15,
+        pilot_mark(cx - r * 0.12, cy - r * 0.42, pal.a(col, 0.55), r * 1.15,
                    RAIL_PEN * F.scale)
-        pilot_mark(cx + r * 0.36, cy + r * 0.2, col, r * 1.3,
+        pilot_mark(cx + r * 0.12, cy + r * 0.42, col, r * 1.25,
                    RAIL_PEN * F.scale)
     end
 

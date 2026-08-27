@@ -2,17 +2,23 @@
 --
 --     lua5.1 client/tests/marks_test.lua
 --
--- A person wears a round helmet with a curved visor. A machine wears a
--- squared one with lamps in it and an antenna over the top. The difference is
--- the message: the games list sets a count of people beside a count of
--- machines, and round-against-square is what answers that at a glance, at a
--- size where a lamp is two pixels.
+-- A person wears pilot's wings. A machine wears a chip. The difference is the
+-- message: the rooms list sets a count of people beside a count of machines,
+-- and a fan of feathers against a square package is what answers that at a
+-- glance, at a size where one feather is two pixels.
 --
--- So this measures the two things that must stay apart and the three that
--- must stay together. Apart: the person's shell turns and the machine's does
--- not, and only the machine reaches above its crown. Together: one collar,
--- one width, one baseline, because a pair that does not sit level reads as
--- two unrelated pictures however different their shapes are.
+-- So this measures the two things that must stay apart and the two that must
+-- stay together. Apart: the person's mark is line thrown outward from a
+-- middle and the machine's is a closed package with legs, and neither borrows
+-- the other's grammar. Together: one width and one center line, because a
+-- pair that does not sit level reads as two unrelated pictures however
+-- different their shapes are.
+--
+-- This measured a pair of helmets until the badges replaced them, and the
+-- questions it asked survived the change even though every assertion under
+-- them did. What it asked about the shells, that one turns and the other does
+-- not, is asked here about the strokes: one mark's are struck outward and
+-- capped round, the other's butt into a package they never cross.
 --
 -- Neither mark is public, and neither is exported for this: they are drawn
 -- through the screens that use them, so what is measured is what a player is
@@ -43,14 +49,23 @@ local function put(kind, x0, y0, x1, y1)
 end
 
 local layer = {}
-function layer:seg(x1, y1, x2, y2, w)
+-- The cap is kept, and it is not a detail. The feathers are capped round so
+-- three of them read as three at eleven points; the chip's legs butt so that
+-- eight of them do not lay a second line along all four sides of the package.
+-- Both marks are a quad and a handful of segments, and the cap is one of the
+-- few things in the record that tells their strokes apart.
+function layer:seg(x1, y1, x2, y2, w, _, round)
     local s = put("seg", x1 - w / 2, y1 - w / 2, x2 + w / 2, y2 + w / 2)
     s.ax, s.ay, s.bx, s.by, s.w = x1, H - y1, x2, H - y2, w
+    s.round = round and true or false
 end
 function layer:disc(x, y, r) put("disc", x - r, y - r, x + r, y + r) end
 function layer:rect(x, y, w, h) put("rect", x, y, x + w, y + h) end
-function layer:outline(pts, w)
-    local o = {kind = "outline", pts = {}, w = w}
+-- Closed is kept for the same kind of reason: the chip's package is a closed
+-- run of four corners, and the one other four-point run on these screens, the
+-- doorway in the Leave stop, is open.
+function layer:outline(pts, w, _, closed)
+    local o = {kind = "outline", pts = {}, w = w, closed = closed and true or false}
     for i = 1, #pts, 2 do
         o.pts[#o.pts + 1] = {pts[i], H - pts[i + 1]}
     end
@@ -62,21 +77,23 @@ function layer:outline(pts, w)
     end
     shapes[#shapes + 1] = o
 end
--- Arcs keep their geometry: a curve's center, radius and sweep are how a
--- round shell is told from a square one.
+-- Arcs keep their geometry, since a curve's center, radius and sweep are how
+-- a round shape is told from a struck one.
 function layer:arc(x, y, r, a0, a1)
     local s = put("arc", x - r, y - r, x + r, y + r)
     s.cx, s.cy, s.r, s.a0, s.a1 = x, H - y, r, a0, a1
 end
+-- The boss a wing springs from and the core of a chip are both one of these,
+-- so its corners are kept rather than collapsed: what is asked of each is
+-- where its middle sits, and a bounding box has thrown the shape away.
 function layer:quad(x1, y1, x2, y2, x3, y3, x4, y4)
     local xs, ys = {x1, x2, x3, x4}, {y1, y2, y3, y4}
     local s = put("quad", math.min(unpack(xs)), math.min(unpack(ys)),
                   math.max(unpack(xs)), math.max(unpack(ys)))
     s.top = H - math.max(unpack(ys))
+    s.cx = (s.x0 + s.x1) / 2
+    s.cy = (s.y0 + s.y1) / 2
 end
--- The visor is one of these. Its points are kept rather than collapsed,
--- because what is checked about it is the shape of its two edges against each
--- other, which a bounding box has thrown away.
 function layer:fan(pts)
     local o = {kind = "fan", pts = {}}
     for i = 1, #pts, 2 do
@@ -134,70 +151,113 @@ end
 
 -- --- finding the marks -----------------------------------------------------
 
--- A person's helmet, found by its shell: a closed run drawn out of far more
--- points than any corner needs, standing taller than it is wide. Everything
--- else outlined on these screens is a handful of straight sides, and the one
--- other sampled curve, the ring around the world in the Zones stop, is three
--- times as wide as it is high.
-local function crowns(list)
-    local out = {}
-    for _, sh in ipairs(list) do
-        if sh.kind == "outline" and sh.pts and #sh.pts >= 20
-            and sh.y1 - sh.y0 > sh.x1 - sh.x0 then
-            out[#out + 1] = {cx = (sh.x0 + sh.x1) / 2,
-                             cy = (sh.y0 + sh.y1) / 2,
-                             w = sh.x1 - sh.x0, h = sh.y1 - sh.y0,
-                             x0 = sh.x0, x1 = sh.x1,
-                             y0 = sh.y0, y1 = sh.y1, pts = sh.pts}
-        end
-    end
-    return out
-end
-
 local function horizontal(sh)
     return sh.kind == "seg" and math.abs(sh.ay - sh.by) < 0.01
-end
--- A collar is a run of line, not a point. Asked for by length because setting
--- its reach to zero still draws a segment, and a degenerate one counted as a
--- collar for as long as this only counted them.
-local function collar_of(sh, span)
-    return horizontal(sh) and math.abs(sh.bx - sh.ax) > span
 end
 local function vertical(sh)
     return sh.kind == "seg" and math.abs(sh.ax - sh.bx) < 0.01
 end
 
--- A machine's helmet, found by its crown: a horizontal run with a vertical
--- dropping from each of its two ends. That is the shape a flat top and two
--- straight sides make and nothing else in these screens draws one.
+-- A pair of wings, found by its fan: a solid boss with strokes thrown out of
+-- it, capped round, three to a side and none of them level or upright.
 --
--- The sides are allowed to start a line width below the crown rather than on
--- it. They butt into it instead of meeting it, so that four capped strokes do
--- not overlap in four bright corners.
-local function boxes(list)
+-- The fan is what identifies it rather than the boss, because a small solid
+-- quad is the commonest shape on these screens and a run of six strokes
+-- leaving one point is not drawn anywhere else. Three a side is asked for
+-- exactly: the gaps between the feathers are the whole of what makes this
+-- wings rather than a moustache, and a cut that loses one loses the mark.
+local function wings(list)
     local out = {}
-    for _, sh in ipairs(list) do
-        if horizontal(sh) then
-            local left, right, drop
-            for _, o in ipairs(list) do
-                if vertical(o) and o.by > o.ay
-                    and o.ay >= sh.ay - 0.01 and o.ay <= sh.ay + sh.w then
-                    if math.abs(o.ax - sh.ax) < 0.01 then left = o end
-                    if math.abs(o.ax - sh.bx) < 0.01 then right = o end
-                    drop = o.by - sh.ay
+    for _, q in ipairs(list) do
+        if q.kind == "quad" then
+            local left, right, span, lo, hi = 0, 0, 0, math.huge, -math.huge
+            local reach = math.max(q.x1 - q.x0, q.y1 - q.y0) * 3
+            for _, sh in ipairs(list) do
+                if sh.kind == "seg" and sh.round then
+                    -- The end that starts at the boss, whichever it is.
+                    local near_x, near_y, far_x = sh.ax, sh.ay, sh.bx
+                    if math.abs(sh.bx - q.cx) < math.abs(sh.ax - q.cx) then
+                        near_x, near_y, far_x = sh.bx, sh.by, sh.ax
+                    end
+                    if math.abs(near_x - q.cx) < reach
+                        and math.abs(near_y - q.cy) < reach
+                        and not horizontal(sh) and not vertical(sh) then
+                        if far_x < q.cx then left = left + 1 else right = right + 1 end
+                        span = math.max(span, math.abs(far_x - q.cx))
+                        lo = math.min(lo, sh.y0)
+                        hi = math.max(hi, sh.y1)
+                    end
                 end
             end
-            if left and right then
-                out[#out + 1] = {cx = (sh.ax + sh.bx) / 2, top = sh.ay,
-                                 w = math.abs(sh.bx - sh.ax), h = drop,
-                                 crown = sh}
+            if left == 3 and right == 3 then
+                out[#out + 1] = {cx = q.cx, cy = q.cy, w = span * 2,
+                                 h = hi - lo, y0 = lo, y1 = hi, boss = q}
             end
         end
     end
     return out
 end
 
--- Everything drawn near a mark, so what sits over its crown is caught too.
+-- A chip, found by its package: a closed run of exactly four points, every
+-- one of them a corner of its own box, square to within a hundredth.
+--
+-- Corners are asked for and not merely four points, because the pip a ladder
+-- draws for an empty rung is also a closed four-point run inside a square
+-- box: it is a diamond, so its points sit at the middles of its sides and
+-- none of them at a corner. The doorway in the Leave stop has four points
+-- too and is open.
+local function chips(list)
+    local out = {}
+    for _, sh in ipairs(list) do
+        if sh.kind == "outline" and sh.closed and sh.pts and #sh.pts == 4 then
+            local w, h = sh.x1 - sh.x0, sh.y1 - sh.y0
+            local corners = 0
+            for _, pt in ipairs(sh.pts) do
+                if (math.abs(pt[1] - sh.x0) < 0.01 or math.abs(pt[1] - sh.x1) < 0.01)
+                    and (math.abs(pt[2] - sh.y0) < 0.01
+                         or math.abs(pt[2] - sh.y1) < 0.01) then
+                    corners = corners + 1
+                end
+            end
+            if corners == 4 and w > 0 and math.abs(w - h) < w * 0.01 then
+                out[#out + 1] = {cx = (sh.x0 + sh.x1) / 2,
+                                 cy = (sh.y0 + sh.y1) / 2,
+                                 w = w, h = h, x0 = sh.x0, x1 = sh.x1,
+                                 y0 = sh.y0, y1 = sh.y1, package = sh}
+            end
+        end
+    end
+    return out
+end
+
+-- The legs of a chip: the strokes that butt into its package from outside and
+-- stop there. Counted by side, because what says silicon is a fringe on all
+-- four rather than a pair of tabs on two.
+local function legs(list, chip)
+    local by = {left = 0, right = 0, top = 0, bottom = 0}
+    local reach = 0
+    for _, sh in ipairs(list) do
+        if sh.kind == "seg" and not sh.round then
+            local ax, ay, bx, by_ = sh.ax, sh.ay, sh.bx, sh.by
+            local out_x = math.max(math.abs(ax - chip.cx), math.abs(bx - chip.cx))
+            local out_y = math.max(math.abs(ay - chip.cy), math.abs(by_ - chip.cy))
+            if out_x < chip.w * 1.2 and out_y < chip.h * 1.2 then
+                if horizontal(sh) and out_x > chip.w / 2 then
+                    if (ax + bx) / 2 < chip.cx then by.left = by.left + 1
+                    else by.right = by.right + 1 end
+                    reach = math.max(reach, out_x)
+                elseif vertical(sh) and out_y > chip.h / 2 then
+                    if (ay + by_) / 2 < chip.cy then by.top = by.top + 1
+                    else by.bottom = by.bottom + 1 end
+                    reach = math.max(reach, out_y)
+                end
+            end
+        end
+    end
+    return by, reach
+end
+
+-- Everything drawn near a mark, so what sits beside its middle is caught too.
 local function near(list, cx, cy, r)
     local out = {}
     for _, sh in ipairs(list) do
@@ -210,8 +270,8 @@ local function near(list, cx, cy, r)
 end
 
 -- The shipped row, less friends. Every stop draws its mark at the foot of the
--- column now, and the friends mark is two helmets one behind the other: this
--- file counts helmets, so the one stop that brings its own pair stays off the
+-- column, and the friends mark is two badges pinned one over the other: this
+-- file counts badges, so the one stop that brings its own pair stays off the
 -- row. Nothing else on it wears one.
 local RAIL = {}
 for i, n in ipairs({"zones", "ship", "upgrades", "settings"}) do
@@ -235,15 +295,9 @@ local function room_frame(open)
     return f
 end
 
--- What the panel put on the frame, rather than what is on the frame. PLAYERS
--- keeps its own pair in the corner keys whether the panel is up or not, and
--- the two land 26 points apart across, which is close enough that picking one
--- by where it is would be picking whichever the layout moved last. Drawing
--- the frame both ways and taking the difference asks the question exactly.
--- The two kinds of mark are found by different readers and come back
--- described differently: a shell knows where its middle is, a box knows where
--- its top is. Across is common to both and is enough here, since nothing
--- draws two of either at one x.
+-- What the panel put on the frame, rather than what is on the frame. Drawing
+-- it both ways and taking the difference asks that question exactly, and it
+-- keeps working however the chrome around the panel changes.
 local function where(m)
     return string.format("%.1f", m.cx)
 end
@@ -260,127 +314,81 @@ local function added(pick)
     return out
 end
 
--- --- the person is round ---------------------------------------------------
+-- --- the person is a fan ---------------------------------------------------
 
--- The helmet a room row counts its people with.
---
--- It was the topbar's, beside the call sign, and the topbar's far end is two
--- buttons now with no mark on either. Every check below is about how the
--- shell itself is drawn, so what it wants is one of them and not which frame
--- it came off.
+-- The wings a room row counts its people with.
 local rail_frame = room_frame(true)
-local rail_only = added(crowns)
-check("a room row counts people with a helmet", #rail_only == 1,
-      #rail_only .. " helmets the panel put up")
+local rail_only = added(wings)
+check("a room row counts people with a pair of wings", #rail_only == 1,
+      #rail_only .. " pairs the panel put up")
 
 if rail_only[1] then
-    local shell = rail_only[1]
-    local parts = near(rail_frame, shell.cx, shell.cy, shell.h / 2)
+    local wing = rail_only[1]
+    local parts = near(rail_frame, wing.cx, wing.cy, wing.w / 2)
 
-    -- Nothing straight under it. The shell used to be cut off flat and stood
-    -- on a collar, and the collar was a line wider than the cut, which read as
-    -- shoulders. It closes on its own chin now, so a straight run down there
-    -- is that collar come back.
-    local straight = 0
+    -- Wider than it is tall, and by a long way. This is the fact every
+    -- caller lays out against: it is why the mark sits where it does beside a
+    -- count, and why the friends stop stacks its pair instead of setting them
+    -- side by side.
+    check("it lies wider than it stands", wing.w > wing.h * 1.6,
+          string.format("%.2f wide by %.2f high", wing.w, wing.h))
+
+    -- Struck under the mark's own pen. A heavy pen closes the gaps it is
+    -- drawn between, and the gaps are the mark: this is the one number in
+    -- the drawing that trades legibility of the shape against weight of the
+    -- line, and raising it to the pen closes the fan first.
+    local boss_h = wing.boss.y1 - wing.boss.y0
+    local heaviest = 0
     for _, sh in ipairs(parts) do
-        if horizontal(sh) and sh.ay > shell.cy then straight = straight + 1 end
+        if sh.kind == "seg" and sh.round then
+            heaviest = math.max(heaviest, sh.w)
+        end
     end
-    check("the person's shell closes on itself, with nothing under it",
-          straight == 0, straight .. " straight runs below the middle")
+    check("and is cut lighter than the mark it sits in",
+          heaviest > 0 and heaviest < boss_h,
+          string.format("%.2f of line against a %.2f boss", heaviest, boss_h))
 
-    -- Taller than it is wide, and narrower at the chin than at the eyes.
-    -- Both are what stopped it reading as a fishbowl, and neither survives
-    -- somebody tuning one number without looking.
-    check("it stands taller than it is wide", shell.h > shell.w * 1.05,
-          string.format("%.2f wide by %.2f high", shell.w, shell.h))
-    local widest, chin = 0, 0
-    for _, pt in ipairs(shell.pts) do
-        local dx = math.abs(pt[1] - shell.cx)
-        widest = math.max(widest, dx)
-        -- The bottom fifth, which is the chin.
-        if pt[2] > shell.y1 - shell.h * 0.2 then chin = math.max(chin, dx) end
-    end
-    check("and draws in below the eyes", chin < widest * 0.75,
-          string.format("chin %.2f against %.2f at the widest", chin, widest))
-
-    -- The visor: one pane, walked as a strip of quads so that both its edges
-    -- can bow. A fan would be fewer triangles and is what this drew until the
-    -- top edge learned to bend, at which point the fan filled the bend back
-    -- in, so the shape being a strip is itself worth pinning.
-    local band = {}
+    -- Three feathers to a side, arriving apart. Both halves of that matter
+    -- and the second is the one that walks: the gaps between the tips are
+    -- what makes this wings rather than one blunt spread, and two feathers
+    -- whose ends land within a stroke of each other have merged into one
+    -- however far apart they started. Measured between neighbors rather than
+    -- across the set, since a pair can close while the third holds the span
+    -- open.
+    local tips = {}
     for _, sh in ipairs(parts) do
-        if sh.kind == "quad" then band[#band + 1] = sh end
+        if sh.kind == "seg" and sh.round then
+            local ty = sh.bx > sh.ax and sh.by or sh.ay
+            local tx = sh.bx > sh.ax and sh.bx or sh.ax
+            if tx > wing.cx then tips[#tips + 1] = ty end
+        end
     end
-    check("the person wears a visor", #band >= 4,
-          #band .. " slices of pane")
-    if #band >= 4 then
-        local lo, hi = math.huge, -math.huge
-        for _, sh in ipairs(band) do
-            lo, hi = math.min(lo, sh.x0), math.max(hi, sh.x1)
-        end
-        local span = hi - lo
-        -- Both edges bow the same way, and by different amounts. The top
-        -- bends down under the brow and the bottom sags further, which is
-        -- what a pane wrapped round a head does. Ruled flat, as it was, it
-        -- read as a line drawn on a face rather than as glass set in a shell.
-        local mid_top, end_top = -math.huge, math.huge
-        local mid_bot, end_bot = -math.huge, math.huge
-        for _, sh in ipairs(band) do
-            local t = ((sh.x0 + sh.x1) / 2 - lo) / span
-            if t > 0.35 and t < 0.65 then
-                mid_top = math.max(mid_top, sh.y0)
-                mid_bot = math.max(mid_bot, sh.y1)
-            end
-            if t < 0.1 or t > 0.9 then
-                end_top = math.min(end_top, sh.y0)
-                end_bot = math.min(end_bot, sh.y1)
-            end
-        end
-        check("its top bends down at the middle",
-              mid_top - end_top > shell.h * 0.02,
-              string.format("%.3f of its own height",
-                            (mid_top - end_top) / shell.h))
-        check("and its bottom sags further",
-              mid_bot - end_bot > mid_top - end_top,
-              string.format("%.3f against %.3f of its height",
-                            (mid_bot - end_bot) / shell.h,
-                            (mid_top - end_top) / shell.h))
+    check("and carries three feathers a side", #tips == 3,
+          #tips .. " tips down one side")
+    if #tips == 3 then
+        table.sort(tips)
+        local gap = math.min(tips[2] - tips[1], tips[3] - tips[2])
+        check("with none of them arriving on top of another",
+              gap > heaviest * 1.2,
+              string.format("%.2f between the closest pair, on a %.2f line",
+                            gap, heaviest))
+    end
 
-        -- Held inside the shell. Measured against the shell's own outline at
-        -- the pane's height rather than against a radius, since there is no
-        -- one circle to measure from any more.
-        local function shell_half(y)
-            local best = 0
-            for _, pt in ipairs(shell.pts) do
-                if math.abs(pt[2] - y) < shell.h * 0.08 then
-                    best = math.max(best, math.abs(pt[1] - shell.cx))
-                end
-            end
-            return best
-        end
-        local worst = 0
-        for _, sh in ipairs(band) do
-            for _, x in ipairs({sh.x0, sh.x1}) do
-                for _, y in ipairs({sh.y0, sh.y1}) do
-                    local half = shell_half(y)
-                    if half > 0 then
-                        worst = math.max(worst, math.abs(x - shell.cx) / half)
-                    end
-                end
-            end
-        end
-        check("and stays inside the shell", worst < 1.02,
-              string.format("reaches %.3f of the shell's own width", worst))
+    -- Nothing closed anywhere near it. The helmets this replaced were a shell
+    -- apiece and the whole point of badges is that neither mark is a head, so
+    -- a closed run turning up around the person's middle is one come back.
+    local shells = 0
+    for _, sh in ipairs(parts) do
+        if sh.kind == "outline" and sh.closed then shells = shells + 1 end
     end
+    check("and wears no shell", shells == 0, shells .. " closed runs on it")
 end
 
--- --- the machine is square -------------------------------------------------
+-- --- the machine is a package ----------------------------------------------
 
 -- The scoreboard and the nameplates answer the same question with the same
 -- pair of marks. This room has a human pilot and a bot, with the bot's hull on
--- screen. The PLAYERS chip used to carry a standing pair of its own and be a
--- third answer; the band that replaced it carries a score and a clock, and
--- says who is in the room by opening the list that names them.
+-- screen.
 ui.details = true
 local board_frame = frame(function()
     ui.hud({
@@ -396,12 +404,41 @@ local board_frame = frame(function()
     })
 end)
 ui.details = false
-local board = boxes(board_frame)
-check("the scoreboard and the nameplate box the bot", #board == 2,
-      #board .. " boxes beside one bot")
-check("the scoreboard marks the human pilot",
-      #crowns(board_frame) == 1,
-      #crowns(board_frame) .. " round helmets beside one human pilot")
+local board = chips(board_frame)
+check("the scoreboard and the nameplate chip the bot", #board == 2,
+      #board .. " chips beside one bot")
+check("the scoreboard wings the human pilot",
+      #wings(board_frame) == 1,
+      #wings(board_frame) .. " pairs of wings beside one human pilot")
+
+if board[1] then
+    local chip = board[1]
+    local side, reach = legs(board_frame, chip)
+    -- A fringe on all four sides. Two tabs on two sides is a connector; what
+    -- reads as silicon at eleven points is little runs coming out of the
+    -- package wherever you look at it.
+    check("the chip wears legs on all four sides",
+          side.left == 2 and side.right == 2
+          and side.top == 2 and side.bottom == 2,
+          string.format("%d left, %d right, %d top, %d bottom",
+                        side.left, side.right, side.top, side.bottom))
+    -- And they stop where the mark stops. The legs are the outermost thing
+    -- drawn, so what a caller is handed as the width has to cover them: a
+    -- package measured without its legs is a mark that runs into the name
+    -- beside it.
+    check("and they reach the edge of the mark it reports",
+          reach > chip.w / 2, string.format("%.2f against a %.2f package",
+                                            reach, chip.w))
+    -- The core, which is what keeps the package from reading as a button.
+    local cores = 0
+    for _, sh in ipairs(near(board_frame, chip.cx, chip.cy, chip.w / 2)) do
+        if sh.kind == "quad" and math.abs(sh.cx - chip.cx) < chip.w * 0.05
+            and math.abs(sh.cy - chip.cy) < chip.h * 0.05 then
+            cores = cores + 1
+        end
+    end
+    check("and carries a core", cores == 1, cores .. " cores in the package")
+end
 
 -- With the list shut, a human stranger's hull keeps the human mark beside its
 -- name, and it is the only mark on the frame: nothing in the chrome carries a
@@ -419,13 +456,13 @@ local human_plate = frame(function()
         zone = "chaos", fps = 60, frame_ms = 16, rx_rate = 0, tx_rate = 0,
     })
 end)
-check("a human nameplate wears the pilot helmet", #crowns(human_plate) == 1,
-      #crowns(human_plate) .. " helmets for one nameplate")
+check("a human nameplate wears the pilot's wings", #wings(human_plate) == 1,
+      #wings(human_plate) .. " pairs for one nameplate")
 
--- A kill line marks nobody. It names two pilots in words, and hanging a
--- helmet and a machine on them says the same thing twice in the one panel
--- whose argument is that short lines need no chrome. With the roster shut and
--- no chip in the corner, that leaves no marks on the frame at all.
+-- A kill line marks nobody. It names two pilots in words, and hanging a badge
+-- on each says the same thing twice in the one panel whose argument is that
+-- short lines need no chrome. With the roster shut and no chip in the corner,
+-- that leaves no marks on the frame at all.
 local kill_frame = frame(function()
     ui.hud({
         me = 0, class_names = {"Apex"}, menu_open = false,
@@ -441,10 +478,10 @@ local kill_frame = frame(function()
         zone = "chaos", fps = 60, frame_ms = 16, rx_rate = 0, tx_rate = 0,
     })
 end)
-check("a kill line hangs no helmet on its human", #crowns(kill_frame) == 0,
-      #crowns(kill_frame) .. " helmets, wanted none")
-check("and none on its bot", #boxes(kill_frame) == 0,
-      #boxes(kill_frame) .. " bot marks, wanted none")
+check("a kill line hangs no wings on its human", #wings(kill_frame) == 0,
+      #wings(kill_frame) .. " pairs, wanted none")
+check("and no chip on its bot", #chips(kill_frame) == 0,
+      #chips(kill_frame) .. " chips, wanted none")
 
 -- The line still measures and right-aligns off its words alone, which is what
 -- the marks used to be folded into. A name keeps its own capitals.
@@ -459,95 +496,54 @@ check("the kill line still draws both names",
 check("and sets them on one line",
       human_text and bot_text and math.abs(human_text.y - bot_text.y) < 0.01)
 
--- The antenna is what the machine says with nothing beside it, so it has to
--- reach above the crown, and the person must not.
---
--- Measured against the mark rather than against the frame. An earlier cut
--- looked for the highest thing drawn anywhere and found the top of the
--- screen, so deleting the antenna outright still passed.
-local function over(list, cx, top, r)
-    local best = top
-    for _, sh in ipairs(near(list, cx, top + r, r)) do
-        if sh.x1 > cx - r * 0.3 and sh.x0 < cx + r * 0.3
-            and not (horizontal(sh) and math.abs(sh.ay - top) < 0.01) then
-            best = math.min(best, sh.y0)
-        end
-    end
-    return (top - best) / r
-end
-
-local machine_over = board[1]
-    and over(board_frame, board[1].cx, board[1].top, board[1].w / 2)
-check("the bot's antenna stands above its crown",
-      machine_over and machine_over > 0.1,
-      string.format("%.3f of a half width above", machine_over or 0))
-
-local person_over = rail_only[1]
-    and over(rail_frame, rail_only[1].cx, rail_only[1].y0,
-             rail_only[1].h / 2)
-check("and the pilot puts nothing above hers",
-      person_over and person_over < 0.02,
-      string.format("%.3f of a half height above", person_over or 0))
-
 -- --- and the pair sits level -----------------------------------------------
 
--- What is left of the family after the shells stopped matching. A row that
--- reads as one question needs the two answers on one line, at one size, on
--- one collar: shape carries the meaning, but position is what makes them a
--- pair rather than two pictures that happen to be adjacent.
+-- What makes the two a family, now that neither is a head. A row that reads as
+-- one question needs the two answers at one size on one line: shape carries
+-- the meaning, but position is what makes them a pair rather than two
+-- pictures that happen to be adjacent.
 local list_frame = room_frame(true)
-local listed_round = added(crowns)
-local listed_square = added(boxes)
-check("the rooms list counts people with a helmet, not a dot",
-      #listed_round == 1, #listed_round .. " helmets against 1 expected")
-check("and counts machines with a box", #listed_square == 1,
-      #listed_square .. " boxes in the row")
+local listed_wings = added(wings)
+local listed_chips = added(chips)
+check("the rooms list counts people with wings, not a dot",
+      #listed_wings == 1, #listed_wings .. " pairs against 1 expected")
+check("and counts machines with a chip", #listed_chips == 1,
+      #listed_chips .. " chips in the row")
 
-if #listed_round == 1 and #listed_square == 1 then
-    local person = listed_round[1]
-    local machine = listed_square[1]
-    -- One height, not one width. The person's shell is drawn narrower than
-    -- its box on purpose, which is what stopped it reading as a fishbowl, so
-    -- the two no longer measure the same across. What still has to hold is
-    -- that they stand the same tall, because a pair at two sizes reads as two
-    -- pictures that happen to be adjacent.
-    --
-    -- Read off the two ends rather than off a height, since the machine's
-    -- sides butt half a line under its own crown so that four capped strokes
-    -- do not light four corners, and a height measured through them comes out
-    -- half a line short of the box the mark actually fills.
-    check("the pair in the row is drawn to one crown",
-          person and math.abs(person.y0 - machine.top) < 0.51,
-          person and string.format("%.2f against %.2f", person.y0,
-                                   machine.top) or "no row helmet")
-    -- And on one line. The machine still stands on a collar and the person
-    -- closes on a chin, so what is compared is the bottom of each: the line
-    -- they are both drawn down to, whatever they do when they get there.
-    local my
-    for _, sh in ipairs(near(list_frame, machine.cx,
-                             machine.top + machine.h / 2, machine.w / 2)) do
-        if collar_of(sh, machine.w / 2) and sh.ay > machine.top then
-            my = math.max(my or -math.huge, sh.ay)
-        end
-    end
-    check("and they stand on one line", person and my
-          and math.abs(person.y1 - my) < 0.51,
-          string.format("%.2f against %.2f", person and person.y1 or -1,
-                        my or -1))
+if #listed_wings == 1 and #listed_chips == 1 then
+    local person = listed_wings[1]
+    local machine = listed_chips[1]
+    -- One width. Both marks are cut to the width their caller is handed, and
+    -- that is the number the row lays itself out against: the wings are
+    -- measured tip to tip and the chip across its legs, which is why the
+    -- fringe had to reach the edge above.
+    local _, machine_reach = legs(list_frame, machine)
+    local machine_w = machine_reach * 2
+    check("the pair in the row is cut to one width",
+          math.abs(person.w - machine_w) < person.w * 0.06,
+          string.format("%.2f of wing against %.2f of chip", person.w,
+                        machine_w))
+    -- And on one line. Neither stands on anything now, so what is compared is
+    -- the middle each is drawn around rather than a foot they share.
+    check("and drawn around one line",
+          math.abs(person.cy - machine.cy) < 0.51,
+          string.format("%.2f against %.2f", person.cy, machine.cy))
 end
 
 -- --- and the ship page draws it in the page's line ------------------------
 
 -- The ship page is a grid of hulls with one cell that is not a hull: the one
--- about flying nothing, which draws the helmet instead. Every hull in that
--- grid is outlined in one width held against the screen, so a row of eight
--- ships at one size is drawn in one weight whatever each of them measures.
+-- about flying nothing, which draws the pilot instead. Every hull in that grid
+-- is outlined in one width held against the screen, so a row of eight ships at
+-- one size is drawn in one weight whatever each of them measures.
 --
--- The helmet was the only figure there working its weight out from its own
--- size, which at the cell's scale came out at twice the ships beside it. This
--- is the same defect the rail had and it has to be checked separately,
--- because the two pages hold their lines to different numbers and neither
--- knows about the other.
+-- The pilot mark is the only figure there working from a pen it is handed, and
+-- it cuts that pen back to keep its feathers apart. That is right, and it is
+-- also exactly the kind of number that walks: too far under and the figure
+-- fades out of a row of ships, at the pen and the fan closes. This is the same
+-- defect the rail had and it has to be checked separately, because the two
+-- pages hold their lines to different numbers and neither knows about the
+-- other.
 local ship_frame = frame(function()
     local rows = {}
     for i = 1, 8 do
@@ -559,7 +555,7 @@ local ship_frame = frame(function()
 end)
 
 -- Everything on the stage, which is to say everything under the tabs. The tab
--- row is on this page too and wears a helmet of its own at its own line, so a
+-- row is on this page too and wears a mark of its own at its own line, so a
 -- search across the whole frame finds two of them and compares the wrong one.
 --
 -- By height rather than by width, which is what this asked before the tabs
@@ -575,26 +571,31 @@ local function on_stage(list)
 end
 
 local stage = on_stage(ship_frame)
-local helmets = crowns(stage)
-check("the ship page draws the helmet in its spectate cell", #helmets == 1,
-      #helmets .. " helmets on a page of seven hulls and one pilot")
-if helmets[1] then
-    -- The hulls are closed outlines too. They are told apart by being wider
-    -- than they are tall and by being drawn out of a handful of points, where
-    -- the helmet is a sampled curve.
-    local hull_w, helm_w
+local pairs_on_stage = wings(stage)
+check("the ship page draws the wings in its spectate cell",
+      #pairs_on_stage == 1,
+      #pairs_on_stage .. " pairs on a page of seven hulls and one pilot")
+if pairs_on_stage[1] then
+    -- The hulls are closed outlines, drawn out of a handful of points and
+    -- wider than they are tall. The feathers are struck, so what is compared
+    -- is a stroke against an outline.
+    local hull_w, feather_w
     for _, sh in ipairs(stage) do
-        if sh.kind == "outline" and sh.pts then
-            if #sh.pts < 20 and sh.x1 - sh.x0 > sh.y1 - sh.y0 then
-                hull_w = math.max(hull_w or 0, sh.w or 0)
-            elseif #sh.pts >= 20 and sh.y1 - sh.y0 > sh.x1 - sh.x0 then
-                helm_w = sh.w
-            end
+        if sh.kind == "outline" and sh.pts and #sh.pts < 12
+            and sh.x1 - sh.x0 > sh.y1 - sh.y0 then
+            hull_w = math.max(hull_w or 0, sh.w or 0)
+        end
+    end
+    for _, sh in ipairs(near(stage, pairs_on_stage[1].cx, pairs_on_stage[1].cy,
+                             pairs_on_stage[1].w / 2)) do
+        if sh.kind == "seg" and sh.round then
+            feather_w = math.max(feather_w or 0, sh.w)
         end
     end
     check("in the same line as the hulls beside it",
-          hull_w and helm_w and math.abs(hull_w - helm_w) < 0.01,
-          string.format("%.2f against %.2f", helm_w or -1, hull_w or -1))
+          hull_w and feather_w and feather_w < hull_w
+          and feather_w > hull_w * 0.7,
+          string.format("%.2f against %.2f", feather_w or -1, hull_w or -1))
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))
