@@ -398,6 +398,27 @@ local function lcg(s)
     return (s * 48271) % 2147483647
 end
 
+-- What a cell's own coordinates are worth, which is not the same question as
+-- what the generator above answers.
+--
+-- Lehmer is affine: two seeds a fixed distance apart give two values a fixed
+-- distance apart, however many times it is run. So walking a grid one cell at
+-- a time walks the output by a constant too, and `% 16` on that is a cycle
+-- sixteen cells long rather than a coin. The band's density test landed on
+-- that lattice and drew the same clump of four over and over: measured across
+-- a grid, a two by two block of cells all carrying a star came up 0.250 of the
+-- time where independent draws give 0.436.
+--
+-- Squaring breaks the line, because the cross term in (s + d) squared depends
+-- on s rather than only on d. Held to fifteen bits first so the product stays
+-- a whole number a double can carry. The same measurement over this comes to
+-- 0.440 against 0.440.
+local function cell_hash(i, j, salt)
+    local s = lcg((i * 3181 + j * 7351 + salt) % 2147483646 + 1)
+    local q = s % 46341
+    return lcg((q * q + s) % 2147483647 + 1)
+end
+
 -- Eight brightnesses per layer in four colors, made once. A star's alpha used
 -- to be a fresh {r,g,b,a} per star per frame, three hundred and fifty tables a
 -- frame and twenty thousand a second, all of them garbage, and at a pixel and
@@ -464,9 +485,9 @@ local SPARKLE_ARM = 9
 local NEBULA = {k = 0.12, cell = 720, fill = 9}
 local NEB_KNOTS = 5
 local NEB_COLS = {
-    pal.a(pal.rgb(0x2b4268), 0.075),
-    pal.a(pal.rgb(0x4a306e), 0.060),
-    pal.a(pal.rgb(0x1d4a5a), 0.068),
+    pal.a(pal.rgb(0x2c3d55), 0.055),
+    pal.a(pal.rgb(0x42315a), 0.048),
+    pal.a(pal.rgb(0x214049), 0.050),
 }
 
 -- The band: a river of fine grain and dust filaments along one diagonal of the
@@ -524,13 +545,13 @@ local DUST_JUMP = 140
 local GRAD_K = 0.04
 local GRAD_R = {2400, 2100}
 local GRAD_COLS = {
-    pal.a(pal.rgb(0x16305a), 0.15),
-    pal.a(pal.rgb(0x3a2a5e), 0.11),
-    pal.a(pal.rgb(0x143f4e), 0.13),
-    pal.a(pal.rgb(0x241d4a), 0.12),
+    pal.a(pal.rgb(0x1a2c42), 0.10),
+    pal.a(pal.rgb(0x342b46), 0.08),
+    pal.a(pal.rgb(0x1a3540), 0.09),
+    pal.a(pal.rgb(0x28243c), 0.085),
 }
 
--- Set pieces: a sun and a comet, one of each per map.
+-- Set pieces: suns and comets, however many a map turns out to have.
 --
 -- They sit at middling depth rather than out with the band, and that choice is
 -- what makes them worth having. A match room is a hundred and sixty tiles
@@ -539,14 +560,34 @@ local GRAD_COLS = {
 -- of the screen for three minutes. At these depths they arrive and leave as
 -- you fly, which is what lets a side be told to regroup under the comet.
 --
--- Both are drawn on the glow layer, additively, and both are dim. A sun that
--- competes with a bolt for attention is a bug wearing a costume, and this one
--- has the whole screen and all three minutes to be noticed in.
-local SUN = {k = 0.26, core = 10, mid = 40, wide = 118, flare = 150}
-local SUN_CORE = pal.a(pal.rgb(0xfff4e0), 0.50)
-local SUN_MID = pal.a(pal.rgb(0xffe6bc), 0.13)
-local SUN_WIDE = pal.a(pal.rgb(0xffd7a0), 0.06)
-local SUN_FLARE = pal.a(pal.rgb(0xffeac6), 0.18)
+-- Everything about them is drawn from the map's name: how many there are, and
+-- for each one its size, its color, how far out it hangs and how deep it sits.
+-- One of each per map, always the same size and always the same yellow, made
+-- every room look like the last one seen from a slightly different chair.
+-- Some maps get no sun at all, and a sky with nothing in it but stars is a
+-- fine sky.
+--
+-- All of it is drawn on the glow layer, additively, and all of it is dim. A
+-- sun that competes with a bolt for attention is a bug wearing a costume, and
+-- this one has the whole screen and all three minutes to be noticed in.
+
+-- How many of each a map gets, drawn from these. Weighted by repetition
+-- rather than by arithmetic, so the shape of the odds can be read.
+local SUN_COUNT = {0, 1, 1, 1, 1, 2}
+local COMET_COUNT = {0, 0, 1, 1, 1, 2}
+
+-- What kind of star it is. The core is what it is at its middle, the glow the
+-- skirt around that, and the wide the haze past it.
+local SUN_KINDS = {
+    {core = 0xfff4e0, glow = 0xffe6bc, wide = 0xffd7a0, flare = 0xffeac6},
+    {core = 0xeaf2ff, glow = 0xc8dcff, wide = 0xa6c6ff, flare = 0xd8e8ff},
+    {core = 0xffe6c6, glow = 0xffc98a, wide = 0xffb066, flare = 0xffd5a0},
+    {core = 0xffd9cc, glow = 0xff9d78, wide = 0xff7c50, flare = 0xffc0a4},
+}
+-- A sun this size draws at these radii, scaled per sun.
+local SUN_CORE_R, SUN_MID_R, SUN_WIDE_R, SUN_FLARE_R = 10, 40, 118, 150
+local COMET_HEAD_R, COMET_TAIL_R = 4, 280
+
 -- And the flare, which is the one thing in this file that is not out there in
 -- the world at all. A flare is what happens inside the camera when a bright
 -- light is pointed at it, so it is laid out on the screen rather than in the
@@ -602,7 +643,6 @@ local function fade_to(col, a)
     return dimmed
 end
 
-local COMET = {k = 0.40, head = 4, tail = 280}
 local COMET_HEAD = pal.a(pal.rgb(0xe4f4ff), 0.75)
 local COMET_GLOW = pal.rgb(0xbfe4ff)
 local COMET_TAIL = pal.a(pal.rgb(0x9fd4ff), 1)
@@ -672,25 +712,67 @@ function M.sky_seed(name)
     -- How far a set piece is thrown from the middle of the map, in world
     -- pixels rather than as a share of the map. What matters is where a piece
     -- lands on the screen, and that is this distance times the depth it is
-    -- drawn at, which has nothing to do with how big the room is. Both of
-    -- these put their piece a little past the edge of a laptop's view when the
-    -- camera is in the middle of the map, so you fly toward them to see them
-    -- and they are never parked over the fight.
+    -- drawn at, which has nothing to do with how big the room is.
+    sky.suns, sky.comets = {}, {}
     s = lcg(s)
-    local reach = 1900 + (s % 600)
+    local suns = SUN_COUNT[s % #SUN_COUNT + 1]
     s = lcg(s)
-    local a = s / 2147483647 * math.pi * 2
-    sky.sun_x = sky.cx + math.cos(a) * reach
-    sky.sun_y = sky.cy + math.sin(a) * reach
-    -- The comet is thrown to the far side of the middle from the sun, which
-    -- keeps the two of them out of one corner and gives the tail room to point
-    -- somewhere other than off the same edge.
-    s = lcg(s)
-    local far = 1300 + (s % 500)
-    s = lcg(s)
-    local b = a + math.pi + (s / 2147483647 - 0.5) * 1.5
-    sky.comet_x = sky.cx + math.cos(b) * far
-    sky.comet_y = sky.cy + math.sin(b) * far
+    local comets = COMET_COUNT[s % #COMET_COUNT + 1]
+
+    for n = 1, suns do
+        s = lcg(s)
+        local kind = SUN_KINDS[s % #SUN_KINDS + 1]
+        s = lcg(s)
+        -- Small and far, or big and close. A sun drawn at one size in one
+        -- place is the thing that made every map look like the last one.
+        local scale = 0.55 + (s % 1000) / 1000 * 1.15
+        s = lcg(s)
+        local k = 0.18 + (s % 1000) / 1000 * 0.16
+        s = lcg(s)
+        -- Enough of a spread that some hang at the rim and some are most of a
+        -- screen out, found by what the depth turns the distance into.
+        local reach = (420 + (s % 1000) / 1000 * 380) / k
+        s = lcg(s)
+        local a = s / 2147483647 * math.pi * 2
+        -- Brightness comes down as it grows, so a big one is a soft lamp
+        -- rather than a hole burned in the screen.
+        local lit = 1 / (0.75 + scale * 0.45)
+        sky.suns[n] = {
+            x = sky.cx + math.cos(a) * reach,
+            y = sky.cy + math.sin(a) * reach,
+            k = k, dir = a,
+            core = SUN_CORE_R * scale, mid = SUN_MID_R * scale,
+            wide = SUN_WIDE_R * scale, flare = SUN_FLARE_R * scale,
+            core_col = pal.a(pal.rgb(kind.core), 0.50 * lit),
+            mid_col = pal.a(pal.rgb(kind.glow), 0.13 * lit),
+            wide_col = pal.a(pal.rgb(kind.wide), 0.06 * lit),
+            flare_col = pal.a(pal.rgb(kind.flare), 0.18 * lit),
+            scale = scale,
+        }
+    end
+
+    for n = 1, comets do
+        s = lcg(s)
+        local scale = 0.6 + (s % 1000) / 1000 * 1.1
+        s = lcg(s)
+        local k = 0.30 + (s % 1000) / 1000 * 0.22
+        s = lcg(s)
+        local reach = (380 + (s % 1000) / 1000 * 300) / k
+        s = lcg(s)
+        local a = s / 2147483647 * math.pi * 2
+        s = lcg(s)
+        -- Which way the tail lies. A comet with no sun to be blown off has to
+        -- be given a bearing of its own, and one with a sun still keeps a
+        -- little of its own, since a tail is not a shadow.
+        local blown = s / 2147483647 * math.pi * 2
+        sky.comets[n] = {
+            x = sky.cx + math.cos(a) * reach,
+            y = sky.cy + math.sin(a) * reach,
+            k = k,
+            head = COMET_HEAD_R * scale, tail = COMET_TAIL_R * scale,
+            blown = blown,
+        }
+    end
 end
 
 -- What a star costs where it is drawn: a rect on the fill layer, and on the
@@ -812,11 +894,20 @@ function M.star_cost(hw, hh)
     local nd = cell_count(hw, hh, DUST.cell)
     f = f + nd * STAR_VERTS
     g = g + nd * SEG_VERTS
-    -- The sun and the comet, which cost the same wherever the camera is, and
-    -- the flare's ghosts, priced as drawn: a ring is a quad a blade, a filled
-    -- one a triangle.
-    g = g + HALO_VERTS + 2 * WIDE_VERTS + 4 * SEG_VERTS
-    g = g + HALO_VERTS + BLOOM_VERTS + 2 * SEG_VERTS
+    -- The set pieces, which cost the same wherever the camera is, priced at
+    -- the most any map can be dealt rather than at what this one got: a
+    -- capacity is a property of the window and cannot be re-derived every time
+    -- a room changes. Then the flare's ghosts, priced as drawn, a ring being a
+    -- quad a blade and a filled one a triangle.
+    local most_suns, most_comets = 0, 0
+    for i = 1, #SUN_COUNT do
+        if SUN_COUNT[i] > most_suns then most_suns = SUN_COUNT[i] end
+    end
+    for i = 1, #COMET_COUNT do
+        if COMET_COUNT[i] > most_comets then most_comets = COMET_COUNT[i] end
+    end
+    g = g + most_suns * (HALO_VERTS + 2 * WIDE_VERTS + 4 * SEG_VERTS)
+    g = g + most_comets * (HALO_VERTS + BLOOM_VERTS + 2 * SEG_VERTS)
     for i = 1, #FLARE do
         g = g + (FLARE[i].w and IRIS_SEGS * 6 or IRIS_SEGS * 3)
     end
@@ -890,7 +981,7 @@ function M.stars(fill, glow, cam_x, cam_y, hw, hh)
         local bx, by = cam_x * L.k, cam_y * L.k
         for j = math.floor((by - hh) / c), math.floor((by + hh) / c) do
             for i = math.floor((bx - hw) / c), math.floor((bx + hw) / c) do
-                local s = lcg((i * 7907 + j * 15551 + 977) % 2147483646 + 1)
+                local s = cell_hash(i, j, 977)
                 if s % 16 < L.fill then
                     s = lcg(s)
                     local px = (i + s / 2147483647) * c + ox
@@ -943,7 +1034,7 @@ function M.stars(fill, glow, cam_x, cam_y, hw, hh)
                         + (j * c + c * 0.5 + oy - ay) * ny
                 if d < 0 then d = -d end
                 if d < edge then
-                    local s = lcg((i * 5323 + j * 12889 + 431) % 2147483646 + 1)
+                    local s = cell_hash(i, j, 431)
                     if s % 16 < L.fill then
                         s = lcg(s)
                         local px = (i + s / 2147483647) * c + ox
@@ -985,8 +1076,7 @@ function M.stars(fill, glow, cam_x, cam_y, hw, hh)
                     -- shades, which is what keeps the edge from being an edge.
                     local top = math.floor(w * STAR_SHADES)
                     if top >= 1 then
-                        local s = lcg((i * 3181 + j * 7351 + 89)
-                                      % 2147483646 + 1)
+                        local s = cell_hash(i, j, 89)
                         if s % 16 < L.fill * w then
                             s = lcg(s)
                             local px = (i + s / 2147483647) * c + ox
@@ -1004,53 +1094,79 @@ function M.stars(fill, glow, cam_x, cam_y, hw, hh)
 
     -- The sun and the comet. Both are anchored in the map and drawn at their
     -- own depth, so a hull flying toward one closes on it.
-    local sx = sky.sun_x * SUN.k + cam_x * (1 - SUN.k)
-    local sy = sky.sun_y * SUN.k + cam_y * (1 - SUN.k)
-    local cx = sky.comet_x * COMET.k + cam_x * (1 - COMET.k)
-    local cy = sky.comet_y * COMET.k + cam_y * (1 - COMET.k)
-    glow:halo(sx, sy, SUN.core, HALO_SEGS, SUN_CORE)
-    glow:halo(sx, sy, SUN.mid, WIDE_SEGS, SUN_MID)
-    glow:halo(sx, sy, SUN.wide, WIDE_SEGS, SUN_WIDE)
-    local fl = SUN.flare
-    glow:seg_fade(sx - fl, sy, sx, sy, 0.5, 2.0, 0, 0.5, SUN_FLARE)
-    glow:seg_fade(sx + fl, sy, sx, sy, 0.5, 2.0, 0, 0.5, SUN_FLARE)
-    glow:seg_fade(sx, sy - fl * 0.42, sx, sy, 0.5, 1.5, 0, 0.36, SUN_FLARE)
-    glow:seg_fade(sx, sy + fl * 0.42, sx, sy, 0.5, 1.5, 0, 0.36, SUN_FLARE)
-    -- The ghosts, down the line from the sun through the middle of the view.
-    -- How far outside the view the sun has gone, in half extents, which is
-    -- what the flare fades on.
-    local ex = math.abs(sx - cam_x) / hw
-    local ey = math.abs(sy - cam_y) / hh
-    local edge = ex > ey and ex or ey
-    local vis = (FLARE_OUT - edge) / (FLARE_OUT - FLARE_IN)
-    if vis > 1 then vis = 1 end
-    if vis > 0 then
-        local gx, gy = cam_x - sx, cam_y - sy
-        for i = 1, #FLARE do
-            local F = FLARE[i]
-            local px, py = sx + gx * F.t, sy + gy * F.t
-            local col = fade_to(F.col, F.col[4] * vis)
-            if F.w then
-                glow:ring(px, py, F.r, F.w, IRIS_SEGS, col)
-            else
-                glow:halo(px, py, F.r, IRIS_SEGS, col)
+    -- The suns, then the flare the brightest of them throws, then the comets.
+    local lead_x, lead_y, lead_col, lead_wide
+    for n = 1, #sky.suns do
+        local S = sky.suns[n]
+        local px = S.x * S.k + cam_x * (1 - S.k)
+        local py = S.y * S.k + cam_y * (1 - S.k)
+        glow:halo(px, py, S.core, HALO_SEGS, S.core_col)
+        glow:halo(px, py, S.mid, WIDE_SEGS, S.mid_col)
+        glow:halo(px, py, S.wide, WIDE_SEGS, S.wide_col)
+        local fl = S.flare
+        glow:seg_fade(px - fl, py, px, py, 0.5, 2.0, 0, 0.5, S.flare_col)
+        glow:seg_fade(px + fl, py, px, py, 0.5, 2.0, 0, 0.5, S.flare_col)
+        glow:seg_fade(px, py - fl * 0.42, px, py, 0.5, 1.5, 0, 0.36, S.flare_col)
+        glow:seg_fade(px, py + fl * 0.42, px, py, 0.5, 1.5, 0, 0.36, S.flare_col)
+        -- Only one of them throws ghosts. Two chains crossing the same frame
+        -- is a hall of mirrors rather than a lens.
+        if not lead_wide or S.scale > lead_wide then
+            lead_x, lead_y, lead_wide = px, py, S.scale
+            lead_col = S.flare_col
+        end
+    end
+
+    if lead_x then
+        -- The ghosts, down the line from the sun through the middle of the
+        -- view. How far outside the view the sun has gone, in half extents,
+        -- which is what the flare fades on.
+        local ex = math.abs(lead_x - cam_x) / hw
+        local ey = math.abs(lead_y - cam_y) / hh
+        local edge = ex > ey and ex or ey
+        local vis = (FLARE_OUT - edge) / (FLARE_OUT - FLARE_IN)
+        if vis > 1 then vis = 1 end
+        if vis > 0 then
+            local gx, gy = cam_x - lead_x, cam_y - lead_y
+            for i = 1, #FLARE do
+                local F = FLARE[i]
+                local px, py = lead_x + gx * F.t, lead_y + gy * F.t
+                -- The aperture sits on the sun and is read against it, so
+                -- it takes that sun's own light. The rest of the chain keeps
+                -- the coatings' warm-then-cool split.
+                local from = (i == 1 and lead_col) or F.col
+                local col = fade_to(from, F.col[4] * vis)
+                if F.w then
+                    glow:ring(px, py, F.r, F.w, IRIS_SEGS, col)
+                else
+                    glow:halo(px, py, F.r, IRIS_SEGS, col)
+                end
             end
         end
     end
-    -- A tail is blown off a sun, so it is drawn away from this one rather than
-    -- along any course of the comet's own. The two sit at different depths and
-    -- drift against each other, which means the angle is worth recomputing
-    -- every frame rather than seeding once.
-    local dx, dy = cx - sx, cy - sy
-    local d = math.sqrt(dx * dx + dy * dy)
-    if d < 1 then d = 1 end
-    dx, dy = dx / d, dy / d
-    glow:halo(cx, cy, COMET.head, HALO_SEGS, COMET_HEAD)
-    glow:bloom(cx, cy, 20, 0.28, COMET_GLOW)
-    glow:seg_fade(cx + dx * COMET.tail, cy + dy * COMET.tail, cx, cy,
-                  1, 8, 0, 0.12, COMET_TAIL)
-    glow:seg_fade(cx + dx * COMET.tail * 0.62, cy + dy * COMET.tail * 0.62,
-                  cx, cy, 0.5, 3, 0, 0.3, COMET_CORE)
+
+    for n = 1, #sky.comets do
+        local C = sky.comets[n]
+        local px = C.x * C.k + cam_x * (1 - C.k)
+        local py = C.y * C.k + cam_y * (1 - C.k)
+        -- A tail is blown off a sun, so it lies away from the nearest one
+        -- rather than along any course of the comet's own. With no sun in the
+        -- sky it keeps the bearing it was seeded with. The two sit at
+        -- different depths and drift against each other, which means the
+        -- angle is worth recomputing every frame rather than seeding once.
+        local dx, dy = math.cos(C.blown), math.sin(C.blown)
+        if lead_x then
+            dx, dy = px - lead_x, py - lead_y
+            local d = math.sqrt(dx * dx + dy * dy)
+            if d < 1 then d = 1 end
+            dx, dy = dx / d, dy / d
+        end
+        glow:halo(px, py, C.head, HALO_SEGS, COMET_HEAD)
+        glow:bloom(px, py, 20, 0.28, COMET_GLOW)
+        glow:seg_fade(px + dx * C.tail, py + dy * C.tail, px, py,
+                      1, 8, 0, 0.12, COMET_TAIL)
+        glow:seg_fade(px + dx * C.tail * 0.62, py + dy * C.tail * 0.62,
+                      px, py, 0.5, 3, 0, 0.3, COMET_CORE)
+    end
 
     for li = 1, #STARS do
         local L = STARS[li]
@@ -1065,7 +1181,7 @@ function M.stars(fill, glow, cam_x, cam_y, hw, hh)
         local bloom = L.k > 0.5 and L.bloom or nil
         for j = j0, j1 do
             for i = i0, i1 do
-                local s = lcg((i * 1973 + j * 9277 + li * 26699) % 2147483646 + 1)
+                local s = cell_hash(i, j, li * 26699)
                 if s % 16 < L.fill then
                     s = lcg(s)
                     local px = (i + s / 2147483647) * c + ox
@@ -1114,7 +1230,7 @@ function M.stars(fill, glow, cam_x, cam_y, hw, hh)
         local size = L.size
         for j = math.floor((by - hh) / c), math.floor((by + hh) / c) do
             for i = math.floor((bx - hw) / c), math.floor((bx + hw) / c) do
-                local s = lcg((i * 6199 + j * 10711 + 3517) % 2147483646 + 1)
+                local s = cell_hash(i, j, 3517)
                 if s % 16 < L.fill then
                     s = lcg(s)
                     local px = (i + s / 2147483647) * c + ox
