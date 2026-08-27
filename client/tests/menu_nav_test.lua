@@ -2987,7 +2987,7 @@ do
     -- already taught its owner to look. A stop appended after it walks that
     -- back without anybody deciding to, which is how it ended up fourth of
     -- five in the first place: `pilot` was tacked on the end of a row that
-    -- already finished with settings. See decision 81.
+    -- already finished with settings. See decision 83.
     for _, state in ipairs({{home = true, watching = false},
                             {home = false, watching = false},
                             {home = false, watching = true}}) do

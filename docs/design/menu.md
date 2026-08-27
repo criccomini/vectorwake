@@ -11,7 +11,7 @@
 > altogether, inside the account page. Ours cannot do the second: `pilot` is
 > off the row a match gets, and settings is the only route to sound and
 > fullscreen on a phone mid-match. See
-> [decision 81](../architecture/decisions.md).
+> [decision 83](../architecture/decisions.md).
 
 > **The x and the call sign are a row of their own.** The two controls on the
 > drawer's top line are the head, and the arrows reach them by pressing up off

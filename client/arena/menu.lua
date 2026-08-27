@@ -1866,7 +1866,7 @@ local NODES = {
         -- phone's own tab bars put it when they carry one at all. It is the
         -- least pressed stop here and the only one that is not part of the
         -- game, so it takes the end of the row and the stop that varies with
-        -- where you are standing takes the slot before it. See decision 81.
+        -- where you are standing takes the slot before it. See decision 83.
         rows[#rows + 1] = {label = "settings", icon = "settings",
                            go = "settings"}
         return rows
