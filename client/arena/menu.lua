@@ -1656,14 +1656,11 @@ end
 
 -- The games the directory is offering, one to a row.
 --
--- Two columns only, so what a row says is its name and how busy it is, and the
--- sentence about what the game actually is goes under the name as a note. Both
--- on one line was tried: "everybody against everybody" beside "3 playing, 5
--- AI" is 45 characters against the 40 a phone has room for, and the count is
--- what decides while the description is what explains. It sat at the foot of
--- the panel for a while as well, a long way from the name it belonged to,
--- which made choosing between three games into reading three sentences one at
--- a time.
+-- A name and the format strip under it, and nothing else. Each game carried a
+-- sentence saying what it was as well, which is the line every one of these
+-- rows had before the strip existed: with TEAMS, TIME and SCORING stating the
+-- format underneath, the sentence was a second answer to a question already
+-- answered, and it was the half nobody had to read.
 local function play_rows()
     local rows = {}
     for i, r in ipairs(directory.rows) do
@@ -1678,24 +1675,19 @@ local function play_rows()
             -- the list, and it wears the dial that is looking for one rather
             -- than a sentence saying nobody is.
             waiting = not r.live,
-            -- What the game is, under its own name rather than at the foot of
-            -- the panel. Choosing between three games is reading three
-            -- sentences; one at a time, a long way from the name it belongs
-            -- to, is not reading them.
-            note = r.detail,
             -- No count and no meter. How many people and how many machines
             -- are in a room is a fact about the next thirty seconds rather
-            -- than about which game to pick, and the row is a name and the
-            -- sentence that says what the game is.
+            -- than about which game to pick, and the row is the game's name
+            -- and the format it is played in.
             live = r.live,
             act = "join", value = i,
         }
-        -- The format strip: label-over-value stacks under the sentence,
-        -- reading what the catalog states about the game rather than
-        -- anything this client knows. Only the stacks the directory sent,
-        -- in a fixed order, so two games read down the same columns; a
-        -- directory from before the strip sends none and the row stays the
-        -- name and the sentence. See docs/design/menu.md.
+        -- The format strip: label-over-value stacks under the name, reading
+        -- what the catalog states about the game rather than anything this
+        -- client knows. Only the stacks the directory sent, in a fixed
+        -- order, so two games read down the same columns; a directory from
+        -- before the strip sends none and the row is its name alone. See
+        -- docs/design/menu.md.
         local specs = {}
         for _, s in ipairs({{"teams", r.teams}, {"time", r.time},
                             {"scoring", r.scoring}}) do
@@ -2299,7 +2291,7 @@ local function view_row(r, i)
         label = r.label, detail = d, note = r.note, help = r.help,
         waiting = r.waiting,
         -- The format strip a games row carries: label-value stacks, drawn
-        -- under the sentence. See `play_rows`.
+        -- under the name. See `play_rows`.
         specs = r.specs,
         -- Whether this row's value is a string to be quoted rather than a
         -- word to be said, and whether its label is somebody's name. See the

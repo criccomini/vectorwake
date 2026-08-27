@@ -113,7 +113,6 @@ pub struct BrowseZone {
     /// one wants and what an older directory sends.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub label: String,
-    pub description: String,
     /// The format strip, as the words a games list draws under TEAMS, TIME
     /// and SCORING: "4 v 4", "3:00", "kills". Stated by the catalog and
     /// derived there (`ZoneDef::format`), so a client reads the format
@@ -231,7 +230,6 @@ impl Directory {
                     let maps = self.published.zone(n).unwrap_or_else(|| c.map_bytes(n));
                     Some(fleet::WireZone {
                         name: n.clone(),
-                        description: z.description.clone(),
                         mode: z.mode.clone(),
                         max_ships: z.max_ships.unwrap_or(64),
                         max_players: z.max_players() as u32,
@@ -352,7 +350,6 @@ impl Directory {
                 BrowseZone {
                     name: n.clone(),
                     label: z.map(|z| z.label(n).to_string()).unwrap_or_default(),
-                    description: z.map(|z| z.description.clone()).unwrap_or_default(),
                     teams,
                     time,
                     scoring,
@@ -1339,9 +1336,9 @@ mod tests {
 
     #[test]
     fn browse_carries_the_format_the_catalog_states() {
-        // The strip rides beside label and description, from the same
-        // place: the zone's own declaration. The client reads it rather
-        // than knowing it, so what travels is the words themselves.
+        // The strip rides beside the label, from the same place: the
+        // zone's own declaration. The client reads it rather than
+        // knowing it, so what travels is the words themselves.
         let mut c = cat();
         {
             let z = c.zones.get_mut("chaos").unwrap();

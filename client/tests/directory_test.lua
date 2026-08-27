@@ -63,7 +63,7 @@ _G.json = {
         local zones = {}
         for name in s:gmatch("[%a]+") do
             zones[#zones + 1] = {
-                name = name, description = name .. " zone", players = 2,
+                name = name, players = 2,
                 bots = 40, instances = {{address = "wss://x/" .. name}},
             }
         end
@@ -260,7 +260,7 @@ check("and that it is still trying",
       "line: " .. tostring(view.empty and view.empty.line))
 
 -- And a page with games on it has nothing to explain.
-dir.rows = {{zone = "chaos", name = "chaos", detail = "a brawl", count = "",
+dir.rows = {{zone = "chaos", name = "chaos", count = "",
              players = 0, bots = 0, live = true}}
 check("a list with games in it says nothing", menu.view().empty == nil,
       tostring(menu.view().empty))
@@ -270,7 +270,7 @@ check("a list with games in it says nothing", menu.view().empty == nil,
 -- still has to be right about is the row: a zone whose one room is waiting on
 -- a rival is marked waiting, which is what the list draws a dial on.
 _G.NEXT_REPLY = {zones = {{
-    name = "ladder", description = "one life", players = 1, bots = 0,
+    name = "ladder", players = 1, bots = 0,
     instances = {{address = "wss://x/ladder", rooms = {
         {number = 1, players = 1, bots = 0, full = false,
          clock = 0, playing = false, waiting = true},
@@ -292,7 +292,7 @@ check("a room with no rival in it is marked waiting",
 -- said out loud.
 
 _G.NEXT_REPLY = {zones = {{
-    name = "pit", description = "rooms",
+    name = "pit",
     players = 6, bots = 0,
     instances = {
         -- Fullest first, which is the order a directory sends and deliberately
@@ -325,7 +325,7 @@ check("and what the server said about it",
 -- A zone whose processes hold one room each has no list. A list of the room
 -- you are already in is a list of one thing you cannot leave for.
 _G.NEXT_REPLY = {zones = {{
-    name = "solo", description = "one room", players = 1, bots = 0,
+    name = "solo", players = 1, bots = 0,
     instances = {{address = "wss://x/a1", rooms = {
         {number = 1, players = 1, bots = 0, full = false},
     }}},
@@ -337,7 +337,7 @@ check("one room in the whole zone is not a list",
 
 -- And the fleet as it stands today, which sends no rooms at all.
 _G.NEXT_REPLY = {zones = {{
-    name = "old", description = "no rooms key", players = 0, bots = 0,
+    name = "old", players = 0, bots = 0,
     instances = {{address = "wss://x/a1"}},
 }}}
 message(last(), "ignored")
@@ -350,7 +350,7 @@ check("a directory that says nothing about rooms is not an error",
 -- then keep the counts it had at that moment for the life of the process,
 -- reasking every three seconds and throwing on every answer.
 _G.NEXT_REPLY = {zones = {{
-    name = "torn", description = "a room with no number", players = 2, bots = 0,
+    name = "torn", players = 2, bots = 0,
     instances = {{address = "wss://x/a1", rooms = {
         {number = 1, players = 1, bots = 0},
         {players = 1, bots = 0},
@@ -369,13 +369,13 @@ check("and the rooms that were numbered are still listed",
 -- --- the format strip -------------------------------------------------------
 --
 -- The words a row's stacks say under TEAMS, TIME and SCORING travel on the
--- reply beside the label and the description, in the catalog's own words. The
--- client lays them out and never derives one, so what matters here is that
--- they land on the row verbatim and that a directory from before the strip
--- leaves the row without one.
+-- reply beside the label, in the catalog's own words. The client lays them
+-- out and never derives one, so what matters here is that they land on the
+-- row verbatim and that a directory from before the strip leaves the row
+-- without one.
 
 _G.NEXT_REPLY = {zones = {{
-    name = "melee", label = "Team Battle", description = "the bounty line",
+    name = "melee", label = "Team Battle",
     teams = "4 v 4", time = "3:00", scoring = "kills",
     players = 3, bots = 5, instances = {{address = "wss://x/m"}},
 }}}
@@ -394,10 +394,27 @@ check("and the play page reads it as stacks, in a fixed order",
       and played[1].specs[3][2] == "kills",
       tostring(played[1] and played[1].specs and #played[1].specs))
 
--- A directory that says nothing about a format is the fleet from before the
--- strip, and the row is the name and the sentence, as it was.
+-- A game is its name and its format now, and a directory still sending the
+-- sentence that used to sit between them is a fleet that has not been
+-- published yet. The row drops it rather than drawing what the catalog no
+-- longer states.
 _G.NEXT_REPLY = {zones = {{
-    name = "old", description = "no strip", players = 0, bots = 0,
+    name = "melee", label = "Team Battle",
+    description = "the longer your run, the bigger the bounty on you",
+    teams = "4 v 4", time = "3:00", scoring = "kills",
+    players = 3, bots = 5, instances = {{address = "wss://x/m"}},
+}}}
+message(last(), "ignored")
+menu.show("play")
+local said = menu.view().rows[1]
+check("a row says nothing about the game beyond its name and its format",
+      said and said.note == nil and said.detail == nil,
+      tostring(said and (said.note or said.detail)))
+
+-- A directory that says nothing about a format is the fleet from before the
+-- strip, and the row is its name alone.
+_G.NEXT_REPLY = {zones = {{
+    name = "old", players = 0, bots = 0,
     instances = {{address = "wss://x/a1"}},
 }}}
 message(last(), "ignored")
@@ -411,8 +428,7 @@ check("and the play page draws no strip for it",
 -- A zone whose mode has words for only part of the strip sends only that
 -- part, and the stacks close up rather than holding an empty column.
 _G.NEXT_REPLY = {zones = {{
-    name = "bare", description = "a melee with no stated clock",
-    scoring = "kills",
+    name = "bare", scoring = "kills",
     players = 0, bots = 0, instances = {{address = "wss://x/b"}},
 }}}
 message(last(), "ignored")
@@ -426,13 +442,13 @@ check("a partial format is the stacks it stated and no more",
 -- it so a full game keeps its counts instead of wearing the dial that means
 -- nobody is running one.
 _G.NEXT_REPLY = {zones = {{
-    name = "packed", description = "no seats", players = 32, bots = 0,
+    name = "packed", players = 32, bots = 0,
     instances = {{address = "wss://x/a1", full = true}},
 }}}
 message(last(), "ignored")
 check("a full zone says so on its row", dir.rows[1] and dir.rows[1].full == true)
 _G.NEXT_REPLY = {zones = {{
-    name = "roomy", description = "seats", players = 2, bots = 0,
+    name = "roomy", players = 2, bots = 0,
     instances = {{address = "wss://x/a1"}},
 }}}
 message(last(), "ignored")

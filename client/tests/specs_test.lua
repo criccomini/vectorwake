@@ -2,13 +2,14 @@
 --
 --     lua5.1 client/tests/specs_test.lua
 --
--- The strip is three label-over-value stacks under the row's sentence, in the
--- catalog's own words. What is worth proving is that the words reach the
--- frame at all (the wiring test in directory_test.lua stops at the view),
--- that the stacks keep their order across both rows so the games read down
--- the same columns, that a value keeps its authored case, and that a list
--- squeezed out of its third line drops the strip rather than drawing it over
--- the name.
+-- The strip is three label-over-value stacks under the row's name, in the
+-- catalog's own words, and it is the whole of the row under that name. What
+-- is worth proving is that the words reach the frame at all (the wiring test
+-- in directory_test.lua stops at the view), that the stacks keep their order
+-- across both rows so the games read down the same columns, that a value
+-- keeps its authored case, that the stacks sit under the name they are
+-- about, and that a list squeezed out of its second line drops the strip
+-- rather than drawing it over the name.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -28,11 +29,11 @@ local ui, state = harness.install()
 
 local function rows()
     return {
-        {label = "Duel", note = "every rung is a harder rival",
+        {label = "Duel",
          specs = {{"teams", "1 v 1"}, {"time", "one life"},
-                  {"scoring", "rungs"}},
+                  {"scoring", "streak"}},
          index = 1, pick = true},
-        {label = "Team Battle", note = "the longer your run",
+        {label = "Team Battle",
          specs = {{"teams", "4 v 4"}, {"time", "3:00"},
                   {"scoring", "kills"}},
          index = 2, pick = true},
@@ -78,11 +79,34 @@ local teams2, time2 = find(words, "4 v 4"), find(words, "3:00")
 check("stacks keep their order inside a row",
       teams1 and time1 and teams1.x < time1.x
       and teams2 and time2 and teams2.x < time2.x)
-check("and the sentence still stands over the strip",
-      find(words, "Every rung is a harder rival") ~= nil
-      or find(words, "every rung is a harder rival") ~= nil)
+-- Under the name, and under that name rather than the other one: `state.text`
+-- counts up from the foot, so a lower line on the screen is the smaller y.
+-- The row is the name and the stacks now, and nothing between them.
+local duel, battle = find(words, "Duel"), find(words, "Team Battle")
+check("the stacks stand under the name they are about",
+      duel and teams1 and battle and teams2
+      and teams1.y < duel.y and teams1.y > battle.y
+      and teams2.y < battle.y,
+      string.format("Duel at %s over %s, Team Battle at %s over %s",
+                    tostring(duel and duel.y), tostring(teams1 and teams1.y),
+                    tostring(battle and battle.y),
+                    tostring(teams2 and teams2.y)))
+local expected = {}
+for _, r in ipairs(rows()) do
+    expected[r.label] = true
+    for _, spec in ipairs(r.specs) do
+        expected[string.upper(spec[1])] = true
+        expected[spec[2]] = true
+    end
+end
+local extra = {}
+for _, t in ipairs(words) do
+    if not expected[t.s] then extra[#extra + 1] = t.s end
+end
+check("and the row is those two things and nothing else",
+      #extra == 0, table.concat(extra, ", "))
 
--- A window too short for the third line. The rows squeeze, and a squeezed
+-- A window too short for the second line. The rows squeeze, and a squeezed
 -- row drops the strip whole rather than laying it over the name.
 draw(390, 260)
 local squeezed = drawn()

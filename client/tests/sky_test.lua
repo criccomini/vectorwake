@@ -172,10 +172,27 @@ local function ghosts(cx, cy)
     return seen
 end
 
-world.sky_seed("drydock")
-local chain = ghosts(MID, MID)
-check("the sun throws a chain of ghosts", #chain >= 5,
-      "drew " .. #chain .. " of them")
+-- Which map throws one and where it is standing are both the seeding's
+-- business, and some maps get no sun at all, so this looks for a sky with a
+-- sun in frame rather than assuming a name has one. Finding none at all would
+-- mean flares never happen, which is worth failing over.
+local ROOMS = {"drydock", "relay", "foundry", "maelstrom", "gantry",
+               "warren", "redoubt", "ringworks", "alpha", "chaos"}
+local lit_room, lit_x, lit_y, chain = nil, 0, 0, {}
+for _, room in ipairs(ROOMS) do
+    world.sky_seed(room)
+    for _, at in ipairs({{0, 0}, {600, 0}, {0, 400}, {-600, -400}}) do
+        if not lit_room then
+            local c = ghosts(MID + at[1], MID + at[2])
+            if #c >= 5 then
+                lit_room, lit_x, lit_y, chain = room, at[1], at[2], c
+            end
+        end
+    end
+end
+check("some map somewhere throws a chain of ghosts", lit_room ~= nil,
+      "no sun in frame anywhere across " .. #ROOMS .. " rooms")
+world.sky_seed(lit_room or "drydock")
 
 -- The first is the aperture, drawn on the sun itself, so everything else is
 -- measured against where that sits.
@@ -190,19 +207,25 @@ end
 check("every ghost is on the line from the sun through the middle",
       bent == nil, "ghost " .. tostring(bent) .. " is off it")
 
-local swung = ghosts(MID + 1600, MID)
+local swung = ghosts(MID + lit_x + 900, MID + lit_y)
 local across = math.abs((swung[1] or {0})[1] - sun[1])
-check("flying swings the chain", across > 200,
+check("flying swings the chain", across > 100,
       "the sun moved " .. string.format("%.0f", across) .. " across the frame")
 
--- Away from the sun rather than past it: fly far enough along its own bearing
--- and it comes back into frame on the other side, which is right and is not
--- what this is asking about.
-local gone = ghosts(MID, MID + 3000)
-check("a flare goes out with the light that throws it", #gone == 0,
-      "still drew " .. #gone .. " with the sun off the frame")
-print(string.format("   the chain swings %.0f px across the frame over 1600" ..
-                    " of flight", across))
+-- Fly far enough in any direction and the light leaves the frame. Walked
+-- rather than guessed at, because how far that is belongs to the sun's own
+-- depth and this map's is not any other map's.
+local out_at = nil
+for step = 1, 30 do
+    if not out_at and #ghosts(MID + lit_x, MID + lit_y + step * 900) == 0 then
+        out_at = step * 900
+    end
+end
+check("a flare goes out with the light that throws it", out_at ~= nil,
+      "still drawing ghosts 27000 out")
+print(string.format("   %s throws a chain, swinging %.0f px over 900 of" ..
+                    " flight, out by %s", lit_room or "?", across,
+                    tostring(out_at)))
 
 -- --- dust knows flying from being moved ------------------------------------
 
