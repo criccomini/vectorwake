@@ -897,9 +897,35 @@ end
 -- already spent. Written once because it has to agree with itself across the
 -- unpack, and a formula copied four times is a formula with four chances to
 -- be edited three times.
+local function born_tick(tick, spec, life)
+    return (tick - (sim.spec_life(spec) - life)) % 65536
+end
+
 local function born_key(tick, spec, life, owner)
-    return owner * 16777216 + spec * 65536
-        + (tick - (sim.spec_life(spec) - life)) % 65536
+    return owner * 16777216 + spec * 65536 + born_tick(tick, spec, life)
+end
+
+-- Is this vanished round one of those, wearing a different birth tick?
+--
+-- Reconciliation can move a round's birth. The tick a held bomb key fires on
+-- hangs on the cooldown, the energy bar, a freeze stall and, for a proximity
+-- bomb, the safety's read of where the enemy hulls are, and any of those can
+-- differ between the prediction that fired it and the corrected world that
+-- fires it again. When one does, the same bomb is reborn a tick or two away,
+-- its name above no longer matches, and the harvest below used to read that
+-- as the round ending on something: a detonation drawn at the muzzle while
+-- the bomb flew on to its real one. Two rounds of the same owner and spec
+-- can never really be born this close together, because the bomb clock holds
+-- them at least BombFireDelay apart and the replay window is shorter, so a
+-- near-twin still in the air is this round and not news.
+local function retimed(w, births)
+    if not births then return false end
+    for _, b in ipairs(births) do
+        local d = (b - w.born) % 65536
+        if d > 32768 then d = 65536 - d end
+        if d <= REPLAY_MAX_TICKS then return true end
+    end
+    return false
 end
 
 -- What the client believes, held across a snapshot that is about to replace
@@ -922,7 +948,8 @@ local function capture_world()
     for i = 0, sim.weapon_count() - 1 do
         local wx, wy, spec, _, _, _, life, owner = sim.weapon_at(i)
         flying[born_key(tick, spec, life, owner)] =
-            {x = wx, y = wy, spec = spec, life = life, owner = owner}
+            {x = wx, y = wy, spec = spec, life = life, owner = owner,
+             born = born_tick(tick, spec, life)}
     end
     return {alive = alive, deaths = deaths, vx = vx, vy = vy, x = x, y = y,
             heading = heading, flying = flying}
@@ -990,12 +1017,18 @@ local function harvest_world(before)
     if benched then return end
     local flying = before.flying
     local tick = sim.tick()
+    local births = {}
     for i = 0, sim.weapon_count() - 1 do
         local _, _, spec, _, _, _, life, owner = sim.weapon_at(i)
         flying[born_key(tick, spec, life, owner)] = nil
+        local id = owner * 256 + spec
+        local b = births[id]
+        if not b then b = {} births[id] = b end
+        b[#b + 1] = born_tick(tick, spec, life)
     end
     for _, w in pairs(flying) do
-        if w.life > 20 and sim.spec_blast(w.spec) > 0 then
+        if w.life > 20 and sim.spec_blast(w.spec) > 0
+            and not retimed(w, births[w.owner * 256 + w.spec]) then
             M.snap_blasts[#M.snap_blasts + 1] = w
         end
     end

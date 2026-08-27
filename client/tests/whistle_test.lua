@@ -162,6 +162,28 @@ check("and it is the one that died",
       net.snap_deaths[1] and net.snap_deaths[1].ship == 1)
 check("the round that killed them still lands", #net.snap_blasts == 1,
       "queued " .. #net.snap_blasts)
+drain()
+
+-- The same bomb reborn a couple of ticks away, which reconciliation does
+-- whenever the corrected world fires a held key on a different tick than the
+-- prediction did. That is not a round ending on something, and drawing it
+-- put a detonation at the muzzle while the bomb flew on to its real one.
+next_air = {1005}
+deliver(snapshot(1005))
+drain()
+next_air = {1007}
+deliver(snapshot(1010))
+check("a bomb reborn a tick or two away does not go off",
+      #net.snap_blasts == 0, "queued " .. #net.snap_blasts)
+drain()
+
+-- But a bomb that really landed still detonates beside a newer one of the
+-- same kind: the bomb clock holds two births at least BombFireDelay apart,
+-- so a twin outside the replay window is a different round.
+next_air = {1200}
+deliver(snapshot(1210))
+check("a bomb that landed still lands beside a newer one",
+      #net.snap_blasts == 1, "queued " .. #net.snap_blasts)
 
 if fails > 0 then os.exit(1) end
 print("all fine")
