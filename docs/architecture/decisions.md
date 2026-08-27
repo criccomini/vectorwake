@@ -4358,3 +4358,41 @@ out rather than what the mode does with the answer.
 
 **Reconsider if:** the window turns out to be long enough to draw fights that
 were not trades, at which point the length is wrong rather than the rule.
+
+## 91. The landing lies down where the column would cover the ship
+
+**What:** the landing asks the window two questions instead of one. Width still
+decides how wide PLAY NOW is. Height decides the shape: where the column of
+decision 89 would reach the middle of the screen, the same four pieces lie down
+into a rail along the foot, three stops as cells beside the key with the name
+over them. A cell carries its question over its answer with the caret on the
+question's line, which is what lets three of them and the key share one line;
+where that line is wider than the window the cells take a line of their own
+over the key. A list opens upward from the cell it hangs on rather than from
+the key, at a width a build name can be read at. What a stop is and what
+pressing it does are the same either way.
+
+**Why:** the column is a fixed 260 points tall and the window is not. That is a
+third of a monitor, which is what it was drawn against, but 55% of a phone held
+sideways and 69% of a browser window 315 points tall. The camera stands behind
+the hull the stands are watching, so the middle of the screen is that hull: at
+844 by 390 the wordmark was drawn across the ship and the account stop across
+its call sign, which is a front page that hides the one thing it is supposed to
+be showing off. The interface already asks height and width separately for the
+menu, where height decides how much room there is to spend; the landing asked
+about width alone. The rail is direction B of the mocks the column won, in
+`.design/start-flow`, so the look was drawn before it was needed.
+
+**Cost:** two layouts to keep working rather than one, and the landing's
+regression tests now ask each window which of them it should be getting. PLAY
+NOW is no longer centered on the window when the rail is up: it ends the band,
+and the band is what is centered. Opening a list takes the name off the screen
+every time, because the list opens over the band the name sits directly above,
+where the column only lost it when a list climbed that far. A cell is 120
+points wide, so an answer longer than that is cut at the cell's edge; a 24
+character call sign is shown as much of itself as fits.
+
+**Reconsider if:** the rail turns out to read better on a monitor too, at which
+point the column is the special case and the question is whether an upright
+phone still wants it; or the stops outgrow three, which is the reconsider
+decision 89 already carries.

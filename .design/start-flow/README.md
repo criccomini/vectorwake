@@ -13,8 +13,10 @@ three directions by three states:
   key, the closest to what ships today
 
 Each direction is drawn closed, with one list open, and on a phone held
-upright. Drawings of a proposal, not a plan of record. Nothing here is
-built.
+upright. Drawings of a proposal, not a plan of record. Two of the three
+were built: the column shipped as decision 89, and the rail came back with
+decision 91 as the shape the landing takes on a window with no height for a
+column.
 
 `build.py` is the source, in the manner of `../spectator-landing/build.py`,
 whose design system it borrows: hues from `client/arena/palette.lua`, panel

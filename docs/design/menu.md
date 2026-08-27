@@ -482,23 +482,28 @@ list.
 There is no landing page. Opening the client dials the game at the head of the
 list as a watcher and draws the room, and the front end is that: the watcher's
 own HUD, with the corner keys, the clock and the score, the radar and the feed,
-and none of a hull's furniture. The front end's chrome is one column over the
-foot of it, in the order you would say it: the wordmark, three stops the key's
-own width (account, zone, ship), and a PLAY NOW key that takes a seat in the
-room already on screen.
+and none of a hull's furniture. The front end's chrome sits over the foot of
+it, in the order you would say it: the wordmark, three stops (account, zone,
+ship), and a PLAY NOW key that takes a seat in the room already on screen. On a
+window with the height for it that is a column, the stops at the key's own
+width stacked over it; on a short one it is a rail, the stops as three cells
+beside the key with the name over them.
 
-The stops are decision 89, and they exist because the drawer went
-undiscovered: a first visit met PLAY NOW and a hamburger, deployed into
-whatever the stands were showing, and never learned there was another game or
-another ship to be. Each stop is the question at its left edge and the current
-answer with a caret at its right. Account opens the drawer on the pilot page.
-Zone drops the games list in place; picking one re-dials the stands to it, so
-the fight behind the glass becomes the one the key would join, and PLAY NOW
-stays the press that commits. Ship drops the pilot's saved builds by the names
-they gave them, no hulls anywhere in it, with SPECTATE as the last row; picking
-a build saves it as the hull's kit exactly as the ship page's own row does. An
-open list stands over the stops above it, and what it covers stands down, the
-wordmark included, the same way the clock band stands down under the drawer.
+The stops are decision 89, and they exist because the drawer went undiscovered:
+a first visit met PLAY NOW and a hamburger, deployed into whatever the stands
+were showing, and never learned there was another game or another ship to be. A
+column row is the question at its left edge and the current answer with a caret
+at its right; a rail cell sets the question over the answer, with the caret on
+the question's line. Account opens the drawer on the pilot page. Zone drops the
+games list in place; picking one re-dials the stands to it, so the fight behind
+the glass becomes the one the key would join, and PLAY NOW stays the press that
+commits. Ship drops the pilot's saved builds by the names they gave them, no
+hulls anywhere in it, with SPECTATE as the last row; picking a build saves it
+as the hull's kit exactly as the ship page's own row does. A list opens upward
+from the stop it belongs to, and what it covers stands down, the wordmark
+included, the same way the clock band stands down under the drawer. Down the
+column that is the stops above the open one; along the rail nothing stands
+above an open cell, so all three stay and only the name comes off.
 
 The key breathes on the same slow swell the on-air tally uses, with its edge
 floored well above dark so the trough never reads as a key that stopped
@@ -507,14 +512,28 @@ because a keyboard should not have to open a menu to start the game. It does
 what the ship stop says: a pilot who picked SPECTATE arrives watching, since
 the choice is written on the screen right over the key.
 
-**The name sits directly over the column.** It could have gone under the
+**The shape is a question about height,** which is decision 91. A column costs
+about 260 points whatever the window is: a third of a monitor, which is what it
+was drawn against, and more than half of a phone held sideways. The camera
+stands behind the hull the stands are watching, so the middle of the screen is
+that hull, and a column that tall on a short window is drawn across it. At 844
+by 390 the wordmark landed on the ship and the account stop on its call sign.
+Where the column would climb that far the same pieces lie down into the rail,
+which is the direction the column beat for the upright case: a cell carries its
+question over its answer, so three cells and the key fit one line, and where
+that line is wider than the window the cells take a line of their own over the
+key, which is what a 320 point screen gets. Nothing about what a stop is or
+what pressing it does changes with the shape.
+
+**The name sits directly over the block.** It could have gone under the
 clock, in the broadcast bug's slot, or into the corner the missing corner
 stack leaves empty; all three were drawn, and the mocks are in
 `.design/spectator-landing`. A stranger's eye ends on the pulsing thing at the
 foot of the screen, climbs the stops, and the name has to be where that look
 ends or the page never says what it is. The stops' own directions, a column
 against a rail along the foot and a line of pressable words, are drawn in
-`.design/start-flow`.
+`.design/start-flow`; the column won the question and the rail came back for
+the windows it does not fit.
 
 Nothing else is added. Every reading a panel would carry is one the HUD
 already draws, to the people in the room, in code that has to be right anyway.
