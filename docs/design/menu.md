@@ -329,11 +329,11 @@ as and the x is the whole of that row.
 
 ## Behind it, the sky the game is played under
 
-The home screen's ground is the arena's own starfield: three parallax layers
-and the nebula behind them, drifting slowly and diagonally because nothing is
-looking at anything. It is the same routine the game draws its sky with, so
-the screen a stranger lands on is made of the thing they are about to be
-inside.
+The home screen's ground is the arena's own sky: three parallax layers of star,
+the clouds and the band behind them, a sun and a comet somewhere out at the
+rim, all of it drifting slowly and diagonally because nothing is looking at
+anything. It is the same routine the game draws its sky with, so the screen a
+stranger lands on is made of the thing they are about to be inside.
 
 A hull used to cross it on a closed loop, trailing a wake, on the argument
 that a text column in the middle of an empty field carried nothing. What it
@@ -603,10 +603,12 @@ anything. What a player saw during that was a gray progress bar on black: a page
 that has not started.
 
 Now the page starts without the engine. `client/tools/single_file.py` draws the
-same starfield, same three depths, same colors, same cell hash, in plain canvas
-2D, with the wordmark over it and one hairline of progress under that. When the
-engine's first real frame is on screen it fades out, into the same starfield
-drawn by the engine with the menu over it.
+stars, same three depths, same density, same four temperatures, same cell hash,
+in plain canvas 2D, with the wordmark over it and one hairline of progress under
+that. When the engine's first real frame is on screen it fades out, into the
+same sky drawn by the engine with the menu over it. What the loader does not
+draw is everything behind the stars, the clouds and the band and the set pieces,
+which arrive with that first frame.
 
 The hand-off is triggered by the game, from `arena.script`, not by the loader.
 "The runtime initialized" is seconds before "there is something on screen", and

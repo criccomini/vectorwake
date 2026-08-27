@@ -34,9 +34,10 @@ local function check(desc, ok, why)
     print(string.format("%-52s %s", desc, ok and "ok" or ("FAIL: " .. why)))
 end
 
--- A layer that counts instead of drawing, through the same two primitives the
--- starfield reaches for. `rect` is two triangles and `halo` is one per
--- segment, which is what the native writer behind vec.lua does.
+-- A layer that counts instead of drawing, through the same primitives the sky
+-- reaches for. `rect` is two triangles, `halo` is one per segment, a tapered
+-- segment is four and a bloom is six, which is what the native writer behind
+-- vec.lua does.
 --
 -- It holds the drawing to the prices the budget was built from as well as
 -- counting, because the budget's slack is wide enough to hide a shape that
@@ -45,6 +46,11 @@ end
 -- near star blooms against a real one in seventeen. A star that started
 -- costing two rects, or a halo that gained four segments, would fit inside
 -- that slack and be caught by nothing. Priced here, it is caught at once.
+--
+-- Two segment counts are legitimate and no others: the eight the sky draws
+-- almost everything at, and the twenty-four the two-thousand-pixel washes need
+-- to stop being visible polygons. Both are published, and a third would mean
+-- the budget is pricing a shape the drawing no longer uses.
 local wrong = nil
 local function counter()
     local L = {n = 0}
@@ -52,11 +58,17 @@ local function counter()
         self.n = self.n + 6
     end
     function L:halo(_, _, _, segs)
-        if segs ~= world.HALO_SEGS and not wrong then
-            wrong = string.format("a halo of %d segments is priced at %d",
-                                  segs, world.HALO_SEGS)
+        if segs ~= world.HALO_SEGS and segs ~= world.WIDE_SEGS and not wrong then
+            wrong = string.format("a halo of %d segments is priced at %d or %d",
+                                  segs, world.HALO_SEGS, world.WIDE_SEGS)
         end
         self.n = self.n + segs * 3
+    end
+    function L:seg_fade()
+        self.n = self.n + 12
+    end
+    function L:bloom()
+        self.n = self.n + 18
     end
     return L
 end
@@ -114,9 +126,15 @@ for _, v in ipairs(VIEWS) do
           string.format("drew %d vertices, budgeted %d", got_g, want_g))
     -- Non-vacuity, and the only thing standing between this file and a budget
     -- of a billion. The fill bound is every cell carrying a star against a
-    -- density of nine to thirteen in sixteen, so a third over is the shape of
-    -- it; anything looser means the derivation has stopped tracking.
-    check(name .. ": the fill bound is not wild", got_f > 0 and want_f < got_f * 1.6,
+    -- density of nine to thirteen in sixteen, which on its own is a third
+    -- over. The band widens that and widens it with the window: it is a stripe
+    -- of fixed width, so the bigger the window the more of it is sky rather
+    -- than band, while the bound goes on reserving the whole window at full
+    -- density inside its stripe, where the real thing thins toward both edges.
+    -- Every window here lands between about half over and twice over, so this
+    -- allows a little past that; anything looser means the derivation has
+    -- stopped tracking what is drawn.
+    check(name .. ": the fill bound is not wild", got_f > 0 and want_f < got_f * 2.5,
           string.format("drew %d, budgeted %d", got_f, want_f))
     -- The glow bound is every near star blooming against one in seventeen, so
     -- it is loose on purpose and only checked for being finite and covered.
@@ -150,15 +168,21 @@ check("a pixel of drag does not move the budget", a == b,
 
 -- What the fill layer used to be, and the window where it stopped being
 -- enough. This is the bug, pinned: if somebody puts the constant back, or
--- makes the starfield cheap enough that it never mattered, this says so.
+-- makes the sky cheap enough that it never mattered, this says so.
+--
+-- The window it ran out at has come in a long way since it was found. It was
+-- about 2100 points wide against three star layers and a round nebula; the
+-- band, the clouds and the rest cost roughly three times that, so the old
+-- capacity would now run out on a phone, which is to say on every window there
+-- is rather than on somebody's large monitor.
 local OLD_CAP = 6144
 local over = nil
-for w = 1200, 2600, 20 do
+for w = 600, 2600, 20 do
     local f = select(1, world.star_cost(w / 2, w * 9 / 32))
     if f > OLD_CAP and not over then over = w end
 end
 check("the old fixed capacity ran out inside a desktop's range",
-      over ~= nil and over > 1280 and over < 2560,
+      over ~= nil and over > 600 and over < 2560,
       "the old 6144 was outgrown at " .. tostring(over) .. " points wide")
 print(string.format("   the old fixed 6144 covered a 16:9 window up to about" ..
                     " %d points wide", (over or 0) - 20))
