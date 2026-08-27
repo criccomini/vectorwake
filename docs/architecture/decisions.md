@@ -4054,3 +4054,64 @@ carries it now, which cannot be discarded by the next hand that sets an alpha.
 **Reconsider if:** a page turns up that needs a size between two rungs. The
 answer is to move a rung rather than add one, since fifteen sizes is what
 adding one looks like fifty edits later.
+
+## 85. A burst shuts its own key for five seconds
+
+**Status:** accepted
+
+**Decision:** every charge kind keeps a firing clock of its own, read off the
+same `delay` a trigger's pattern uses, and the burst's is 500 ticks. The
+repel's stays at zero. Nothing else about a burst moves: the same twenty-four
+rounds at the same damage, the same rack of three, still dealt once a match and
+still not handed back by a death.
+
+The clock is per kind rather than one over the rack, and it is not cleared by
+dying. It belongs to the ammunition, and a match start is the only thing that
+refills the rack, so a whistle clears it along with the rest.
+
+A key that does nothing has to look like one, so the corner rail and the touch
+cells wash a kind's row down on the tick it goes and bring it back as the clock
+runs out. The ticks left travel in the owner-only tail of a snapshot, because
+the clock is set at a press that may be older than the tick a snapshot begins
+from and a client that could not read it would predict a key the zone has shut.
+That is protocol 26.
+
+**Why:** inventory was the whole limit, and inventory limits nothing at the
+scale a hand works at. Three presses take a tenth of a second, a burst costs no
+energy at all, and three rosettes thrown from one standing position is
+seventy-two rounds, of which three end anybody. So the play was to fly at
+somebody and empty the rack, and what it asked of the pilot was one approach:
+the second and third bursts asked nothing the first had not already asked. That
+is a weapon that beats a better pilot without out-flying them.
+
+Five seconds is measured against the fight rather than against the rack. The
+longest weapon clock in the game is a bomb at a second and a half, and a hull
+crosses its own length in well under one, so the exchange a burst was thrown
+into is settled long before this runs out: whatever the first one was going to
+do, it has done. The second is then something you spend on the next fight,
+which is what three of them lasting three minutes was always supposed to mean.
+
+Per kind, because the two kinds are opposite things. A repel is the answer to a
+round already in the air and is wanted precisely when a fight is going badly,
+so shutting it because a burst had just gone would take the answer away at the
+moment it is asked for. It also does no damage, which makes chaining repels a
+way of wasting them rather than a way of winning.
+
+**Cost:** the number is argued rather than measured. The authored bots throw a
+burst only at close range on a nearly empty bar, so the melee probe has nothing
+to say about the case this fixes, and the evidence for five seconds is the
+arithmetic above and not a run. Twenty matches on gantry either side of the
+change say only that the room still plays the same: 59.5 rounds in the air
+against 59.1, the repel rack spent at 61s, 102s and 131s against 60s, 100s and
+130s, skill against k/d at +0.86 against +0.88. A pilot who genuinely needed
+the whole rack in one moment, cornered by three, no longer has it.
+
+The wire and the mirrors also grow: eight bytes on every owner record, one more
+array on the ship, and one more thing the two ends have to agree about, which
+is what the protocol number is for.
+
+**Reconsider if:** matches start ending with bursts still in the rack, which
+would be the number too long rather than the rule wrong, and the answer is a
+shorter delay rather than no delay. Or if the same fly-in comes back off one
+burst alone, which would be what a burst does at contact range rather than how
+often it may be thrown, and the answer is its damage.

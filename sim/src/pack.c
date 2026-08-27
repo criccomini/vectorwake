@@ -151,6 +151,14 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
                 w16(&w, sh->mods[t]);
             }
             for (int k = 0; k < SIM_MAX_CHARGES; k++) w8(&w, sh->charge[k]);
+            /* And when each kind may be thrown again. The prediction cannot
+             * work this one out for itself: the clock is set at a press that
+             * may be older than the tick a snapshot starts from, so a client
+             * rebuilding from the wire without it would believe the key was
+             * ready and be corrected on the next one every time. The same
+             * reason the trigger clocks are at the head of this tail. */
+            for (int k = 0; k < SIM_MAX_CHARGES; k++)
+                w16(&w, sh->charge_cooldown[k]);
             /* These are needed only by the owner prediction. The edge state
              * prevents a held toggle from becoming a fresh press after every
              * snapshot. */
@@ -331,6 +339,8 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
                 sh->charge[k] = (uint8_t)r8(&r);
                 if (sh->charge[k] > SIM_CHARGE_MAX) return -1;
             }
+            for (int k = 0; k < SIM_MAX_CHARGES; k++)
+                sh->charge_cooldown[k] = (uint16_t)r16(&r);
             sh->multi_off = (uint8_t)r8(&r);
             if (sh->multi_off > 1) return -1;
             sh->btn_prev = (uint16_t)r16(&r);

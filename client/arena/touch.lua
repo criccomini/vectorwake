@@ -115,6 +115,13 @@ local fanned = false
 -- The charge slots this hull can carry, newest set by the caller. Empty until
 -- told, so a hull with none draws none.
 M.charges = {}
+-- Ticks until each kind may be thrown again, and how long each waits when it
+-- is thrown, both by slot and both set by the caller alongside the counts.
+M.waits = {}
+M.delays = {}
+-- How far down a cell washes on the tick its key shuts, matching the corner
+-- rail's own floor: unavailable at a glance, still readable as a control.
+local SHUT = 0.3
 
 -- Where the controls are. One definition, used by the hit test and by the
 -- drawing, because they were written out separately once and had drifted: the
@@ -439,21 +446,34 @@ function M.draw(u, w, h, s)
     for _, c in ipairs(L.charge) do
         local n = M.counts and M.counts[c.slot] or 0
         local cap = (M.maxes and M.maxes[c.slot]) or 3
+        -- A kind that has just been thrown keeps its key shut, and the cell
+        -- goes out with it and comes back as the clock does. A thumb has no
+        -- key to feel go dead, so on glass this is the only thing that says
+        -- the tap will do nothing yet. Nothing dims for a kind with no delay,
+        -- which the repel is.
+        local wait = M.waits and M.waits[c.slot] or 0
+        local delay = M.delays and M.delays[c.slot] or 0
+        local lit = 1
+        if wait > 0 and delay > 0 then
+            lit = SHUT + (1 - SHUT) * (1 - math.min(1, wait / delay))
+        end
         local half = c.w / 2
-        u:rect(c.x - half, c.y - half, c.w, c.w, pal.a(pal.CHARGE_COL, 0.05))
+        u:rect(c.x - half, c.y - half, c.w, c.w,
+               pal.a(pal.CHARGE_COL, 0.05 * lit))
         u:frame(c.x - half, c.y - half, c.w, c.w, 2.2 * s,
-                pal.a(pal.CHARGE_COL, 0.55))
+                pal.a(pal.CHARGE_COL, 0.55 * lit))
         marks.charge(c.slot, c.x, c.y + c.w * 0.08, c.w * 0.42,
-                     pal.a(pal.CHARGE_COL, 0.92))
+                     pal.a(pal.CHARGE_COL, 0.92 * lit))
         local pitch = c.w * 0.19
         local px = c.x - (cap - 1) * pitch / 2
         for i = 1, cap do
             local at = px + (i - 1) * pitch
             if i <= n then
-                u:disc(at, c.y - c.w * 0.33, 2.4 * s, 8, pal.CHARGE_COL)
+                u:disc(at, c.y - c.w * 0.33, 2.4 * s, 8,
+                       pal.a(pal.CHARGE_COL, lit))
             else
                 u:ring(at, c.y - c.w * 0.33, 2.4 * s, 1.4 * s, 8,
-                       pal.a(pal.CHARGE_COL, 0.3))
+                       pal.a(pal.CHARGE_COL, 0.3 * lit))
             end
         end
     end

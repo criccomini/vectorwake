@@ -173,6 +173,27 @@ static const uint16_t hull_extent[SIM_MAX_CLASSES][3] = {
 #define CHARGE_REPEL_MAX 3
 #define CHARGE_BURST_MAX 3
 
+/* How long a burst shuts its own key for. Five seconds.
+ *
+ * The original has no such setting and did not need one: a burst is loot
+ * there, and a pilot holding three has had a good afternoon. Here the rack is
+ * a kit slot, everybody who wants three has three from the whistle, and the
+ * only thing between the first press and the third was how fast a thumb
+ * moves. Three at once is three rosettes from one standing position, and at
+ * 700 a round against a bar of 1475 it takes three of the seventy-two to end
+ * anybody. What that asked of the pilot was one approach.
+ *
+ * Five seconds is chosen against the fight rather than against the rack. A
+ * bomb clock is a second and a half and a hull crosses its own length in well
+ * under one, so the exchange a burst was thrown into is settled long before
+ * this runs out: whatever the first one was going to do, it has done. The
+ * second is then a thing you spend on the next fight, which is what three of
+ * them lasting three minutes was supposed to mean.
+ *
+ * The repel keeps none of this. It does no damage, chaining it only wastes
+ * it, and it is the answer to a round already in the air. */
+#define CHARGE_BURST_DELAY 500
+
 /* The above, over the flat slot space: the most this arena will let a kit put
  * in each slot, and zero for a slot it does not have at all. */
 static void fill_kit_ceiling(sim_settings *cfg) {
@@ -389,8 +410,10 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * written, and the burst is sixteen rounds at a full turn's spacing --
      * the rosette that motivated `count` and `spacing` in the first place.
      *
-     * Neither uses a firing delay. Inventory and energy are the limits, and a
-     * repel or burst remains available while the gun or bomb clock is shut. */
+     * Neither shares the gun and bomb clock: a repel or burst remains
+     * available while either trigger is shut, which is what makes a repel an
+     * answer to anything. The burst keeps a clock of its own instead, which is
+     * CHARGE_BURST_DELAY above and the reason it is there. */
     {
         sim_weapon_spec rp;
         memset(&rp, 0, sizeof rp);
@@ -441,6 +464,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         bf.spec = (uint8_t)sim_add_spec(cfg, &bs);
         bf.count = 24;
         bf.spacing = 65536 / 24;
+        bf.delay = CHARGE_BURST_DELAY;
         cfg->charge[1] = (uint8_t)sim_add_pattern(cfg, &bf);
 
         /* The rack is wider than the two kinds that fill it, and a slot with

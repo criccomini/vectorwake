@@ -2806,6 +2806,10 @@ end
 -- rows at full size are most of the height of a phone held sideways, so a
 -- short window gets whatever fits and never less than the old size.
 local STACK, STACK_SHARE = 1.5, 0.34
+-- How far down a charge row washes on the tick its key shuts. Dim enough to
+-- read as unavailable at a glance and not so dim that the row leaves the
+-- corner: what a pilot is holding is still true while they wait for it.
+local SHUT = 0.3
 
 local function status(me, charges, lift)
     -- Only the charges you are holding. A row for a slot you have spent out
@@ -2888,10 +2892,25 @@ local function status(me, charges, lift)
         -- show any more, a key or a pad names its charge outright, and
         -- which key is which row is the help page's job, not a label
         -- worn in the corner of every fight.
+        --
+        -- What the row does carry is the wait. A burst shuts its own key for
+        -- five seconds after it goes, so the row goes out with it and comes
+        -- back as the clock runs down, which is the same event drawn twice:
+        -- one pip fewer says it was spent, and the row returning says when
+        -- the next one may go. A blink would say the first and not the
+        -- second, and a key that simply did nothing would say neither.
+        --
+        -- A kind with no delay, which the repel is, has no wait and never
+        -- dims: `ready` is 1 the whole time.
+        local ready = 1
+        if (c.wait or 0) > 0 and (c.delay or 0) > 0 then
+            ready = 1 - math.min(1, c.wait / c.delay)
+        end
+        local lit = SHUT + (1 - SHUT) * ready
         local slot = string.lower(c.name or c.short or "")
         local gc = CHARGE_GLYPHS[slot] or gl_diamond
         gc(mid, y + rows_h / 2, 7 * z,
-           pal.a(CHARGE_HUES[slot] or pal.CHARGE_COL, 0.85))
+           pal.a(CHARGE_HUES[slot] or pal.CHARGE_COL, 0.85 * lit))
         -- The count in the ship page's own circle grammar, pages.dot: solid
         -- is a charge in hand, a ring is the slot a spent one leaves. The
         -- corner used its own smaller pips for this, which was a second
@@ -2900,7 +2919,7 @@ local function status(me, charges, lift)
         for p = 1, slot_max do
             pages.dot(val + 3 * z + (p - 1) * 13 * z, y + rows_h / 2,
                       4.5 * z, p <= (c.count or 0) and "on" or "ring",
-                      pal.CHARGE_COL)
+                      pal.a(pal.CHARGE_COL, lit))
         end
         local pw = val + 3 * z + (slot_max - 1) * 13 * z + 4.5 * z
         if pw > wide then wide = pw end
@@ -4875,13 +4894,18 @@ end
 -- has that the account does not. One mark with three fills is a grammar a
 -- pilot learns once; the page used to carry pips, chips, squares and a
 -- diamond, which is four marks for one idea. See .design/hangar.
+--
+-- The ring carries its own alpha over whatever the caller handed in, rather
+-- than replacing it: every page passes a solid color and gets 0.8 as before,
+-- and the one caller that washes a whole row down (a charge whose key is shut)
+-- has its rings wash with the rest of it instead of staying bright.
 function pages.dot(cx, cy, r, kind, col)
     local sides = 14
     if kind == "on" then
         F.layer:disc(cx, ry(cy), r, sides, col)
     elseif kind == "ring" then
         F.layer:ring(cx, ry(cy), r - 0.5 * F.scale, 1.1 * F.scale, sides,
-                     pal.a(col, 0.8))
+                     pal.a(col, 0.8 * (col[4] or 1)))
     else
         F.layer:ring(cx, ry(cy), r - 0.5 * F.scale, 1.0 * F.scale, sides,
                      pal.a(pal.DIM, 0.5))

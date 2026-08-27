@@ -3238,8 +3238,9 @@ static void test_tech_tree(const sim_settings *base) {
         step_n(&s, &cfg, use, 0, 3);
         CHECK(s.ships[0].charge[0] == 1, "holding it down spends no more");
 
-        /* Inventory, not a cooldown, is the limit. Let go, press again, and
-         * the second one goes at once while the first is still in the air. */
+        /* The repel's own delay is zero, so inventory is the whole of the
+         * limit on this kind. Let go, press again, and the second one goes at
+         * once while the first is still in the air. */
         step_n(&s, &cfg, 0, 0, 1);
         step_n(&s, &cfg, use, 0, 1);
         CHECK(s.ships[0].charge[0] == 0, "the second follows immediately");
@@ -3333,6 +3334,99 @@ static void test_tech_tree(const sim_settings *base) {
         ev_counts ec = step_counting(&s, &cfg, 0, 0, 120);
         CHECK(ec.hits > 0, "the ring still reaches whoever was standing there");
         CHECK(s.ships[1].energy < e0, "and still hurts");
+    }
+
+    {
+        /* And a burst shuts its own key behind it, so the rack is not one
+         * approach.
+         *
+         * Three presses were the whole of it: no energy, no clock, and a hand
+         * makes three presses inside a tenth of a second. So a pilot flew in,
+         * tapped, and put seventy-two rounds through whoever was standing
+         * there, of which the last forty-eight asked nothing of them that the
+         * first twenty-four had not already asked. The clock does not touch
+         * what a burst does; it decides when the next one may be a decision.
+         *
+         * Read off the pattern rather than written here, because the number
+         * is the arena's. What this pins is that the shipped one is a real
+         * wait rather than a rounding error, and that the clock is exactly as
+         * long as the pattern says. */
+        const int BURST = SIM_CHARGE_BURST;
+        const uint16_t use =
+            (uint16_t)(SIM_BTN_USE | ((uint16_t)BURST << SIM_BTN_SLOT_SHIFT));
+        const uint16_t wait = cfg.patterns[cfg.charge[BURST]].delay;
+        CHECK(wait >= 300, "the shipped burst is shut for seconds, not ticks");
+
+        static sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].charge[BURST] = 3;
+        /* Press, release, press, release, press: as fast as the rack can be
+         * asked for, and faster than any hand actually manages. */
+        for (int i = 0; i < 3; i++) {
+            step_n(&s, &cfg, use, 0, 1);
+            step_n(&s, &cfg, 0, 0, 1);
+        }
+        CHECK(s.ships[0].charge[BURST] == 2, "one approach throws one burst");
+        CHECK(s.weapon_count == 24, "twenty-four rounds in the air, not 72");
+        CHECK(s.ships[0].charge_cooldown[BURST] > 0, "with the key shut behind it");
+
+        /* A tick short of the delay it is still shut. */
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].charge[BURST] = 3;
+        step_n(&s, &cfg, use, 0, 1);
+        step_n(&s, &cfg, 0, 0, (int)wait - 2);
+        step_n(&s, &cfg, use, 0, 1);
+        CHECK(s.ships[0].charge[BURST] == 2, "a tick short throws nothing");
+
+        /* On the tick it runs out, the next one goes. */
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].charge[BURST] = 3;
+        step_n(&s, &cfg, use, 0, 1);
+        step_n(&s, &cfg, 0, 0, (int)wait - 1);
+        step_n(&s, &cfg, use, 0, 1);
+        CHECK(s.ships[0].charge[BURST] == 1, "and the second goes when it does");
+
+        /* A clock per kind. A burst does not shut the repel: one is the answer
+         * to a round already arriving and the other is why one is arriving, so
+         * a single clock over the rack would take the answer away exactly when
+         * a pilot wants it. */
+        const uint16_t rep = (uint16_t)(SIM_BTN_USE
+                             | ((uint16_t)SIM_CHARGE_REPEL << SIM_BTN_SLOT_SHIFT));
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].charge[SIM_CHARGE_BURST] = 1;
+        s.ships[0].charge[SIM_CHARGE_REPEL] = 1;
+        step_n(&s, &cfg, use, 0, 1);
+        step_n(&s, &cfg, 0, 0, 1);
+        step_n(&s, &cfg, rep, 0, 1);
+        CHECK(s.ships[0].charge[SIM_CHARGE_REPEL] == 0,
+              "a burst leaves the repel alone");
+
+        /* The clock belongs to the ammunition, which is the one thing a death
+         * does not give back, so a death does not hand the next burst over
+         * early either. */
+        sim_settings dk = cfg;
+        dk.respawn_delay = 2;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &dk);
+        s.ships[0].charge[BURST] = 3;
+        step_n(&s, &dk, use, 0, 1);
+        s.ships[0].alive = 0;
+        s.ships[0].respawn_at = 2;
+        step_n(&s, &dk, 0, 0, 4);
+        CHECK(s.ships[0].alive, "the pilot is back");
+        CHECK(s.ships[0].charge_cooldown[BURST] > 0, "and the key is still shut");
+        step_n(&s, &dk, use, 0, 1);
+        CHECK(s.ships[0].charge[BURST] == 2, "so dying is not a way to reload");
+
+        /* A whistle is: the rack is dealt afresh at a match start, and its
+         * clocks go with it. A burst thrown at the end of one match cannot
+         * shut the key at the start of the next. */
+        sim_restart(&s, &dk);
+        CHECK(s.ships[0].charge_cooldown[BURST] == 0, "a whistle clears them");
     }
 
     {

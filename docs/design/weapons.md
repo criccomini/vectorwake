@@ -61,6 +61,9 @@ sim_fire_pattern              sim_weapon_spec
                                   stall        ticks of suppressed recharge
 ```
 
+A `delay` is a cooldown on whatever fired the pattern: a trigger's clock when
+a trigger fired it, and the charge kind's own when a charge did.
+
 The cost is the *shot's*, not each projectile's: a burst of sixteen costs what
 pulling the trigger costs, which is what makes count a design knob rather than
 a multiplier on price. Multifire is the one exception, and it is priced the way
@@ -127,7 +130,8 @@ measure of how close you were standing, which the screen shake reads back out.
 **Multifire.** The same spec, `count: 3`, `spacing: 20°`.
 
 **Burst.** `count: 16`, `spacing: 22.5°` -- a full turn divided by the count,
-so it is a rosette. Sixteen for the price of one trigger pull.
+so it is a rosette. Sixteen for the price of one trigger pull, and a `delay`
+that shuts the key behind it: see [charges](#charges).
 
 **Bouncing bomb.** The bomb spec with `on_wall: bounce`, `bounces: 3`.
 
@@ -507,8 +511,33 @@ inventory is a decision rather than a hotkey. That is slower than muscle
 memory on seven keys, and it is the trade.
 
 Charges do not share the gun and bomb firing clock. A pilot may spend one
-during a weapon delay, on the same tick as a shot, or immediately after another
-charge. Their inventory and energy cost are the limits.
+during a weapon delay or on the same tick as a shot. That half is deliberate:
+a repel answers a round that is already arriving, and a repel you cannot throw
+because your guns are hot is not an answer to anything.
+
+**Each kind keeps a clock of its own, though, and the burst's is five
+seconds.** It used to keep none, and inventory turned out not to be a limit at
+the scale a hand works at: three presses is a tenth of a second, the burst
+costs no energy, and three rosettes from one standing position is seventy-two
+rounds, of which three end anybody. What that asked of a pilot was one
+approach, and the second and third bursts asked nothing the first had not
+already asked. The clock does not change what a burst does. It decides when
+the next one may be a decision, and five seconds is longer than the exchange
+the first one was thrown into: a bomb clock is a second and a half, and a hull
+crosses its own length in well under one.
+
+The repel has no delay, which is the reason the clock is per kind rather than
+one over the rack. It does no damage, chaining it only wastes it, and shutting
+it because a burst had just gone would take the answer away exactly when a
+pilot wants it.
+
+The wait is the pattern's own `delay`, so it is the arena's to set like any
+other weapon number, and the ticks left ride in the owner-only tail of a
+snapshot: the clock is set at a press that may be older than the tick a
+snapshot starts from, so a client that could not read it would predict a key
+the zone has shut. The corner rail and the touch pads wash a kind's row down
+when its key shuts and bring it back as the clock runs out, so a key that does
+nothing looks like one.
 
 ### Thirty is a loud opening, and that is a choice
 

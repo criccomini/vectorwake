@@ -493,7 +493,7 @@ typedef struct {
     uint8_t count;        /* projectiles per shot */
     uint16_t spacing;     /* heading units between them; 65536 is a full turn */
     int32_t energy;       /* Q10 to fire */
-    uint16_t delay;       /* trigger cooldown; carried charges ignore it */
+    uint16_t delay;       /* cooldown ticks: a trigger's, or a charge kind's */
     int32_t recoil;       /* Q16 px/tick backwards on the ship that fired */
 } sim_fire_pattern;
 
@@ -848,6 +848,21 @@ typedef struct {
      * NOT give back: the kit deals them once and the match spends them.
      * Dying to reload would otherwise be free at a bounty of one. */
     uint8_t charge[SIM_MAX_CHARGES];
+    /* Ticks until each kind may be thrown again, counted down, set from the
+     * pattern's own `delay` when one goes.
+     *
+     * A clock per kind rather than one over the rack, because the two kinds
+     * are opposite things. A repel answers a round that is already arriving
+     * and is wanted precisely when a fight is going badly; a burst is the
+     * thing that makes one go badly for somebody else. Shutting the first
+     * because the second has just gone would take the answer away at the
+     * moment it is asked for.
+     *
+     * Not cleared by a death, for the reason the count above is not: the
+     * clock belongs to the ammunition, so dying is not a way to get the next
+     * one back early. A match start deals the rack afresh and clears these
+     * with it, in `sim_deal_kit`. */
+    uint16_t charge_cooldown[SIM_MAX_CHARGES];
     /* Kills since this hull last spawned, which is the whole of its bounty
      * beyond the base. Cleared by death, which is what makes the number over
      * a ship say "this one is on a run" rather than "this one shopped well". */
