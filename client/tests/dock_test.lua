@@ -145,6 +145,18 @@ local function press(x, y) local r = ui.pick(x, y) return r and r.action end
 -- already did.
 local DOCK = 390
 
+-- What a window with room multiplies that by. The column is one drawing
+-- wherever it stands and it is not one size: a monitor draws it a quarter
+-- larger, column and type and gaps together, because 390 points held at
+-- arm's length is a strip of a phone screen shown on a desk. A phone keeps
+-- the measure, held sideways included, since the scarce axis is what decides
+-- and a landscape phone is 390 points tall. Asked of ui rather than written
+-- down twice. See TYPE and MENU_SCALE in arena/ui.lua.
+local function measure(w, h)
+    local compact = math.min(w, h) < 480
+    return math.min(DOCK * (compact and 1 or ui.MENU_SCALE), w)
+end
+
 local SHAPES = {
     {"desktop", 1440, 810},
     {"sideways", 844, 390},
@@ -158,7 +170,7 @@ local seen = {}
 for _, s in ipairs(SHAPES) do
     local name, w, h = s[1], s[2], s[3]
     frame(w, h)
-    local want = math.min(DOCK, w)
+    local want = measure(w, h)
     local tabs = rail_boxes()
     check(name .. " lays the six stops along the foot",
           #tabs == #RAIL, #tabs .. " of " .. #RAIL)
@@ -167,9 +179,9 @@ for _, s in ipairs(SHAPES) do
         local right = tabs[#tabs].x + tabs[#tabs].w
         check(name .. " docks the column to the left edge",
               math.abs(left) < 1.5, string.format("%.1f", left))
-        check(name .. " draws it at a phone's own measure",
+        check(name .. " draws the column at this window's measure",
               math.abs(right - want) < 2,
-              string.format("%.1f against %d", right, want))
+              string.format("%.1f against %.1f", right, want))
         -- The foot is the foot: the stops reach the bottom of the glass
         -- rather than floating over an indicator.
         local bottom = tabs[1].y + tabs[1].h
@@ -187,12 +199,13 @@ for _, s in ipairs(SHAPES) do
 end
 
 -- The point of all of it: the column is the same drawing wherever it stands,
--- so the only thing a window changes is how much fight is beside it.
+-- so the only things a window changes are how large it is drawn and how much
+-- fight is beside it. Same proportions, one scale apart.
 do
     local a, b = seen.desktop, seen.sideways
-    check("a monitor and a phone on its side draw the same column",
-          a and b and math.abs(a.right - b.right) < 2
-              and math.abs(a.pitch - b.pitch) < 2,
+    check("a monitor and a phone on its side draw one column at two sizes",
+          a and b and math.abs(a.right - b.right * ui.MENU_SCALE) < 2
+              and math.abs(a.pitch - b.pitch * ui.MENU_SCALE) < 2,
           a and b and string.format("%.1f/%.1f wide, %.1f/%.1f a stop",
                                     a.right, b.right, a.pitch, b.pitch)
               or "missing a shape")
@@ -370,12 +383,14 @@ do
           or "none")
 end
 
--- --- nothing in the menu is set under ten points ----------------------------
+-- --- nothing in the menu is set under the ladder ----------------------------
 --
--- The floor for authored type, which the account page's keys were under: NEW
--- NAME at eight and a half points is eight and a half pixels on a monitor,
--- since this column is drawn at a phone's measure on every window. It was
--- reported as a key nobody could read.
+-- The account page's keys were under the old floor: NEW NAME at eight and a
+-- half points is eight and a half pixels on a monitor, and it was reported as
+-- a key nobody could read. The floor is the bottom rung now, and it is
+-- measured here in the page that broke it rather than only in the sweep, so
+-- the reason this file exists stays attached to the check it produced.
+-- client/tests/type_test.lua holds the whole menu to the same ladder.
 
 do
     local st = page(1440, 810,
@@ -388,12 +403,13 @@ do
                               {label = "change password", index = 2,
                                pick = true},
                               {label = "log out", index = 3, pick = true}}})
+    local floor = ui.TYPE.LABEL * ui.MENU_SCALE - 0.01
     local small = nil
     for i = 1, st.n do
         local t = st.text[i]
-        if t.px < 9.99 then small = t end
+        if t.px < floor then small = t end
     end
-    check("the account page sets nothing under ten points",
+    check("the account page sets nothing under the ladder's bottom rung",
           small == nil,
           small and string.format("%s at %.1f", small.s, small.px) or "")
 end

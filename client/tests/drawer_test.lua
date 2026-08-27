@@ -190,8 +190,12 @@ do
     frame(7.00, true)
     ui.drawer_grab = -10000
     local far = frame(7.02, true)
+    -- The drawer's own width, asked rather than restated: a window with
+    -- room draws the column MENU_SCALE larger than a phone does, and a
+    -- clamp written as a phone's 390 would pass on one and not the other.
+    local wide = select(3, ui.drawer_span())
     check("a finger cannot pull it past the edge it lives on",
-          far >= -390 - 0.5, string.format("%.1f", far))
+          far >= -wide - 0.5, string.format("%.1f of %.1f", far, wide))
     ui.drawer_release(true)
     frame(7.40, false)
     ui.drawer_grab = nil

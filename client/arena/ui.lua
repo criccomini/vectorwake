@@ -43,6 +43,42 @@ local FONT = 13
 -- rows below it set type in it.
 local MENU_FONT = "menu"
 local LINE = 18
+
+-- The menu's type, as five sizes and nothing else.
+--
+-- In points, before the scale. There were fifteen sizes here, near enough all
+-- of them written as bare numbers at the call site: 10, 10.5, 11, 11.5, 12,
+-- 12.5, 13, 14, 15, 16, 18, 19, 21, 24 and 30, with four fifths of the type on
+-- a page sitting at 13 or under. Nothing decided which of 11 and 11.5 a row
+-- got. Somebody did, once, for that row.
+--
+-- Five, and each one has a job. LABEL is the upper case register that names a
+-- group or a column of figures. BODY is everything small that is being read:
+-- a sentence, a detail, a price, a word in a button, a tab. ROW is a name in a
+-- list, LEAD the same name where it heads a sentence or a strip of figures,
+-- and PAGE is what a page calls itself.
+--
+-- The gap from LABEL to BODY is smaller than the rest of the ladder on
+-- purpose. Upper case reads larger than lower at the same size, so a caps
+-- label set level with the body it names looks heavier than it.
+local TYPE = {LABEL = 12, BODY = 14, ROW = 17, LEAD = 21, PAGE = 26}
+
+-- What the menu multiplies its whole scale by on a window with room.
+--
+-- The menu is drawn at a phone's measure wherever it stands, which is the
+-- right column and the wrong type: 390 points of column on a monitor is a
+-- strip, and 10 point labels held at arm's length are half the angular size
+-- they are in a hand. There was a constant for this, MENU_ZOOM at 1.18, and it
+-- went out with decision 63 when the two layouts became one. Nothing replaced
+-- it, so the menu spent five decisions being a phone screen shown on a desk.
+--
+-- The whole scale rather than the type alone. Rows, gaps, marks and the column
+-- itself grow together, so nothing has to be measured twice; scaling the type
+-- by itself is how a name ends up wider than the row that was sized for it.
+-- 1.25 rather than the old 1.18 because the sizes above only moved partway to
+-- what a desktop wants, and 12 points of label at 1.25 is 15, which is the
+-- first size in this interface a monitor can read without leaning in.
+local MENU_SCALE = 1.25
 -- Two triggers, one line each in the status panel. Read once rather than
 -- from `sim` per frame: the panel's height needs it before it draws.
 local SIM_TRIGGERS = 2
@@ -217,22 +253,22 @@ local function txt(s, x, y, px, col, pivot, font, raw)
     t.dim = F.text_dim ~= 1 and F.text_dim or nil
 end
 
--- The small label the mocks head every group with: mono, upper, dim, and
--- small. It is the one piece of type in this interface that is neither a name
--- nor a number, and it is drawn raw because it is already in the case it
--- wants and the menu is otherwise set in a sentence's.
+-- The small label the mocks head every group with: mono, upper, MUTE, LABEL.
+-- It is the one piece of type in this interface that is neither a name nor a
+-- number, and it is drawn raw because it is already in the case it wants and
+-- the menu is otherwise set in a sentence's.
 --
--- Ten points is the floor for authored type, this register included, and the
--- register was under it: nine-point dim mono at nine tenths of its own alpha
--- came out near 3.9:1 against the field, short of the 4.5:1 small type wants,
--- on the labels that name every group on every page. One point and the last
--- tenth of alpha carry it over the line. The constant is what a caller that
--- measures this register measures with, so a head cannot be measured at one
--- size and drawn at another.
-local LBL_PX = 10
+-- Callers pass a color to say something with it, never to say less loudly: the
+-- register is one weight, and a label that has gone quiet is a label nobody
+-- reads. Every one of them used to take an alpha, and every one of those was
+-- under the 4.5:1 small type wants. See `pal.MUTE`.
+--
+-- The size is here rather than at the call sites so a head cannot be measured
+-- at one size and drawn at another.
+local LBL_PX = TYPE.LABEL
 local function lbl(s, x, y, col, align, px)
     txt(string.upper(s or ""), x, y, px or LBL_PX * F.scale,
-        col or pal.a(pal.DIM, 1), align, nil, true)
+        col or pal.MUTE, align, nil, true)
 end
 
 
@@ -449,6 +485,11 @@ end
 -- client/tests/row_field_test.lua.
 M.LIT = LIT
 M.MENU_PAD = MENU_PAD
+-- Published so the tests measure the ladder rather than restating it, and so
+-- a page that needs to know how tall a line is asks the same table the drawing
+-- asks. See client/tests/type_test.lua.
+M.TYPE = TYPE
+M.MENU_SCALE = MENU_SCALE
 
 -- A count, as marks rather than as a number: it reads at a glance and never
 -- asks the eye to parse a digit.
@@ -675,21 +716,20 @@ end
 -- The shop needs the same shape for its BUY, and two of these would be two
 -- chances to change the look of a button and only remember one of them.
 local function row_button_w(label)
-    return text_w(label, 12 * F.scale) + 26 * F.scale
+    return text_w(label, TYPE.BODY * F.scale, MENU_FONT) + 26 * F.scale
 end
 
 local function row_button(bx, cy, h, label, go, hot, action, val, lev)
     local bw = row_button_w(label)
     local by = cy - h / 2
-    local edge = go and pal.FRIEND or pal.RADAR_TILE
+    local edge = go and pal.FRIEND or pal.KEY_EDGE
     rect(bx - bw, by, bw, h, pal.rgb(0x070b12, hot and 0.85 or 0.55))
     if hot then rect(bx - bw, by, bw, h, pal.a(pal.FRIEND, LIT.CURSOR)) end
     -- The wash goes down before the outline, so the stroke is the last
     -- thing drawn on the shape rather than a line under a field.
-    key_box(bx - bw, by, bw, h, nil,
-            pal.a(edge, hot and 0.95 or (go and 0.75 or 0.5)))
-    txt(label, bx - bw / 2, cy, 12 * F.scale,
-        pal.a(go and pal.FRIEND or pal.INK, hot and 1 or 0.85), "center")
+    key_box(bx - bw, by, bw, h, nil, edge)
+    txt(label, bx - bw / 2, cy, TYPE.BODY * F.scale,
+        go and pal.FRIEND or pal.INK, "center", MENU_FONT)
     if action then hit(bx - bw, by, bw, h, action, val, lev) end
     return bx - bw
 end
@@ -737,12 +777,14 @@ function pages.field(x, y, w, value, hint, on, act, wipe)
     bracket(x, y, w, h, pal.a(on and pal.FRIEND or pal.RADAR_TILE,
                               on and 0.9 or 0.55), 10 * F.scale)
     local ix = x + 11 * F.scale
-    local px = 15 * F.scale
+    local px = TYPE.BODY * F.scale
     if value == "" then
-        lbl(hint, ix, cy, pal.a(pal.DIM, on and 0.7 or 0.5))
+        -- The placeholder is the only thing on screen saying what to type, so
+        -- it is written to be read. It was DIM at half alpha, 1.94:1, the
+        -- least legible run of type in the menu.
+        txt(hint, ix, cy, px, pal.MUTE, nil, MENU_FONT)
     else
-        txt(value, ix, cy, px, pal.a(pal.CHARGE_COL, 0.95), nil, MENU_FONT,
-            true)
+        txt(value, ix, cy, px, pal.CHARGE_COL, nil, MENU_FONT, true)
     end
     -- Where the next letter goes, and only while the box is taking them.
     if on then
@@ -772,20 +814,47 @@ end
 local KEY_H, KEY_PAD, KEY_GAP = 26, 9, 6
 local function key_size() return (FONT - 1) * F.scale end
 local function key_w(label) return text_w(label, key_size()) + 2 * KEY_PAD * F.scale end
+-- The outline is the whole of what says a key is there, so it draws at full
+-- weight in a color that can carry the job: `pal.KEY_EDGE` off and the team
+-- blue on. It was one color at two alphas, 0.55 of DIM when off, worth 2.12:1
+-- against the column, which is a button you have to already know about. The
+-- wash inside stays thin, because a wash is ground rather than structure.
 local function key_frame(x, y, w, on)
     local col = on and pal.FRIEND or pal.DIM
     local h = KEY_H * F.scale
     key_box(x, y, w, h, pal.a(col, on and 0.16 or 0.07),
-            pal.a(col, on and 0.95 or 0.55))
+            on and pal.FRIEND or pal.KEY_EDGE)
     return col, h
 end
 local function key_cap(x, y, w, label, on)
     local col, h = key_frame(x, y, w, on)
-    -- A key is shouted wherever it turns up, menu or corner: it is a thing to
-    -- press rather than something the interface is saying, and the two of them
-    -- are the same object.
+    -- A key in flight is shouted: it is a thing to press rather than something
+    -- the interface is saying, and upper case mono is what an instrument
+    -- labels a button with. See `menu_key` for the other half of this.
     txt(string.upper(label), x + w / 2, y + h / 2, key_size(),
-        pal.a(col, on and 1 or 0.85), "center", nil, true)
+        on and pal.FRIEND or pal.INK, "center", nil, true)
+    return col
+end
+
+-- The same key in the menu, which is a different object.
+--
+-- A key in the corner is glanced at over a fight. A key in the menu is a word
+-- you read before you press it, so it takes the face and the case the rest of
+-- the menu is set in. This is the one place the face rule splits on where a
+-- thing is drawn rather than on what it says, and it splits exactly the way
+-- interface.md already splits a call sign: the same name beside a nameplate in
+-- flight is mono, because everything in flight is.
+local function menu_key_w(label)
+    return text_w(label, TYPE.BODY * F.scale, MENU_FONT) + 2 * KEY_PAD * F.scale
+end
+
+local function menu_key(x, y, w, label, on)
+    local h = KEY_H * F.scale
+    key_box(x, y, w, h, pal.a(pal.FRIEND, on and 0.16 or 0.07),
+            on and pal.FRIEND or pal.KEY_EDGE)
+    txt(label, x + w / 2, y + h / 2, TYPE.BODY * F.scale,
+        on and pal.FRIEND or pal.INK, "center", MENU_FONT)
+    return h
 end
 
 -- The way into the menu, as the three bars the whole web uses for it.
@@ -3220,11 +3289,19 @@ end
 
 -- Break a sentence to a width, on spaces. The one card that carries prose is
 -- the bounty's, and its sentence is wider than any corner should be.
-local function wrapped(s, px, max)
+-- `font` names the face the lines will be drawn in, because a line has to be
+-- measured in the face it is set in. The menu's runs about 85% of the mono's
+-- width for the same size, so a sentence measured with the mono's one number
+-- breaks a word or two early on every line, which on a phone is a paragraph
+-- one line taller than it needs to be. Nothing measures type by guessing.
+local function wrapped(s, px, max, font)
     local out, line = {}, nil
+    local width = font == MENU_FONT
+        and function(t) return text_w(t, px, font, true) end
+        or function(t) return glyph_w(t, px) end
     for word in string.gmatch(s, "%S+") do
         local try = line and (line .. " " .. word) or word
-        if line and glyph_w(try, px) > max then
+        if line and width(try) > max then
             out[#out + 1] = line
             line = word
         else
@@ -4911,7 +4988,7 @@ function pages.kit(v, x, y, w, h, focused)
     local bx = x
     if band[1] then
         local r = band[1]
-        local px = 12 * F.scale
+        local px = TYPE.BODY * F.scale
         local label = cased(r.label or "custom")
         local kw = text_w(label, px, MENU_FONT) + 26 * F.scale
         local kh = 26 * F.scale
@@ -4919,7 +4996,7 @@ function pages.kit(v, x, y, w, h, focused)
         key_box(bx, mid - kh / 2, kw, kh,
                 hot and pal.a(pal.FRIEND, LIT.CURSOR) or nil,
                 pal.a(pal.FRIEND, hot and (focused and 1 or 0.55) or 0.5))
-        txt(label, bx + kw / 2, mid, px, pal.a(pal.INK, hot and 1 or 0.9),
+        txt(label, bx + kw / 2, mid, px, pal.INK,
             "center", MENU_FONT)
         if live then hit(bx, mid - kh / 2, kw, kh, "stage", r.index) end
         -- Whether the thirty points in hand are still what that name says.
@@ -4927,7 +5004,7 @@ function pages.kit(v, x, y, w, h, focused)
         -- needs no word for it.
         if v.profile and v.profile.state then
             lbl(v.profile.state, bx + kw + 10 * F.scale, mid,
-                pal.a(pal.DIM, 0.8))
+                pal.MUTE)
         end
     end
     if band[2] and v.kit_spent then
@@ -4942,9 +5019,9 @@ function pages.kit(v, x, y, w, h, focused)
         local fw = text_w(fig, 11 * F.scale)
         local bw = 52 * F.scale
         local by = mid + 5 * F.scale
-        txt(fig, right, by, 11 * F.scale,
-            pal.a(pal.INK, hot and 1 or 0.9), "right")
-        lbl("points", right, mid - 9 * F.scale, pal.a(pal.DIM, hot and 1 or 0.8),
+        txt(fig, right, by, TYPE.BODY * F.scale,
+            pal.INK, "right")
+        lbl("points", right, mid - 9 * F.scale, pal.MUTE,
             "right")
         local mx = right - fw - 8 * F.scale - bw
         rect(mx, by - 2 * F.scale, bw, 4 * F.scale, pal.a(pal.DIM, 0.25))
@@ -5002,8 +5079,8 @@ function pages.kit(v, x, y, w, h, focused)
         end
         local hot = cursor(r)
         if hot then LIT.field(cy - srow / 2, srow, LIT.CURSOR) end
-        txt(r.label, x, cy, 12.5 * F.scale,
-            pal.a(pal.INK, hot and 1 or 0.85), nil, MENU_FONT)
+        txt(r.label, x, cy, TYPE.BODY * F.scale,
+            pal.INK, nil, MENU_FONT)
         -- The ladder. Every circle this account owns takes a press of its
         -- own, so a tap on the fourth asks for four; the one it is already on
         -- takes the point back. The dim ones are not controls: a press there
@@ -5027,11 +5104,11 @@ function pages.kit(v, x, y, w, h, focused)
         -- a rung reads L1, L2, L3, because that is what a level is called
         -- everywhere else, and a spray of two is two rounds.
         if r.group == "levels" then
-            txt("L" .. (held + 1), px + 10 * F.scale, cy, 11 * F.scale,
-                pal.a(pal.INK, hot and 0.95 or 0.7))
+            txt("L" .. (held + 1), px + 10 * F.scale, cy, TYPE.BODY * F.scale,
+                pal.INK)
         elseif r.ladder then
-            txt(tostring(held + 1), px + 10 * F.scale, cy, 11 * F.scale,
-                pal.a(pal.INK, hot and 0.95 or 0.7))
+            txt(tostring(held + 1), px + 10 * F.scale, cy, TYPE.BODY * F.scale,
+                pal.INK)
         end
         -- Which of the two keys throws a carried charge, in a box beside it.
         if r.charge_slot then
@@ -5056,7 +5133,7 @@ function pages.kit(v, x, y, w, h, focused)
                     pal.a(pal.CHARGE_COL, hot and 0.16 or 0.07),
                     pal.a(pal.CHARGE_COL, hot and 0.9 or 0.5))
             lbl(word, bx2 + bw / 2, cy,
-                pal.a(pal.CHARGE_COL, hot and 1 or 0.8), "center")
+                pal.CHARGE_COL, "center")
             if live then hit(bx2, cy - bh / 2, bw, bh, "charge_swap") end
         end
         -- And what the next rung costs, on the end of the row. The only
@@ -5064,7 +5141,7 @@ function pages.kit(v, x, y, w, h, focused)
         -- shop's gold, and the wallet it comes out of is on the reading.
         if r.price then
             local can = r.afford ~= false
-            pages.priced(r.price, x + w, cy, 11.5 * F.scale,
+            pages.priced(r.price, x + w, cy, TYPE.BODY * F.scale,
                          pal.a(can and pal.CHARGE_COL or pal.DIM,
                                can and 0.95 or 0.55), "right")
         end
@@ -5088,12 +5165,12 @@ function pages.kit(v, x, y, w, h, focused)
         end
         local hot = cursor(r)
         if hot then LIT.field(cy - srow / 2, srow, LIT.CURSOR) end
-        txt(r.label, x, cy, 12.5 * F.scale,
-            pal.a(pal.INK, hot and 1 or 0.85), nil, MENU_FONT)
+        txt(r.label, x, cy, TYPE.BODY * F.scale,
+            pal.INK, nil, MENU_FONT)
         local vx = x + NAMEW + 14 * F.scale
         local vw = text_w(r.detail or "", 12.5 * F.scale, MENU_FONT)
-        txt(r.detail or "", vx, cy, 12.5 * F.scale,
-            pal.a(pal.FRIEND, hot and 1 or 0.85), nil, MENU_FONT)
+        txt(r.detail or "", vx, cy, TYPE.BODY * F.scale,
+            pal.FRIEND, nil, MENU_FONT)
         local dirs = {{-1, vx - 16 * F.scale}, {1, vx + vw + 14 * F.scale}}
         local action = r.ship and "carousel" or "wake"
         for _, d in ipairs(dirs) do
@@ -5110,7 +5187,7 @@ function pages.kit(v, x, y, w, h, focused)
         end
         if r.choices and r.choices > 1 then
             lbl((r.choice or 1) .. " of " .. r.choices, x + w, cy,
-                pal.a(pal.DIM, 0.7), "right")
+                pal.MUTE, "right")
         end
         if live then
             local hx, _, hw = M.drawer_span()
@@ -5160,8 +5237,8 @@ function pages.kit(v, x, y, w, h, focused)
         key_box(x, ky, w, kh,
                 pal.a(pal.FRIEND, hot and LIT.CURSOR or 0.10),
                 pal.a(pal.FRIEND, hot and (focused and 1 or 0.7) or 0.85))
-        txt("save", x + w / 2, ky + kh / 2, 13 * F.scale,
-            pal.a(pal.INK, 1), "center", MENU_FONT)
+        txt("save", x + w / 2, ky + kh / 2, TYPE.BODY * F.scale,
+            pal.INK, "center", MENU_FONT)
         if live then hit(x, ky, w, kh, "stage", save.index) end
     end
 
@@ -5188,8 +5265,8 @@ function pages.back_row(v, x, y, w, place)
     local bx = x
     F.layer:tri(bx, ry(mid), bx + 7 * F.scale, ry(mid - 5.5 * F.scale),
                 bx + 7 * F.scale, ry(mid + 5.5 * F.scale),
-                pal.a(pal.DIM, 0.9))
-    lbl(place, bx + 15 * F.scale, mid, pal.a(pal.DIM, 0.9))
+                pal.MUTE)
+    lbl(place, bx + 15 * F.scale, mid, pal.MUTE)
     hit(bx - 10 * F.scale, y, 130 * F.scale, 48 * F.scale, "back")
     hrule(x, y + 48 * F.scale, w)
     return y + 48 * F.scale + 8 * F.scale
@@ -5215,8 +5292,8 @@ function pages.slot(v, x, y, w, h, focused)
         kind = (r.trigger == 0 and "gun" or "bomb") .. " add-on"
     else kind = "charge" end
     lbl(kind, x, at + 16 * F.scale)
-    txt(r.label or r.sold or "", x, at + 44 * F.scale, 24 * F.scale,
-        pal.a(pal.INK, 1), nil, MENU_FONT)
+    txt(r.label or r.sold or "", x, at + 44 * F.scale, TYPE.PAGE * F.scale,
+        pal.INK, nil, MENU_FONT)
     -- The thing working, at toy scale. A page can name a fuse and price a
     -- fuse, and neither tells a browsing pilot what a fuse is for.
     local by = at + 64 * F.scale
@@ -5226,10 +5303,11 @@ function pages.slot(v, x, y, w, h, focused)
     local ly = by + bh + 26 * F.scale
     -- What it does, in the client's own words.
     if r.teach then
-        for _, line in ipairs(wrapped(r.teach, 13 * F.scale, w)) do
-            txt(line, x, ly, 13 * F.scale, pal.a(pal.PANEL_INK, 0.92),
-                nil, nil, true)
-            ly = ly + 18 * F.scale
+        for _, line in ipairs(wrapped(r.teach, TYPE.BODY * F.scale, w,
+                                      MENU_FONT)) do
+            txt(line, x, ly, TYPE.BODY * F.scale, pal.READ,
+                nil, MENU_FONT, true)
+            ly = ly + pages.NOTE_LINE * F.scale
         end
         ly = ly + 12 * F.scale
     end
@@ -5247,7 +5325,7 @@ function pages.slot(v, x, y, w, h, focused)
         if held > 0 then said[#said + 1] = held .. " equipped" end
         if top > owned then said[#said + 1] = (top - owned) .. " to climb" end
         lbl(table.concat(said, " \194\183 "), x, ly + 24 * F.scale,
-            pal.a(pal.DIM, 0.85))
+            pal.MUTE)
         ly = ly + 48 * F.scale
     end
     -- The deal, and the wallet it comes out of. This is the one page in the
@@ -5258,18 +5336,18 @@ function pages.slot(v, x, y, w, h, focused)
                                   pal.a(can and pal.CHARGE_COL or pal.DIM,
                                         can and 0.95 or 0.55))
         lbl("buys the next rung", x + used + 14 * F.scale, ly,
-            pal.a(pal.DIM, 0.85))
+            pal.MUTE)
         -- The wallet at the far end of the same line, its word measured off
         -- the figure rather than guessed at: a four-figure balance is wider
         -- than a two-figure one and the label has to start clear of it.
         local purse = pages.priced(v.wallet or 0, x + w, ly, 12 * F.scale,
                                    pal.a(pal.CHARGE_COL, 0.9), "right")
-        lbl("wallet", x + w - purse - 8 * F.scale, ly, pal.a(pal.DIM, 0.8),
+        lbl("wallet", x + w - purse - 8 * F.scale, ly, pal.MUTE,
             "right")
         ly = ly + 26 * F.scale
     elseif top > 0 then
         lbl(owned > (r.base or 0) and "yours, all the way up"
-            or "dealt to everybody", x, ly, pal.a(pal.DIM, 0.7))
+            or "dealt to everybody", x, ly, pal.MUTE)
         ly = ly + 26 * F.scale
     end
     M.page_extent = (ly - y) + 90 * F.scale
@@ -5289,7 +5367,7 @@ function pages.slot(v, x, y, w, h, focused)
                 pal.a(col, (hot and 0.18) or (can and 0.10 or 0.04)),
                 pal.a(can and col or pal.DIM, hot and 1 or (can and 0.9 or 0.5)))
         txt(buy and "buy" or (row.label or ""), x + w / 2, ky + kh / 2,
-            13 * F.scale, pal.a(can and pal.INK or pal.DIM, 1), "center",
+            TYPE.BODY * F.scale, can and pal.INK or pal.MUTE, "center",
             MENU_FONT)
         hit(x, ky, w, kh, buy and "buy_go" or "stage",
             buy and nil or row.index)
@@ -5324,12 +5402,12 @@ function pages.builds(v, x, y, w, h, focused)
         elseif loaded then
             LIT.field(ry0, ROW, LIT.HERE)
         end
-        txt(r.label or "", x, ry0 + ROW / 2, 13 * F.scale,
-            pal.a(loaded and pal.FRIEND or pal.INK,
-                  hot and 1 or (loaded and LIT.breath() or 0.85)),
+        txt(r.label or "", x, ry0 + ROW / 2, TYPE.ROW * F.scale,
+            loaded and pal.a(pal.FRIEND, hot and 1 or LIT.breath())
+                or pal.INK,
             nil, MENU_FONT, true)
         if r.starter then
-            lbl("starter", x + w, ry0 + ROW / 2, pal.a(pal.DIM, 0.7), "right")
+            lbl("starter", x + w, ry0 + ROW / 2, pal.MUTE, "right")
         end
         local hx, _, hw = M.drawer_span()
         hit(hx, ry0, hw, ROW, "stage", r.index)
@@ -5348,8 +5426,8 @@ function pages.builds(v, x, y, w, h, focused)
                                or (i == 1 and pal.a(pal.FRIEND, 0.08) or nil))
                 or nil,
                 pal.a(pal.FRIEND, dim and 0.2 or (hot and 1 or 0.55)))
-        txt(r.label or "", kx + kw / 2, ky + kh / 2, 11 * F.scale,
-            pal.a(pal.INK, dim and 0.4 or (hot and 1 or 0.8)), "center",
+        txt(r.label or "", kx + kw / 2, ky + kh / 2, TYPE.BODY * F.scale,
+            dim and pal.MUTE or pal.INK, "center",
             MENU_FONT)
         hit(kx, ky, kw, kh, "stage", r.index)
     end
@@ -5363,15 +5441,15 @@ function pages.newbuild(v, x, y, w, h, focused)
     local at = pages.back_row(v, x, y, w, "builds")
     local nb = v.new or {}
     lbl("builds", x, at + 16 * F.scale)
-    txt("new build", x, at + 44 * F.scale, 24 * F.scale,
-        pal.a(pal.INK, 1), nil, MENU_FONT)
+    txt("new build", x, at + 44 * F.scale, TYPE.PAGE * F.scale,
+        pal.INK, nil, MENU_FONT)
     local ly = at + 64 * F.scale
     for _, line in ipairs(wrapped(
             "keeps the thirty points in hand under a name of yours.",
-            13 * F.scale, w)) do
-        txt(line, x, ly, 13 * F.scale, pal.a(pal.PANEL_INK, 0.92), nil, nil,
+            TYPE.BODY * F.scale, w, MENU_FONT)) do
+        txt(line, x, ly, TYPE.BODY * F.scale, pal.READ, nil, MENU_FONT,
             true)
-        ly = ly + 18 * F.scale
+        ly = ly + pages.NOTE_LINE * F.scale
     end
     ly = ly + 16 * F.scale
     pages.field(x, ly, w, nb.name or "", "a name for this build", nb.on,
@@ -5387,8 +5465,8 @@ function pages.newbuild(v, x, y, w, h, focused)
     key_box(x, ky, w, kh,
             pal.a(pal.FRIEND, can and (hot and 0.18 or 0.10) or 0.04),
             pal.a(can and pal.FRIEND or pal.DIM, can and 0.9 or 0.5))
-    txt("create", x + w / 2, ky + kh / 2, 13 * F.scale,
-        pal.a(can and pal.INK or pal.DIM, 1), "center", MENU_FONT)
+    txt("create", x + w / 2, ky + kh / 2, TYPE.BODY * F.scale,
+        can and pal.INK or pal.MUTE, "center", MENU_FONT)
     hit(x, ky, w, kh, "create_build")
     if hot then
         key_box(x, ky, w, kh, nil, pal.a(pal.FRIEND, 1))
@@ -5405,17 +5483,17 @@ end
 function pages.points(v, x, y, w, h)
     local at = pages.back_row(v, x, y, w, "ship")
     lbl("points", x, at + 16 * F.scale)
-    txt("thirty points", x, at + 44 * F.scale, 24 * F.scale,
-        pal.a(pal.INK, 1), nil, MENU_FONT)
+    txt("thirty points", x, at + 44 * F.scale, TYPE.PAGE * F.scale,
+        pal.INK, nil, MENU_FONT)
     local ly = at + 64 * F.scale
     for _, line in ipairs(wrapped(
             "every ship is a spend of the same thirty points, whoever flies "
             .. "it and whatever the account owns. press a circle to spend a "
             .. "point there; press the one it is on to take the point back.",
-            13 * F.scale, w)) do
-        txt(line, x, ly, 13 * F.scale, pal.a(pal.PANEL_INK, 0.92), nil, nil,
+            TYPE.BODY * F.scale, w)) do
+        txt(line, x, ly, TYPE.BODY * F.scale, pal.READ, nil, nil,
             true)
-        ly = ly + 18 * F.scale
+        ly = ly + pages.NOTE_LINE * F.scale
     end
     ly = ly + 22 * F.scale
     -- The meter again, at reading size, with both figures spelled out.
@@ -5428,7 +5506,7 @@ function pages.points(v, x, y, w, h)
     rect(x, ly - 3 * F.scale, bw, 6 * F.scale, pal.a(pal.DIM, 0.25))
     rect(x, ly - 3 * F.scale, bw * (spent / math.max(total, 1)), 6 * F.scale,
          pal.a(pal.FRIEND, 0.85))
-    txt(fig, x + w, ly, 12 * F.scale, pal.a(pal.INK, 0.9), "right")
+    txt(fig, x + w, ly, TYPE.BODY * F.scale, pal.INK, "right")
     ly = ly + 30 * F.scale
     lbl("what a circle says", x, ly)
     ly = ly + 22 * F.scale
@@ -5437,8 +5515,8 @@ function pages.points(v, x, y, w, h)
             {"ring", pal.FRIEND, "owned, waiting for a point"},
             {"dim", pal.DIM, "not yours yet: its price sits on the row"}}) do
         pages.dot(x + 6 * F.scale, ly, 5.5 * F.scale, s[1], s[2])
-        txt(s[3], x + 24 * F.scale, ly, 12 * F.scale,
-            pal.a(pal.PANEL_INK, 0.9), nil, nil, true)
+        txt(s[3], x + 24 * F.scale, ly, TYPE.BODY * F.scale,
+            pal.READ, nil, nil, true)
         ly = ly + 26 * F.scale
     end
     M.page_extent = (ly - y) + 20 * F.scale
@@ -5501,14 +5579,15 @@ function pages.invite_banner(v, y)
                 pal.a(pal.FRIEND, 0.5), true)
     local margin = MENU_PAD * F.scale
     txt("Get somebody you know into the game.", bx + margin,
-        y + 16 * F.scale, 12.5 * F.scale, pal.a(pal.INK, 0.95), nil,
+        y + 16 * F.scale, TYPE.BODY * F.scale, pal.INK, nil,
         MENU_FONT)
     -- The second line flips once the browser says the link went somewhere,
     -- which is the only acknowledgment a copy gets: nothing else on screen
     -- moves.
     local copied = M.share_result == "copied"
     txt(copied and "Link copied." or "Press here to share an invite.",
-        bx + margin, y + 33 * F.scale, 10 * F.scale, pal.a(pal.DIM, 1))
+        bx + margin, y + 33 * F.scale, TYPE.BODY * F.scale, pal.READ, nil,
+        MENU_FONT)
     hit(bx, y, bw, bh, "invite")
     -- The browser lays a real anchor over it: a share sheet and a clipboard
     -- write both have to happen inside a gesture the page itself saw, and a
@@ -5542,7 +5621,7 @@ function pages.friends(v, x, y, w, h, focused)
     -- box under it where a section's first row goes. It used to sit eight
     -- points down, which is a page whose first line is higher than its second
     -- section's for no reason either of them could give.
-    lbl("add friend", x, y + SECT * pages.SECT_LABEL, pal.a(pal.DIM, 0.85))
+    lbl("add friend", x, y + SECT * pages.SECT_LABEL, pal.MUTE)
     local fy = y + SECT + bh / 2
     local aw = text_w("add", 12 * F.scale) + 26 * F.scale
     local fw = math.min(300 * F.scale, w - aw - 12 * F.scale)
@@ -5557,11 +5636,12 @@ function pages.friends(v, x, y, w, h, focused)
     -- and waiting: this looks up a call sign whole and offers nothing.
     local note = a.note or ""
     if note ~= "" then
-        txt(note, x, fy + bh / 2 + 12 * F.scale, 12 * F.scale,
-            pal.a(a.bad and pal.ENEMY or pal.FRIEND, 0.95))
+        txt(note, x, fy + bh / 2 + 12 * F.scale, TYPE.BODY * F.scale,
+            a.bad and pal.ENEMY or pal.FRIEND)
     elseif not packed then
         txt("enter their call sign exactly",
-            x + fw + aw + 24 * F.scale, fy, 12 * F.scale, pal.a(pal.DIM, 0.8))
+            x + fw + aw + 24 * F.scale, fy, TYPE.BODY * F.scale, pal.READ,
+            nil, MENU_FONT)
     end
     local BAND = SECT + bh + 24 * F.scale
 
@@ -5595,8 +5675,8 @@ function pages.friends(v, x, y, w, h, focused)
             if on then
                 rect(fx, ry0, lw, rh, pal.a(pal.FRIEND, LIT.CURSOR))
             end
-            txt(p.name or "?", fx + 11 * F.scale, ry0 + rh / 2, 14 * F.scale,
-                pal.a(pal.INK, on and 1 or 0.85), nil, MENU_FONT, true)
+            txt(p.name or "?", fx + 11 * F.scale, ry0 + rh / 2, TYPE.ROW * F.scale,
+                pal.INK, nil, MENU_FONT, true)
             hit(fx, ry0, lw, rh, "found", i)
         end
         -- The band grows to clear them, so the first section is not drawn
@@ -5628,7 +5708,8 @@ function pages.friends(v, x, y, w, h, focused)
     local function head_h(r)
         if not r.sect then return 0 end
         local said = r.sect_line
-            and wrapped(cased(r.sect_line), 11.5 * F.scale, w - 10 * F.scale)
+            and wrapped(cased(r.sect_line), TYPE.BODY * F.scale,
+                        w - 10 * F.scale, MENU_FONT)
             or nil
         return SECT + (said and (#said * 15 * F.scale + 4 * F.scale) or 0)
     end
@@ -5654,8 +5735,8 @@ function pages.friends(v, x, y, w, h, focused)
             -- second one over the row under it. On a phone this sentence is
             -- most of the width of the screen.
             local said = r.sect_line
-                and wrapped(cased(r.sect_line), 11.5 * F.scale,
-                            w - 10 * F.scale) or nil
+                and wrapped(cased(r.sect_line), TYPE.BODY * F.scale,
+                            w - 10 * F.scale, MENU_FONT) or nil
             local sh = head_h(r)
             local hy = at - dy
             if hy >= top and hy + sh <= floor then
@@ -5665,7 +5746,7 @@ function pages.friends(v, x, y, w, h, focused)
                     lbl(r.sect_note,
                         x + text_w(r.sect, LBL_PX * F.scale) + 12 * F.scale,
                         hy + SECT * pages.SECT_LABEL,
-                        pal.a(pal.FRIEND, 0.85))
+                        pal.FRIEND)
                 end
                 if said then
                     -- Cased once over the whole sentence and drawn raw. Left
@@ -5674,9 +5755,9 @@ function pages.friends(v, x, y, w, h, focused)
                     -- itself.
                     local ny = hy + SECT + 8 * F.scale
                     for _, line in ipairs(said) do
-                        txt(line, x, ny, 11.5 * F.scale, pal.a(pal.DIM, 0.85),
-                            nil, nil, true)
-                        ny = ny + 15 * F.scale
+                        txt(line, x, ny, TYPE.BODY * F.scale, pal.READ,
+                            nil, MENU_FONT, true)
+                        ny = ny + pages.NOTE_LINE * F.scale
                     end
                 end
             end
@@ -5704,15 +5785,15 @@ function pages.friends(v, x, y, w, h, focused)
                                   "friend_act", i, k) - 8 * F.scale
                 end
                 if packed then
-                    txt(r.label or "?", x, ry0 + rowh * 0.28, 15 * F.scale,
+                    txt(r.label or "?", x, ry0 + rowh * 0.28, TYPE.ROW * F.scale,
                         col, nil, MENU_FONT, true)
-                    txt(r.detail or "", x, ry0 + rowh * 0.72, 11.5 * F.scale,
-                        pal.a(pal.DIM, 0.95))
+                    txt(r.detail or "", x, ry0 + rowh * 0.72, TYPE.BODY * F.scale,
+                        pal.READ, nil, MENU_FONT)
                 else
-                    txt(r.label or "?", x, cy - 8 * F.scale, 16 * F.scale, col,
+                    txt(r.label or "?", x, cy - 8 * F.scale, TYPE.ROW * F.scale, col,
                         nil, MENU_FONT, true)
-                    txt(r.detail or "", x, cy + 10 * F.scale, 11.5 * F.scale,
-                        pal.a(pal.DIM, 0.95))
+                    txt(r.detail or "", x, cy + 10 * F.scale, TYPE.BODY * F.scale,
+                        pal.READ, nil, MENU_FONT)
                 end
             else
                 -- A friend: the dot, the name, and the game. Solid where they
@@ -5728,14 +5809,14 @@ function pages.friends(v, x, y, w, h, focused)
                     F.layer:ring(dx, ry(cy), pages.ON_R * F.scale,
                                  1.3 * F.scale, 10, pal.a(pal.DIM, 0.7))
                 end
-                txt(r.label or "?", x + 19 * F.scale, cy, 16 * F.scale,
-                    pal.a(pal.INK, hot and 1 or (on and 0.95 or 0.75)),
+                txt(r.label or "?", x + 19 * F.scale, cy, TYPE.ROW * F.scale,
+                    on and pal.INK or pal.READ,
                     nil, MENU_FONT, true)
                 -- Against the far edge, where the eye is not reading names,
                 -- and raw: a game keeps the capitals the games list gave it.
                 if r.detail and r.detail ~= "" then
-                    txt(r.detail, x + w, cy, 11.5 * F.scale,
-                        pal.a(pal.DIM, 0.95), "right", nil, true)
+                    txt(r.detail, x + w, cy, TYPE.BODY * F.scale,
+                        pal.READ, "right", MENU_FONT, true)
                 end
             end
             -- The row itself, after its buttons, so a press on one of them
@@ -5826,7 +5907,7 @@ function pages.range(r, bx, by, bw, bh)
         local y1, y2 = cy - 22 * F.scale, cy + 22 * F.scale
         local col = pal.a(r.tint_col or pal.INK, 0.9)
         if r.short ~= "ROT" then
-            lbl("now", bx + 12 * F.scale, y1, pal.a(pal.DIM, 0.7))
+            lbl("now", bx + 12 * F.scale, y1, pal.MUTE)
             lbl("next", bx + 12 * F.scale, y2,
                 pal.a(r.tint_col or pal.INK, 0.9))
         end
@@ -5861,7 +5942,7 @@ function pages.range(r, bx, by, bw, bh)
             local wy = cy + 28 * F.scale
             turn_dial(d1, 1, pal.a(pal.DIM, 0.8))
             turn_dial(d2, 1.4, col)
-            lbl("now", d1, wy, pal.a(pal.DIM, 0.7), "center")
+            lbl("now", d1, wy, pal.MUTE, "center")
             lbl("next", d2, wy,
                 pal.a(r.tint_col or pal.INK, 0.9), "center")
         end
@@ -5968,7 +6049,7 @@ function pages.range(r, bx, by, bw, bh)
             elseif t < 0.85 then fl = 0.45
             else fl = 0.45 + (t - 0.85) * 2 end
             lbl("their recharge", bx + 12 * F.scale, by + bh - 18 * F.scale,
-                pal.a(pal.DIM, 0.6))
+                pal.MUTE)
             tank(bx + bw * 0.42, by + bh - 21 * F.scale, bw * 0.44, fl,
                  pal.a(pal.ENEMY, 0.8))
             if t < 0.45 then
@@ -6176,20 +6257,20 @@ function pages.pilot(v, x, y, w, h, focused)
     -- The name in its owner's case. A press on it does nothing any more; it
     -- used to reroll it, which cost a curious pilot their call sign.
     local kh = 26 * F.scale
-    txt(c.name or "", x, at + kh / 2, 24 * F.scale, pal.a(pal.INK, 1),
+    txt(c.name or "", x, at + kh / 2, TYPE.PAGE * F.scale, pal.INK,
         nil, MENU_FONT, true)
     -- The size every other key in this menu is set at. It was eight and a half
     -- points, which is under the ten this interface holds authored type to and
     -- is eight and a half pixels on a monitor that is not a phone: a key
     -- nobody with a desktop could read. See `lbl`.
-    local KEY_PX = 12 * F.scale
+    local KEY_PX = TYPE.BODY * F.scale
     local kw = text_w("new name", KEY_PX, MENU_FONT) + 22 * F.scale
     local hot = sel == 1
     key_box(x + w - kw, at, kw, kh,
             pal.rgb(0x0a0f18, hot and 0.95 or 0.7),
             pal.a(hot and pal.FRIEND or pal.RADAR_TILE, hot and 0.95 or 0.7))
     txt("new name", x + w - kw / 2, at + kh / 2, KEY_PX,
-        pal.a(hot and pal.FRIEND or pal.INK, hot and 1 or 0.6), "center",
+        hot and pal.FRIEND or pal.INK, "center",
         MENU_FONT)
     hit(x + w - kw, at, kw, kh, "stage", 1)
     at = at + kh + 16 * F.scale
@@ -6204,8 +6285,8 @@ function pages.pilot(v, x, y, w, h, focused)
     lbl("career", x, at)
     at = at + 24 * F.scale
     local function fact(label, value)
-        txt(label, x, at, 14 * F.scale, pal.a(pal.INK, 0.85))
-        txt(value, x + w, at, 11 * F.scale, pal.a(pal.PANEL_INK, 0.95),
+        txt(label, x, at, TYPE.ROW * F.scale, pal.INK)
+        txt(value, x + w, at, TYPE.BODY * F.scale, pal.READ,
             "right", nil, true)
         at = at + 26 * F.scale
     end
@@ -6225,8 +6306,8 @@ function pages.pilot(v, x, y, w, h, focused)
              .. " deaths")
         fact("Games", tostring(career.games))
     end
-    txt("Rivets", x, at, 14 * F.scale, pal.a(pal.INK, 0.85))
-    pages.priced(c.rivets or 0, x + w, at, 11.5 * F.scale,
+    txt("Rivets", x, at, TYPE.ROW * F.scale, pal.INK)
+    pages.priced(c.rivets or 0, x + w, at, TYPE.BODY * F.scale,
                  pal.a(pal.CHARGE_COL, 0.95), "right")
     at = at + 26 * F.scale
 
@@ -6247,23 +6328,29 @@ function pages.pilot(v, x, y, w, h, focused)
         local l2 = ky - 16 * F.scale
         local l1 = l2 - 19 * F.scale
         txt("Keep your points and log in on other devices", mid, l1,
-            10.5 * F.scale, pal.a(pal.DIM, 1), "center")
+            TYPE.BODY * F.scale, pal.READ, "center", MENU_FONT)
         local ask = "Already have a pilot? "
         local act = "log in"
-        local px2 = 10.5 * F.scale
-        local aw = text_w(ask, px2)
-        local vw = text_w(act, px2)
+        local px2 = TYPE.BODY * F.scale
+        local aw = text_w(ask, px2, MENU_FONT)
+        local vw = text_w(act, px2, MENU_FONT)
         local sx2 = mid - (aw + vw) / 2
-        local hot3 = sel == 3
-        txt(ask, sx2, l2, px2, pal.a(pal.DIM, 1))
+        -- The cursor says where a press lands, the way it does on every other
+        -- row of every other page. It used to be said by setting the word
+        -- itself a shade brighter, which is a thing type in this menu no
+        -- longer does: state is a color here, and cyan has nothing above it.
+        if sel == 3 then
+            LIT.field(l2 - 10 * F.scale, 20 * F.scale, LIT.CURSOR)
+        end
+        txt(ask, sx2, l2, px2, pal.READ, nil, MENU_FONT)
         txt(act, sx2 + aw, l2, px2,
-            pal.a(pal.FRIEND, hot3 and 1 or 0.85), nil, nil, true)
+            pal.FRIEND, nil, MENU_FONT, true)
         hit(x, l2 - 10 * F.scale, w, 20 * F.scale, "stage", 3)
         local hot2 = sel == 2
         key_box(x, ky, w, fh, pal.a(pal.FRIEND, hot2 and 0.18 or 0.10),
                 pal.a(pal.FRIEND, hot2 and 1 or 0.85))
-        txt("sign up", mid, ky + fh / 2, 12.5 * F.scale,
-            pal.a(pal.INK, 1), "center", MENU_FONT)
+        txt("sign up", mid, ky + fh / 2, TYPE.BODY * F.scale,
+            pal.INK, "center", MENU_FONT)
         hit(x, ky, w, fh, "stage", 2)
     elseif c.online then
         local half = (w - 10 * F.scale) / 2
@@ -6275,7 +6362,7 @@ function pages.pilot(v, x, y, w, h, focused)
                     pal.a(on and pal.FRIEND or pal.RADAR_TILE,
                           on and 0.95 or 0.7))
             txt(word, bx + half / 2, ky + fh / 2, KEY_PX,
-                pal.a(on and pal.FRIEND or pal.INK, on and 1 or 0.75),
+                on and pal.FRIEND or pal.INK,
                 "center", MENU_FONT)
             hit(bx, ky, half, fh, "stage", i + 1)
         end
@@ -6298,8 +6385,8 @@ end
 --
 -- On `pages` rather than in a local of its own, because this file is at the
 -- two hundred locals a Lua chunk may hold. See client/tests/upvalues_test.lua.
-pages.NOTE_PX = 11.5
-pages.NOTE_LINE = 15
+pages.NOTE_PX = TYPE.BODY
+pages.NOTE_LINE = 19
 
 -- What a row keeps back at its right for the keys it carries, if any.
 function pages.acts_w(r)
@@ -6319,7 +6406,7 @@ end
 function pages.note_lines(note, w, r)
     if not note or note == "" then return nil end
     return wrapped(cased(note), pages.NOTE_PX * F.scale,
-                   math.max(40 * F.scale, w - pages.acts_w(r)))
+                   math.max(40 * F.scale, w - pages.acts_w(r)), MENU_FONT)
 end
 
 -- One row of the stage: a mark for the one you are on, the name, and
@@ -6357,17 +6444,26 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
     -- above the list is set in.
     local tx = x
     local sel = hot or r.mark
-    -- How bright the name is set. The row you are already on breathes, unless
-    -- the cursor is also on it, in which case the cursor has it and the row is
-    -- still: one thing moves on a page, and it is the thing you are not
-    -- looking at.
-    local label_a = sel and 1 or 0.82
+    -- Two kinds of row you cannot press, written a register back from the ones
+    -- you can: one nothing is serving yet, and one with no seat left.
+    --
+    -- It was `col = pal.a(col, 0.6)` and it did nothing at all, because the
+    -- two places that draw the name ask for `pal.a(col, label_a)` and `pal.a`
+    -- replaces an alpha rather than multiplying one. So a room nobody was
+    -- serving named itself at exactly the weight of a room you could join,
+    -- while the strip of figures under it did dim, through a multiplier that
+    -- worked, down to 1.97:1. The row said the wrong half of itself quietly.
+    -- A register carries it now, which is a thing that cannot be thrown away
+    -- by the next hand that sets an alpha.
+    local off = r.waiting or r.full
+    if off then col = pal.MUTE end
+    -- The row you are already on breathes, unless the cursor is also on it, in
+    -- which case the cursor has it and the row is still: one thing moves on a
+    -- page, and it is the thing you are not looking at. Breath is the one
+    -- alpha left on type in this menu, and it rides on a name at full ink,
+    -- floored at 0.74, which is 9.2:1 at the bottom of the curve.
+    local label_a = 1
     if r.mark and not hot then label_a = LIT.breath() end
-    -- A row nothing is serving is a place that exists and cannot be flown to
-    -- yet, so it is written a shade back from the ones that can.
-    -- Two kinds of row you cannot press, written the same shade back from the
-    -- ones you can: one nothing is serving yet, and one with no seat left.
-    if r.waiting or r.full then col = pal.a(col, 0.6) end
     -- A row carrying a sentence of its own gives it the lower half and takes
     -- the upper for everything else. The rows that set a value are the ones
     -- that want it: a shelf item or a control is a name whose meaning is not
@@ -6400,9 +6496,9 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
     -- was wrong here: read above its own `local`, `note` is a global, a
     -- global is nil, and the larger size this chooses never once applied.
     -- That is the bug .luacheckrc exists to catch, and it caught this one.
-    local size = (M.compact and 17 or 18) * F.scale
+    local size = TYPE.ROW * F.scale
     if (note or strip) and h >= 44 * F.scale then
-        size = (M.compact and 19 or 21) * F.scale
+        size = TYPE.LEAD * F.scale
     end
     local ly = note and (y + h * 0.36) or (y + h / 2)
     if strip then ly = y + h * 0.25 end
@@ -6433,8 +6529,8 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
             - (#lines - 1) * pages.NOTE_LINE * F.scale / 2
         for _, line in ipairs(lines) do
             txt(line, tx, ny, pages.NOTE_PX * F.scale,
-                pal.a(pal.DIM, (hot and 1 or 0.75) * (r.waiting and 0.7 or 1)),
-                nil, nil, true)
+                off and pal.MUTE or pal.READ,
+                nil, MENU_FONT, true)
             ny = ny + pages.NOTE_LINE * F.scale
         end
     end
@@ -6444,14 +6540,13 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
         -- every game because the rows share one height and one order. The
         -- words are the catalog's; this only lays them out. Values keep
         -- their authored case, since "4 v 4" is data rather than a
-        -- sentence, and a row nothing is serving dims its facts with the
-        -- rest of itself.
+        -- sentence, and a row nothing is serving writes its facts a
+        -- register back, with the rest of itself.
         --
         -- About seven points of air over the name and seven under the
         -- values, which is what the row had when a sentence sat between
         -- them: it lost a line, so the two that are left closed up rather
         -- than spreading into the gap.
-        local dimmed = (r.waiting or r.full) and 0.6 or 1
         local sx2 = tx
         local right = x + w
         for si, s in ipairs(strip) do
@@ -6468,9 +6563,9 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
                             1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.45), true)
             end
             lbl(s[1], at2, y + h * 0.59,
-                pal.a(pal.DIM, (hot and 1 or 0.85) * dimmed))
-            txt(s[2], at2, y + h * 0.81, 13 * F.scale,
-                pal.a(pal.INK, (sel and 0.95 or 0.8) * dimmed), nil, nil, true)
+                pal.MUTE)
+            txt(s[2], at2, y + h * 0.81, TYPE.BODY * F.scale,
+                off and pal.MUTE or pal.READ, nil, nil, true)
             sx2 = at2 + sw2 + 15 * F.scale
         end
     end
@@ -6539,8 +6634,8 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
             end
         end
         if r.detail and r.detail ~= "" then
-            txt(r.detail, x0 - 12 * F.scale, y + h / 2, 11 * F.scale,
-                pal.a(pal.DIM, 0.8), "right")
+            txt(r.detail, x0 - 12 * F.scale, y + h / 2, TYPE.BODY * F.scale,
+                pal.READ, "right")
         end
     elseif r.detail and r.detail ~= "" then
         -- Beside the label where it fits, under it where it does not. The
@@ -6554,11 +6649,11 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
         if two_line then
             txt(r.label or "", tx, y + h * 0.32, size,
                 pal.a(col, label_a), nil, MENU_FONT, r.named)
-            txt(r.detail, tx, y + h * 0.70, 11 * F.scale, pal.a(pal.DIM, 0.9),
+            txt(r.detail, tx, y + h * 0.70, TYPE.BODY * F.scale, pal.READ,
                 nil, nil, r.verbatim)
         else
-            txt(r.detail, x + w, ly, 12 * F.scale,
-                pal.a(r.mark and pal.FRIEND or pal.DIM, 0.95), "right",
+            txt(r.detail, x + w, ly, TYPE.BODY * F.scale,
+                r.mark and pal.FRIEND or pal.MUTE, "right",
                 nil, r.verbatim)
         end
     end
@@ -6586,21 +6681,22 @@ function empty_state(x, y, w, h, e)
     local cy = y + math.max(0, (h - blockh) / 2) + r + 8 * F.scale
     sweep_dial(cx, cy, r)
     local ty = cy + r + 30 * F.scale
-    txt(e.head or "", cx, ty, (M.compact and 17 or 19) * F.scale,
-        pal.a(pal.INK, 0.85), "center", MENU_FONT)
+    txt(e.head or "", cx, ty, TYPE.LEAD * F.scale,
+        pal.INK, "center", MENU_FONT)
     -- Wrapped to the room it has. It was one centred line whatever it said,
     -- so on a phone "fly with somebody, add them here, and they add you back"
     -- ran off both edges at once and the sentence was missing a word at each
     -- end.
     if e.line and e.line ~= "" then
-        local px = 12 * F.scale
+        local px = TYPE.BODY * F.scale
         local ly = ty + 24 * F.scale
         -- Cased once, over the whole sentence, and then drawn raw. Left to
         -- `txt` it is applied per line, so a sentence that wrapped came out
         -- with a capital in the middle of itself.
-        for _, line in ipairs(wrapped(cased(e.line), px, w - 16 * F.scale)) do
-            txt(line, cx, ly, px, pal.a(pal.DIM, 0.95), "center", nil, true)
-            ly = ly + 17 * F.scale
+        for _, line in ipairs(wrapped(cased(e.line), px, w - 16 * F.scale,
+                                      MENU_FONT)) do
+            txt(line, cx, ly, px, pal.READ, "center", MENU_FONT, true)
+            ly = ly + pages.NOTE_LINE * F.scale
         end
     end
 end
@@ -6621,11 +6717,11 @@ local function field_line(x, y, w, f, lit, dom)
     -- holds them, so nothing here claims it: the labels weigh the same and
     -- the caret in the element is what says which line is live.
     if dom then lit = false end
-    txt(f.label or "", x, y, 11 * F.scale, pal.a(pal.DIM, lit and 0.95 or 0.7))
+    txt(f.label or "", x, y, TYPE.BODY * F.scale, pal.READ)
     local ty = y + 22 * F.scale
     if not dom then
         local shown = f.value or ""
-        local size = 16 * F.scale
+        local size = TYPE.ROW * F.scale
         local adv = size * ADVANCE
         -- What fits on the rule, and the end of it rather than the start,
         -- the way a text box scrolled to its caret shows the end. A line
@@ -6641,7 +6737,7 @@ local function field_line(x, y, w, f, lit, dom)
                        pal.a(pal.FRIEND, lit and 1 or 0.65))
             end
         else
-            txt(shown, x, ty, size, pal.a(pal.FRIEND, lit and 1 or 0.7),
+            txt(shown, x, ty, size, pal.FRIEND,
                 nil, nil, true)
         end
         if lit then
@@ -6744,21 +6840,21 @@ local function ask_card(x, y, w, h, a)
     rect(cx, cy, cw, ch, pal.a(pal.BTN_BG, 0.98))
     F.layer:frame(cx, ry(cy, ch), cw, ch, 1.1 * F.scale, pal.a(pal.BORDER, 1))
     local mid = cx + cw / 2
-    txt(a.head or "", mid, cy + 36 * F.scale, (M.compact and 15 or 16) * F.scale,
-        pal.a(pal.INK, 0.95), "center", MENU_FONT)
+    txt(a.head or "", mid, cy + 36 * F.scale, TYPE.ROW * F.scale,
+        pal.INK, "center", MENU_FONT)
     -- What answering costs, when that is not obvious from the question. The
     -- menu's cards never needed one; the rooms card does, because what a move
     -- takes off a pilot is the part they cannot see.
     if a.note then
-        txt(a.note, mid, cy + 60 * F.scale, (FONT - 2) * F.scale,
-            pal.a(pal.DIM, 0.9), "center")
+        txt(a.note, mid, cy + 60 * F.scale, TYPE.BODY * F.scale,
+            pal.READ, "center")
     end
     -- What the question is about, when it is about a string rather than a
     -- choice: big enough to read off one machine and type into another,
     -- quoted rather than said, and lit, because it is the one thing on the
     -- card anybody has to get right.
     if a.code then
-        txt(a.code, mid, cy + 72 * F.scale, 30 * F.scale, pal.FRIEND, "center", nil, true)
+        txt(a.code, mid, cy + 72 * F.scale, TYPE.PAGE * F.scale, pal.FRIEND, "center", nil, true)
     end
     if a.fields then
         local fx = cx + 26 * F.scale
@@ -6784,14 +6880,14 @@ local function ask_card(x, y, w, h, a)
     -- answers stays centered whatever the words are.
     local ws, total = {}, 0
     for i, k in ipairs(a.keys) do
-        ws[i] = key_w(k.label)
+        ws[i] = menu_key_w(k.label)
         total = total + ws[i]
     end
     total = total + KEY_GAP * F.scale * (#a.keys - 1)
     local kx = mid - total / 2
     local ky = cy + ch - 22 * F.scale - KEY_H * F.scale
     for i, k in ipairs(a.keys) do
-        key_cap(kx, ky, ws[i], k.label, i == a.sel)
+        menu_key(kx, ky, ws[i], k.label, i == a.sel)
         -- Whose question this is. The menu owns "answer"; anything else
         -- raising a card says so, or its answers are delivered to the menu.
         hit(kx, ky, ws[i], KEY_H * F.scale, a.action or "answer", i)
@@ -6881,11 +6977,11 @@ local function ship_grid(x, y, w, h, v, focused)
         end
         -- The name of the hull you fly breathes the way every standing row
         -- does, unless the cursor is on it, in which case the cursor has it.
-        txt(r.label or "", cx, cy + ch * 0.20, (M.compact and 14 or 15) * F.scale,
-            pal.a(col, hot and 1 or (r.mark and LIT.breath() or 0.8)),
+        txt(r.label or "", cx, cy + ch * 0.20, TYPE.ROW * F.scale,
+            pal.a(col, (r.mark and not hot) and LIT.breath() or 1),
             "center", MENU_FONT)
         if r.role then
-            txt(r.role, cx, cy + ch * 0.34, 10 * F.scale, pal.a(pal.DIM, 0.9),
+            txt(r.role, cx, cy + ch * 0.34, TYPE.LABEL * F.scale, pal.MUTE,
                 "center")
         end
         hit(x + c * cw, y + rr * ch, cw, ch, "stage", i)
@@ -7107,7 +7203,7 @@ function pages.corner(v, right, cy)
     -- mouse crossing the name is not a claim about where you are.
     local on = v.head_sel == "pilot"
         or (v.pilot_hot and v.at ~= "pilot")
-    local px = 12 * F.scale
+    local px = TYPE.BODY * F.scale
     local bw = text_w(v.pilot.name, px, MENU_FONT, true) + 30 * F.scale
     local bx = rt - bw
     key_box(bx, by, bw, bh, pal.rgb(0x0a0f18, on and 0.95 or 0.7),
@@ -7116,7 +7212,7 @@ function pages.corner(v, right, cy)
     -- set brighter than the tabs it sits beside, and read as the thing the
     -- head was about.
     txt(v.pilot.name, bx + 15 * F.scale, cy, px,
-        pal.a(on and pal.FRIEND or pal.INK, on and 1 or 0.55), nil,
+        on and pal.FRIEND or pal.INK, nil,
         MENU_FONT, true)
     hit(bx, by, bw, bh, "pilot_page")
     return bx
@@ -7271,13 +7367,24 @@ function M.menu(v)
     M.menu_drawn = true
     F.case = "sentence"
     local was_scale = F.scale
+    -- The column draws larger wherever there is room for it. A phone is
+    -- already showing as much as it can, so it keeps the scale the rest of the
+    -- interface uses; anything wider gets the whole menu a quarter larger,
+    -- column included. Restored at the end of the function, because everything
+    -- drawn after the menu is the arena's and is not a menu.
+    if not M.compact then F.scale = was_scale * MENU_SCALE end
 
     -- A question takes the keys off whatever asked it, and the panel says so
     -- by standing down. It has to be set before a word of it is written: a
     -- glyph carries the alpha it was queued with, and the gui draws it over
     -- every mesh whatever is laid on top afterwards.
     F.text_dim = v.ask and 0.1 or 1
-    local pts_w, pts_h = F.w / F.scale, F.h / F.scale
+    -- The window, in the browser's own points rather than the menu's. What
+    -- these two decide is what shape the window is, and a menu that has just
+    -- made its own pixels bigger would answer that question with its own
+    -- zoom in it: at 1.25 a 600 point window reports as 480 and takes the
+    -- layout a short screen gets.
+    local pts_w, pts_h = F.w / F.density, F.h / F.density
     -- Where the column stands, which is the whole of the menu's layout.
     --
     -- It is drawn at a phone's own measure wherever it stands: a head carrying
@@ -7519,10 +7626,11 @@ function M.menu(v)
         F.layer:seg(dx, ry(by), dx + dock, ry(by), F.scale,
                     pal.a(pal.CHARGE_COL, 0.5), true)
         txt("You are using a guest account.", dx + MENU_PAD * F.scale,
-            by + 16 * F.scale, 12.5 * F.scale, pal.a(pal.INK, 0.95), nil,
+            by + 16 * F.scale, TYPE.BODY * F.scale, pal.INK, nil,
             MENU_FONT)
         txt("Press here to set your password.", dx + MENU_PAD * F.scale,
-            by + 33 * F.scale, 10 * F.scale, pal.a(pal.DIM, 1))
+            by + 33 * F.scale, TYPE.BODY * F.scale, pal.READ, nil,
+            MENU_FONT)
         hit(dx, by, dock, bh, "pilot_page")
     end
     -- A rule under the head, so the x and the call sign read as a bar over the
@@ -7606,7 +7714,7 @@ function M.menu(v)
     -- carry a word, because "settings" and "about" at the desktop's size run
     -- into each other with eight of them across a phone; a row of marks you
     -- have to learn by tapping is worse than a row of small words.
-    local label_px = 11 * F.scale
+    local label_px = TYPE.BODY * F.scale
     -- The widest of them at one point, so the size that fits it in the room
     -- one stop has is a division. Counting characters and calling each one an
     -- advance was the same sum with the wrong face's number in it, and it set
@@ -7629,7 +7737,7 @@ function M.menu(v)
         local hot = (i == v.rail_hover) and not sel
         local cx = rx + (i - 0.5) * pitch
         local cy = ry_ + icon_dy
-        local col = (sel or hot) and pal.FRIEND or pal.a(pal.DIM, 0.9)
+        local col = (sel or hot) and pal.FRIEND or pal.MUTE
         local r = 13 * F.scale
         if hot then
             -- The list's own cursor weight, and only the field: the lit stop
@@ -7658,8 +7766,7 @@ function M.menu(v)
                          2.4 * F.scale, 10, pal.CHARGE_COL)
         end
         txt(e.label, cx, cy + 24 * F.scale, label_px,
-            pal.a((sel or hot) and pal.FRIEND or pal.DIM,
-                  (sel or hot) and 1 or 0.8),
+            (sel or hot) and pal.FRIEND or pal.MUTE,
             "center", MENU_FONT)
         -- The rail's own action: it names a destination, not a row of
         -- whatever page is on the stage.
@@ -7816,7 +7923,7 @@ function M.menu(v)
         -- charge is a page that cannot be read in one look.
         local hh = 40 * F.scale
         local name = v.head.label or ""
-        local size = 18 * F.scale
+        local size = TYPE.LEAD * F.scale
         -- Where the heading's own baseline sits. Named for what it is rather
         -- than `base`, which is the panel's wash weight a few hundred lines
         -- up: two different numbers under one name in one function.
@@ -7829,10 +7936,10 @@ function M.menu(v)
                   pal.a(pal.FRIEND, 0.95), hh / 78)
             nx = tx + 40 * F.scale
         end
-        txt(name, nx, head_y, size, pal.a(pal.INK, 0.95), nil, MENU_FONT)
+        txt(name, nx, head_y, size, pal.INK, nil, MENU_FONT)
         if v.head.role then
             txt(v.head.role, nx + text_w(name, size, MENU_FONT) + 10 * F.scale,
-                head_y, 10.5 * F.scale, pal.a(pal.DIM, 0.9))
+                head_y, TYPE.LABEL * F.scale, pal.MUTE)
         end
         top = top + hh
         room = room - hh
@@ -7845,15 +7952,15 @@ function M.menu(v)
         -- Wrapped to the list's own measure. One line is what it is on a
         -- monitor and two on a phone, where it ran off the right edge and the
         -- sentence stopped mid-word.
-        local px = 12 * F.scale
-        local lines = wrapped(v.lede, px, lw)
-        local lh = 17 * F.scale
+        local px = TYPE.BODY * F.scale
+        local lines = wrapped(v.lede, px, lw, MENU_FONT)
+        local lh = pages.NOTE_LINE * F.scale
         for i, line in ipairs(lines) do
             -- Only the first line is a sentence opening. The menu capitalizes
             -- the first letter of whatever it is handed, and handed two lines
             -- it capitalized both: "as / Soon as they add you back".
             txt(line, tx, top + 10 * F.scale + (i - 1) * lh, px,
-                pal.a(pal.DIM, 0.9), nil, nil, i > 1)
+                pal.READ, nil, MENU_FONT, i > 1)
         end
         local used = #lines * lh + 12 * F.scale
         top = top + used
@@ -8071,18 +8178,18 @@ function M.menu(v)
     -- right of a phone with the last four words missing.
     local said = v.note or v.foot
     if said then
-        local px = 12 * F.scale
-        local col = v.note and pal.a(pal.HURT, 0.95) or pal.a(pal.DIM, 0.9)
+        local px = TYPE.BODY * F.scale
+        local col = v.note and pal.HURT or pal.READ
         -- Cased once over the whole sentence and drawn raw, since `txt`
         -- would capitalise each line it was handed and a wrapped sentence
         -- would come out with a capital in the middle of itself.
-        local lines = wrapped(cased(said), px, sw - 8 * F.scale)
+        local lines = wrapped(cased(said), px, sw - 8 * F.scale, MENU_FONT)
         -- Standing in the room `room` kept back for it, which is measured
         -- from the rail: the stage runs to the rule now, so a line four
         -- points off the end of it would be drawn half under the tab row.
-        local fy = sy + sh - 14 * F.scale - (#lines - 1) * 16 * F.scale
+        local fy = sy + sh - 14 * F.scale - (#lines - 1) * pages.NOTE_LINE * F.scale
         for _, line in ipairs(lines) do
-            txt(line, tx, fy, px, col, nil, nil, true)
+            txt(line, tx, fy, px, col, nil, MENU_FONT, true)
             fy = fy + 16 * F.scale
         end
     end

@@ -22,6 +22,30 @@ local M = {rgb = rgb}
 M.BG        = rgb(0x05070c)
 M.INK       = rgb(0xdfe9f5)
 M.DIM       = rgb(0x6c7a90)
+
+-- The menu's other two inks, under INK.
+--
+-- Text in the menu draws at full alpha and says what it means with a color,
+-- which is a rule these two exist to make possible. DIM is why: on the
+-- column's ground it is worth 4.68:1, so it clears the 4.5 small type wants
+-- with nothing left over, and every fraction of alpha laid on top of it lands
+-- under the line. Thirty-three call sites laid one on, and a third of the type
+-- in the menu was unreadable as a result. See docs/design/interface.md.
+--
+-- READ is what a sentence, a price or a detail is set in, at 9.81:1. MUTE is
+-- the register under it, at 6.54:1, and is what names a group and what a row
+-- you cannot use is written in. Both are measured on the three grounds a menu
+-- row actually has: the column, a row under the pointer, and the row you are
+-- already on. MUTE's worst of those is 4.75:1, so there is room to draw it
+-- over a lit field and still be read.
+--
+-- READ carries PANEL_INK's value and not its name. That constant is hull
+-- plating, drawn as fills at a fifth of its alpha, and one name doing two jobs
+-- is how a change to a ship's panel lines would quietly move the type on the
+-- settings page.
+M.READ      = rgb(0x9fb6d4)
+M.MUTE      = rgb(0x8593a9)
+
 M.FRIEND    = rgb(0x4fd6ff)
 M.ENEMY     = rgb(0xffa552)
 -- The logo is a brand mark rather than a team indicator. Its more saturated
@@ -45,6 +69,16 @@ M.BURST     = rgb(0xc27bff)
 
 M.BORDER    = rgb(0x1d2838)
 M.BAR_EDGE  = rgb(0x22304a)
+-- The outline of anything you can press, and the one edge in the interface
+-- with a number to hit: a control's own boundary is what says a control is
+-- there, so it wants 3:1 against what is beside it the way small type wants
+-- 4.5. This is 3.97:1 on the column. A key cap wore DIM at 0.55 before, worth
+-- 2.12, which left a button whose label was hard to read sitting in a box you
+-- could not see either.
+--
+-- Rules between rows and divisions inside a panel keep BORDER. Those are
+-- drawing rather than structure, and nothing has to find them.
+M.KEY_EDGE  = rgb(0x55708f)
 M.RADAR_BG  = rgb(0x060a10)
 -- Terrain has to read as terrain at two pixels a tile. The old value was
 -- #16243a on #070b12, which is a dark slate on a darker one: technically
