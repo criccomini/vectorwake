@@ -411,224 +411,100 @@ M.MENU_PAD = MENU_PAD
 -- asks the eye to parse a digit.
 -- Who is in a seat, in two marks that answer one question.
 --
--- A person wears a round helmet with a curved visor across it. A machine
--- wears a squared one with two lamps in it and an antenna over the top.
--- Drawn rather than spelled, because "AI" beside a name is two letters that
--- read as part of the name until you have learned they are not, and these
--- lists are scanned rather than read.
+-- A person wears pilot's wings. A machine wears a chip. Drawn rather than
+-- spelled, because "AI" beside a name is two letters that read as part of
+-- the name until you have learned they are not, and these lists are scanned
+-- rather than read.
 --
--- The two shells differ on purpose. They were one shell for a while, on the
--- reasoning that the games list sets a count of people beside a count of
--- machines and the pair should read as one question. It does read as one
--- question, but the round-against-square difference is what answers it at a
--- glance: curved is grown, boxed is built, and that is legible at a size
--- where a lamp is two pixels and an antenna is three. What holds the pair
--- together is the collar, the height, and the baseline, all of which they
--- still share.
+-- What these replaced was a pair of helmets: a domed shell with a visor
+-- wrapped into it, and a boxed one with two lamps and an antenna. That pair
+-- read at every size and the logic under it was sound, curved is grown and
+-- boxed is built. The objection was to the drawing. Two heads in a row of
+-- numbers are two faces looking back at the reader, and the shells carried
+-- enough detail that what separated them was a texture rather than a shape.
 --
--- Everywhere but that row each mark is alone, so each has to say what it is
--- with nothing to compare against. The box does that for the machine, and
--- the antenna over it says it twice.
+-- Badges carry the same fact with no head in them. A badge is what a seat is
+-- issued rather than what sits in it, and both of these are shapes a player
+-- already knows before the game explains anything: wings mean a pilot, a
+-- square with legs means silicon. They also part at the silhouette instead
+-- of at the detail, which is the half that survives being drawn at eleven
+-- points beside a count.
 --
--- `k` is the width of the shell. `y` is the middle of the line it sits on, so
--- a caller can hand it a row's center without knowing the height.
---
--- HELM_NECK is how far below the center the collar cuts, in radii. Both
--- shells are cut off there and sit on the same run of line, so the mark's
--- height is what it actually draws rather than a box of air around it.
-local HELM_NECK, HELM_COLLAR = 0.68, 1.26
-local HELM_TALL = 0.5 * (1 + HELM_NECK)
-
--- The collar, under either shell. `half` is the shell's own half width where
--- the cut lands; the line runs a little past it so the helmet sits in
--- something rather than ending in mid air.
-local function collar(cx, neck, half, line, col)
-    F.layer:seg(cx - half * HELM_COLLAR, ry(neck), cx + half * HELM_COLLAR, ry(neck),
-          line, col, true)
-end
-
--- A person's shell: a closed flight helmet, a crown over a longer face, with
--- nothing under it.
---
--- Two superellipses sharing a waist, which is the widest line across it and
--- where the face keeps its eyes. FACE_CROWN is the share of the height above
--- that waist, so a small one is a long face. FACE_ROUND is how square the
--- crown turns and FACE_BLUNT how the chin ends: 2 turns through the bottom,
--- less draws it towards a point. FACE_IN is the width the face gives up on
--- its way down, which is the other half of a chin and has to move with
--- FACE_BLUNT, since a blunt end on a face that has already lost its width is
--- a stub rather than a jaw.
---
--- What this replaced was a bowl of glass on a collar, cut off flat at the
--- neck. Three things were wrong with it and only the last is obvious. A true
--- circle is as wide at the mouth as at the eyes and widest exactly halfway
--- down, which no helmet built for a cockpit is. The collar was a line wider
--- than the cut it stood on, so it read as shoulders under a fishbowl. And a
--- circle with a bar across it is a diagram of a face rather than a drawing of
--- one.
-local FACE_WIDE, FACE_CROWN = 0.38, 0.38
-local FACE_ROUND, FACE_BLUNT, FACE_IN = 2.1, 2.3, 0.22
-
-local function helm(cx, cy, k, col, line)
-    local w = k
-    local h = w * HELM_TALL
-    local x0, y0 = cx - w / 2, cy - h / 2
-    line = line or pen(k, 0.11)
-    local up, down = h * FACE_CROWN, h * (1 - FACE_CROWN)
-    local waist = y0 + up
-    local half = k * FACE_WIDE
-    -- Half the shell's width at a height. Crown above the waist, face below.
-    local function hw(y)
-        local t = (y - waist) / (y < waist and up or down)
-        t = math.max(-1, math.min(1, t))
-        if t < 0 then
-            return half * (1 - (-t) ^ FACE_ROUND) ^ (1 / FACE_ROUND)
-        end
-        return half * (1 - t ^ FACE_BLUNT) ^ (1 / FACE_BLUNT)
-                    * (1 - FACE_IN * t)
-    end
-    -- One closed run, left side down and right side back up. Sampled rather
-    -- than struck, because there is no one circle to strike it from.
-    local pts, steps = {}, math.max(10, math.min(18, math.floor(k * 0.7)))
-    for i = 0, steps do
-        local y = y0 + h * i / steps
-        pts[#pts + 1] = cx - hw(y)
-        pts[#pts + 1] = ry(y)
-    end
-    for i = steps, 0, -1 do
-        local y = y0 + h * i / steps
-        pts[#pts + 1] = cx + hw(y)
-        pts[#pts + 1] = ry(y)
-    end
-    F.layer:outline(pts, line, col, true)
-    return x0, y0, w, h, waist, hw
-end
-
--- A machine's shell: the same envelope with the curve taken out of it.
---
--- Squared to the same width and the same neckline as the bowl, so the two sit
--- level in a row. Its crown is flat where the person's is domed, which is the
--- whole of the difference and all it needs to be.
---
--- Three sides and a collar rather than a closed outline. Closing it lays the
--- box's own base under the collar, and two lines of one color on one pixel
--- row is a brighter line wherever these marks draw at part alpha, which is
--- every nameplate in the arena.
---
--- The same reasoning decides the corners. A capped stroke runs half a width
--- past each end, so four capped sides overlap in four squares and light every
--- corner. The crown is capped and covers them; the sides butt into it and
--- into the collar, each drawing its own length and no more.
-local function hull_helm(cx, cy, k, col, line)
-    local w = k
-    local h = w * HELM_TALL
-    local x0, y0 = cx - w / 2, cy - h / 2
-    local r = w * 0.5
-    local mid = y0 + r
-    local neck = mid + r * HELM_NECK
-    line = line or pen(k, 0.11)
-    F.layer:seg(x0, ry(y0), x0 + w, ry(y0), line, col, true)
-    F.layer:seg(x0, ry(y0 + line / 2), x0, ry(neck - line / 2), line, col)
-    F.layer:seg(x0 + w, ry(y0 + line / 2), x0 + w, ry(neck - line / 2), line, col)
-    collar(cx, neck, w / 2, line, col)
-    return x0, y0, w, h, mid, r
-end
-
--- A bowl on a collar with a visor in it has more parts than the box it
--- replaced, and parts are what die first when a mark is drawn small. Eleven
--- points rather than nine: still a mark beside a number rather than a picture
--- in a row, and enough for the glass, the collar and the band to survive.
+-- Eleven points, kept from the helmets. It is still a mark beside a number
+-- rather than a picture in a row, and it is what the feathers need to stay
+-- three feathers instead of one wing.
 local MARK_K = 11
 
--- How high the visor sits over the waist and how far it sags under it, in
--- strokes, so the glass travels with the line rather than with the mark.
--- Against the mark it grew with the drawing, and wherever the mark went big
--- under a line held thin -- the rail -- the glass came out a slab in a column
--- of line work.
+-- Pilot's wings: a boss with three feathers off each side.
 --
--- And a ceiling on both, against the mark's own height, because the trade runs
--- the other way at the other end. The pen is 0.13 of this mark's height at
--- eleven points and 0.07 of it in the rail, so a visor cut purely in strokes
--- is twice as deep in the games list as in the menu: it filled the shell and
--- left a helmet reading as a blob with a notch in it. The ceilings are set
--- clear of what the rail draws, so the size this shape was chosen at is the
--- one neither of them touches.
-local VISOR_LIFT, VISOR_SAG = 1.5, 2.6
-local VISOR_LIFT_MAX, VISOR_SAG_MAX = 0.11, 0.19
-
--- How far the top edge bends down at the middle, as a share of the mark's
--- height. Against the mark rather than against the stroke, because the stroke
--- is held to the column in the rail and a bend cut in strokes came to under a
--- pixel there: it was drawn and could not be seen.
-local VISOR_BEND = 0.080
-
--- A person: the visor, wrapped into the shell.
+-- `cx` is the middle of the mark and `cy` the middle of the line it sits on,
+-- so a caller can hand it a row's center without knowing the height.
 --
--- Ruled along the top and sagging along the bottom, so it wraps the face
--- rather than lying across it, and it is deepest where it crosses the middle
--- of that face. It sits on the waist, which is the shell's own widest line
--- and where a face keeps its eyes.
+-- Feathers rather than a filled spread, because the gaps are what make this
+-- wings at all: solid at eleven points it is a moustache. They are struck a
+-- shade under the mark's own pen for the same reason, since a heavy pen
+-- closes the gaps it is drawn between, and the gaps are the mark.
 --
--- Everything before it was a band: struck two ways to bow apart, or bent, or
--- ruled flat. All of them read as a line drawn on a face rather than as a
--- pane set into a helmet, because a band has two edges doing the same thing
--- and glass in a shell does not. Both of these edges bow the same way and by
--- different amounts, which is what a pane wrapped round a head does.
---
--- Its ends come off the shell's own width at that height, so a narrower head
--- gets a shorter visor. That is the trade in this mark: the visor is the
--- whole of it at 26 points, and every hundredth of width the head gives up
--- comes off the part being read.
+-- Cut so the spread is exactly the mark's width. Every caller lays this out
+-- against `k` and one of them sets it beside a name, so wings that reached
+-- past what they reported would be wings that touch a call sign.
 local function pilot_mark(cx, cy, col, k, line)
     k = k or MARK_K * F.scale
-    line = line or pen(k, 0.11)
-    local w, h, waist, hw = select(3, helm(cx, cy, k, col, line))
-    local top = waist - math.min(line * VISOR_LIFT, h * VISOR_LIFT_MAX)
-    local reach = hw(top) - line * 1.1
-    local sag = math.min(line * VISOR_SAG, h * VISOR_SAG_MAX)
-    local bend, floor = h * VISOR_BEND, cy + h / 2
-    -- A strip, a quad between each pair of samples, walking the two edges
-    -- together. One fan would be fewer triangles and was what this drew until
-    -- the top edge learned to bend: a fan is struck from a single corner and
-    -- is exact only over a convex shape, and a pane with a bend in its top is
-    -- concave along that edge, so the fan filled the bend back in. The bend
-    -- was drawn and then painted over, which looks exactly like never having
-    -- been drawn.
-    local px, pty, pby
-    for i = 0, 10 do
-        local t = -1 + 2 * i / 10
-        local x = cx + reach * t
-        local ty = top + bend * (1 - t * t)
-        local by = math.min(waist + sag * (1 - t * t), floor - line)
-        if px then
-            F.layer:quad(px, ry(pty), x, ry(ty), x, ry(by), px, ry(pby), col)
-        end
-        px, pty, pby = x, ty, by
+    line = (line or pen(k, 0.11)) * 0.85
+    local function px(t) return cx + t * k end
+    local function py(t) return ry(cy + t * k) end
+    -- The boss the feathers spring from, and the only solid piece here. It
+    -- holds the middle of the mark at the size where each feather is two
+    -- pixels of line and there is nothing else to hold it.
+    F.layer:quad(px(0), py(-0.13), px(0.093), py(0.01),
+                 px(0), py(0.15), px(-0.093), py(0.01), col)
+    -- Swept back and fanned, longest on top. A rank of parallel strokes is a
+    -- chevron; what makes a wing is that the three of them disagree about
+    -- where they are going.
+    for _, s in ipairs({1, -1}) do
+        F.layer:seg(px(s * 0.102), py(-0.06), px(s * 0.500), py(-0.30),
+                    line, col, true)
+        F.layer:seg(px(s * 0.102), py(0.06), px(s * 0.463), py(-0.10),
+                    line, col, true)
+        F.layer:seg(px(s * 0.102), py(0.18), px(s * 0.389), py(0.09),
+                    line, col, true)
     end
-    return w
+    return k
 end
 
--- A machine: the boxed shell, two lamps, and the antenna over the crown.
+-- A chip: a square package with a core in it and two legs a side.
 --
 -- `x` is its left edge rather than its center, because every caller of this
 -- one is laying a row out left to right and knows where the mark starts.
 --
--- Lamps rather than a visor, and a flat crown to stand them under. The
--- antenna says the same thing a second time, which is worth the two points it
--- costs: three of this mark's four uses are solo.
+-- The legs are the mark. A square with a square in it is a button, and what
+-- says silicon is the little runs coming out of the package, so they are
+-- drawn on all four sides even at the size where each is two pixels: eight
+-- of them read as a fringe, and a fringe is enough to carry it.
+--
+-- Butted rather than capped, each leg drawing its own length and no more. A
+-- capped stroke runs half a width past each end, and eight of them would lay
+-- a second line along all four sides of the package, which at the part alpha
+-- every nameplate draws these at is a package with brighter edges than its
+-- own outline.
 local function bot_mark(x, y, col, k, line)
     k = k or MARK_K * F.scale
+    line = line or pen(k, 0.11)
     local cx = x + k / 2
-    local x0, y0, w, _, mid, r = hull_helm(cx, y, k, col, line)
-    -- The middle of the box rather than the middle of the circle it used to
-    -- be: a flat crown puts the room the dome was using back into the shell,
-    -- and lamps left where they were sat in the bottom third of it.
-    local eye = mid - r * 0.16
-    F.layer:disc(x0 + w * 0.31, ry(eye), w * 0.115, 8, col)
-    F.layer:disc(x0 + w * 0.69, ry(eye), w * 0.115, 8, col)
-    F.layer:seg(cx, ry(y0), cx, ry(y0 - r * 0.36), line or pen(k, 0.09), col, true)
-    F.layer:disc(cx, ry(y0 - r * 0.48), w * 0.11, 8, col)
-    return w
+    local function px(t) return cx + t * k end
+    local function py(t) return ry(y + t * k) end
+    local s, leg = 0.33, 0.50
+    F.layer:outline({px(-s), py(-s), px(s), py(-s),
+                     px(s), py(s), px(-s), py(s)}, line, col, true)
+    F.layer:quad(px(-0.11), py(-0.11), px(0.11), py(-0.11),
+                 px(0.11), py(0.11), px(-0.11), py(0.11), col)
+    for _, t in ipairs({-0.165, 0.165}) do
+        F.layer:seg(px(-s), py(t), px(-leg), py(t), line, col)
+        F.layer:seg(px(s), py(t), px(leg), py(t), line, col)
+        F.layer:seg(px(t), py(-s), px(t), py(-leg), line, col)
+        F.layer:seg(px(t), py(s), px(t), py(leg), line, col)
+    end
+    return k
 end
 
 
