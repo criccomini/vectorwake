@@ -43,11 +43,13 @@ return {
     {id = "thrust", name = "thrust", cat = "fly", keys = {"up"},
      what = "Drives your ship forward.",
      pad = "left thumb: push it away from the middle"},
-    -- This row carries no thumb sentence, because a phone has no reverse: the
-    -- stick points where the nose should go and a push behind it is a turn, so
-    -- there is no gesture to describe. See arena/touch.lua.
+    -- A stance on glass rather than something held, so the sentence has to say
+    -- both halves of it: nothing on screen says a double tap undoes itself.
+    -- The stick turns amber and grows an arrow while it is set. See
+    -- arena/touch.lua.
     {id = "reverse", name = "reverse", cat = "fly", keys = {"down"},
-     what = "Drives your ship backward."},
+     what = "Drives your ship backward.",
+     pad = "left thumb: double tap, and again to stop"},
     {id = "guns", name = "guns", cat = "gun", keys = {"space"},
      what = "Fires your rapid weapon.",
      pad = "the big pad on the right"},

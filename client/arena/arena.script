@@ -3206,6 +3206,12 @@ function on_input(self, action_id, action)
     end
 
     if action_id == hash("touch") then
+        -- What time the stick thinks it is. Only its double tap reads this,
+        -- and it is set here rather than beside the rest of touch.lua's fields
+        -- in update() because a release can arrive on the line below: a clock
+        -- a frame old would be measuring the gap between two taps against the
+        -- wrong end of it.
+        touch.now = self.clock or 0
         -- Every touch that went down this frame, not just whichever one the
         -- engine decided was primary: on a phone the finger that reaches the
         -- button is often the second one down.

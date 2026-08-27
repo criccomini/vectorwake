@@ -366,8 +366,10 @@ d-pad was kept afterward as a second steering setting beside the stick, on a
 north-up screen like everybody else's. Both that and the reverse that came with
 it are gone now. One push of a thumb meant one thing on the pad and another on
 the stick, and on the stick it changed again while the guns were up, so a phone
-flies with the stick alone and a pilot who wants to be going the other way turns
-the ship around. See `arena/touch.lua`.
+flies with the stick alone. Reverse came back later as a stance the pilot sets
+rather than a push the stick reads into, which is
+[decision 86](#86-a-phones-reverse-is-a-stance-not-a-push); the d-pad did not.
+See `arena/touch.lua`.
 
 
 **Status:** accepted
@@ -4125,3 +4127,60 @@ still in the rack, which is the same lever the other way. Or if the fly-in
 comes back off one burst alone, which would be what a burst does at contact
 range rather than how often it may be thrown, and the answer is its damage
 instead.
+
+
+## 86. A phone's reverse is a stance, not a push
+
+**Status:** accepted
+
+**Decision:** a double tap anywhere on the stick's half of the screen flips the
+ship into reverse, and it holds until another double tap flips it back. The
+stick names the course either way. Reversed, the nose is held at the far end of
+that course rather than on it, so a pilot backs away from their own thumb with
+the guns still on whatever they are backing away from. Everything else about
+the stick is unchanged, the rule that the engine waits for the nose included.
+
+The stance is drawn twice over. The stick turns the color the ship's plumes are
+drawn in, and the middle of its resting mark becomes the down arrow the
+keyboard's reverse key already wears; while a thumb is on it, a headed spur out
+the far side of the press says where the nose is being carried. The ship has
+drawn retros off its bow all along, and the note in `arena/world.lua` saying
+they exist for a touchscreen reverse was written for the one that had gone. A
+watch, a lost window or a shutdown drops the stance with the rest of the
+controls.
+
+**Why:** [decision 13](#13-the-camera-holds-a-fixed-zoom) took two reverses out
+of this client, and both went for the same reason: the stick was guessing. Down
+on the d-pad and a rearward push on the stick were one thumb movement meaning
+two different things, and on the stick the meaning changed again mid-burst,
+since it read as backing out only when the guns were up or a hostile sat ahead.
+What was wrong was never that a phone had a reverse. It was that nothing the
+pilot did decided which reading they got.
+
+A latch has none of that. The pilot sets the stance, the screen says which one
+is up, and a push means what it has always meant. It costs the simulation
+nothing: the core has had `SIM_BTN_REVERSE` from the start and still receives
+the bitfield a keyboard sends.
+
+Holding the nose opposite rather than on the thumb is the other half of this,
+and the half worth arguing. The alternative reads better in source and worse in
+the hand, because the same push would name a course going forward and a target
+going back, which is the mid-burst change wearing a switch. It is also the only
+reason to fly backward at all. A ship that can reverse only straight away from
+where it is pointed has a slower way of turning around, not a way of retreating
+under fire.
+
+**Cost:** a mode a pilot can forget they set. The drawing is the whole answer to
+that, which is why the arrow on the resting mark is counted in
+`client/tests/touch_test.lua` rather than left to a look. An indicator that goes
+quiet leaves a ship flying backward for a reason nothing on screen explains.
+
+It is also a gesture nobody stumbles on. The controls page a phone reads names
+it and that is all there is, so a pilot who never opens that page never finds
+reverse. The keyboard has the same problem and answers it the same way.
+
+And `arena/touch.lua` keeps a clock again, which was one of the three costs
+listed when the last reverse went. It is one number set at the single call site
+rather than a timer the module runs, and the gesture asks that time have passed
+rather than merely that not too much of it has, so a caller that stops setting
+it loses the flip instead of firing it on every pair of quick presses.
