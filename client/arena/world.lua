@@ -1500,7 +1500,6 @@ local ROCK_FACETS = {
 }
 local ROCK_RIDGE = pal.a(pal.ROCK_EDGE, 0.20)
 local ROCK_CRACK = pal.a(pal.ROCK_DARK, 0.95)
-local ROCK_CRATER = pal.a(pal.ROCK_EDGE, 0.17)
 local ROCK_ORE = pal.a(pal.ROCK_ORE, 0.52)
 
 local function rock_shape(seed, sides, r)
@@ -1521,15 +1520,6 @@ local function rock_shape(seed, sides, r)
         nrm[i * 2 + 1] = math.cos(a)
         nrm[i * 2 + 2] = math.sin(a)
     end
-    local craters = {}
-    local crater_count = sides >= 10 and 2 or 1
-    for _ = 1, crater_count do
-        local a = rnd() * TAU
-        local d = r * (0.18 + rnd() * 0.24)
-        craters[#craters + 1] = math.cos(a) * d
-        craters[#craters + 1] = math.sin(a) * d
-        craters[#craters + 1] = r * (0.10 + rnd() * 0.07)
-    end
     local ridges = {}
     local ridge_count = sides >= 10 and 3 or 1
     for _ = 1, ridge_count do
@@ -1540,7 +1530,7 @@ local function rock_shape(seed, sides, r)
     -- rather than one shape stamped in a rank. The normals are the shape's
     -- own and never turn now, so there is no second scratch beside `tmp`.
     s = {pts = pts, nrm = nrm, sides = sides, seed = seed,
-         craters = craters, ridges = ridges, tmp = {}}
+         ridges = ridges, tmp = {}}
     rock_shapes[k] = s
     return s
 end
@@ -1585,15 +1575,9 @@ local function draw_rock(bg, glow, cx, cy, s)
                  0.7, ROCK_RIDGE)
     end
 
-    -- Pits and one mineral seam. They stay subordinate to the collision
-    -- outline; a rock is still one dark mass at speed.
-    local craters = s.craters
-    for i = 1, #craters, 3 do
-        local x, y = cx + craters[i], cy + craters[i + 1]
-        local rr = craters[i + 2]
-        bg:disc(x, y, rr, 8, ROCK_FACETS[1])
-        glow:ring(x, y, rr, 0.6, 8, ROCK_CRATER)
-    end
+    -- One mineral seam, subordinate to the collision outline: a rock is one
+    -- dark mass at speed and the seam is what says it is stone rather than a
+    -- hole cut in the floor.
     local vi = s.seed % sides
     local vj = (vi + math.floor(sides / 3)) % sides
     local vx, vy = pts[vi * 2 + 1], pts[vi * 2 + 2]

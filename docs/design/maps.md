@@ -475,7 +475,7 @@ carries no hatches, pipes, braces, warning marks, panels, or interior seams.
 Thin partitions and deep walls use the same treatment, so walls stay quiet
 while the objects around them carry the arena's mechanical detail.
 
-A rock is warmer, faceted, cratered, and carries sparse mineral seams. It does
+A rock is warmer, faceted, and carries a sparse mineral seam. It does
 not turn: an asteroid that tumbles cannot be built into the terrain mesh, and a
 map laying a few hundred of them then costs more of a frame's vertex budget
 than the fight it is a backdrop for. A station fills the whole six-tile square

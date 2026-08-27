@@ -193,7 +193,7 @@ check("its free end is still capped",
       seg_drawn("met-glow:seg", 240, 240, 256, 240))
 
 -- A big rock is still one collision object, but it is no longer one flat
--- polygon. Facet triangles, ridges, pits, and a mineral seam give it volume.
+-- polygon. Facet triangles, ridges, and a mineral seam give it volume.
 --
 -- Built into the terrain mesh with the walls, because a rock that does not
 -- turn has nothing to redraw. It used to be a per-frame pass of its own, and
@@ -204,7 +204,10 @@ put(20, 20, T_SOLID, 4)
 world.build_static(writer("rock-fill"), writer("rock-glow"), 16, 16, 24, 24)
 check("a big rock has a faceted body", count("rock-fill:tri") >= 11,
       count("rock-fill:tri") .. " facets")
-check("a big rock has crater relief", count("rock-fill:disc") >= 2,
+-- Pits are gone on purpose, and this says so rather than merely not looking:
+-- each was a disc and an eight-segment ring, 72 vertices apiece, on the one
+-- piece of terrain a map is allowed several hundred of.
+check("a big rock has no crater pits", count("rock-fill:disc") == 0,
       count("rock-fill:disc") .. " pits")
 check("a big rock has internal fracture lines",
       count("rock-fill:seg") > 0 and count("rock-glow:seg") > 0,
