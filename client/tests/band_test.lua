@@ -82,7 +82,10 @@ package.loaded["arena.touch"] = {
 package.loaded["arena.world"] = {
     build_overview = function() end,
     forget_overview = function() end,
-    overview = function() return {grid = 0, rects = {}} end,
+    -- The shape `overview` really has: a table, not a call, and `rect` rather
+    -- than `rects`. It was both of those the wrong way round here for as long
+    -- as nothing in this file opened the map.
+    overview = {grid = 0, n = 0, rect = {}},
     radar_tiles = {160, 160},
     radar_safe = {},
     radar_doors = {},
@@ -234,65 +237,109 @@ end
 
 -- --- the top row is a row ---------------------------------------------------
 
--- The way into the menu at the left, the band in the middle and the link bars
--- at the right, on one line, at every window size. The readouts each worked
--- their own vertical out of the padding once, which is a horizontal
--- measurement, and came out four points high on a monitor and ten on a phone.
--- The band then spent a while dropping off the row on a phone, which put it
--- through the radar instead and cost the row the alignment it is for.
+-- The way into the menu at the left, the band beside it and the dial at the
+-- far end, on one line, at every window size. The readouts each worked their
+-- own vertical out of the padding once, which is a horizontal measurement,
+-- and came out four points high on a monitor and ten on a phone. The band
+-- then spent a while dropping off the row on a phone, which put it through
+-- the radar instead and cost the row the alignment it is for.
+--
+-- The link meter used to be the right end of this row and is in the menu's
+-- head now. What took the corner it left is the dial, which used to start a
+-- line lower, so the row is a key, a band and an instrument and nothing else:
+-- the tile readout that stood up here on the wider windows is gone from the
+-- interface entirely.
 --
 -- Measured against the key's published box, because that is the height the
 -- row takes from and the one thing here that cannot drift out of step with
--- itself. `pos_on_row` is the one thing that differs between the two: the
--- tile readout is up here on a monitor and under the dial on a phone, which
--- is what leaves a 390-point row wide enough for the band.
-local function row_shares_a_center(where, pos_on_row)
-    local key = box("open")
-    local pos, bars, tick = drawn("POS"), drawn("LINK"), drawn("0:33")
-    if not (key and pos and bars and tick) then
+-- itself.
+local function row_shares_a_center(where)
+    local key, tick = box("open"), drawn("0:33")
+    if not (key and tick) then
         check("the row is drawn on " .. where, false,
               table.concat(words(), " | "))
         return
     end
+    -- The link meter draws four bars and no caption, so what says it is not
+    -- up here is the box it would publish over itself.
+    check("and the link meter is not on it on " .. where,
+          box("debug") == nil, "the meter is still in the corner")
+    -- And no tile readout anywhere on the screen, not merely off this row.
+    -- Where you are was a caption on the dial and then a word in this corner
+    -- before that, and the instrument under it draws the same fact.
+    check("and nothing writes out where you are on " .. where,
+          drawn("POS") == nil, "the tile readout is back")
     local mid = key.y + key.h / 2
-    local off = math.max(math.abs(down(bars) - mid),
-                         math.abs(down(tick) - mid),
-                         pos_on_row and math.abs(down(pos) - mid) or 0)
-    check("the row shares one center on " .. where, off < 0.5,
-          string.format("%.1f off a center of %.1f", off, mid))
-    if not pos_on_row then
-        -- Under the instrument that says the same thing in a picture, and
-        -- above where the feed starts, rather than over either of them.
-        check("and the tile readout is under the dial on " .. where,
-              ui.row_at(pos.x + 1, down(pos)) ~= "radar"
-                  and down(pos) < ui.radar_span(),
-              string.format("POS at %.0f, dial ends %.0f",
-                            down(pos), ui.radar_span()))
+    check("the row shares one center on " .. where,
+          math.abs(down(tick) - mid) < 0.5,
+          string.format("%.1f off a center of %.1f", down(tick), mid))
+    -- Both ends of the row are instruments and the band grows outward from
+    -- the middle, so it is aligned with neither for longer than it stays off
+    -- them.
+    local press, corner = box("details"), box("map")
+    if press then
+        check("and the band keeps out of the key on " .. where,
+              press.x > key.x + key.w,
+              string.format("band starts %.0f, key ends %.0f",
+                            press.x, key.x + key.w))
+        check("and off the right edge on " .. where,
+              press.x + press.w <= w_now + 0.5,
+              string.format("band ends %.0f, window is %.0f",
+                            press.x + press.w, w_now))
     end
-    -- The band grows outward from the middle and the row's two ends are
-    -- controls, so it is only aligned with them for as long as it stays off
-    -- them. `debug` is the box the link cluster publishes over itself, which
-    -- is where the right end of the row is.
-    local press, bell = box("details"), box("debug")
-    if press and bell then
-        check("and the band keeps out of both ends of it on " .. where,
-              press.x > key.x + key.w and press.x + press.w < bell.x,
-              string.format("band %.0f..%.0f between %.0f and %.0f",
-                            press.x, press.x + press.w,
-                            key.x + key.w, bell.x))
+    if press and corner then
+        check("and out of the dial on " .. where,
+              press.x + press.w <= corner.x,
+              string.format("band ends %.0f, dial starts %.0f",
+                            press.x + press.w, corner.x))
     end
 end
 
-row_shares_a_center("a monitor", true)
+-- --- the dial hugs the corner ----------------------------------------------
 
--- A phone is the same drawing at its own size, and the sides stay on it: the
--- band came off the corner row's line to make room for them once, and both the
--- key that crowded it and the readout that crowded it are out of its way now.
+-- What the row's right end is: the dial itself, hard into the corner, at the
+-- margin the way into the menu keeps from the corner opposite. It hung a row
+-- lower for as long as the link bars stood above it, and with those in the
+-- menu's head there was nothing left up there to start under.
+--
+-- Both instruments are asked for their own published box rather than for a
+-- number written down here, because the check is that the two margins match.
+-- A `PAD` that moved on one of them and not the other would pass against a
+-- constant and still look wrong on the screen.
+local function dial_hugs_the_corner(where)
+    local key, corner = box("open"), box("map")
+    if not (key and corner) then
+        check("the dial is in the corner on " .. where, false,
+              "no dial or no menu key")
+        return
+    end
+    check("the dial starts on the key's own line on " .. where,
+          math.abs(corner.y - key.y) < 0.5,
+          string.format("dial at %.1f, key at %.1f", corner.y, key.y))
+    check("and keeps the key's own margin from its corner on " .. where,
+          math.abs((w_now - (corner.x + corner.w)) - key.x) < 0.5
+              and math.abs(corner.y - key.y) < 0.5,
+          string.format("gap %.1f right and %.1f top against the key's %.1f",
+                        w_now - (corner.x + corner.w), corner.y, key.x))
+end
+
+row_shares_a_center("a monitor")
+dial_hugs_the_corner("a monitor")
+
+-- A phone is the same drawing at its own size, and it is on the row: the band
+-- came off the corner row's line once and went back when the key beside it
+-- lost PLAYERS and the readout beside it went under the dial.
+--
+-- What it does not keep at 390 points is the names. The way into the menu, a
+-- centered clock and a dial a third of the screen wide are what that row
+-- holds, and a call sign does not fit in what is left. The figures do, and
+-- they are the reading.
 frame({w = 390, h = 844})
 local small_clock = drawn("0:33")
-check("a phone draws the same band, sides and all",
-      drawn("PYLON") ~= nil and drawn("CAISSON") ~= nil
-          and small_clock ~= nil,
+check("a phone draws the same band", small_clock ~= nil,
+      table.concat(words(), " | "))
+check("and both figures on it",
+      drawn("15") ~= nil and drawn("19") ~= nil,
       table.concat(words(), " | "))
 if small_clock and clock then
     -- At the same size, since the key it matches is the same size on both.
@@ -300,28 +347,111 @@ if small_clock and clock then
           math.abs(small_clock.px - clock.px) < 0.5,
           string.format("%.0f against %.0f", small_clock.px, clock.px))
 end
-row_shares_a_center("a phone", false)
+row_shares_a_center("a phone")
+dial_hugs_the_corner("a phone")
+
+-- Held sideways it is the same phone with 844 points of row, which is width
+-- enough for the names, so the drop above is the width rather than the size
+-- of the type or a rule about touchscreens.
+frame({w = 844, h = 390})
+check("a phone on its side has the room and keeps them",
+      drawn("PYLON") ~= nil and drawn("CAISSON") ~= nil,
+      table.concat(words(), " | "))
+dial_hugs_the_corner("a phone on its side")
 
 -- A call sign runs to twenty four characters and the band grows with it, so
 -- the longest one a pilot can register is what decides whether the band fits
 -- the row. It gives up the name rather than the row: the number under it is
 -- the reading, and a name drawn through the way into the menu is what put the
 -- band on a line of its own the first time.
+--
+-- Both names or neither, whichever end runs out first. The row's two ends are
+-- a small key and a square a third of a phone across, so asking each side
+-- against the end it happens to face dropped one name and drew the other,
+-- which reads as a fault rather than as a band out of room. The pair is the
+-- unit.
 local SHORT = NAMES
 NAMES = {[0] = string.rep("W", 24), [1] = string.rep("M", 24)}
 frame({w = 390, h = 844})
-check("a name with nowhere to go is dropped rather than drawn over the row",
-      drawn(NAMES[0]) == nil and drawn(NAMES[1]) == nil
-          and drawn("15") ~= nil and drawn("19") ~= nil,
+check("names that would reach either instrument are both dropped",
+      drawn(NAMES[0]) == nil and drawn(NAMES[1]) == nil,
       table.concat(words(), " | "))
-row_shares_a_center("a phone with the longest names there are", false)
--- And kept where the row has the width for it, which is the whole point of
--- asking rather than dropping the name on every phone.
+check("and both figures are drawn either way",
+      drawn("15") ~= nil and drawn("19") ~= nil,
+      table.concat(words(), " | "))
+row_shares_a_center("a phone with the longest names there are")
+-- And kept where the row has the width for them, which is the whole point of
+-- measuring rather than dropping the names on every phone.
 frame()
 check("a monitor has the room and keeps them",
       drawn(NAMES[0]) ~= nil and drawn(NAMES[1]) ~= nil,
       table.concat(words(), " | "))
+-- And on the screen rather than merely drawn: the check above says the names
+-- were placed, and this says where the far one stops.
+local grown = drawn(NAMES[1])
+if grown then
+    check("the names it kept stay inside the row",
+          grown.x + #NAMES[1] * grown.px * (1233 / 2048) <= box("map").x,
+          string.format("ends %.0f, dial starts %.0f",
+                        grown.x + #NAMES[1] * grown.px * (1233 / 2048),
+                        box("map").x))
+end
 NAMES = SHORT
+
+-- --- the map takes the same corner, a line lower --------------------------
+
+-- One corner, one instrument, and the map is the radar pulled back to the
+-- whole arena. It does not take the radar's line with it: two thirds of the
+-- short side of the window reaches past the middle of an upright phone, so a
+-- map on the row would be a map with the clock drawn on top of it. It hangs
+-- under the row instead, which is where both of them used to start.
+--
+-- The row's end does not move when it opens, either. That is the radar's
+-- resting edge, so a band that had room for its names keeps them while a
+-- player reads the map.
+do
+    -- The same names either way: the section above leaves the longest call
+    -- signs there are in `NAMES`, and a band measured against those is not
+    -- the band this compares.
+    frame()
+    local before = box("details")
+    ui.map = true
+    frame()
+    local corner, key, press = box("map"), box("open"), box("details")
+    check("the map stands in the dial's corner", corner ~= nil)
+    if corner and key then
+        check("wider than the dial at rest",
+              corner.w > 168, string.format("%.0f wide", corner.w))
+        check("and under the row rather than on it",
+              corner.y >= key.y + key.h,
+              string.format("map at %.0f, row ends %.0f",
+                            corner.y, key.y + key.h))
+        check("keeping the dial's own margin from the right edge",
+              math.abs((W - (corner.x + corner.w)) - key.x) < 0.5,
+              string.format("gap %.1f against the key's %.1f",
+                            W - (corner.x + corner.w), key.x))
+    end
+    check("and a monitor's band is untouched by opening it",
+          drawn("PYLON") ~= nil and drawn("CAISSON") ~= nil
+              and press and before
+              and math.abs(press.w - before.w) < 0.5,
+          table.concat(words(), " | "))
+    -- A phone's map is the case that forced the line: on the row it would
+    -- start left of the clock.
+    frame({w = 390, h = 844})
+    local small, small_key = box("map"), box("open")
+    if small and small_key then
+        check("a phone's map reaches past the middle of the window",
+              small.x < 195,
+              string.format("starts at %.0f of 390", small.x))
+        check("and is under the row, clear of the clock",
+              small.y >= small_key.y + small_key.h,
+              string.format("map at %.0f, row ends %.0f",
+                            small.y, small_key.y + small_key.h))
+    end
+    ui.map = false
+    frame()
+end
 
 -- --- the band is the control -----------------------------------------------
 

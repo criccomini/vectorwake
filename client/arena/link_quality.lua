@@ -1,4 +1,4 @@
--- The slow connection instrument behind the LINK bars.
+-- The slow connection instrument behind the link meter in the menu head.
 
 local M = {}
 M.__index = M

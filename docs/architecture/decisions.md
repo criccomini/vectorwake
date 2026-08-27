@@ -366,8 +366,10 @@ d-pad was kept afterward as a second steering setting beside the stick, on a
 north-up screen like everybody else's. Both that and the reverse that came with
 it are gone now. One push of a thumb meant one thing on the pad and another on
 the stick, and on the stick it changed again while the guns were up, so a phone
-flies with the stick alone and a pilot who wants to be going the other way turns
-the ship around. See `arena/touch.lua`.
+flies with the stick alone. Reverse came back later as a stance the pilot sets
+rather than a push the stick reads into, which is
+[decision 88](#88-a-phones-reverse-is-a-stance-not-a-push); the d-pad did not.
+See `arena/touch.lua`.
 
 
 **Status:** accepted
@@ -3999,6 +4001,274 @@ thing this decision is about.
 **Reconsider if:** the pilot page is ever wanted on the row a match gets. That
 is the one change that would let settings fold into it the way most phones do
 it, and the row would drop a stop rather than reorder one.
+
+## 84. The menu has one type system
+
+**Date:** 2026-08-27
+
+The menu was set in two faces, fifteen sizes and no contrast floor, and on a
+desktop it was small as well. Driving the shipped menu and reading back every
+run of type it asked for: 34 of 91 runs across the five pages landed under the
+4.5:1 that small type wants.
+
+Three rules replace all of it.
+
+**Face is decided by one question:** would you read it aloud as a sentence, or
+look it up in a column? Language takes the menu face, values take the mono. That
+rule was already written down in `docs/design/interface.md` and was followed in
+one place, so every sentence in the menu was set in DejaVu Sans Mono at 11.5
+points. Moving them is close to free: weighted by English letter frequency the
+menu face sets at 0.511 em against the mono's 0.602, so 14 points of it runs as
+wide as 11.9 points of mono. `wrapped` takes a face now, because a line has to
+be measured in the one it is set in.
+
+**Text draws at alpha 1,** and state says itself with a color instead. Every
+failing site was a fraction of alpha on a color with no headroom, so one rule
+deletes all of them. `pal.DIM` is that color: 4.68:1 on the column at full
+alpha, which cannot survive being drawn on a lit row, and thirty-three call
+sites passed it a fraction. `pal.READ` and `pal.MUTE` replace it in the menu at
+9.81 and 6.54, both measured on the three grounds a row actually has. The worst
+number in the menu is now 4.61.
+
+**Sizes come from a ladder of five:** LABEL 12, BODY 14, ROW 17, LEAD 21, PAGE
+26. There were fifteen, near enough all of them bare numbers at the call site,
+with four fifths of a page at 13 points or under.
+
+And the menu multiplies its whole scale by 1.25 on a window with room. It had a
+constant for this, `MENU_ZOOM` at 1.18, which went out with decision 63 and was
+never replaced, so for five decisions the menu was a phone screen shown on a
+desk. A phone keeps the measure it already had.
+
+**Cost:** a plain row name is 17 points against 18 on a phone, and the call sign
+in the head steps down a rung to LABEL. The head is a strip of fixed height
+sharing its width with the way out at one end and the line meter at the other,
+and at BODY the longest call sign anybody can register leaves a phone 54 points
+for a readout that needs 80. Everything else on a phone got larger.
+
+**What the sweep turned up:** `stage_row` wrote a room nobody is serving back a
+shade with `col = pal.a(col, 0.6)`, and both places that draw the name ask for
+`pal.a(col, label_a)`, which replaces an alpha rather than multiplying one. The
+0.6 was thrown away, so the name drew at the weight of a room you could join
+while the figures under it dimmed through a separate multiplier that worked,
+down to 1.97:1. The row said the wrong half of itself quietly. A register
+carries it now, which cannot be discarded by the next hand that sets an alpha.
+
+**Reconsider if:** a page turns up that needs a size between two rungs. The
+answer is to move a rung rather than add one, since fifteen sizes is what
+adding one looks like fifty edits later.
+
+## 85. A burst shuts its own key for a second and a half
+
+**Status:** accepted
+
+**Decision:** every charge kind keeps a firing clock of its own, read off the
+same `delay` a trigger's pattern uses, and the burst's is 150 ticks, which is
+the bomb's own delay and the longest wait any weapon here asks for. The
+repel's stays at zero. Nothing else about a burst moves: the same twenty-four
+rounds at the same damage, the same rack of three, still dealt once a match and
+still not handed back by a death.
+
+The clock is per kind rather than one over the rack, and it is not cleared by
+dying. It belongs to the ammunition, and a match start is the only thing that
+refills the rack, so a whistle clears it along with the rest.
+
+A key that does nothing has to look like one, so the corner rail and the touch
+cells wash a kind's row down on the tick it goes and bring it back as the clock
+runs out. The ticks left travel in the owner-only tail of a snapshot, because
+the clock is set at a press that may be older than the tick a snapshot begins
+from and a client that could not read it would predict a key the zone has shut.
+That is protocol 26.
+
+**Why:** inventory was the whole limit, and inventory limits nothing at the
+scale a hand works at. Three presses take a tenth of a second, a burst costs no
+energy at all, and three rosettes thrown from one standing position is
+seventy-two rounds, of which three end anybody. So the play was to fly at
+somebody and empty the rack, and what it asked of the pilot was one approach:
+the second and third bursts asked nothing the first had not already asked. That
+is a weapon that beats a better pilot without out-flying them.
+
+The number prices the cadence and not the fight. Emptying the rack takes three
+seconds now, where three presses took a tenth of one, which is long enough that
+the second and third bursts are flown between and aimed separately, and short
+enough that all three are still available inside the exchange the first one was
+thrown into. A wait that pushed the next burst into the next fight is several
+times this: five seconds was written first and rejected, because it decides
+what a rack is for as well as how fast it may be spent, and that is a bigger
+rule than this one needs to be. The number to move if the fly-in survives is
+this one.
+
+Per kind, because the two kinds are opposite things. A repel is the answer to a
+round already in the air and is wanted precisely when a fight is going badly,
+so shutting it because a burst had just gone would take the answer away at the
+moment it is asked for. It also does no damage, which makes chaining repels a
+way of wasting them rather than a way of winning.
+
+**Cost:** a pilot who wants two bursts in one fight still has them, a second
+and a half apart. This does not end the fly-in on its own. It makes the pilot
+fly for three seconds under fire to spend the rack rather than press a key
+three times, and whether that is enough is the open question here.
+
+The number is also argued rather than measured. The authored bots throw a burst
+only at close range on a nearly empty bar, so the melee probe has nothing to
+say about the case this fixes, and the evidence is the arithmetic above and not
+a run. Twenty matches on gantry either side of the change say only that the
+room still plays the same: 59.5 rounds in the air against 60.1, the repel rack
+spent at 61s, 102s and 131s against 58s, 100s and 129s, skill against k/d at
++0.86 against +0.93.
+
+The wire and the mirrors also grow: eight bytes on every owner record, one more
+array on the ship, and one more thing the two ends have to agree about, which
+is what the protocol number is for.
+
+**Reconsider if:** a pilot can still fly in and end somebody on two bursts a
+second and a half apart, which would be this number too short rather than the
+rule wrong, and the answer is a longer one. Or if matches start ending with
+bursts still in the rack, which is the same lever the other way. Or if the
+fly-in comes back off one burst alone, which would be what a burst does at
+contact range rather than how often it may be thrown, and the answer is its
+damage instead.
+
+## 86. The dial hugs the corner the link bars left
+
+**Status:** accepted
+
+**Decision:** the radar sits hard in the top right, one PAD from the top edge
+and one from the right, which is the margin the way into the menu keeps from
+the corner opposite. Same margin on both axes and at every window size. Its
+POS caption hangs under its foot everywhere rather than standing above it on
+the windows wide enough for that, and the clock band, which used to grow to
+the screen's own edge, stops at the radar's left side again.
+
+The map keeps the lower line both of them used to start on. It is two thirds
+of the window's short side, which on an upright phone reaches past the middle,
+so a map on the row would have the clock drawn over it, and capping its width
+to clear the band leaves something narrower at 390 points than the radar it
+grew from. The row's end stays the radar's resting edge for the same reason,
+so opening the map does not take a name off the band.
+
+**Why:** asked for. The dial used to start a key's height lower because the
+LINK bars stood in the strip above it, and the bars went into the head of the
+menu a day before this. Nothing replaced them, so the instrument was left
+indented off a row that no longer existed, which reads as having slipped down
+the screen rather than as leaving room for something.
+
+Both instruments anchored to the top of the window now hang off one padding
+instead of one of them hanging off the other, which is the whole of what
+`PAD` was already for.
+
+**Cost:** an upright phone gives up the two side names on the band. 390 points
+hold the way into the menu, a centered clock and a 112-point dial, and a call
+sign does not fit in the eighteen points left over. The figures under the
+names always draw, the board a press on the band opens carries both names, and
+a phone held sideways has 844 points of row and keeps them.
+
+The band gives up both names or neither, which is new. Each side used to be
+measured against the end of the row it faced, and those ends are not the same
+width: a small key at one and a square a third of a phone across at the other.
+So the left name drew while the right one was dropped, which reads as a fault
+rather than as a band that has run out of room. The pair is the unit now, and
+the cost is a monitor with one very long call sign and one short one, where
+both go instead of the long one alone.
+
+**Reconsider if:** a phone's band is wanted with names on it. The dial would
+have to give up about a third of its width to pay for one, and it was cropped
+to 112 points on a phone already; the reach that crop bought back is worth
+more than a name that is on the board one press away.
+
+## 87. The tile readout goes
+
+**Status:** accepted
+
+**Decision:** POS and the pair of numbers beside it are gone from the arena.
+Nothing is captioned in that corner now. The radar keeps its whole square, the
+feed starts a gap under it rather than under a line of type, and `radar_span`
+is the instrument and that gap.
+
+**Why:** asked for, one commit after decision 86 moved the readout under the
+dial's foot. Moving it was what made it worth looking at, and what a look
+found is that the instrument it now hangs off already answers the question.
+The dial is a picture of where you are, sixty tiles wide with the terrain in
+it. A pair of tile numbers is the same fact written out, and written out is
+not the form a reading gets taken in mid-fight.
+
+Two things go with it. `TOP.coord_line` measured a line for the caption alone
+and has no other reader, and the hover zone the dial published was placed so
+that a word beside it could be hung off the square's full height rather than
+off one line of type. Nothing in the client reads a zone called `radar`: the
+card that reads zones knows the corner stack's rows and nothing else.
+
+**Cost:** the exact figures are not on screen anywhere now. Nothing else
+writes them out: the debug readout behind the link meter is frame times and
+wire statistics, and the map draws you as an arrow over the whole arena rather
+than as a number. A pilot who was calling a position across a room has the
+dial to read by eye and nothing to read off, which is the whole of what this
+takes away.
+
+**Reconsider if:** a mode arrives where a named place matters, a flag post or
+a base to call, in which case the answer is probably a name on the dial rather
+than the numbers back in the corner.
+
+
+## 88. A phone's reverse is a stance, not a push
+
+**Status:** accepted
+
+**Decision:** a double tap anywhere on the stick's half of the screen flips the
+ship into reverse, and it holds until another double tap flips it back. The
+stick names the course either way. Reversed, the nose is held at the far end of
+that course rather than on it, so a pilot backs away from their own thumb with
+the guns still on whatever they are backing away from. Everything else about
+the stick is unchanged, the rule that the engine waits for the nose included.
+
+The stance is drawn twice over. The stick turns the color the ship's plumes are
+drawn in, and the middle of its resting mark becomes the down arrow the
+keyboard's reverse key already wears; while a thumb is on it, a headed spur out
+the far side of the press says where the nose is being carried. The ship has
+drawn retros off its bow all along, and the note in `arena/world.lua` saying
+they exist for a touchscreen reverse was written for the one that had gone. A
+watch, a lost window or a shutdown drops the stance with the rest of the
+controls.
+
+**Why:** [decision 13](#13-the-camera-holds-a-fixed-zoom) took two reverses out
+of this client, and both went for the same reason: the stick was guessing. Down
+on the d-pad and a rearward push on the stick were one thumb movement meaning
+two different things, and on the stick the meaning changed again mid-burst,
+since it read as backing out only when the guns were up or a hostile sat ahead.
+What was wrong was never that a phone had a reverse. It was that nothing the
+pilot did decided which reading they got.
+
+A latch has none of that. The pilot sets the stance, the screen says which one
+is up, and a push means what it has always meant. It costs the simulation
+nothing: the core has had `SIM_BTN_REVERSE` from the start and still receives
+the bitfield a keyboard sends.
+
+Holding the nose opposite rather than on the thumb is the other half of this,
+and the half worth arguing. The alternative reads better in source and worse in
+the hand, because the same push would name a course going forward and a target
+going back, which is the mid-burst change wearing a switch. It is also the only
+reason to fly backward at all. A ship that can reverse only straight away from
+where it is pointed has a slower way of turning around, not a way of retreating
+under fire.
+
+**Cost:** a mode a pilot can forget they set. The drawing is the whole answer to
+that, which is why the arrow on the resting mark is counted in
+`client/tests/touch_test.lua` rather than left to a look. An indicator that goes
+quiet leaves a ship flying backward for a reason nothing on screen explains.
+
+It is also a gesture nobody stumbles on. The controls page a phone reads names
+it and that is all there is, so a pilot who never opens that page never finds
+reverse. The keyboard has the same problem and answers it the same way.
+
+And `arena/touch.lua` keeps a clock again, which was one of the three costs
+listed when the last reverse went. It is one number set at the single call site
+rather than a timer the module runs, and the gesture asks that time have passed
+rather than merely that not too much of it has, so a caller that stops setting
+it loses the flip instead of firing it on every pair of quick presses.
+
+**Reconsider if:** nobody finds it. The gesture is named on the controls page
+and nowhere else, and a stance no one sets is worth less than the corner of the
+screen it colors; the answer then is a control that says what it is rather than
+a longer sentence about this one.
 
 ## 89. The landing carries the choices, and their lists open in place
 

@@ -468,6 +468,16 @@ local function charge_row()
             -- same fifteen for everybody, so the rail drew a pilot carrying
             -- three repels as three of fifteen.
             max = sim.ship_kit(me, sim.SLOT_CHARGE0 + k),
+            -- How long until this kind may be thrown again, and how long it
+            -- waits when it is. A burst shuts its own key behind it and the
+            -- corner has to say so, or a pilot presses a key that does
+            -- nothing and learns nothing from it.
+            --
+            -- Off the hull rather than the copy above, because a death does
+            -- not clear this clock: the rack is not re-dealt at a respawn, so
+            -- neither is the wait in front of it.
+            wait = sim.ship_charge_wait(me, k),
+            delay = sim.charge_delay(k),
         }
     end
     return out
@@ -2022,10 +2032,14 @@ function update(self, dt)
         touch.charges = my_slots()
         touch.counts = {}
         touch.maxes = {}
+        touch.waits = {}
+        touch.delays = {}
         for _, k in ipairs(touch.charges) do
             touch.counts[k] = held_kit and held_kit.charge[k]
                 or sim.ship_charge(me, k)
             touch.maxes[k] = sim.ship_kit(me, sim.SLOT_CHARGE0 + k)
+            touch.waits[k] = sim.ship_charge_wait(me, k)
+            touch.delays[k] = sim.charge_delay(k)
         end
 
         -- Doors and wormholes: world geometry that moves, so it cannot live in
@@ -2199,8 +2213,8 @@ function update(self, dt)
             lag_notice = net.lag_notice,
             -- The round trip belongs to the connection module. The frame
             -- layer slows its noisy estimate into the stable number of bars
-            -- that the readout above the dial needs. Input scheduling margin
-            -- is separate and lives in the debug readout.
+            -- the meter in the menu's head needs. Input scheduling margin is
+            -- separate and lives in the debug readout.
             link_bars = self.link_bars,
             stats = net.stats, zone = net.zone,
             -- Every room of this game and which one we are in, for the chip
@@ -2244,12 +2258,17 @@ function update(self, dt)
     -- menu last built rather than a fresh one, because a page has nothing to
     -- say about a menu that is shut and the picture sliding away should be the
     -- picture that was there.
-    if menu.open then
-        self.menu_view = menu.view()
-        self.menu_view.open = true
-        ui.menu(self.menu_view)
-    elseif ui.drawer_up() and self.menu_view then
-        self.menu_view.open = false
+    if menu.open then self.menu_view = menu.view() end
+    if self.menu_view and (menu.open or ui.drawer_up()) then
+        self.menu_view.open = menu.open
+        -- The state of the line, for the readout in the panel's head. It is
+        -- set here rather than in `menu.view` because the frame layer is what
+        -- smooths the connection's noisy round trip into a bar count, and the
+        -- menu knows about pages rather than about packets. It is set on the
+        -- way out as well, since a drawer is still on screen while it slides
+        -- away and a meter frozen at the moment the menu shut would be showing
+        -- the wrong number.
+        self.menu_view.link_bars = self.link_bars
         ui.menu(self.menu_view)
     end
     -- The question about moving room, last of everything that publishes a hit
@@ -3292,6 +3311,12 @@ function on_input(self, action_id, action)
     end
 
     if action_id == hash("touch") then
+        -- What time the stick thinks it is. Only its double tap reads this,
+        -- and it is set here rather than beside the rest of touch.lua's fields
+        -- in update() because a release can arrive on the line below: a clock
+        -- a frame old would be measuring the gap between two taps against the
+        -- wrong end of it.
+        touch.now = self.clock or 0
         -- Every touch that went down this frame, not just whichever one the
         -- engine decided was primary: on a phone the finger that reaches the
         -- button is often the second one down.

@@ -164,9 +164,9 @@ local function frame(touching)
         y0 = math.min(y0, H - s.y1)
         x1 = math.max(x1, s.x1)
     end
-    -- The text goes to the edges too: POS and LINK are the topmost things
-    -- on screen, and text is not a shape. It rides the same bottom-up frame
-    -- the mesh does, so it flips through H the same way.
+    -- The text goes to the edges too, the clock band being among the topmost
+    -- things on screen, and text is not a shape. It rides the same bottom-up
+    -- frame the mesh does, so it flips through H the same way.
     for k = 1, state.n do
         local t = state.text[k]
         y0 = math.min(y0, H - t.y - t.px / 2)

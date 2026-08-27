@@ -516,6 +516,34 @@ int ShipCharge(lua_State* L) {
     return 1;
 }
 
+// Ticks before this pilot may throw that kind of charge again, and how many
+// the kind waits in the first place. Two numbers rather than a fraction,
+// because the fraction is a drawing decision and this file does not make
+// those: a corner that washes a row out and a pad that does the same want the
+// same two numbers and divide them differently.
+//
+// The second is the zone's, off the pattern, so a kind the zone leaves without
+// a delay reports zero and nothing drawn from it ever dims.
+int ShipChargeWait(lua_State* L) {
+    int i = CheckShip(L);
+    int k = (int)luaL_checkinteger(L, 2);
+    lua_pushnumber(L, (k >= 0 && k < SIM_MAX_CHARGES)
+                          ? g_cur->ships[i].charge_cooldown[k] : 0);
+    return 1;
+}
+
+int ChargeDelay(lua_State* L) {
+    int k = (int)luaL_checkinteger(L, 1);
+    uint8_t pat = (k >= 0 && k < SIM_MAX_CHARGES) ? g_cfg.charge[k]
+                                                  : SIM_NO_PATTERN;
+    if (pat == SIM_NO_PATTERN || pat >= g_cfg.pattern_count) {
+        lua_pushnumber(L, 0);
+        return 1;
+    }
+    lua_pushnumber(L, g_cfg.patterns[pat].delay);
+    return 1;
+}
+
 // Whether this hull has the trigger at all, as opposed to being on rung zero
 // of it. A hull with no bomb rack carries SIM_NO_PATTERN at rung zero, which
 // is a different thing from carrying a bomb that happens to be weak -- and the
@@ -1185,6 +1213,8 @@ const luaL_reg kFunctions[] = {
     {"starter_kit", StarterKit},
     {"ship_level", ShipLevel},
     {"ship_charge", ShipCharge},
+    {"ship_charge_wait", ShipChargeWait},
+    {"charge_delay", ChargeDelay},
     {"ship_bounty", ShipBounty},
     {"ship_streak", ShipStreak},
     {"ship_on_streak", ShipOnStreak},

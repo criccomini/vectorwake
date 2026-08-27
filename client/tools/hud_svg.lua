@@ -364,7 +364,6 @@ ui.hud({
     lag_notice = "",
     match_url = ending and "https://vectorwake.net/m/42" or nil,
     rtt = 22,
-    link_bars = 4,
     zone = (landing or scenario == "ending") and "melee" or "ladder",
     room = 1,
     fps = 60, frame_ms = 16.7, rx_rate = 31000, tx_rate = 700,

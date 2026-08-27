@@ -13,7 +13,7 @@ extern "C" {
 
 /* Largest whole-state snapshot. Every visible ship carries its private tail,
  * so this is slightly larger than the network limit. */
-#define SIM_STATE_PACK_MAX 66198
+#define SIM_STATE_PACK_MAX 68238
 
 /* A network snapshot carries one owner-only ship tail. The whole-state
  * replay path and trusted house bots ask for every tail instead.

@@ -24,7 +24,7 @@ mid-fight, out of the corner of an eye. The menu is read, parked, between
 matches. Everything else in this document follows from that split.
 
 The HUD speaks in capitals, because capitals are the case an instrument is
-labeled in: LINK, POS, MENU, PILOTS, DESTROYED. The menu speaks in a
+labeled in: MENU, PILOTS, STREAK, DESTROYED. The menu speaks in a
 sentence's case, one capital at the front of a line and nothing else, because
 a page of capitals is a page nobody reads twice. The switch is made in one
 place (`cased` in ui.lua), set by whichever surface is drawing, never written
@@ -118,36 +118,98 @@ so the brand mark cannot drift into the colors pilots identify sides by.
 Two faces, and the split is the two voices again.
 
 **The mono** is DejaVu Sans Mono, the face everything in flight is set in and
-the face of every number, key cap, count, and machine reading in the menu.
-The HUD's base size is 13 points on an 18 point line; small labels step down
-from there (the group label is 9 points, upper case, dim). Its advance is one
-number, 1233/2048 of the size, and `text_w` uses it.
+the face of every number, count and machine reading in the menu. The HUD's
+base size is 13 points on an 18 point line. Its advance is one number,
+1233/2048 of the size, and `text_w` uses it.
 
-**The menu face** is proportional, and it is what the menu sets names and
-prose in: tab words, page rows at 15 to 21 points, the podium's headline, the
-wordmark. Its advances are read out of the font file itself and generated
-into `client/arena/menu_face.lua` by `client/tools/font_advances.py`, because
+**The menu face** is proportional, and it is what the menu sets names and prose
+in. Its advances are read out of the font file itself and generated into
+`client/arena/menu_face.lua` by `client/tools/font_advances.py`, because
 measuring it with the mono's number runs about a fifth long and puts carets
-past the ends of names. Nothing measures type by guessing.
+past the ends of names. Nothing measures type by guessing, `wrapped` included:
+it takes the face it is breaking lines for.
 
-The rule for choosing between them: data is mono, things being read are the
-menu face. A row's label is menu face; the count at the end of it is mono. A
-call sign in the roster is menu face because it is being read as a name; the
-same call sign beside a nameplate in flight is mono because everything in
-flight is.
+The rule for choosing between them is one question. Would you read it aloud as
+a sentence, or look it up in a column? Language takes the menu face, values take
+the mono. A row's label is menu face; the count at the end of it is mono. A call
+sign in the roster is menu face because it is being read as a name; the same
+call sign beside a nameplate in flight is mono because everything in flight is.
+A key in the menu is a word you read before you press it and takes the menu face
+in a sentence's case; a key in the corner is an instrument label and stays upper
+case mono.
 
-Ten points is the floor for authored type, the small label register included
-(`LBL_PX` in ui.lua), and dim labels at that size draw at DIM's full alpha:
-nine-point dim mono at nine tenths of itself measured about 3.9:1 against the
-field, under the 4.5:1 small type wants, on the labels that name every group.
-The only type below the floor is squeezed there by a window too small for the
-authored size, where the alternative is overlap.
+That rule is not new and was followed in one place. Every sentence in the menu
+was set in mono at 11.5 points until the type pass, which is what a paragraph
+without a test is worth. Moving them cost almost nothing in width: weighted by
+English letter frequency the menu face sets at 0.511 em against the mono's
+0.602, so 14 points of it runs as wide as 11.9 points of mono.
 
-The menu sets its type 1.18 larger than the HUD on a desktop window
-(`MENU_ZOOM`), and not on a phone or a short window, which are already showing
-as much as they can. The zoom is applied to the whole scale, not the type
-alone, so rows, gaps, and marks grow together and nothing drifts out of
-alignment.
+### The ladder
+
+Five sizes, in points, in `TYPE` in ui.lua:
+
+| | pt | what it sets |
+| --- | --- | --- |
+| `LABEL` | 12 | the upper case register that names a group or a column of figures, and a chip in a dense bar |
+| `BODY` | 14 | everything small being read: a sentence, a detail, a price, a word in a button, a tab |
+| `ROW` | 17 | a name in a list |
+| `LEAD` | 21 | the same name where it heads a sentence or a strip of figures |
+| `PAGE` | 26 | what a page calls itself |
+
+There were fifteen, near enough all of them bare numbers at the call site, with
+four fifths of a page at 13 points or under. The gap from `LABEL` to `BODY` is
+smaller than the rest of the ladder because upper case reads larger than lower
+at the same size.
+
+The menu multiplies its whole scale by `MENU_SCALE`, 1.25, on any window that is
+not `M.compact`. Rows, gaps, marks and the column grow with the type, so nothing
+is measured twice; scaling the type alone is how a name ends up wider than the
+row sized for it. A phone keeps the scale the rest of the interface uses, held
+sideways included, since the scarce axis decides and a landscape phone is 390
+points tall.
+
+There was a constant for this, `MENU_ZOOM` at 1.18. It went out with decision 63
+and nothing replaced it, so for five decisions the menu was a phone screen shown
+on a desk.
+
+### The inks
+
+Text draws at alpha 1. State says itself with a color: a register brighter under
+the cursor, team blue where you already are, a register back where you cannot
+press.
+
+| | hex | on the column | what it sets |
+| --- | --- | --- | --- |
+| `INK` | `#dfe9f5` | 16.59 | names, titles, the thing you came to read |
+| `READ` | `#9fb6d4` | 9.81 | sentences, details, values |
+| `MUTE` | `#8593a9` | 6.54 | the caps that name a group, and anything unavailable |
+| `FRIEND` | `#4fd6ff` | 12.01 | where you are, what is on |
+| `CHARGE_COL` | `#ffd166` | 14.12 | a warning, and what you have typed into a field |
+| `HURT` | `#ff505a` | 6.35 | an error |
+
+The ground is the column's own: `0x03050a` at 0.86 over the arena. Two other
+grounds matter, since a row can be lit, and every one of these clears 4.5:1 on
+all three. The worst number in the menu is 4.61.
+
+`pal.DIM` is why the rule is stated as alpha 1 rather than as a habit. It is
+worth 4.68:1 on the column at full alpha, so it clears the 4.5 small type wants
+with nothing left over and cannot survive being drawn on a lit row at all.
+Thirty-three call sites passed it a fraction anyway, and a third of the type in
+the menu went under the line: a tab row at 3.33, a games row's own figures at
+1.97, the add-a-friend placeholder at 1.94, which is the field telling you what
+to type. Each of those was defensible on its own line. The number that condemned
+them is a function of the color, the alpha and the ground three files apart,
+which is why `client/tests/type_test.lua` exists and this paragraph is not
+enough on its own.
+
+One alpha is left on type: `LIT.breath` on the row you are standing on, which
+rides on a name at full ink and floors at 0.74, worth 9.2:1 at the bottom of the
+curve.
+
+A control's outline is the other thing with a number to hit, since a boundary is
+what says a control is there. `pal.KEY_EDGE` at `#55708f` is 3.97:1 on the
+column, against the 3:1 non-text contrast asks. Rules between rows and divisions
+inside a panel keep `BORDER` and have nothing to find.
 
 ## Shape
 
@@ -282,17 +344,28 @@ The constants that repeat, from ui.lua:
 
 The HUD has a fixed geography, and it is the prototype's. Top left: the button
 row (MENU, ROOM, the on-air or watching chip) and the rooms panel under it.
-Top right: the LINK bars, then the radar or the map (one corner, one
-instrument), with POS on the dial's other shoulder and the feed hanging under
-it. Bottom left: the corner stack, what your triggers do and what you carry,
-growing upward.
+Top right: the radar or the map (one corner, one instrument), with the feed
+hanging under it. The radar is hard into the corner at the same PAD the button
+row keeps from the other one; the map, which is two thirds of the window's
+short side and reaches past the middle of an upright phone, starts on the line
+under the row instead. Nothing is captioned up there. The instrument draws
+where you are, and a pair of tile numbers beside it was the same fact in the
+form nobody reads. Bottom left: the corner stack, what your triggers do and
+what you carry, growing upward.
 
-The top of that geography is a row, and everything standing in it shares one
-center: the corner key at the left, the band in the middle where there is room
-for it, and the LINK and POS readouts at the right. A key's height is what the
-row takes from, and the dial starts where the row ends. Anything up there that
-works its own vertical out of the padding drifts, because the padding is a
-horizontal measurement.
+The top of that geography is a row with an instrument at each end. The corner
+key and the band share one center, a key's height is what that center is taken
+from, and the band grows outward from the middle until it reaches the key on
+one side or the dial on the other. Anything up there that works its own
+vertical out of the padding drifts, because the padding is a horizontal
+measurement.
+
+A band with nowhere left to grow gives up the two side names rather than the
+line it stands on, and gives up both or neither: the row's ends are a small
+key and a square a third of a phone across, so measuring each name against the
+end it happens to face drew one and dropped the other. An upright phone is the
+window that runs out, and reads as the clock with a figure either side of it.
+The names are on the board a press on the band opens.
 
 The match ending is the board again rather than a page of its own: at the
 whistle it comes up whether or not anybody asked for it, in a column of its

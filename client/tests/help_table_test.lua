@@ -294,7 +294,11 @@ do
     -- weapon, because a kit carries two kinds and which two is the pilot's
     -- choice. They still need the sentence: what a thumb has to be told is
     -- where the cell is, and that is the same wherever the choice landed.
-    local MUST_SAY = {"turn left", "thrust", "guns", "bombs",
+    --
+    -- Reverse is on the list because it is a stance rather than a control: on
+    -- glass it is a double tap on the stick's half, which is a gesture no
+    -- amount of looking at the screen will find.
+    local MUST_SAY = {"turn left", "thrust", "reverse", "guns", "bombs",
                       "charge 1", "charge 2", "multifire", "map", "players"}
     local pad = {}
     for _, r in ipairs(ROWS) do pad[r.name] = r.pad end
@@ -308,12 +312,9 @@ do
 
     -- The ones that say nothing, and why. The controls page is the page being
     -- read; turn right shares the stick with turn left and is named by it.
-    -- Page Up and Page Down are replaced by tapping the pilot row. Reverse is
-    -- keyboard-only: the stick points where the nose should go and a push
-    -- behind it is a turn, so a phone has no way to ask for it and nothing to
-    -- describe. Anything else arriving with no `pad` is a control a phone has
-    -- quietly lost.
-    local QUIET = {controls = true, ["turn right"] = true, reverse = true,
+    -- Page Up and Page Down are replaced by tapping the pilot row. Anything
+    -- else arriving with no `pad` is a control a phone has quietly lost.
+    local QUIET = {controls = true, ["turn right"] = true,
                    ["previous player"] = true, ["next player"] = true}
     local mute = {}
     for _, r in ipairs(ROWS) do
@@ -321,6 +322,60 @@ do
     end
     check("and only the deliberate ones are keyboard-only", #mute == 0,
           table.concat(mute, ", "))
+
+    -- And it fits the column it lands in.
+    --
+    -- The page a phone reads is not the block this file measures above: these
+    -- sentences go on menu rows, in a drawer 390 points wide with 20 points of
+    -- air at each edge, and a row does not wrap a detail. It cuts it at the
+    -- nearest letter, so a sentence four words too long simply loses its last
+    -- two and still reads like a finished sentence. The longest that ships is
+    -- within five points of the edge, which is close enough that the next one
+    -- written is a coin toss rather than a decision.
+    --
+    -- Drawn rather than counted, through the same ui.menu the client calls, so
+    -- the answer moves if the column, the type or the padding does.
+    do
+        local st = package.loaded["arena.state"]
+        local wide = {}
+        st.n = 0
+        ui.begin(layer, 390, 844, 1, true, 0)
+        local rows = {}
+        for _, r in ipairs(ROWS) do
+            if r.pad then
+                rows[#rows + 1] = {label = r.pad_name or r.name, detail = r.pad}
+            end
+        end
+        ui.menu({depth = 2, sel = 1, focus = "page", home = false,
+                 scenery = false, closable = true, rows = rows,
+                 at = "controls", rail = {{label = "settings", at = "settings"}},
+                 rail_sel = 1, pilot = {name = "Krait 4", rivets = 310}})
+        ui.finish()
+        local x0, _, w = ui.drawer_span()
+        local lo, hi = x0 + ui.MENU_PAD, x0 + w - ui.MENU_PAD
+        local said = {}
+        for _, r in ipairs(rows) do said[string.lower(r.detail)] = true end
+        for i = 1, st.n do
+            local t = st.text[i]
+            -- The row raises the first letter of a sentence as it draws it,
+            -- so what lands is not the string controls.lua wrote.
+            if said[string.lower(t.s)] then
+                local tw = glyphs(t.s) * t.px * ADVANCE
+                local left = t.x
+                if t.pivot == "right" then left = t.x - tw
+                elseif t.pivot == "center" then left = t.x - tw / 2 end
+                if left < lo - 0.5 or left + tw > hi + 0.5 then
+                    wide[#wide + 1] = string.format("%q spans %.0f..%.0f",
+                                                    t.s, left, left + tw)
+                end
+                said[string.lower(t.s)] = nil
+            end
+        end
+        check("every thumb sentence reached the page", next(said) == nil,
+              "missing " .. tostring(next(said)))
+        check("and every one fits the column it is drawn in", #wide == 0,
+              table.concat(wide, ", "))
+    end
 
     -- A thumb sentence that names a key is a sentence written for the wrong
     -- device, which is the shape the drift took last time.
