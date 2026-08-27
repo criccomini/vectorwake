@@ -493,25 +493,29 @@ local function pilot_mark(cx, cy, col, k, line)
     -- chevron; what makes a wing is that the three of them disagree about
     -- where they are going.
     --
-    -- Each one starts on the hull rather than at a shared distance from the
-    -- middle. They all began at one x, which is a straight line down through
-    -- a shape that has no straight line in it: the hull is a hair wide under
-    -- the nose and four times that by the wingtip, so a root that cleared it
-    -- at the bottom left the top two hanging in space with a gap behind
-    -- them. The roots are the leading edge's own x at each height now, a
-    -- shade inside it, so the feathers meet the ship and read as coming off
-    -- it rather than as floating beside it.
+    -- Each one starts off the hull's own edge rather than at a shared
+    -- distance from the middle. They all began at one x, which is a straight
+    -- line down a shape that has no straight line in it: the hull is a hair
+    -- wide under the nose and four times that by the wingtip, so a root set
+    -- clear of it at the bottom left the top two hanging in space.
     --
-    -- Which means these three numbers are the hull's and have to move when
-    -- it does. Wrong, they do not fall off the mark or overlap anything;
-    -- they just open the gap again, which is the kind of fault that survives
-    -- a long time because nothing about it looks broken.
+    -- The roots are the leading edge's x at each height plus the same small
+    -- clearance, so the gap behind a feather is the same gap whichever
+    -- feather you look at. Drawn touching first, and touching is worse: the
+    -- three run into the hull and the badge reads as one blob with spines.
+    -- What it wants is to sit just off, near enough to belong to the ship
+    -- and far enough that the eye finds the edge.
+    --
+    -- Which makes these numbers the hull's, and they have to move when it
+    -- does. Set wrong they do not fall off the mark or cross anything, they
+    -- just reopen the gap unevenly, which is the kind of fault that lasts
+    -- because nothing about it looks broken.
     for _, w in ipairs({1, -1}) do
-        F.layer:seg(px(w * 0.034), py(-0.06), px(w * 0.500), py(-0.30),
+        F.layer:seg(px(w * 0.118), py(-0.06), px(w * 0.500), py(-0.30),
                     line, col, true)
-        F.layer:seg(px(w * 0.078), py(0.06), px(w * 0.463), py(-0.10),
+        F.layer:seg(px(w * 0.166), py(0.06), px(w * 0.463), py(-0.10),
                     line, col, true)
-        F.layer:seg(px(w * 0.150), py(0.18), px(w * 0.389), py(0.09),
+        F.layer:seg(px(w * 0.238), py(0.18), px(w * 0.389), py(0.09),
                     line, col, true)
     end
     return k
