@@ -95,14 +95,72 @@ function M.new(context)
     end
 
     local function mark_settings(cx, cy, r, col)
-        -- Three rules with a knob apiece, at three different settings, because a
-        -- row of identical sliders is a picture of nothing being adjustable.
-        for i, k in ipairs({-0.62, 0, 0.62}) do
-            local y = cy + r * k
-            F.layer:seg(cx - r, ry(y), cx + r, ry(y), 1.0 * F.scale, pal.a(col, 0.45), true)
-            local kx = cx + r * ({-0.3, 0.42, -0.05})[i]
-            rect(kx - r * 0.17, y - r * 0.26, r * 0.34, r * 0.52, col)
+        -- A gauge off the panel in front of you: a dark instrument body with a
+        -- lit rim, a scale of four graduations, a needle up among them, and the
+        -- top of the scale washed in as a redline.
+        --
+        -- Three sliders came before it, one knob apiece at three different
+        -- settings, which said adjustable and said it in the vocabulary of a
+        -- phone's mixer panel. Every other stop on this rail is a thing out of
+        -- the game: a world for the list of places to fly, your own hull for the
+        -- ship, wings for a pilot. Settings is the one stop about the machine
+        -- rather than the match, and a cockpit instrument is what that looks
+        -- like here.
+        --
+        -- What it gives up is that a gauge reads rather than sets. What it buys
+        -- back is a needle sitting between two graduations, which is a level
+        -- somewhere in a range, and a silhouette no other stop owns: it is the
+        -- only mark on the row with a flat bottom edge.
+        local R = r * 1.05
+        local hx, hy = cx, ry(cy + r * 0.52)   -- the hub, on the baseline
+        local pen = RAIL_PEN * F.scale
+        -- Dark in the body and lit at the rim, which is how everything solid in
+        -- this game is drawn, from a wall face to a hull to the world on the
+        -- stop beside this one.
+        local pts = {hx, hy}
+        for i = 0, 20 do
+            local t = math.pi * i / 20
+            pts[#pts + 1] = hx + R * math.cos(t)
+            pts[#pts + 1] = hy + R * math.sin(t)
         end
+        F.layer:fan(pts, pal.a(pal.BG, 0.94))
+        F.layer:arc(hx, hy, R, 0, math.pi, pen, 20, col)
+        F.layer:seg(hx - R, hy, hx + R, hy, pen, col, true)
+        -- Four graduations, not the six a real instrument would wear. At the
+        -- thirteen points a sideways phone gives this mark, six of them are a
+        -- smear where four are still four.
+        local r0, r1 = R * 0.66, R * 0.87
+        for _, deg in ipairs({150, 115, 80, 45}) do
+            local a = math.rad(deg)
+            local ca, sa = math.cos(a), math.sin(a)
+            F.layer:seg(hx + r0 * ca, hy + r0 * sa, hx + r1 * ca, hy + r1 * sa,
+                        1.0 * F.scale, pal.a(col, 0.7), true)
+        end
+        -- The band past the last graduation that a needle is not meant to
+        -- reach: a faint fill under a drawn edge, which is how the pennants on
+        -- the team mark and the flag on a game row are both built. The fill
+        -- alone was a grey pane rather than a marked part of the scale, since
+        -- nothing on this rail is a filled shape without an edge on it.
+        local ra, rb = math.rad(5), math.rad(35)
+        local band = {}
+        for i = 0, 4 do
+            local t = ra + (rb - ra) * i / 4
+            band[#band + 1] = hx + r1 * math.cos(t)
+            band[#band + 1] = hy + r1 * math.sin(t)
+        end
+        for i = 4, 0, -1 do
+            local t = ra + (rb - ra) * i / 4
+            band[#band + 1] = hx + r0 * math.cos(t)
+            band[#band + 1] = hy + r0 * math.sin(t)
+        end
+        F.layer:fan(band, pal.a(col, 0.26))
+        F.layer:outline(band, 1.0 * F.scale, pal.a(col, 0.85), true)
+        -- Up on the scale and short of the redline, because a needle lying flat
+        -- reads as a shape with a line through it rather than as a reading.
+        local a = math.rad(62)
+        F.layer:seg(hx, hy, hx + R * 0.90 * math.cos(a),
+                    hy + R * 0.90 * math.sin(a), 1.4 * F.scale, col, true)
+        F.layer:disc(hx, hy, r * 0.11, 10, col)
     end
 
     -- The arrow cluster, which is what the page it opens is a picture of.

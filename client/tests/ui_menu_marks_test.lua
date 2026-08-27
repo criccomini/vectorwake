@@ -12,8 +12,8 @@ local function record(name, ...)
 end
 
 local layer = {}
-for _, name in ipairs({"disc", "fan", "frame", "outline", "ring", "seg",
-                        "tri"}) do
+for _, name in ipairs({"arc", "disc", "fan", "frame", "outline", "ring",
+                        "seg", "tri"}) do
     layer[name] = function(_, ...) record(name, ...) end
 end
 
@@ -46,7 +46,12 @@ local expected = {
     zones = "outline/4,disc/5,ring/6",
     pilot = "pilot/5",
     team = "seg/7,fan/2,outline/4,seg/7,fan/2,outline/4",
-    settings = "seg/7,rect/5,seg/7,rect/5,seg/7,rect/5",
+    -- The gauge, in the order it is built: a dark body under a lit rim, the
+    -- flat edge it stands on, four graduations, the redline as a fill under an
+    -- edge, then the needle and its hub. See gauge_test for what each of those
+    -- has to be; this only asks that the mapping still reaches the gauge.
+    settings = "fan/2,arc/8,seg/7,seg/7,seg/7,seg/7,seg/7,fan/2,outline/4,"
+               .. "seg/7,disc/5",
     controls = "rect/5,frame/6,rect/5,frame/6,rect/5,frame/6,rect/5,frame/6",
     about = "ring/6,disc/5,seg/7",
     leave = "outline/4,seg/7,tri/7",
