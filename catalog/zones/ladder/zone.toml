@@ -9,9 +9,6 @@
 # seat and gives it back the moment somebody wants it.
 
 label = "Duel"
-# The format strip beside this carries the numbers (teams, one life, streak),
-# so the sentence carries the stakes the numbers cannot.
-description = "every win is a harder rival; one death ends the streak"
 mode = "ladder"
 
 # The same five rooms Team Battle plays, so a pilot who learns a map learns it

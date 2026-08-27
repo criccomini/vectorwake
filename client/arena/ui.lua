@@ -47,7 +47,31 @@ local LINE = 18
 -- from `sim` per frame: the panel's height needs it before it draws.
 local SIM_TRIGGERS = 2
 local COL_W = 248      -- the width of the three stacked side panels
-local RADAR = 168
+
+-- The dial, and the smaller one a phone draws.
+--
+-- `crop` comes off the side and off the reach by the same factor, so a small
+-- screen gets a crop of the full dial rather than a scaled copy of it. A tile
+-- is worth 1.4 pixels either way, which leaves a blip, a contact and the
+-- space between two contacts reading as they do on a monitor; all that
+-- changes is how much ground the square covers. Cropping the side alone would
+-- have squeezed sixty tiles into two thirds of the pixels and cost every mark
+-- on the dial a third of its separation.
+--
+-- Two thirds leaves forty tiles of reach, which is two screens of world
+-- across on a phone: render/zoom.lua guarantees its short axis forty tiles,
+-- so the dial reaches one screen past the glass in every direction. Uncropped
+-- it reached three screens across there, against two and a half on an eight
+-- hundred point window that sees fifty tiles at once. The smallest screen had
+-- the most reach and the least room to draw it in.
+local RADAR = {side = 168, crop = 2 / 3}
+
+-- What this window draws the dial at. Asked by the side and by the reach,
+-- because a dial cropped by one number and sized by another is a dial whose
+-- contents no longer agree with its own scale.
+function RADAR.factor()
+    return M.compact and RADAR.crop or 1
+end
 
 M.hits = {}            -- clickable rectangles the menu published, top-left px
 M.map = false          -- the whole map, in the radar's corner
@@ -965,7 +989,7 @@ end
 -- pointer can no longer reach.
 local function dial()
     local pad = (M.compact and 8 or PAD) * F.scale
-    local side = RADAR * F.scale
+    local side = RADAR.side * RADAR.factor() * F.scale
     if M.map then
         side = math.max(side,
                         math.min(math.min(F.w, F.h) * 0.66, F.h * 0.66,
@@ -1073,7 +1097,15 @@ local function radar(cx, cy, me)
     -- Sixty tiles out, so the reference arena nearly fills the dial. At a
     -- hundred and fifty it sat in the middle quarter with the rest of the
     -- radar showing empty space nobody can fly to.
+    --
+    -- Sixty is also what the zone culls a snapshot to and what a bot sees by,
+    -- and constant_drift_test holds those three copies together, so the number
+    -- stays written down whole here and the crop is taken on the next line
+    -- instead. Short of the filter is the safe direction: the dial then shows
+    -- less than the client was told, where a longer one would carry a band of
+    -- empty square the zone has never reported a ship into.
     local SPAN = 60 * 16
+    SPAN = SPAN * RADAR.factor()
     local k = r / (2 * SPAN)
     -- The dial is a diagram, not a window, and it is worth snapping to the
     -- pixel grid it is drawn on.
@@ -3596,11 +3628,12 @@ local function debug_hud(o, top)
     rect(x, y, w, h, pal.a(pal.BG, 0.78))
     vrule(x, y, h, pal.a(pal.PAID, 0.8))
     txt("DEBUG", x + 10 * F.scale, y + 15 * F.scale, size, pal.a(pal.PAID, 0.9))
-    -- The zone's name and nothing else. The wire sends the description on a
-    -- second line of the same message, and a sentence about the game is not a
-    -- diagnostic: it wrapped the header in prose that never changes while the
-    -- numbers under it do.
-    txt((o.zone or ""):match("^[^\n]*"), x + w - 10 * F.scale, y + 15 * F.scale, size,
+    -- The zone's name, which is the whole of what the wire says about a game
+    -- now. It carried a sentence on a second line of the same message for as
+    -- long as a zone had one, and this dropped it: a description that never
+    -- changes is not a diagnostic, and it wrapped the header in prose while
+    -- the numbers under it moved.
+    txt(o.zone or "", x + w - 10 * F.scale, y + 15 * F.scale, size,
         pal.a(pal.DIM, 0.8), "right")
     for n, l in ipairs(lines) do
         local c = math.floor((n - 1) / per)
@@ -4483,7 +4516,7 @@ function M.hud(o)
 
     -- One panel in this column at a time. The rooms list stands in the
     -- scoreboard's slot, so whichever is up is the one drawn.
-    M.zone_name = (o.zone or ""):match("^[^\n]*")
+    M.zone_name = o.zone or ""
     -- The rooms list keeps the left column, under the key that opens it. The
     -- board is its own column now, under the band, so the two no longer stand
     -- in one slot and neither has to put the other away.
@@ -5440,12 +5473,22 @@ function pages.friends(v, x, y, w, h, focused)
     local packed = w < 470 * F.scale
     local bh = pages.FIELD_TALL * F.scale
     local kh = 26 * F.scale
+    -- How tall a section head is, and therefore how far into one its label
+    -- sits. Read up here because the box at the top of the page is a section
+    -- head like any other on it: the same label on the same line, with the
+    -- head's rule left to the one already drawn under the bar.
+    local SECT = pages.SECT * F.scale
 
     -- One button. Returns its left edge, so a row can lay them out from the
     -- right and stop where it stops.
     -- --- the field, pinned at the top
-    lbl("add friend", x, y + 8 * F.scale, pal.a(pal.DIM, 0.85))
-    local fy = y + 22 * F.scale + bh / 2
+    --
+    -- Its label stands where every other label on this page stands, and the
+    -- box under it where a section's first row goes. It used to sit eight
+    -- points down, which is a page whose first line is higher than its second
+    -- section's for no reason either of them could give.
+    lbl("add friend", x, y + SECT * pages.SECT_LABEL, pal.a(pal.DIM, 0.85))
+    local fy = y + SECT + bh / 2
     local aw = text_w("add", 12 * F.scale) + 26 * F.scale
     local fw = math.min(300 * F.scale, w - aw - 12 * F.scale)
     local fx = x
@@ -5465,7 +5508,7 @@ function pages.friends(v, x, y, w, h, focused)
         txt("enter their call sign exactly",
             x + fw + aw + 24 * F.scale, fy, 12 * F.scale, pal.a(pal.DIM, 0.8))
     end
-    local BAND = 22 * F.scale + bh + 24 * F.scale
+    local BAND = SECT + bh + 24 * F.scale
 
     -- --- what the box found, under it
     --
@@ -5522,7 +5565,6 @@ function pages.friends(v, x, y, w, h, focused)
         if r.state == "asked" then return (packed and 52 or 44) * F.scale end
         return 44 * F.scale
     end
-    local SECT = 24 * F.scale
     -- Laid out unscrolled and drawn shifted, so the height this page came to
     -- is a number and not that number minus wherever the finger left it.
     local at = top
@@ -5562,12 +5604,13 @@ function pages.friends(v, x, y, w, h, focused)
             local sh = head_h(r)
             local hy = at - dy
             if hy >= top and hy + sh <= floor then
-                hrule(x, hy + SECT * 0.42, w)
-                lbl(r.sect, x, hy + SECT * 0.82)
+                hrule(x, hy + SECT * pages.SECT_RULE, w)
+                lbl(r.sect, x, hy + SECT * pages.SECT_LABEL)
                 if r.sect_note then
                     lbl(r.sect_note,
                         x + text_w(r.sect, LBL_PX * F.scale) + 12 * F.scale,
-                        hy + SECT * 0.82, pal.a(pal.FRIEND, 0.85))
+                        hy + SECT * pages.SECT_LABEL,
+                        pal.a(pal.FRIEND, 0.85))
                 end
                 if said then
                     -- Cased once over the whole sentence and drawn raw. Left
@@ -5959,17 +6002,37 @@ end
 -- the stage publishes its own hit boxes. Resting on a row is the other: it
 -- lights, because it moves the same cursor the arrows move.
 
--- How far under the top of the block the stage's first row sits: the rule
--- that introduces the list, and the way out sitting over it. The rail starts
--- there too, so a mark is level with the row it would open rather than with
--- the middle of the list.
-local STAGE_TOP = 30
+-- How far under the head's rule a page begins, on every page in the menu.
+--
+-- The column keeps MENU_PAD from each of its side edges, so the page is inset
+-- the same from the bar over it as it is from the two edges beside it. One
+-- measure for the panel, rather than one for the sides and another for the
+-- top.
+--
+-- It was thirty, plus eight more in `sy`, and a page carrying a band of its
+-- own got ten instead. Thirty was room held for two things that have since
+-- moved out from under it: the ticked rule that used to introduce a list, and
+-- the way out, which is on the head row now beside the call sign. What was
+-- left was thirty-eight points of nothing over a games list and eighteen over
+-- the hangar, which is the same panel measured two ways.
+local STAGE_TOP = MENU_PAD
 
 -- And how much the foot of the stage keeps back for the one line drawn across
 -- it, on the frames where there is one. On `pages` rather than beside
 -- STAGE_TOP because this file is at the two hundred locals a Lua chunk may
 -- hold. See client/tests/upvalues_test.lua.
 pages.FOOT_LINE = 26
+
+-- A section head: a hairline with a small label under it, which is how this
+-- menu groups a list. How tall one is, and how far into it the rule and the
+-- label sit. Two pages draw them, the list and the friends page, and they had
+-- a set of fractions each: 0.45 and 0.85 against 0.42 and 0.82, the same
+-- object measured two ways, so the first label on the settings page and the
+-- first on the friends page sat most of a point apart. On `pages` for the
+-- reason FOOT_LINE is.
+pages.SECT = 24
+pages.SECT_RULE = 0.45
+pages.SECT_LABEL = 0.85
 
 -- The strip down the left of the stage that the type does not enter. The mark
 -- on the row you are already in sits there, off the column rather than in it,
@@ -6251,32 +6314,33 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
     -- ones you can: one nothing is serving yet, and one with no seat left.
     if r.waiting or r.full then col = pal.a(col, 0.6) end
     -- A row carrying a sentence of its own gives it the lower half and takes
-    -- the upper for everything else. The games are the list that wants it:
-    -- choosing between three of them is reading three sentences, and one at a
-    -- time at the foot of the panel, a screen away from the name it belongs
-    -- to, is not reading them.
+    -- the upper for everything else. The rows that set a value are the ones
+    -- that want it: a shelf item or a control is a name whose meaning is not
+    -- in the name, and the line under it is where that meaning goes.
     -- A sentence of its own needs two lines of room. A list long enough to
     -- squeeze its rows has neither, and drew the note over the label rather
     -- than dropping it: the shelf's descriptions landed on top of the names
     -- they described.
     local note = (h >= 44 * F.scale) and r.note or nil
-    -- A row carrying a sentence is a row about a thing you are choosing
-    -- between rather than a value you are setting, and the mocks set those
-    -- names half again as large: it is the name that is being read, and the
-    -- sentence under it is the reading.
+    -- The format strip, where the row carries one and the list gave it the
+    -- room. It is the whole of the row under the name: a game had a sentence
+    -- between the two until the strip made it a second answer to a question
+    -- the stacks already answer, and no row carries both.
+    local strip = (h >= 58 * F.scale) and r.specs or nil
+    -- A row you are choosing between, rather than one setting a value, sets
+    -- its name half again as large, which is how the mocks draw both: it is
+    -- the name that is being read, and what is under it is the reading.
     --
     -- Declared under `note` rather than over it, which is the whole of what
     -- was wrong here: read above its own `local`, `note` is a global, a
     -- global is nil, and the larger size this chooses never once applied.
     -- That is the bug .luacheckrc exists to catch, and it caught this one.
     local size = (M.compact and 17 or 18) * F.scale
-    if note and h >= 44 * F.scale then size = (M.compact and 19 or 21) * F.scale end
-    -- The format strip, where the row carries one and the list gave it the
-    -- third line of room. Everything moves up to make that room: the name
-    -- takes the top, the sentence the middle, the stacks the foot.
-    local strip = (h >= 74 * F.scale) and r.specs or nil
+    if (note or strip) and h >= 44 * F.scale then
+        size = (M.compact and 19 or 21) * F.scale
+    end
     local ly = note and (y + h * 0.36) or (y + h / 2)
-    if strip then ly = y + h * 0.20 end
+    if strip then ly = y + h * 0.25 end
     -- Drawn here unless the detail turns out not to fit beside it, in which
     -- case the pair is laid out as two lines below and this one is skipped.
     --
@@ -6300,7 +6364,7 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
         -- sentence takes two grows into the room the list gave it, evenly,
         -- rather than hanging off the top of the gap.
         local lines = pages.note_lines(note, w, r)
-        local ny = y + h * (strip and 0.42 or 0.68)
+        local ny = y + h * 0.68
             - (#lines - 1) * pages.NOTE_LINE * F.scale / 2
         for _, line in ipairs(lines) do
             txt(line, tx, ny, pages.NOTE_PX * F.scale,
@@ -6317,6 +6381,11 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
         -- their authored case, since "4 v 4" is data rather than a
         -- sentence, and a row nothing is serving dims its facts with the
         -- rest of itself.
+        --
+        -- About seven points of air over the name and seven under the
+        -- values, which is what the row had when a sentence sat between
+        -- them: it lost a line, so the two that are left closed up rather
+        -- than spreading into the gap.
         local dimmed = (r.waiting or r.full) and 0.6 or 1
         local sx2 = tx
         local right = x + w
@@ -6330,12 +6399,12 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
             local at2 = sx2 + (si > 1 and 15 * F.scale or 0)
             if at2 + sw2 > right then break end
             if si > 1 then
-                F.layer:seg(sx2, ry(y + h * 0.58), sx2, ry(y + h * 0.92),
+                F.layer:seg(sx2, ry(y + h * 0.49), sx2, ry(y + h * 0.90),
                             1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.45), true)
             end
-            lbl(s[1], at2, y + h * 0.66,
+            lbl(s[1], at2, y + h * 0.59,
                 pal.a(pal.DIM, (hot and 1 or 0.85) * dimmed))
-            txt(s[2], at2, y + h * 0.84, 13 * F.scale,
+            txt(s[2], at2, y + h * 0.81, 13 * F.scale,
                 pal.a(pal.INK, (sel and 0.95 or 0.8) * dimmed), nil, nil, true)
             sx2 = at2 + sw2 + 15 * F.scale
         end
@@ -7352,7 +7421,12 @@ function M.menu(v)
     local hy = F.safe_t
     logo_y = hy + head / 2
     sx, sw = dx + margin, dock - 2 * margin
-    sy = hy + head + 8 * F.scale
+    -- The stage begins at the rule, and what a page holds back from it is
+    -- STAGE_TOP alone. Eight points used to be taken here and the rest taken
+    -- again where the page starts, which is one gap written as two numbers in
+    -- two places, and it is why nobody could say what the air under the head
+    -- was meant to be.
+    sy = hy + head
     -- Down to the rail. The stage used to stop fourteen points short of it
     -- and the room handed to a page took another twenty-six under that, so a
     -- key pinned at the foot of a page stood forty points clear of the tab
@@ -7627,16 +7701,13 @@ function M.menu(v)
         hit(dx + margin, logo_y - box / 2, box, box, "close")
     end
     -- A page with a heading starts its heading where a page without one
-    -- starts its first row, near enough: the air over the list is what the
-    -- heading is standing in. Taking the full band and then the heading on
-    -- top of it cost the kit page its last row.
-    --
-    -- The same for a page carrying its own band: the ship page's build name
-    -- and points, and the way back out that the four screens it opens wear.
-    -- A band is a heading, so it stands in the air a heading stands in rather
-    -- than under the whole of what a list gets.
-    local banded = v.kit or v.builds or v.newbuild or v.points or v.item
-    local top = sy + ((v.head or banded) and 10 or STAGE_TOP) * F.scale
+    -- starts its first row, which is what this used to spend a second number
+    -- on getting near: ten under the stage for a page carrying a band or a
+    -- head, thirty for a list. Both wanted the same line and neither landed on
+    -- it. One line now, and each page's first object stands on it: a row's
+    -- lit field, the ship page's band, the friends box's label. What that
+    -- object centers inside itself falls where it falls.
+    local top = sy + STAGE_TOP * F.scale
     -- And the room under it is the rest of the stage, less the one line
     -- drawn across the foot of it. That line is a refusal on the ship page or
     -- a confirmation on the bindings page, both of them answers to a press
@@ -7748,9 +7819,9 @@ function M.menu(v)
         for _, r in ipairs(v.rows) do
             if r.note then noted = true break end
         end
-        -- And a third line of room where a row carries its format strip:
-        -- name, sentence, and the stacks under both. One height for the
-        -- whole list, as above, so the games read down the same columns.
+        -- And a second line of room where a row carries its format strip:
+        -- the name, and the stacks under it. One height for the whole list,
+        -- as above, so the games read down the same columns.
         local specced = false
         for _, r in ipairs(v.rows) do
             if r.specs then specced = true break end
@@ -7776,8 +7847,8 @@ function M.menu(v)
         for _, r in ipairs(v.rows) do
             if r.sect then heads = heads + 1 end
         end
-        local SECT = 24 * F.scale
-        local rowh = math.min((wrapped_extra + (specced and 86 or noted and 58
+        local SECT = pages.SECT * F.scale
+        local rowh = math.min((wrapped_extra + (specced and 70 or noted and 58
                                or (M.compact and 46 or 40))) * F.scale,
                               math.max(30 * F.scale,
                                        (room - heads * SECT)
@@ -7838,8 +7909,8 @@ function M.menu(v)
                 -- stopped four points short of them, which is three
                 -- different right edges down one page once the selection
                 -- field is counted.
-                hrule(tx, at + SECT * 0.45, lw)
-                lbl(r.sect, tx, at + SECT * 0.85)
+                hrule(tx, at + SECT * pages.SECT_RULE, lw)
+                lbl(r.sect, tx, at + SECT * pages.SECT_LABEL)
                 at = at + SECT
             end
             local y = at

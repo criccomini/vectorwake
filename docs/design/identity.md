@@ -109,11 +109,12 @@ constraints that shaped the original's art.
 **Field.** Near-black, under a parallax sky with real depth in it: two vast
 washes beneath everything, clouds drawn as runs of knots rather than round
 smudges, a band of fine grain along one diagonal, three depths of star in four
-temperatures with a rare one burning, a sun and a comet anchored in the map,
-the flare the sun throws inside the camera, and a near layer of dust that
-streaks along the camera's own motion. Nothing is stored. Every part of it is hashed from position, so a map twice the size costs
-the same, and the band and the set pieces are placed from the map's name, so a
-room has a sky of its own and the same one every time it is played.
+temperatures with a rare one burning, whatever suns and comets the map was
+dealt with the flare the brightest of them throws inside the camera, and a near
+layer of dust that streaks along the camera's own motion. Nothing is stored.
+Every part of it is hashed from position, so a map twice the size costs the
+same, and the band and the set pieces are placed from the map's name, so a room
+has a sky of its own and the same one every time it is played.
 
 This replaces a rule asking for a sparse starfield and no nebula texture. The
 reasoning under that rule is the part worth keeping and it has not moved: the

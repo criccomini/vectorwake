@@ -26,7 +26,6 @@ pub struct ZoneDef {
     /// existed.
     #[serde(default)]
     pub label: Option<String>,
-    pub description: String,
     /// arena | warzone | melee | duel. Read, unlike before.
     pub mode: String,
     /// The maps this zone plays, relative to its own directory, in the order
@@ -84,7 +83,6 @@ impl Default for ZoneDef {
     fn default() -> Self {
         ZoneDef {
             label: None,
-            description: String::new(),
             mode: "arena".into(),
             maps: Vec::new(),
             max_ships: None,

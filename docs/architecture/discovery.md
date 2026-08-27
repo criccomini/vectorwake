@@ -228,14 +228,14 @@ this is a signpost, not a service.
   "catalog_version": 37,
   "meta": "https://play.example/meta",
   "zones": [
-    {"name": "chaos", "description": "...", "players": 41, "bots": 6,
+    {"name": "chaos", "label": "Chaos", "players": 41, "bots": 6,
      "instances": [
        {"address": "wss://a3.us-east.example:9010", "region": "us-east",
         "players": 22, "bots": 4, "full": false},
        {"address": "wss://a7.eu-west.example:9010", "region": "eu-west",
         "players": 19, "bots": 2, "full": false}
      ]},
-    {"name": "duel", "description": "...", "players": 4, "bots": 0,
+    {"name": "duel", "label": "Duel", "players": 4, "bots": 0,
      "instances": [...]}
   ]
 }

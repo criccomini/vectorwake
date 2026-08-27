@@ -147,6 +147,21 @@ check("world.lua names a radar reach", reach ~= nil)
 check("the dial spans the same reach",
       tonumber(uisrc:match("local SPAN = (%d+) %* " .. TILE_PX)) == reach,
       "world.lua says " .. tostring(reach))
+-- A small screen draws a crop of that reach rather than all of it, and the
+-- check above sees only the number being cropped. Short of the filter is the
+-- safe direction to be wrong in, because the dial then shows less than the
+-- client was told; past it the outer band is empty square the zone has never
+-- reported a ship into, which reads as quiet ground rather than as no data.
+-- So the factor is held inside one here, where nothing else is looking.
+--
+-- Evaluated rather than matched digit by digit, so writing the fraction a
+-- different way is not a failure about arithmetic that never happened.
+local radartbl = uisrc:match("local RADAR = (%b{})")
+local radar = radartbl and loadstring("return " .. radartbl)()
+check("and a cropped dial never reaches past that filter",
+      radar and type(radar.crop) == "number"
+          and radar.crop > 0 and radar.crop <= 1,
+      "ui.lua says " .. tostring(radar and radar.crop))
 local fair = tonumber(deliveryrs:match("const FAIR_INTEREST: i32 = (%d+) %*"))
 local slack = tonumber(worldsrc:match("local RADAR_SLACK = (%d+)"))
 check("the zone filters at radar reach plus arrival margin",

@@ -85,7 +85,7 @@ A zone file selects a built-in mode, an ordered map rotation, room policy, team
 policy, and simulation tuning. This is a shortened current example:
 
 ```toml
-description = "four a side, three minutes"
+label = "Team Battle"
 mode = "melee"
 maps = [
   "drydock.vwmap",
@@ -131,6 +131,7 @@ The zone fields are:
 
 | Field | Meaning |
 |---|---|
+| `label` | What players read the game as, where it differs from the zone's key. The key is what a join names and what a rating is filed under, so renaming the game a player sees cannot move either. |
 | `mode` | `arena`, `warzone`, `melee`, or `duel`. `duel` is currently accepted but uses free-for-all rules while its dedicated design remains deferred. |
 | `maps` | One or more `.vwmap` files relative to the zone directory, in rotation order. |
 | `max_ships` | Total seats in one room, bots included. A ship index is one byte, so 255 is the parse ceiling. |
