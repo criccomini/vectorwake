@@ -2215,12 +2215,17 @@ function update(self, dt)
     -- menu last built rather than a fresh one, because a page has nothing to
     -- say about a menu that is shut and the picture sliding away should be the
     -- picture that was there.
-    if menu.open then
-        self.menu_view = menu.view()
-        self.menu_view.open = true
-        ui.menu(self.menu_view)
-    elseif ui.drawer_up() and self.menu_view then
-        self.menu_view.open = false
+    if menu.open then self.menu_view = menu.view() end
+    if self.menu_view and (menu.open or ui.drawer_up()) then
+        self.menu_view.open = menu.open
+        -- The state of the line, for the readout in the panel's head. It is
+        -- set here rather than in `menu.view` because the frame layer is what
+        -- smooths the connection's noisy round trip into a bar count, and the
+        -- menu knows about pages rather than about packets. It is set on the
+        -- way out as well, since a drawer is still on screen while it slides
+        -- away and a meter frozen at the moment the menu shut would be showing
+        -- the wrong number.
+        self.menu_view.link_bars = self.link_bars
         ui.menu(self.menu_view)
     end
     -- The question about moving room, last of everything that publishes a hit

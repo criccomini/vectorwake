@@ -234,12 +234,16 @@ end
 
 -- --- the top row is a row ---------------------------------------------------
 
--- The way into the menu at the left, the band in the middle and the link bars
--- at the right, on one line, at every window size. The readouts each worked
--- their own vertical out of the padding once, which is a horizontal
--- measurement, and came out four points high on a monitor and ten on a phone.
--- The band then spent a while dropping off the row on a phone, which put it
--- through the radar instead and cost the row the alignment it is for.
+-- The way into the menu at the left and the band beside it, on one line, at
+-- every window size. The readouts each worked their own vertical out of the
+-- padding once, which is a horizontal measurement, and came out four points
+-- high on a monitor and ten on a phone. The band then spent a while dropping
+-- off the row on a phone, which put it through the radar instead and cost the
+-- row the alignment it is for.
+--
+-- The link meter used to be the right end of this row and is in the menu's
+-- head now, so what is left up here is the key, the band and, on a monitor,
+-- the tile readout.
 --
 -- Measured against the key's published box, because that is the height the
 -- row takes from and the one thing here that cannot drift out of step with
@@ -248,15 +252,18 @@ end
 -- is what leaves a 390-point row wide enough for the band.
 local function row_shares_a_center(where, pos_on_row)
     local key = box("open")
-    local pos, bars, tick = drawn("POS"), drawn("LINK"), drawn("0:33")
-    if not (key and pos and bars and tick) then
+    local pos, tick = drawn("POS"), drawn("0:33")
+    if not (key and pos and tick) then
         check("the row is drawn on " .. where, false,
               table.concat(words(), " | "))
         return
     end
+    -- The link meter draws four bars and no caption, so what says it is not
+    -- up here is the box it would publish over itself.
+    check("and the link meter is not on it on " .. where,
+          box("debug") == nil, "the meter is still in the corner")
     local mid = key.y + key.h / 2
-    local off = math.max(math.abs(down(bars) - mid),
-                         math.abs(down(tick) - mid),
+    local off = math.max(math.abs(down(tick) - mid),
                          pos_on_row and math.abs(down(pos) - mid) or 0)
     check("the row shares one center on " .. where, off < 0.5,
           string.format("%.1f off a center of %.1f", off, mid))
@@ -269,17 +276,20 @@ local function row_shares_a_center(where, pos_on_row)
               string.format("POS at %.0f, dial ends %.0f",
                             down(pos), ui.radar_span()))
     end
-    -- The band grows outward from the middle and the row's two ends are
-    -- controls, so it is only aligned with them for as long as it stays off
-    -- them. `debug` is the box the link cluster publishes over itself, which
-    -- is where the right end of the row is.
-    local press, bell = box("details"), box("debug")
-    if press and bell then
-        check("and the band keeps out of both ends of it on " .. where,
-              press.x > key.x + key.w and press.x + press.w < bell.x,
-              string.format("band %.0f..%.0f between %.0f and %.0f",
-                            press.x, press.x + press.w,
-                            key.x + key.w, bell.x))
+    -- The band grows outward from the middle and the left end of the row is a
+    -- control, so it is only aligned with the key for as long as it stays off
+    -- it. The right end is the screen's own edge now that the link cluster has
+    -- gone into the menu, and the band has to stay inside that too.
+    local press = box("details")
+    if press then
+        check("and the band keeps out of the key on " .. where,
+              press.x > key.x + key.w,
+              string.format("band starts %.0f, key ends %.0f",
+                            press.x, key.x + key.w))
+        check("and off the right edge on " .. where,
+              press.x + press.w <= w_now + 0.5,
+              string.format("band ends %.0f, window is %.0f",
+                            press.x + press.w, w_now))
     end
 end
 
@@ -307,13 +317,32 @@ row_shares_a_center("a phone", false)
 -- the row. It gives up the name rather than the row: the number under it is
 -- the reading, and a name drawn through the way into the menu is what put the
 -- band on a line of its own the first time.
+--
+-- One side, not both. The left of this row is the way into the menu and the
+-- right of it is the edge of the screen, since the link bars that used to
+-- stand there are in the menu's head: a name that would run into the key is
+-- still dropped, and one that has the rest of the phone to grow into is
+-- drawn. That asymmetry is the reason each end is asked separately rather
+-- than the band being given one width and centered in it.
 local SHORT = NAMES
 NAMES = {[0] = string.rep("W", 24), [1] = string.rep("M", 24)}
 frame({w = 390, h = 844})
-check("a name with nowhere to go is dropped rather than drawn over the row",
-      drawn(NAMES[0]) == nil and drawn(NAMES[1]) == nil
-          and drawn("15") ~= nil and drawn("19") ~= nil,
+check("a name that would reach the menu key is dropped",
+      drawn(NAMES[0]) == nil, table.concat(words(), " | "))
+check("and the other keeps its name, the corner beside it being empty now",
+      drawn(NAMES[1]) ~= nil, table.concat(words(), " | "))
+check("and both figures are drawn either way",
+      drawn("15") ~= nil and drawn("19") ~= nil,
       table.concat(words(), " | "))
+-- And it is on the screen rather than merely drawn: the check above says a
+-- name was placed, and this says where it stops.
+local grown = drawn(NAMES[1])
+if grown then
+    check("the name it kept stays inside the window",
+          grown.x + #NAMES[1] * grown.px * (1233 / 2048) <= 390,
+          string.format("ends %.0f of 390",
+                        grown.x + #NAMES[1] * grown.px * (1233 / 2048)))
+end
 row_shares_a_center("a phone with the longest names there are", false)
 -- And kept where the row has the width for it, which is the whole point of
 -- asking rather than dropping the name on every phone.

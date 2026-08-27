@@ -313,14 +313,12 @@ do
           word("PYLON") ~= nil and word("CAISSON") ~= nil,
           "a name is missing")
     check("and both figures", word("3") ~= nil and word("5") ~= nil)
-    -- The other end of the row. LINK owns the top right corner, and the band
-    -- is level with it rather than starting under it.
-    local link = word("LINK")
-    if link and clock then
-        check("level with the dial's own readout",
-              math.abs(clock.y - link.y) < 1,
-              string.format("clock at %.0f, LINK at %.0f", clock.y, link.y))
-    end
+    -- And the other end of the row is empty. The link meter stood in that
+    -- corner until it went into the menu's head, which is the whole reason the
+    -- band has the width it has here. It draws no caption, so what answers
+    -- for it is the box it would publish over its bars.
+    check("and nothing in the far corner of the row", box("debug") == nil,
+          "the link meter is still on the landing")
 
     -- The band is the control, so the press that opens the roster is on the
     -- band rather than in the corner beside the way into the menu.

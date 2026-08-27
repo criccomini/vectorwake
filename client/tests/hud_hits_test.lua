@@ -46,8 +46,7 @@ for _, name in ipairs({"arc", "disc", "flush", "frame", "halo", "outline", "quad
 end
 
 -- Rectangles are kept as well as counted, because one question here is
--- whether a box covers a drawing rather than whether a drawing happened:
--- the LINK bars are rects, and a toggle that misses them is the fault.
+-- whether a box covers a drawing rather than whether a drawing happened.
 -- Bottom-up, the way the mesh takes them.
 local rects = {}
 layer.rect = function(self, x, y, w, h)
@@ -229,12 +228,12 @@ check("the sweep found ships to press on", tested > 0)
 
 -- --- the debug readout closes itself ---------------------------------------
 
--- What opens it is the LINK bars in the far corner, and on a phone the
--- readout lands under the dial a screen's width away from them. So the panel
--- itself has to be the way out, or a player who opened it has nothing to
--- press but the four bars they have no reason to look back at.
--- Both boxes carry the same action, so they are told apart by size: the
--- bars are a chip in the corner and the panel is a slab under the dial.
+-- What opens it is the link meter in the menu's head: the panel that carries
+-- the switch is shut over the readout the moment the readout appears,
+-- and it lands under the dial besides. So the panel itself has to be the way
+-- out, or a player who opened it has nothing to press but a control they have
+-- to reopen a menu to reach. See dock_test.lua for the switch end of this.
+
 local function debug_boxes()
     local out = {}
     for _, r in ipairs(ui.hits) do
@@ -245,87 +244,23 @@ end
 
 ui.debug = false
 frame()
-check("shut, only the bars answer", #debug_boxes() == 1,
+check("shut, the arena offers no way into it", #debug_boxes() == 0,
       #debug_boxes() .. " boxes")
-
--- And what that one box has to cover is the thing it looks like: the whole
--- word LINK and all four of its bars. It used to be a rectangle hung off the
--- right edge that took the bars and the last quarter of the word, so most of
--- the only label on screen saying LINK did nothing when pressed, which is
--- what made it hard to hit on a phone.
-do
-    local chip = debug_boxes()[1]
-    -- The word, from the text the interface published. Right-pivoted, so it
-    -- runs leftward from where it was placed, and stored bottom-up.
-    local st = package.loaded["arena.state"]
-    local wx0, wx1, wy
-    for k = 1, st.n do
-        local t = st.text[k]
-        if t.s == "LINK" then
-            wx1 = t.x
-            wx0 = t.x - #t.s * t.px * (1233 / 2048)
-            wy = H - t.y
-        end
-    end
-    check("the readout draws its word", wx0 ~= nil)
-    if wx0 and chip then
-        check("the toggle covers the whole word",
-              wx0 >= chip.x and wx1 <= chip.x + chip.w
-              and wy >= chip.y and wy <= chip.y + chip.h,
-              string.format("word %.0f..%.0f at %.0f, box %.0f..%.0f y %.0f..%.0f",
-                            wx0, wx1, wy, chip.x, chip.x + chip.w,
-                            chip.y, chip.y + chip.h))
-        -- The bars: the four small rects in the same strip.
-        local bars = 0
-        for _, r in ipairs(rects) do
-            local top = H - (r.y + r.h)
-            if r.w < 8 and top < chip.y + chip.h + 8 and r.x > W / 2 then
-                bars = bars + 1
-                check("bar at x " .. math.floor(r.x) .. " is inside the toggle",
-                      r.x >= chip.x and r.x + r.w <= chip.x + chip.w
-                      and top >= chip.y and H - r.y <= chip.y + chip.h)
-            end
-        end
-        check("all four bars were found", bars == 4, bars .. " bars")
-        -- And it is a target rather than a hairline. A thumb wants about
-        -- forty points; the strip above the dial is what the layout leaves,
-        -- so the width makes up what the height cannot.
-        check("the toggle is a thumb's worth of screen",
-              chip.w >= 60 and chip.h >= 24 and chip.w * chip.h >= 44 * 44 * 0.9,
-              string.format("%.0fx%.0f", chip.w, chip.h))
-        -- Anchored at the very top, so a thumb aiming for the corner cannot
-        -- overshoot upward past it.
-        check("it starts at the top edge", chip.y <= 0.01,
-              string.format("y %.1f", chip.y))
-        -- And it stops where the dial starts, because the dial is the
-        -- control that opens the map and one control does not eat another.
-        local mapbox = box("map")
-        check("it does not reach into the dial",
-              mapbox ~= nil and chip.y + chip.h <= mapbox.y + 0.01,
-              mapbox and string.format("box ends %.0f, dial starts %.0f",
-                                       chip.y + chip.h, mapbox.y) or "no map box")
-    end
-end
 
 ui.debug = true
 frame()
 local dbg = debug_boxes()
-check("open, the readout publishes a box of its own", #dbg == 2,
+check("open, the readout publishes the one box, its own", #dbg == 1,
       #dbg .. " boxes")
-local panel = dbg[#dbg]
-if #dbg == 2 then
+local panel = dbg[1]
+if panel then
     check("and it is a slab rather than a chip",
           panel.w > 100 and panel.h > 40,
           string.format("%.0fx%.0f", panel.w, panel.h))
-    -- Pressed in the middle, which is where a thumb finishing a read lands,
-    -- and nowhere near the four bars that opened it.
+    -- Pressed in the middle, which is where a thumb finishing a read lands.
     local act = press(panel.x + panel.w / 2, panel.y + panel.h / 2)
     check("a press in the middle of it closes it", act == "debug",
           "landed on " .. tostring(act))
-    -- The corner it came from is a long way off, which is the whole reason
-    -- this box exists.
-    check("the bars are nowhere near it",
-          math.abs((panel.y + panel.h / 2) - (dbg[1].y + dbg[1].h / 2)) > 40)
 end
 ui.debug = false
 
