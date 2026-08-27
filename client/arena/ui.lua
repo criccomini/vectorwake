@@ -5441,12 +5441,22 @@ function pages.friends(v, x, y, w, h, focused)
     local packed = w < 470 * F.scale
     local bh = pages.FIELD_TALL * F.scale
     local kh = 26 * F.scale
+    -- How tall a section head is, and therefore how far into one its label
+    -- sits. Read up here because the box at the top of the page is a section
+    -- head like any other on it: the same label on the same line, with the
+    -- head's rule left to the one already drawn under the bar.
+    local SECT = pages.SECT * F.scale
 
     -- One button. Returns its left edge, so a row can lay them out from the
     -- right and stop where it stops.
     -- --- the field, pinned at the top
-    lbl("add friend", x, y + 8 * F.scale, pal.a(pal.DIM, 0.85))
-    local fy = y + 22 * F.scale + bh / 2
+    --
+    -- Its label stands where every other label on this page stands, and the
+    -- box under it where a section's first row goes. It used to sit eight
+    -- points down, which is a page whose first line is higher than its second
+    -- section's for no reason either of them could give.
+    lbl("add friend", x, y + SECT * pages.SECT_LABEL, pal.a(pal.DIM, 0.85))
+    local fy = y + SECT + bh / 2
     local aw = text_w("add", 12 * F.scale) + 26 * F.scale
     local fw = math.min(300 * F.scale, w - aw - 12 * F.scale)
     local fx = x
@@ -5466,7 +5476,7 @@ function pages.friends(v, x, y, w, h, focused)
         txt("enter their call sign exactly",
             x + fw + aw + 24 * F.scale, fy, 12 * F.scale, pal.a(pal.DIM, 0.8))
     end
-    local BAND = 22 * F.scale + bh + 24 * F.scale
+    local BAND = SECT + bh + 24 * F.scale
 
     -- --- what the box found, under it
     --
@@ -5523,7 +5533,6 @@ function pages.friends(v, x, y, w, h, focused)
         if r.state == "asked" then return (packed and 52 or 44) * F.scale end
         return 44 * F.scale
     end
-    local SECT = 24 * F.scale
     -- Laid out unscrolled and drawn shifted, so the height this page came to
     -- is a number and not that number minus wherever the finger left it.
     local at = top
@@ -5563,12 +5572,13 @@ function pages.friends(v, x, y, w, h, focused)
             local sh = head_h(r)
             local hy = at - dy
             if hy >= top and hy + sh <= floor then
-                hrule(x, hy + SECT * 0.42, w)
-                lbl(r.sect, x, hy + SECT * 0.82)
+                hrule(x, hy + SECT * pages.SECT_RULE, w)
+                lbl(r.sect, x, hy + SECT * pages.SECT_LABEL)
                 if r.sect_note then
                     lbl(r.sect_note,
                         x + text_w(r.sect, LBL_PX * F.scale) + 12 * F.scale,
-                        hy + SECT * 0.82, pal.a(pal.FRIEND, 0.85))
+                        hy + SECT * pages.SECT_LABEL,
+                        pal.a(pal.FRIEND, 0.85))
                 end
                 if said then
                     -- Cased once over the whole sentence and drawn raw. Left
@@ -5960,17 +5970,37 @@ end
 -- the stage publishes its own hit boxes. Resting on a row is the other: it
 -- lights, because it moves the same cursor the arrows move.
 
--- How far under the top of the block the stage's first row sits: the rule
--- that introduces the list, and the way out sitting over it. The rail starts
--- there too, so a mark is level with the row it would open rather than with
--- the middle of the list.
-local STAGE_TOP = 30
+-- How far under the head's rule a page begins, on every page in the menu.
+--
+-- The column keeps MENU_PAD from each of its side edges, so the page is inset
+-- the same from the bar over it as it is from the two edges beside it. One
+-- measure for the panel, rather than one for the sides and another for the
+-- top.
+--
+-- It was thirty, plus eight more in `sy`, and a page carrying a band of its
+-- own got ten instead. Thirty was room held for two things that have since
+-- moved out from under it: the ticked rule that used to introduce a list, and
+-- the way out, which is on the head row now beside the call sign. What was
+-- left was thirty-eight points of nothing over a games list and eighteen over
+-- the hangar, which is the same panel measured two ways.
+local STAGE_TOP = MENU_PAD
 
 -- And how much the foot of the stage keeps back for the one line drawn across
 -- it, on the frames where there is one. On `pages` rather than beside
 -- STAGE_TOP because this file is at the two hundred locals a Lua chunk may
 -- hold. See client/tests/upvalues_test.lua.
 pages.FOOT_LINE = 26
+
+-- A section head: a hairline with a small label under it, which is how this
+-- menu groups a list. How tall one is, and how far into it the rule and the
+-- label sit. Two pages draw them, the list and the friends page, and they had
+-- a set of fractions each: 0.45 and 0.85 against 0.42 and 0.82, the same
+-- object measured two ways, so the first label on the settings page and the
+-- first on the friends page sat most of a point apart. On `pages` for the
+-- reason FOOT_LINE is.
+pages.SECT = 24
+pages.SECT_RULE = 0.45
+pages.SECT_LABEL = 0.85
 
 -- The strip down the left of the stage that the type does not enter. The mark
 -- on the row you are already in sits there, off the column rather than in it,
@@ -7359,7 +7389,12 @@ function M.menu(v)
     local hy = F.safe_t
     logo_y = hy + head / 2
     sx, sw = dx + margin, dock - 2 * margin
-    sy = hy + head + 8 * F.scale
+    -- The stage begins at the rule, and what a page holds back from it is
+    -- STAGE_TOP alone. Eight points used to be taken here and the rest taken
+    -- again where the page starts, which is one gap written as two numbers in
+    -- two places, and it is why nobody could say what the air under the head
+    -- was meant to be.
+    sy = hy + head
     -- Down to the rail. The stage used to stop fourteen points short of it
     -- and the room handed to a page took another twenty-six under that, so a
     -- key pinned at the foot of a page stood forty points clear of the tab
@@ -7634,16 +7669,13 @@ function M.menu(v)
         hit(dx + margin, logo_y - box / 2, box, box, "close")
     end
     -- A page with a heading starts its heading where a page without one
-    -- starts its first row, near enough: the air over the list is what the
-    -- heading is standing in. Taking the full band and then the heading on
-    -- top of it cost the kit page its last row.
-    --
-    -- The same for a page carrying its own band: the ship page's build name
-    -- and points, and the way back out that the four screens it opens wear.
-    -- A band is a heading, so it stands in the air a heading stands in rather
-    -- than under the whole of what a list gets.
-    local banded = v.kit or v.builds or v.newbuild or v.points or v.item
-    local top = sy + ((v.head or banded) and 10 or STAGE_TOP) * F.scale
+    -- starts its first row, which is what this used to spend a second number
+    -- on getting near: ten under the stage for a page carrying a band or a
+    -- head, thirty for a list. Both wanted the same line and neither landed on
+    -- it. One line now, and each page's first object stands on it: a row's
+    -- lit field, the ship page's band, the friends box's label. What that
+    -- object centers inside itself falls where it falls.
+    local top = sy + STAGE_TOP * F.scale
     -- And the room under it is the rest of the stage, less the one line
     -- drawn across the foot of it. That line is a refusal on the ship page or
     -- a confirmation on the bindings page, both of them answers to a press
@@ -7783,7 +7815,7 @@ function M.menu(v)
         for _, r in ipairs(v.rows) do
             if r.sect then heads = heads + 1 end
         end
-        local SECT = 24 * F.scale
+        local SECT = pages.SECT * F.scale
         local rowh = math.min((wrapped_extra + (specced and 70 or noted and 58
                                or (M.compact and 46 or 40))) * F.scale,
                               math.max(30 * F.scale,
@@ -7845,8 +7877,8 @@ function M.menu(v)
                 -- stopped four points short of them, which is three
                 -- different right edges down one page once the selection
                 -- field is counted.
-                hrule(tx, at + SECT * 0.45, lw)
-                lbl(r.sect, tx, at + SECT * 0.85)
+                hrule(tx, at + SECT * pages.SECT_RULE, lw)
+                lbl(r.sect, tx, at + SECT * pages.SECT_LABEL)
                 at = at + SECT
             end
             local y = at

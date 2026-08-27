@@ -110,7 +110,7 @@
 > label, derived by the catalog from what each zone declares
 > (`ZoneDef::format`), so a tuning edit that moves the clock moves the strip
 > and the client never knows a format. Each game carried a sentence between
-> its name and its stacks until [decision 81](../architecture/decisions.md):
+> its name and its stacks until [decision 82](../architecture/decisions.md):
 > the strip answers what the sentence answered, in the zone's own numbers, and
 > the sentence was the half nobody had to read. A directory from before the
 > strip sends none and the row is its name alone. Mocked and chosen in
@@ -456,7 +456,7 @@ one at a time, a long way from the name it belongs to. What settled its place
 was dropping the count. How many people and how many machines are in a room is
 a fact about the next thirty seconds rather than about which game to pick, and
 taking it out left the row wide enough for a second line under the name. The
-strip is what stands on that line now, per decision 81, and the sentence is
+strip is what stands on that line now, per decision 82, and the sentence is
 gone: the stacks say what it said, in the numbers the zone already declares.
 
 The game you played last is marked and the cursor opens on it, so coming back is

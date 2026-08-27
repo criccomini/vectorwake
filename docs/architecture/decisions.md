@@ -3236,7 +3236,7 @@ page and `/pilots` need one shape.
 ## 71. A game row states its format, and the catalog states the words
 
 **Status:** accepted, amended by
-[decision 81](#81-a-game-row-is-a-name-and-its-format)
+[decision 82](#82-a-game-row-is-a-name-and-its-format)
 
 **Decision:** every row of the games list carries a format strip under its
 sentence: three label-over-value stacks reading TEAMS, TIME and SCORING,
@@ -3713,14 +3713,25 @@ somewhere quieter than the page it used to close.
 **Decision:** the background is no longer three layers of star and a round
 fade. It draws, from the back forward: two enormous washes under everything, a
 band of fine grain and dust filaments along one diagonal, clouds strung out as
-runs of knots rather than round smudges, a sun and a comet, three depths of
+runs of knots rather than round smudges, suns and comets, three depths of
 star in four temperatures with a rare one burning a four-point cross, and a
 near layer of dust that draws as dots standing still and as streaks under way.
 
 Everything that is not hashed from its own position is placed from the map's
-name: the band's angle and where it runs, the two washes, and where the sun
-and the comet hang. So a room has a sky of its own, and has the same one every
-time it is played.
+name: the band's angle and where it runs, the two washes, and how many set
+pieces there are with the size, color, depth and distance of each. A map may
+get two suns, or none, and a sky with nothing in it but stars is a fine sky.
+So a room has a sky of its own, and has the same one every time it is played.
+
+One of each at one size in one color made every room look like the last one
+seen from a slightly different chair, which is the same complaint the band
+drew: its density test ran off a Lehmer hash, and Lehmer is affine, so walking
+a grid a cell at a time walked the output by a constant and the test landed on
+a lattice sixteen cells wide. Measured over a grid, a two by two block of cells
+all carrying a star came up 0.250 of the time where independent draws give
+0.436. Squaring the value between two Lehmer steps breaks the line, because the
+cross term depends on what is being squared rather than only on the step; the
+same measurement then comes to 0.440 against 0.440.
 
 The two set pieces sit at middling depth rather than out with the band. A
 match room is a hundred and sixty tiles across, and anything drawn at the
@@ -3833,9 +3844,79 @@ strip of nothing for a rare step under a sentence somebody just caused.
 in a real hand, at which point the invite is the one that gives way, since the
 empty state above it already offers the same act in words.
 
----
+## 81. The menu's pages all begin one margin under the head
 
-## 81. A game row is a name and its format
+**Status:** accepted
+
+**Decision:** the air between the bar at the top of the menu and the page
+under it is MENU_PAD, on every page, and it is written once. The stage begins
+at the head's rule, `STAGE_TOP` is the whole of what a page holds back from
+it, and there is no second number and no branch on what kind of page it is.
+
+MENU_PAD because that is what the column already keeps back from each of its
+two side edges. A page is inset the same from the bar over it as from the
+edges beside it, so the drawer has one margin rather than one for the sides
+and another for the top.
+
+What stands on that line is whatever object the page opens with: a row's lit
+field on a list, the ship page's band, the box on the friends page. Where an
+object centers something inside itself, the type falls where the object puts
+it, which is why the first word on a page is not at the same height on all of
+them and should not be made to be. A name centered in a row tall enough for a
+sentence and a strip of figures sits lower than a label near the top of a
+section head, and both are right.
+
+The friends page's add box goes with it. Its label sat eight points down while
+every other label on that page sits where a section head puts one, so it is a
+section head now like the rest, with the head's own rule left to the one
+already drawn under the bar.
+
+And a section head is one object with one set of numbers. The list drew its
+rule at 0.45 of the head and its label at 0.85; the friends page drew the same
+head at 0.42 and 0.82, so the first label on the settings page and the first
+on the friends page sat most of a point apart for no reason either of them
+could give. Both read `pages.SECT_RULE` and `pages.SECT_LABEL` now.
+
+**Why:** the gap was three numbers with a branch in the middle. Eight points
+were taken where the stage begins, thirty more where the page begins, and ten
+instead of the thirty for a page carrying a band or a head of its own. Nobody
+reading either site could say what the air under the head was meant to be,
+because neither site held the whole of it.
+
+The thirty was room held for two things that had moved out from under it: the
+ticked rule that used to introduce a list, and the way out, which sits on the
+head row now beside the call sign. Its own comment still said so. What it left
+behind was thirty-eight points of nothing over the games list against eighteen
+over the hangar, and then each page's own lead-in on top of whichever it got.
+Measured off the head rule, the first word on a page landed anywhere from 42
+to 61 points under it depending on which stop you were standing on. It is 40.2
+to 44 now. Walking the tab row, the panel appeared to change height under a
+hand that had not moved.
+
+This is the same fault decision 80 found at the other end of the column, and
+the same sentence answers it: two numbers nobody had put beside each other.
+
+**Cost:** the pages that carried a band gain two points rather than losing
+any, since eighteen was under the new twenty. Nothing here makes the first
+word on a page land at the same height on all of them, and the four points
+left over are the objects rather than the gap: a 48-point band centers its key
+and sets its type at 24, a 24-point section head puts its label at 20, and a
+list row sets its name at a fraction of a row height that moves with what the
+row holds. Forcing those to agree would push the band's key off its own
+center, which is a worse fault than the one it would fix. Nothing else in the menu moves
+sideways or changes size, and the room a page has grows by what the gap gave
+back, which on a list is another row and a half on a phone.
+
+Tying the top margin to MENU_PAD means a change to the column's side margin
+moves the head's gap with it. That is the point, and it is worth saying out
+loud, because it is also the way this comes back: a future edit that wants the
+sides wider and the top where it is has to say so, and say why.
+
+**Reconsider if:** a page turns up whose first object cannot stand on that
+line, at which point the answer is the object's own shape rather than a second
+number here.
+
+## 82. A game row is a name and its format
 
 **Status:** accepted
 
@@ -3871,3 +3952,4 @@ that fix: fields in zone.toml as overrides rather than a longer match arm.
 **Reconsider if:** two games arrive whose strips read alike and play
 differently. Telling those apart is what a sentence is for, and the row has
 the room for one.
+
