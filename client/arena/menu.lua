@@ -902,6 +902,53 @@ local function choose_profile(at)
     return true
 end
 
+-- What the landing's ship stop says: the next deploy, as the profile's own
+-- name, or spectate. Asked every frame the landing is up, so it reloads the
+-- hull's saved kit whenever nothing is being edited: a build chosen in the
+-- hangar, or one arriving from the account after this screen first drew,
+-- shows here without anybody reopening anything. An unedited kit is always
+-- safe to reload, because every settled choice lands in `account.kits` the
+-- moment it is made; what must survive is an edit in progress, and the note
+-- whoever pressed something just earned, since the reload's own trim
+-- warnings belong to the hangar rather than to a label.
+function M.landing_ship()
+    if M.spectating() then return "spectate" end
+    if M.kit == nil or M.kit_class ~= M.class or not M.kit_changed() then
+        local note = M.note
+        M.open_kit(M.class)
+        M.note = note
+    end
+    return M.profile_band().name
+end
+
+-- The rows that stop opens: every build this pilot can fly, by the names
+-- they gave them, and sitting out as the last answer. The same list the
+-- ship page keeps, minus everything about hulls: which hull a build rides
+-- is the hangar's business.
+function M.landing_ships()
+    local rows = {}
+    for i, p in ipairs(account.profiles or {}) do
+        rows[#rows + 1] = {label = p.name or "profile", value = i,
+                           here = not M.spectating() and M.profile_at == i}
+    end
+    rows[#rows + 1] = {label = "spectate", value = "spectate",
+                       here = M.spectating()}
+    return rows
+end
+
+-- A press on a build in that list: arrive as it. The same path the ship
+-- page's row takes, so the choice reaches the account through the "kit" act
+-- the caller runs; picking a build also means arriving in one, so a
+-- remembered spectate comes off here rather than surviving to make the
+-- deploy invisible.
+function M.pick_profile(at)
+    if M.kit == nil or M.kit_class ~= M.class then M.open_kit(M.class) end
+    if not choose_profile(at) then return nil end
+    M.spectate = false
+    M.save_identity()
+    return "kit"
+end
+
 -- The kit for a hull, as rows. `class` is the hull being asked about, which
 -- is the one being edited on the kit page and the one under the cursor while
 -- the roster has it: standing on a hull in the hangar shows what it will fly,

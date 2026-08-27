@@ -80,6 +80,14 @@ pub const TICKS_PER_SECOND: u32 = 100;
 pub const DEFAULT_LADDER_FIRST_TO: u16 = 1;
 pub const DEFAULT_LADDER_LOSS_DROP: u32 = 2;
 
+/// How long a duel keeps flying after the death that decides it.
+///
+/// Two seconds is a bomb's flight, and the pilot who fired one is not safe
+/// from it: a kill that opens this window and a death inside it are a draw
+/// rather than a win. It is also the zone's respawn delay, so the pilot who
+/// went down is still down when the fight is filed.
+pub const LADDER_DEATH_PAUSE_TICKS: u32 = 2 * TICKS_PER_SECOND;
+
 /// The rules that turn one completed Ladder series into run progress.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LadderRules {
@@ -384,15 +392,12 @@ pub fn build(name: &str, s: &Setup) -> Box<dyn Mode> {
 
 pub trait Mode: Send {
     fn tick(&mut self, ctx: &mut ModeCtx);
+    /// One death, in the order the tick that produced it emitted them. A mode
+    /// that decides a whole result on a death has to be indifferent to that
+    /// order, because two ships killing each other is one exchange and the
+    /// core reports it as two events: Ladder answers by holding the fight
+    /// open for a window rather than filing it on the first of the two.
     fn on_death(&mut self, ctx: &mut ModeCtx, victim: u8, killer: u8);
-    /// Every death emitted by one simulation tick. Most modes can consume
-    /// them in order. A mode where one life is the whole result overrides
-    /// this so simultaneous deaths cannot be decided by event ordering.
-    fn on_deaths(&mut self, ctx: &mut ModeCtx, deaths: &[(u8, u8)]) {
-        for &(victim, killer) in deaths {
-            self.on_death(ctx, victim, killer);
-        }
-    }
     /// A seat left while the room still holds its mutex. Match modes that
     /// cannot fairly replace a life may invalidate it before a new seat can
     /// arrive.
@@ -602,6 +607,22 @@ impl Mode for Melee {
     }
 }
 
+/// A duel in its last two seconds: decided, and still being flown.
+///
+/// The life belongs to whoever the deciding death named, unless the other
+/// ship goes down before the window runs out, in which case it belongs to
+/// nobody. Killing somebody and dying to the shot they had already fired is a
+/// trade, and it used to be scored as a clean win because the fight was filed
+/// on the first of the two deaths, in a room that stopped listening before the
+/// second one landed.
+#[derive(Clone, Copy, Debug)]
+struct Settling {
+    /// Which way the fight goes if nothing else happens.
+    human_won: bool,
+    /// Ticks left before that is filed.
+    left: u32,
+}
+
 /// Ladder: one climber against one house pilot, first to a configured score.
 ///
 /// A series is the indivisible difficulty step. The active opponent slot is
@@ -615,6 +636,10 @@ impl Mode for Melee {
 /// deciding whether to press play. Nothing here knows which it has. A run
 /// belongs to whoever is flying it, and the mode starts a new one whenever
 /// that seat changes hands.
+///
+/// A life is not filed on the death that decides it. The arena keeps running
+/// for `LADDER_DEATH_PAUSE_TICKS` first, and a second death inside that window
+/// draws the fight: see `Settling`.
 pub struct Ladder {
     rules: LadderRules,
     run: LadderProgression,
@@ -625,6 +650,9 @@ pub struct Ladder {
     opened: bool,
     score: [u16; 2],
     active_opponent_slot: u32,
+    /// The death that ended the fight, waiting out its draw window. `None`
+    /// during an ordinary life and from the whistle onwards.
+    settling: Option<Settling>,
     result: Option<bool>,
     cleared: bool,
     interrupted: bool,
@@ -650,6 +678,7 @@ impl Ladder {
             opened: false,
             score: [0, 0],
             active_opponent_slot: 0,
+            settling: None,
             result: None,
             cleared: false,
             interrupted: false,
@@ -668,7 +697,9 @@ impl Ladder {
     /// The seconds come off the clock rather than being counted beside it.
     /// `left` moves only while a rival is seated, and this runs while the life
     /// is still live, before the intermission clock takes `left` over, so the
-    /// difference is exactly what was flown. A drawn life files the whole
+    /// difference is exactly what was flown. That includes the window a
+    /// decided fight is held open for, because the room is live through it and
+    /// the pilots are still flying. A life drawn at the whistle files the whole
     /// match timer.
     fn log_leg(&mut self, result: LegResult, rival: &str) {
         let flown = self.match_ticks.saturating_sub(self.left);
@@ -698,6 +729,7 @@ impl Ladder {
         self.playing = false;
         self.left = self.match_ticks;
         self.score = [0, 0];
+        self.settling = None;
         self.result = None;
         self.cleared = false;
         self.interrupted = false;
@@ -725,6 +757,7 @@ impl Ladder {
         self.playing = true;
         self.left = self.match_ticks;
         self.score = [0, 0];
+        self.settling = None;
         self.active_opponent_slot = self.run.rung();
         self.result = None;
         self.cleared = false;
@@ -753,6 +786,7 @@ impl Ladder {
         };
         self.playing = false;
         self.left = self.intermission_ticks;
+        self.settling = None;
         self.result = Some(human_won);
         self.interrupted = false;
         self.replacement_vacated = false;
@@ -766,11 +800,27 @@ impl Ladder {
         self.log_leg(LegResult::Drawn, ctx.rival_name.unwrap_or_default());
         self.playing = false;
         self.left = self.intermission_ticks;
+        self.settling = None;
         self.result = None;
         self.cleared = false;
         self.interrupted = false;
         self.replacement_vacated = false;
         ctx.close_match = true;
+    }
+
+    /// A seat has gone. File the life if the window already decided it, and
+    /// void it if it did not.
+    ///
+    /// Whoever left a decided fight had lost it before they went, and the only
+    /// thing its window could still have changed is a draw, which needs both
+    /// pilots on the field. Voiding it instead would hand a climber's win back
+    /// on a rival that dropped in the two seconds after it, and would let a
+    /// pilot who has just died dodge the loss by pulling the plug.
+    fn seat_gone(&mut self, ctx: &mut ModeCtx) {
+        match self.settling {
+            Some(settling) => self.finish_series(settling.human_won, ctx),
+            None => self.interrupt_series(ctx),
+        }
     }
 
     fn interrupt_series(&mut self, ctx: &mut ModeCtx) {
@@ -780,6 +830,7 @@ impl Ladder {
         self.playing = false;
         self.left = self.intermission_ticks;
         self.score = [0, 0];
+        self.settling = None;
         self.result = None;
         self.cleared = false;
         self.interrupted = true;
@@ -854,13 +905,25 @@ impl Mode for Ladder {
             }
         } else if self.playing {
             if was_ready && !opponent_ready {
-                self.interrupt_series(ctx);
+                self.seat_gone(ctx);
             } else if opponent_ready {
                 self.left = self.left.saturating_sub(1);
-                // The whistle settles the life: whoever is ahead takes it, and
-                // a life nobody has scored in is a draw, which moves no rung
-                // and breaks no streak.
-                if self.left == 0 {
+                if let Some(settling) = self.settling {
+                    // A fight that has already been decided plays its window
+                    // out before it is filed, and the whistle does not reach
+                    // past it: the death named the winner, and the only thing
+                    // that can still change the answer is the other pilot
+                    // dying too.
+                    let left = settling.left.saturating_sub(1);
+                    if left == 0 {
+                        self.finish_series(settling.human_won, ctx);
+                    } else {
+                        self.settling = Some(Settling { left, ..settling });
+                    }
+                } else if self.left == 0 {
+                    // The whistle settles a life the pilots did not: whoever
+                    // is ahead takes it, and a life nobody has scored in is a
+                    // draw, which moves no rung and breaks no streak.
                     if self.score[0] == self.score[1] {
                         self.draw_series(ctx);
                     } else {
@@ -898,40 +961,32 @@ impl Mode for Ladder {
             return;
         };
         self.score[side] = self.score[side].saturating_add(1);
-        if self.score[side] >= self.rules.first_to {
-            self.finish_series(side == 0, ctx);
+        let human_won = side == 0;
+        if let Some(settling) = self.settling {
+            // The other ship went down inside the window the deciding death
+            // opened. Neither pilot came out of the life, so neither of them
+            // took it, and that holds whichever order the two deaths arrive
+            // in, including both on one tick.
+            if settling.human_won != human_won {
+                self.draw_series(ctx);
+            }
+        } else if self.score[side] >= self.rules.first_to {
+            self.settling = Some(Settling {
+                human_won,
+                left: LADDER_DEATH_PAUSE_TICKS,
+            });
         }
         ctx.banner = self.banner();
     }
 
-    fn on_deaths(&mut self, ctx: &mut ModeCtx, deaths: &[(u8, u8)]) {
-        if !self.playing {
-            return;
-        }
-        let Some((climber, rival)) = Self::opponents(ctx.seats, ctx.rival) else {
-            return;
-        };
-        let climber_died = deaths.iter().any(|(victim, _)| *victim == climber);
-        let rival_died = deaths.iter().any(|(victim, _)| *victim == rival);
-        if climber_died && rival_died {
-            self.score[0] = self.score[0].saturating_add(1);
-            self.score[1] = self.score[1].saturating_add(1);
-            self.draw_series(ctx);
-            ctx.banner = self.banner();
-            return;
-        }
-        for &(victim, killer) in deaths {
-            self.on_death(ctx, victim, killer);
-        }
-    }
-
     /// A rival leaving voids the life and the same rung reopens against the
-    /// replacement. A climber leaving ends the run: the rung, the streak and
-    /// the log are one pilot's evening, and the next person through the door,
-    /// or the stand-in that takes the seat back when they go, is not standing
+    /// replacement, unless the life was already decided: see `seat_gone`. A
+    /// climber leaving ends the run either way: the rung, the streak and the
+    /// log are one pilot's evening, and the next person through the door, or
+    /// the stand-in that takes the seat back when they go, is not standing
     /// where they were.
     fn on_departure(&mut self, ctx: &mut ModeCtx, ship: u8, _bot: bool) {
-        self.interrupt_series(ctx);
+        self.seat_gone(ctx);
         if ctx.rival != Some(ship) {
             self.open_run(LadderProgression::new(self.rules));
         }
@@ -1448,9 +1503,7 @@ mod ladder_tests {
             assert_eq!(state.desired_opponent_slot, 0);
         }
 
-        let mut winning_point = ctx(&mut world, &seats);
-        ladder.on_death(&mut winning_point, 9, 3);
-        assert!(winning_point.close_match);
+        assert!(deciding_death(&mut ladder, &mut world, &seats, 9, 3));
         let state = ladder.ladder_state().unwrap();
         assert!(!state.playing);
         assert_eq!(state.rung, 1);
@@ -1479,6 +1532,27 @@ mod ladder_tests {
         assert_eq!(state.desired_opponent_slot, 1);
     }
 
+    /// The death that decides a life, and the window the mode holds the fight
+    /// open for afterwards. Answers whether the life was filed on the far side
+    /// of it, because that is where the result now lands rather than on the
+    /// death itself.
+    fn deciding_death(
+        ladder: &mut Ladder,
+        world: &mut World,
+        seats: &[u8],
+        victim: u8,
+        killer: u8,
+    ) -> bool {
+        ladder.on_death(&mut ctx(world, seats), victim, killer);
+        let mut closed = false;
+        for _ in 0..LADDER_DEATH_PAUSE_TICKS {
+            let mut c = ctx(world, seats);
+            ladder.tick(&mut c);
+            closed |= c.close_match;
+        }
+        closed
+    }
+
     /// One life from the whistle to its deciding death, flown for `ticks`.
     ///
     /// The rival's seat is emptied on the way in, because the room refuses to
@@ -1503,7 +1577,10 @@ mod ladder_tests {
             ladder.tick(&mut ctx(world, seats));
         }
         let (victim, killer) = if won { (9, 3) } else { (3, 9) };
-        ladder.on_death(&mut ctx(world, seats), victim, killer);
+        assert!(
+            deciding_death(ladder, world, seats, victim, killer),
+            "the deciding death should have filed the life"
+        );
     }
 
     #[test]
@@ -1526,12 +1603,15 @@ mod ladder_tests {
             "the leg names whoever was across the arena, since by the time \
              the board draws it the seat belongs to the next rival"
         );
-        assert_eq!(won.seconds, 3, "250 ticks is two and a half seconds of it");
+        assert_eq!(
+            won.seconds, 5,
+            "250 ticks and the window it ended in, rounded up"
+        );
 
         let lost = state.log[1];
         assert_eq!(lost.result, LegResult::Lost);
         assert_eq!(lost.rival.as_str(), "Tessellate 0001");
-        assert_eq!(lost.seconds, 11, "and a life is rounded up, like the clock");
+        assert_eq!(lost.seconds, 13, "and a life is rounded up, like the clock");
     }
 
     /// A call sign longer than the buffer loses its tail rather than becoming
@@ -1640,6 +1720,170 @@ mod ladder_tests {
         );
     }
 
+    /// A duel is not filed on the death that decides it. The arena keeps
+    /// running for two seconds first, which is what a bomb already in the air
+    /// needs to finish the journey it was on.
+    #[test]
+    fn the_deciding_death_holds_the_fight_open_for_two_seconds() {
+        let seats = [3, RIVAL];
+        let mut world = World::new(7);
+        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
+        ladder.tick(&mut ctx(&mut world, &seats));
+
+        let mut kill = ctx(&mut world, &seats);
+        ladder.on_death(&mut kill, RIVAL, 3);
+        assert!(!kill.close_match, "the kill does not end the fight");
+        let held = ladder.ladder_state().unwrap();
+        assert!(held.playing, "both pilots are still on the clock");
+        assert_eq!(held.score, [1, 0], "and the score already says who leads");
+        assert_eq!(held.rung, 0, "the rung waits for the window");
+        assert_eq!(held.logged, 0, "so does the log");
+
+        for elapsed in 1..LADDER_DEATH_PAUSE_TICKS {
+            let mut c = ctx(&mut world, &seats);
+            ladder.tick(&mut c);
+            assert!(!c.close_match, "filed {elapsed} ticks into the window");
+            assert!(ladder.ladder_state().unwrap().playing);
+        }
+        let mut closing = ctx(&mut world, &seats);
+        ladder.tick(&mut closing);
+        assert!(closing.close_match, "the window is what files it");
+        let state = ladder.ladder_state().unwrap();
+        assert!(!state.playing);
+        assert_eq!(state.rung, 1);
+        assert_eq!(state.log[0].result, LegResult::Cleared);
+    }
+
+    /// Dying inside that window is what it is for. A pilot who takes the kill
+    /// and goes down to the shot that was already coming has traded, and a
+    /// trade is a draw however far apart the two deaths land.
+    #[test]
+    fn a_death_inside_the_window_draws_the_life() {
+        let seats = [3, RIVAL];
+        for after in [
+            0,
+            1,
+            LADDER_DEATH_PAUSE_TICKS / 2,
+            LADDER_DEATH_PAUSE_TICKS - 1,
+        ] {
+            let mut world = World::new(7);
+            let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
+            ladder.tick(&mut ctx(&mut world, &seats));
+            ladder.on_death(&mut ctx(&mut world, &seats), RIVAL, 3);
+            for _ in 0..after {
+                ladder.tick(&mut ctx(&mut world, &seats));
+            }
+
+            let mut trade = ctx(&mut world, &seats);
+            ladder.on_death(&mut trade, 3, RIVAL);
+            assert!(trade.close_match, "the trade files it at {after}");
+            let state = ladder.ladder_state().unwrap();
+            assert!(!state.playing);
+            assert_eq!(state.score, [1, 1]);
+            assert_eq!(state.logged, 1);
+            assert_eq!(state.log[0].result, LegResult::Drawn);
+            assert_eq!(state.rung, 0, "a draw moves nothing");
+            assert_eq!(state.streak, 0);
+        }
+    }
+
+    /// And dying after it is not. The window closed, the win is filed, and the
+    /// next thing to happen in that room belongs to the next life.
+    #[test]
+    fn a_death_after_the_window_cannot_take_the_win_back() {
+        let seats = [3, RIVAL];
+        let mut world = World::new(7);
+        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 20);
+        ladder.tick(&mut ctx(&mut world, &seats));
+        assert!(deciding_death(&mut ladder, &mut world, &seats, RIVAL, 3));
+
+        ladder.on_death(&mut ctx(&mut world, &seats), 3, RIVAL);
+        let state = ladder.ladder_state().unwrap();
+        assert_eq!(state.score, [1, 0], "the intermission scores nothing");
+        assert_eq!(state.logged, 1);
+        assert_eq!(state.log[0].result, LegResult::Cleared);
+        assert_eq!(state.rung, 1);
+    }
+
+    /// The window outlives regulation. A kill in the last second of a duel is
+    /// as tradeable as one in the first, so the clock running out inside the
+    /// window neither files the fight early nor takes the draw away.
+    #[test]
+    fn the_whistle_does_not_cut_the_window_short() {
+        let seats = [3, RIVAL];
+        let mut world = World::new(7);
+        let match_ticks = 300;
+        let mut ladder = Ladder::new(LadderRules::default(), match_ticks, 2);
+        ladder.tick(&mut ctx(&mut world, &seats));
+        for _ in 0..match_ticks - 50 {
+            ladder.tick(&mut ctx(&mut world, &seats));
+        }
+        assert_eq!(ladder.left, 50, "half a second of regulation left");
+
+        ladder.on_death(&mut ctx(&mut world, &seats), RIVAL, 3);
+        for _ in 0..60 {
+            let mut past = ctx(&mut world, &seats);
+            ladder.tick(&mut past);
+            assert!(!past.close_match);
+        }
+        assert_eq!(ladder.left, 0, "the clock ran out inside the window");
+        assert!(
+            ladder.ladder_state().unwrap().playing,
+            "and the fight it is holding open outlived it"
+        );
+
+        let mut trade = ctx(&mut world, &seats);
+        ladder.on_death(&mut trade, 3, RIVAL);
+        assert!(trade.close_match);
+        let state = ladder.ladder_state().unwrap();
+        assert_eq!(state.log[0].result, LegResult::Drawn);
+        assert_eq!(state.rung, 0);
+    }
+
+    /// A seat vanishing inside the window does not hand the fight back. The
+    /// pilot who left had already lost it, and the only thing the window could
+    /// still have done is draw it, which needs both of them on the field. This
+    /// is the tick edge, which is how a seat that stops counting goes.
+    #[test]
+    fn a_seat_lost_inside_the_window_files_the_fight_it_decided() {
+        let seats = [3, RIVAL];
+        let rival_gone = [3];
+        let mut world = World::new(7);
+        let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
+        ladder.tick(&mut ctx(&mut world, &seats));
+        ladder.on_death(&mut ctx(&mut world, &seats), RIVAL, 3);
+
+        let mut went = ctx(&mut world, &rival_gone);
+        ladder.tick(&mut went);
+        assert!(went.close_match, "the win is filed rather than voided");
+        assert!(!went.abort_match);
+        let state = ladder.ladder_state().unwrap();
+        assert!(!state.playing);
+        assert_eq!(state.rung, 1);
+        assert_eq!(state.logged, 1);
+        assert_eq!(state.log[0].result, LegResult::Cleared);
+    }
+
+    /// And the same through the departure hook, which is the path a disconnect
+    /// takes. A pilot who has just died cannot dodge the loss by pulling the
+    /// plug inside the two seconds it is held open for.
+    #[test]
+    fn a_departure_inside_the_window_cannot_dodge_the_loss() {
+        let seats = [3, RIVAL];
+        let mut world = World::new(7);
+        let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
+        ladder.tick(&mut ctx(&mut world, &seats));
+        ladder.on_death(&mut ctx(&mut world, &seats), 3, RIVAL);
+
+        let mut gone = ctx(&mut world, &seats);
+        ladder.on_departure(&mut gone, RIVAL, true);
+        assert!(gone.close_match);
+        assert!(!gone.abort_match);
+        let state = ladder.ladder_state().unwrap();
+        assert_eq!(state.logged, 1);
+        assert_eq!(state.log[0].result, LegResult::Lost);
+    }
+
     /// A draw is a real result at this table: both pilots died on the same
     /// tick, the same rival is fought again, and the log says it happened.
     #[test]
@@ -1648,7 +1892,9 @@ mod ladder_tests {
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
         ladder.tick(&mut ctx(&mut world, &seats));
-        ladder.on_deaths(&mut ctx(&mut world, &seats), &[(3, 9), (9, 3)]);
+        let mut same_tick = ctx(&mut world, &seats);
+        ladder.on_death(&mut same_tick, 3, 9);
+        ladder.on_death(&mut same_tick, 9, 3);
         let state = ladder.ladder_state().unwrap();
         assert_eq!(state.logged, 1);
         assert_eq!(state.log[0].result, LegResult::Drawn);
@@ -1763,7 +2009,7 @@ mod ladder_tests {
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
         ladder.tick(&mut ctx(&mut world, &seats));
-        ladder.on_death(&mut ctx(&mut world, &seats), RIVAL, 3);
+        deciding_death(&mut ladder, &mut world, &seats, RIVAL, 3);
         assert_eq!(ladder.ladder_state().unwrap().rung, 1, "one rung climbed");
 
         let mut gone = ctx(&mut world, &seats);
@@ -1782,7 +2028,7 @@ mod ladder_tests {
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
         ladder.tick(&mut ctx(&mut world, &seats));
-        ladder.on_death(&mut ctx(&mut world, &seats), RIVAL, 3);
+        deciding_death(&mut ladder, &mut world, &seats, RIVAL, 3);
         let climbed = ladder.ladder_state().unwrap();
 
         let mut gone = ctx(&mut world, &seats);
@@ -1804,9 +2050,7 @@ mod ladder_tests {
         ladder.tick(&mut opening);
         assert!(opening.open_match);
 
-        let mut point = ctx(&mut world, &seats);
-        ladder.on_death(&mut point, RIVAL, 3);
-        assert!(point.close_match);
+        assert!(deciding_death(&mut ladder, &mut world, &seats, RIVAL, 3));
         let state = ladder.ladder_state().unwrap();
         assert_eq!(state.score, [1, 0], "the climber's side scores first");
         assert_eq!(state.rung, 1);
@@ -1828,16 +2072,21 @@ mod ladder_tests {
 
         let mut cleared = ctx(&mut world, &seats);
         ladder.on_death(&mut cleared, RIVAL, 3);
-        assert!(cleared.close_match, "the life ended");
+        assert_eq!(cleared.banner, "", "nor is the kill that decided it");
+        for _ in 0..LADDER_DEATH_PAUSE_TICKS {
+            let mut c = ctx(&mut world, &seats);
+            ladder.tick(&mut c);
+            assert_eq!(c.banner, "", "a won rung is not an announcement");
+        }
         assert_eq!(ladder.ladder_state().unwrap().rung, 1, "and it advanced");
-        let mut settling = ctx(&mut world, &seats);
-        ladder.tick(&mut settling);
-        assert_eq!(settling.banner, "", "a won rung is not an announcement");
 
         // And a lost one is not either: the row says lost, and the standing
         // above it says what the run fell to.
-        let mut lost = ctx(&mut world, &seats);
-        ladder.on_death(&mut lost, 3, RIVAL);
+        one_life(&mut ladder, &mut world, &seats, 10, false);
+        assert_eq!(
+            ladder.ladder_state().unwrap().log[1].result,
+            LegResult::Lost
+        );
         let mut after = ctx(&mut world, &seats);
         ladder.tick(&mut after);
         assert_eq!(after.banner, "", "a lost rung is not one either");
@@ -1892,7 +2141,7 @@ mod ladder_tests {
             2,
         );
         ladder.tick(&mut ctx(&mut world, &seats));
-        ladder.on_death(&mut ctx(&mut world, &seats), 9, 3);
+        deciding_death(&mut ladder, &mut world, &seats, 9, 3);
         assert_eq!(ladder.ladder_state().unwrap().rung, 1);
 
         assert!(ladder.first_human(), "a run is the arriving pilot's own");
@@ -1912,9 +2161,7 @@ mod ladder_tests {
         let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
         ladder.tick(&mut ctx(&mut world, &seats));
 
-        let mut point = ctx(&mut world, &seats);
-        ladder.on_death(&mut point, 9, 3);
-        assert!(point.close_match);
+        assert!(deciding_death(&mut ladder, &mut world, &seats, 9, 3));
         assert_eq!(ladder.ladder_state().unwrap().rung, 1);
     }
 
@@ -1931,9 +2178,7 @@ mod ladder_tests {
         ladder.run = climbed;
         ladder.tick(&mut ctx(&mut world, &seats));
 
-        let mut point = ctx(&mut world, &seats);
-        ladder.on_death(&mut point, 9, 3);
-        assert!(point.close_match);
+        assert!(deciding_death(&mut ladder, &mut world, &seats, 9, 3));
         let state = ladder.ladder_state().unwrap();
         assert!(state.cleared);
         assert_eq!(state.active_opponent_slot, last);
@@ -2034,7 +2279,7 @@ mod ladder_tests {
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 500, 2);
         ladder.tick(&mut ctx(&mut world, &pair));
-        ladder.on_death(&mut ctx(&mut world, &pair), 9, 3);
+        deciding_death(&mut ladder, &mut world, &pair, 9, 3);
 
         ladder.tick(&mut ctx(&mut world, &pair));
         let mut zero = ctx(&mut world, &pair);
@@ -2059,7 +2304,9 @@ mod ladder_tests {
             ladder.tick(&mut ctx(&mut world, &seats));
 
             let mut same_tick = ctx(&mut world, &seats);
-            ladder.on_deaths(&mut same_tick, &deaths);
+            for (victim, killer) in deaths {
+                ladder.on_death(&mut same_tick, victim, killer);
+            }
             assert!(same_tick.close_match);
             let state = ladder.ladder_state().unwrap();
             assert!(!state.playing);

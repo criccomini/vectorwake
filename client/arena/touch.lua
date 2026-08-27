@@ -11,15 +11,28 @@
 -- turns at its own rate, so nothing about the flight model changes. This only
 -- decides which way the turn is applied, exactly as the AI does it.
 --
--- It is the only flying control, and it only ever drives the ship forward.
--- Beside it for a while sat a d-pad, chosen in the settings, and a reverse
--- with no pad of its own: down on the d-pad, and on the stick a rearward push
--- read as backing out whenever the guns were up or a hostile sat ahead. Both
--- are gone. A thumb pushed the same way meant one thing on the pad and another
--- on the stick, and on the stick it changed again mid-burst, which cost a
--- field on every caller, a clock run from the frame loop, and a module of its
--- own deciding what counted as a fight. A pilot who wants to be going the
--- other way turns the ship around.
+-- It is the only flying control. Beside it for a while sat a d-pad, chosen in
+-- the settings, and two goes at a reverse: down on the d-pad, and on the stick
+-- a rearward push that read as backing out whenever the guns were up or a
+-- hostile sat ahead. All three are gone, and why they went decides the shape
+-- of the one that is here now. A thumb pushed the same way meant one thing on
+-- the pad and another on the stick, and on the stick it changed again
+-- mid-burst, which cost a field on every caller, a clock run from the frame
+-- loop, and a module of its own deciding what counted as a fight.
+--
+-- So reverse is a stance the pilot sets rather than a push the stick reads
+-- into. A double tap anywhere on the stick's half flips it, and it holds until
+-- another double tap flips it back. Nothing is inferred from a fight, a
+-- trigger or a bearing, and a push still means the one thing it has always
+-- meant.
+--
+-- What it means is the course you want, and reverse must not take that away.
+-- The stick goes on pointing where you want to be going and the nose is held
+-- at the far end of it, so you back away from your own thumb with the guns
+-- still on whatever you are backing away from. That is the only reason to fly
+-- backward at all. Holding the nose on the thumb instead and running the
+-- engine the other way is the mid-burst change again wearing a switch: the
+-- same push would name a course going forward and a target going back.
 --
 -- The simulation never learns any of this happened: it receives the same
 -- button bitfield a keyboard produces.
@@ -44,9 +57,29 @@ local pal = require("arena.palette")
 local DEAD_PX = 14        -- ignore a thumb that has barely moved
 local THRUST_PX = 46      -- push past this and the engine lights
 local FAN_SWIPE_PX = 32   -- deliberate upward pull while holding the gun
+local TAP_SLIP_PX = 40    -- how far a tap may wander and still be a tap
+local TAP_HOLD = 0.30     -- seconds a press may last before it is a hold
+local TAP_GAP = 0.30      -- seconds between the two taps of a double tap
 
 M.used = false            -- has this device ever reported a touch?
 M.scale = 1               -- drawable pixels per point
+
+-- Seconds, counting up, set by the caller at the moment it hands a touch down.
+--
+-- The stick wants a clock for one thing: telling a double tap from two presses
+-- that happen to land in the same place. The header lists a clock among what
+-- the last reverse cost, so this one is worth being plain about. It is a
+-- number set at the single call site rather than a timer this file runs.
+-- Nothing here ticks.
+--
+-- The gesture wants time to have passed rather than merely not too much of it,
+-- which costs nothing real: two taps by a hand are frames apart and this clock
+-- moves every frame. What it buys is the direction the failure falls in. A
+-- caller that stops setting this, or never starts, holds one number forever,
+-- and a stick that reads every pair of quick presses as a flip is worse than
+-- one that has quietly lost the flip altogether.
+M.now = 0
+
 -- How many of each charge slot are in hand, by slot. Set by the caller.
 M.counts = {}
 -- And how many of each the hull can hold, which is what the pips count out.
@@ -90,7 +123,15 @@ M.me = nil
 -- of them stop depending on each other at all.
 M.ceiling = math.huge
 
-local stick = nil         -- {id, ox, oy, x, y}
+local stick = nil         -- {id, ox, oy, x, y, t0, still, flipped}
+-- The last press that ended as a tap: when it let go, and where it sat. A
+-- second tap near it and soon after is the gesture.
+local last_tap = nil
+-- Which end of the ship the engine pushes from. Latched, because a stance is
+-- not a thing a hand can hold: backing out of a fight is exactly when both
+-- thumbs are busy elsewhere, and a reverse you have to keep pressing is one
+-- you cannot shoot through.
+local reversed = false
 local guns = nil          -- touch id holding the guns pad
 local gun_ox, gun_oy = nil, nil
 local gun_fanned = false
@@ -246,7 +287,21 @@ function M.on_touch(action, w, h, s, claimed)
         elseif t.pressed then
             local z = zone(tx, ty, w, h, s)
             if z == "stick" and not stick then
-                stick = {id = t.id, ox = tx, oy = ty, x = tx, y = ty}
+                -- The flip lands on the second press rather than its release,
+                -- so tap-then-press-and-drag is one gesture: the stance
+                -- changes and the same thumb flies out of it without lifting.
+                local slip = TAP_SLIP_PX * M.scale
+                local flip = last_tap ~= nil
+                    and M.now > last_tap.t
+                    and M.now - last_tap.t <= TAP_GAP
+                    and math.abs(tx - last_tap.x) <= slip
+                    and math.abs(ty - last_tap.y) <= slip
+                if flip then
+                    reversed = not reversed
+                    last_tap = nil
+                end
+                stick = {id = t.id, ox = tx, oy = ty, x = tx, y = ty,
+                         t0 = M.now, still = true, flipped = flip}
             elseif z == "guns" then
                 guns = t.id
                 gun_ox, gun_oy = tx, ty
@@ -261,6 +316,12 @@ function M.on_touch(action, w, h, s, claimed)
         else
             if stick and stick.id == t.id then
                 stick.x, stick.y = tx, ty
+                -- A thumb that has gone anywhere is flying, and a press that
+                -- flew is not half of a double tap however briefly it lasted.
+                if math.abs(tx - stick.ox) > TAP_SLIP_PX * M.scale
+                    or math.abs(ty - stick.oy) > TAP_SLIP_PX * M.scale then
+                    stick.still = false
+                end
             elseif guns == t.id and M.has_fan and not gun_fanned then
                 local dx, dy = tx - gun_ox, ty - gun_oy
                 if dy >= FAN_SWIPE_PX * M.scale
@@ -278,7 +339,23 @@ end
 -- batch that another leaves a pad. Passing that release through here first
 -- keeps the panel's early return from leaving the other control held.
 function M.release(id)
-    if stick and stick.id == id then stick = nil end
+    if stick and stick.id == id then
+        -- A press that stayed put and let go quickly is a tap, and a tap is
+        -- half a gesture. The press that just flipped is not: three taps are
+        -- one double tap and a spare, not two double taps, which is the
+        -- difference between a stance a thumb can trust and a coin toss.
+        --
+        -- Anything else clears the pending half rather than leaving it to time
+        -- out, so a tap followed by a real bit of flying cannot be joined to
+        -- the press after it.
+        if stick.still and not stick.flipped
+            and M.now - stick.t0 <= TAP_HOLD then
+            last_tap = {t = M.now, x = stick.ox, y = stick.oy}
+        else
+            last_tap = nil
+        end
+        stick = nil
+    end
     if guns == id then
         guns, gun_ox, gun_oy, gun_fanned = nil, nil, nil, false
     end
@@ -290,6 +367,12 @@ end
 function M.release_all()
     stick, guns, bombs = nil, nil, nil
     gun_ox, gun_oy, gun_fanned = nil, nil, false
+    last_tap = nil
+    -- The stance goes with them. This is called when the cockpit went away:
+    -- focus lost, a watch taken, the client shutting down. Coming back to a
+    -- ship that flies backward for a reason nobody remembers setting is worse
+    -- than coming back to one that flies the way it always has.
+    reversed = false
 end
 
 -- Which charge slot was tapped since this was last asked, or nil. Consumed by
@@ -326,6 +409,12 @@ function M.bits(heading)
     -- Screen +y is up and the simulation's +y is down, which is why this is
     -- atan2(x, y) rather than the atan2(dx, -dy) the AI uses on sim vectors.
     local want = math.atan2(dx, dy)
+    -- The thumb names the course either way. Reversed, the engine pushes out
+    -- of the tail, so the nose that serves that course is the one half a turn
+    -- from it, and that is what the rudder is given to chase. Everything below
+    -- is then the forward case unchanged, the thrust gate included: the nose
+    -- still has to be roughly where it is wanted before the engine lights.
+    if reversed then want = want + math.pi end
     local head = (heading / 65536) * math.pi * 2
     local diff = want - head
     while diff > math.pi do diff = diff - math.pi * 2 end
@@ -339,7 +428,7 @@ function M.bits(heading)
     -- The engine once the thumb is committed and the nose is roughly there,
     -- so a hard turn does not fling the ship the way it used to be facing.
     if mag > THRUST_PX * M.scale and math.abs(diff) < 1.0 then
-        out[#out + 1] = sim.BTN_THRUST
+        out[#out + 1] = reversed and sim.BTN_REVERSE or sim.BTN_THRUST
     end
     return out
 end
@@ -348,6 +437,15 @@ end
 -- rather than let two sources fight over the rudder.
 function M.steering()
     return stick ~= nil
+end
+
+-- Which way the engine is pointed. For the drawing below, and for a test:
+-- everything the stance changes is inside this file, so nothing else has to
+-- ask, and the ship shows the answer on its own anyway. See the retros in
+-- arena/world.lua, drawn off the bow because a thumb reporting the sign of the
+-- thrust is a thumb the pilot is not looking at.
+function M.reversing()
+    return reversed
 end
 
 -- --- what a pad has to say -------------------------------------------------
@@ -478,17 +576,65 @@ function M.draw(u, w, h, s)
         end
     end
 
+    -- The stance is the stick's own color: THRUST is what the ship's plumes
+    -- are drawn in, so a stick the color of an engine is a stick with the
+    -- engine turned round. It has to be on the mark as well as on the live
+    -- control, because a stance outlives the thumb that set it and the resting
+    -- mark is the whole of what a pilot can read with no thumb down.
+    local hot = reversed and pal.THRUST or pal.FRIEND
     if stick then
-        local live = pal.a(pal.FRIEND, 0.9)
+        local live = pal.a(hot, 0.9)
         u:ring(stick.ox, stick.oy, L.home.r, 1.8 * s, 26, dim)
         u:ring(stick.x, stick.y, L.r * 0.42, 1.8 * s, 16, live)
         u:seg(stick.ox, stick.oy, stick.x, stick.y, 2 * s, live)
+        -- The nose, out the far side of the press. Reverse is the one time
+        -- the ship is not pointed where the thumb is, and that is the part of
+        -- it a pilot has to be shown rather than told: a thumb to the right
+        -- turning the ship left looks like a bug until you can see the nose
+        -- being carried to the other end of the course.
+        --
+        -- Headed, and stopping short of the ring. A bare segment on the line
+        -- the thumb is already on reads as the thumb's own line drawn longer,
+        -- which is the one thing it must not say.
+        if reversed then
+            local dx, dy = stick.x - stick.ox, stick.y - stick.oy
+            local mag = math.sqrt(dx * dx + dy * dy)
+            if mag > DEAD_PX * s then
+                local ux, uy = -dx / mag, -dy / mag
+                local px, py = -uy, ux
+                local tx = stick.ox + ux * L.home.r * 0.72
+                local ty = stick.oy + uy * L.home.r * 0.72
+                local barb = L.r * 0.2
+                u:seg(stick.ox, stick.oy, tx, ty, 2 * s, pal.a(hot, 0.4))
+                local c = pal.a(hot, 0.55)
+                u:seg(tx, ty, tx - ux * barb + px * barb * 0.6,
+                      ty - uy * barb + py * barb * 0.6, 2 * s, c)
+                u:seg(tx, ty, tx - ux * barb - px * barb * 0.6,
+                      ty - uy * barb - py * barb * 0.6, 2 * s, c)
+            end
+        end
     else
         -- A resting mark where a thumb should go. The stick itself is
         -- relative: it appears wherever you press, and a control that is
         -- invisible until you find it is a control nobody finds.
-        u:ring(L.home.x, L.home.y, L.home.r, 1.8 * s, 26, pal.a(pal.DIM, 0.28))
-        u:ring(L.home.x, L.home.y, L.r * 0.3, 1.8 * s, 16, pal.a(pal.DIM, 0.35))
+        --
+        -- Reversed, its middle is an arrow rather than a dot, and it points
+        -- down: the same arrow the keyboard's reverse key wears, since that
+        -- control is bound to the down key and this one is the same control.
+        local eye = L.r * 0.3
+        local rest = reversed and pal.a(hot, 0.55) or pal.a(pal.DIM, 0.28)
+        u:ring(L.home.x, L.home.y, L.home.r, 1.8 * s, 26, rest)
+        if reversed then
+            local c = pal.a(hot, 0.8)
+            u:seg(L.home.x, L.home.y + eye, L.home.x, L.home.y - eye,
+                  1.8 * s, c)
+            u:seg(L.home.x, L.home.y - eye,
+                  L.home.x - eye * 0.7, L.home.y - eye * 0.3, 1.8 * s, c)
+            u:seg(L.home.x, L.home.y - eye,
+                  L.home.x + eye * 0.7, L.home.y - eye * 0.3, 1.8 * s, c)
+        else
+            u:ring(L.home.x, L.home.y, eye, 1.8 * s, 16, pal.a(pal.DIM, 0.35))
+        end
     end
 end
 

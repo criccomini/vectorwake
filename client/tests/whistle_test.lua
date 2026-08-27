@@ -162,6 +162,39 @@ check("and it is the one that died",
       net.snap_deaths[1] and net.snap_deaths[1].ship == 1)
 check("the round that killed them still lands", #net.snap_blasts == 1,
       "queued " .. #net.snap_blasts)
+drain()
+
+-- A bomb only the prediction has fired, which the corrected world then fires
+-- a couple of ticks later: the tick a held key fires on hangs on cooldown,
+-- energy and the proximity safety, and a snapshot can change any of them.
+-- No snapshot ever carried the first birth, so nothing the zone knew about
+-- ended, and drawing it put a detonation at the muzzle while the bomb flew
+-- on to its real one.
+air = {1005}
+next_air = {1007}
+deliver(snapshot(1010))
+check("a bomb reborn under correction does not go off",
+      #net.snap_blasts == 0, "queued " .. #net.snap_blasts)
+drain()
+
+-- The same when the corrected world refuses the shot altogether: a round
+-- the zone never saw cannot have landed on anything.
+air = {1012}
+next_air = {}
+deliver(snapshot(1015))
+check("a bomb the correction takes back does not go off",
+      #net.snap_blasts == 0, "queued " .. #net.snap_blasts)
+drain()
+
+-- But once a snapshot has carried the round, the zone has spoken for it, and
+-- its disappearance is a real ending however young it is.
+next_air = {1016}
+deliver(snapshot(1020))
+drain()
+next_air = {}
+deliver(snapshot(1025))
+check("a bomb a snapshot vouched for still lands",
+      #net.snap_blasts == 1, "queued " .. #net.snap_blasts)
 
 if fails > 0 then os.exit(1) end
 print("all fine")

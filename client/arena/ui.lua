@@ -142,6 +142,11 @@ M.room_scroll = 0
 -- here is derived from holdings. One stray click in a corner should not empty
 -- a hold.
 M.room_ask = nil
+-- Which of the landing's stops has its list open: "zone", "ship", or nil for
+-- neither. The account stop opens the drawer instead of a list, so it never
+-- lands here. Owned by this module the way `rooms_open` is: the arena flips
+-- it on a press and everything that leaves the landing clears it.
+M.land_open = nil
 
 -- --- primitives ------------------------------------------------------------
 
@@ -4458,10 +4463,12 @@ end
 -- clock and score and radar and feed, is the rest of this screen. See
 -- decision 61 for why a spectator's view of a game beats a panel describing
 -- one as a front page.
--- Where the front end's two pieces sit. One function because the waiting
--- screen draws the same wordmark in the same place as the landing does, and a
--- logo that jumps when the room arrives is the reason this is shared rather
--- than written twice.
+-- Where the front end's pieces sit. One function because the waiting screen
+-- draws the same wordmark in the same place as the landing does, and a logo
+-- that jumps when the room arrives is the reason this is shared rather than
+-- written twice. The name stands clear of the three stops even on the
+-- waiting screen, where the stops are not drawn yet: when the room answers,
+-- the stops and the key appear and nothing already on screen moves.
 local function landing_geom()
     local pts_w = F.w / math.max(F.density, 0.0001)
     -- Edge to edge on a phone held upright, where a centered key of fixed
@@ -4477,12 +4484,18 @@ local function landing_geom()
     -- `y` counts down from the top here, as it does everywhere in this file,
     -- so the foot of the screen is measured back from `F.h`.
     local ky = F.h - F.safe_b - (M.compact and 18 or 22) * F.scale - kh
+    -- The stops: three rows the key's own width, stacked over it. A finger
+    -- gets the touch floor; a pointer gets a slimmer row and `M.pick` grows
+    -- it when a finger arrives anyway.
+    local rh = (narrow and 44 or (M.compact and 30 or 36)) * F.scale
+    local rgap = 8 * F.scale
     local size = (M.compact and 20 or 26) * F.scale
     -- `txt` sets a string on the middle of its line, so half the type goes
-    -- back to put the baseline where it belongs above the key.
-    local wy = ky - (M.compact and 16 or 20) * F.scale - size / 2
+    -- back to put the baseline where it belongs above the stack.
+    local wy = ky - 12 * F.scale - 3 * rh - 2 * rgap
+               - (M.compact and 16 or 20) * F.scale - size / 2
     return kx, ky, kw, kh, size, wy,
-           (narrow and 16 or (M.compact and 14 or 19)) * F.scale
+           (narrow and 16 or (M.compact and 14 or 19)) * F.scale, rh, rgap
 end
 
 -- The name, where it sits whether or not there is a room to join yet.
@@ -4491,26 +4504,101 @@ local function landing_mark()
     M.wordmark(kx + kw / 2 - M.wordmark_w(size) / 2, wy, size)
 end
 
--- The landing: the game's name over the one key the screen exists for.
+-- A stop's caret: the two strokes that say a press here opens downward into
+-- a list, in the weight the rest of the chrome is drawn at.
+local function land_caret(cx, cy, col)
+    local k = 4 * F.scale
+    F.layer:seg(cx - k, ry(cy - k * 0.6), cx, ry(cy + k * 0.6),
+                1.3 * F.scale, col, true)
+    F.layer:seg(cx, ry(cy + k * 0.6), cx + k, ry(cy - k * 0.6),
+                1.3 * F.scale, col, true)
+end
+
+-- One stop of the landing's column: the question at the left edge, the
+-- current answer and a caret at the right, in the same stroked rectangle
+-- every key here wears. `lit` is the stop whose list is open.
+local function land_stop(kx, y, kw, rh, label, value, action, lit)
+    key_box(kx, y, kw, rh, pal.a(pal.BTN_BG, 0.6),
+            lit and pal.a(pal.FRIEND, 0.8) or pal.a(pal.RADAR_TILE, 0.75))
+    local pad = 12 * F.scale
+    lbl(label, kx + pad, y + rh / 2)
+    local cx = kx + kw - pad - 3 * F.scale
+    land_caret(cx, y + rh / 2, pal.a(pal.INK, 0.75))
+    txt(value or "", cx - 11 * F.scale, y + rh / 2,
+        (M.compact and 11 or 12) * F.scale, pal.a(pal.INK, 0.95), "right")
+    hit(kx, y, kw, rh, action)
+end
+
+-- A stop's open list, upward over the glass so it never covers the key. Rows
+-- wear the menu's own states from decision 72: the row the pointer rests on
+-- washes at 0.18, the row you are already in at 0.07. Nearly opaque ground,
+-- unlike the drawer's wash: two or three rows over a live fight have to be
+-- read, not read through.
+local function land_list(kx, kw, bottom, list, drh)
+    local padv = 5 * F.scale
+    local h = padv * 2
+    for _, r in ipairs(list) do
+        h = h + (r.rule and 9 * F.scale or drh)
+    end
+    local py = bottom - h
+    rect(kx, py, kw, h, pal.a(pal.BG, 0.96))
+    F.layer:frame(kx, ry(py, h), kw, h, 1.1 * F.scale,
+                  pal.a(pal.RADAR_TILE, 0.85))
+    local pad = 12 * F.scale
+    local dpx = (M.compact and 11 or 12) * F.scale
+    local y = py + padv
+    for _, r in ipairs(list) do
+        if r.rule then
+            hrule(kx + pad, y + 4.5 * F.scale, kw - 2 * pad, 0.6)
+            y = y + 9 * F.scale
+        else
+            local hov = not r.dim and M.hover_x and M.hover_y
+                and M.hover_x >= kx and M.hover_x <= kx + kw
+                and M.hover_y >= y and M.hover_y <= y + drh
+            if hov then
+                rect(kx, y, kw, drh, pal.a(pal.FRIEND, 0.18))
+            elseif r.here then
+                rect(kx, y, kw, drh, pal.a(pal.FRIEND, 0.07))
+            end
+            local col = r.dim and pal.a(pal.DIM, 0.8)
+                or (r.here and pal.a(pal.FRIEND, 0.95))
+                or pal.a(pal.INK, hov and 1 or 0.8)
+            txt(r.label, kx + pad, y + drh / 2, dpx, col)
+            if r.note then
+                txt(r.note, kx + kw - pad, y + drh / 2,
+                    dpx - 2 * F.scale, pal.a(pal.DIM, 0.9), "right")
+            end
+            if not r.dim then
+                hit(kx, y, kw, drh, r.action, r.value, nil, 1)
+            end
+            y = y + drh
+        end
+    end
+end
+
+-- The landing: the game's name and the column of stops over the one key the
+-- screen exists for.
 --
 -- This is the whole of the front end now. Opening the client seats you in the
 -- stands of a real room, so what a stranger meets is the game being played,
--- drawn by the same code that draws it to the people in it, with two things
--- laid over the bottom of it: what this is, and the way in.
+-- drawn by the same code that draws it to the people in it, with the choices
+-- laid over the bottom of it in the order you would say them: what this is,
+-- who you are, where you are going, what you arrive as, and the way in.
 --
--- The name goes directly over the key rather than into a corner or under the
--- clock. A stranger's eye ends on the pulsing thing at the foot of the screen,
--- and the name has to be where that look lands or it is a page that never says
--- what it is. Read as one object the two are a title and its button; read
--- apart they are a mark in a corner nobody looks at. Three placements were
--- drawn before this one was picked; see .design/spectator-landing.
+-- The stops exist because the drawer went undiscovered: a first visit met
+-- PLAY NOW and a hamburger, deployed into whatever the stands were showing,
+-- and never learned there was another game or another ship to be. Account
+-- opens the drawer on the pilot page; zone and ship open lists in place, and
+-- SPECTATE is the ship list's last row, exactly as the ship page has it.
+-- Mocked in .design/start-flow, where the column won over a rail along the
+-- foot and a line of pressable words.
 --
 -- Nothing else is added. The HUD a watcher already gets, corner keys and
 -- clock and score and radar and feed, is the rest of this screen. See
 -- decision 61 for why a spectator's view of a game beats a panel describing
 -- one as a front page.
-local function landing()
-    local kx, ky, kw, kh, _, _, kpx = landing_geom()
+local function landing(land)
+    local kx, ky, kw, kh, _, _, kpx, rh, rgap = landing_geom()
     -- The key breathes on the same clock the on-air tally swells at, and the
     -- edge is floored well above dark so the trough never reads as a key that
     -- has stopped working. `F.now` is zero under the test harness, which is
@@ -4520,7 +4608,68 @@ local function landing()
             pal.a(pal.FRIEND, 0.62 + 0.38 * breath))
     txt("PLAY NOW", kx + kw / 2, ky + kh / 2, kpx, pal.a(pal.INK, 1), "center")
     hit(kx, ky, kw, kh, "play_now")
-    landing_mark()
+    local mark_down = false
+    if land then
+        local ship_y = ky - 12 * F.scale - rh
+        local zone_y = ship_y - rgap - rh
+        local acct_y = zone_y - rgap - rh
+        -- The open list first, as rows and a height, because whatever it
+        -- covers has to stand down: glyphs come from the gui and the gui
+        -- draws over every mesh, so a stop drawn under the panel would read
+        -- through it. Same rule the clock band follows under the drawer.
+        local open, list, bottom = M.land_open, nil, nil
+        local drh = (rh >= 44 * F.scale) and 40 * F.scale or 30 * F.scale
+        if open == "zone" and land.zones then
+            list, bottom = {}, zone_y - 6 * F.scale
+            for _, z in ipairs(land.zones) do
+                list[#list + 1] = {label = z.label, value = z.zone,
+                                   action = "land_pick_zone", here = z.here,
+                                   dim = not z.live, note = z.format}
+            end
+        elseif open == "ship" and land.ships then
+            list, bottom = {}, ship_y - 6 * F.scale
+            for _, s in ipairs(land.ships) do
+                -- Sitting out is the list's last answer, held apart from the
+                -- builds by a rule: it is a different kind of thing to be.
+                if s.value == "spectate" then list[#list + 1] = {rule = true} end
+                list[#list + 1] = {label = s.label, value = s.value,
+                                   action = "land_pick_ship", here = s.here}
+            end
+        else
+            open = nil
+        end
+        local ptop = nil
+        if list then
+            local h = 10 * F.scale
+            for _, r in ipairs(list) do
+                h = h + (r.rule and 9 * F.scale or drh)
+            end
+            ptop = bottom - h
+        end
+        -- The stops the panel does not cover. A list opens upward from its
+        -- own stop, so the stops above the open one are the covered ones.
+        if open ~= "zone" and open ~= "ship" then
+            land_stop(kx, acct_y, kw, rh, "account", land.name,
+                      "land_account", false)
+        end
+        if open ~= "ship" then
+            land_stop(kx, zone_y, kw, rh, "zone", land.zone, "land_zone",
+                      open == "zone")
+        end
+        land_stop(kx, ship_y, kw, rh, "ship", land.ship, "land_ship",
+                  open == "ship")
+        -- The list itself, its rows published above the stops (`pri` 1) and
+        -- a screen-wide backdrop behind everything (`pri` -1), so a press
+        -- outside it puts it away instead of pulling a trigger.
+        if list then
+            hit(0, 0, F.w, F.h, "land_shut", nil, nil, -1)
+            land_list(kx, kw, bottom, list, drh)
+            -- And the name stands down when the panel climbs into it.
+            local _, _, _, _, size, wy = landing_geom()
+            mark_down = ptop < wy + size
+        end
+    end
+    if not mark_down then landing_mark() end
 end
 
 -- Before a room answers: the landing with everything that needs a room taken
@@ -4771,7 +4920,7 @@ function M.hud(o)
     -- one line up. The ending washes the entire window, so a key laid down
     -- first spends the twenty five seconds between matches buried under it:
     -- visible to a hit test, invisible to a person.
-    if o.landing then landing() end
+    if o.landing then landing(o.land) end
     if ending then return end
     -- Over the arena and under nothing, since it is the thing being read. The
     -- game carries on behind it: nothing is paused here, and a player who
