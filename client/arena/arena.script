@@ -1132,7 +1132,7 @@ function init(self)
         -- magnitude. Unlike the sky they do not follow the window: what fills
         -- them is the fight, and how much of that there is belongs to the
         -- room.
-        fill = vec.layer("#fill", 6144),
+        fill = vec.layer("#fill", (world.fight_budget())),
         -- Raised from 8192 with the detailed hulls. A hull costs up to 780
         -- vertices where the old outline and spine cost 134, so the old
         -- ceiling held ten of them and their fire, and an overflow does not
@@ -1141,7 +1141,16 @@ function init(self)
         -- Raised again when strokes got their falloff, which took the worst
         -- hull from 780 vertices to 1176 and this ceiling from twenty-one
         -- hulls down to thirteen. Chaos seats sixty-four. Back to twenty.
-        glow = vec.layer("#glow", 24576),
+        --
+        -- Both figures come from world now rather than being written here.
+        -- They used to be an opening guess that the viewport message grew to
+        -- the window, because half of what these held was sky; with the sky
+        -- gone to its own layers nothing grows them, and a guess that is never
+        -- corrected is just a ceiling. This one was 24576 against a fight
+        -- allowance of 40960, and a busy frame at 1920 by 1080 overflowed it:
+        -- what that draws is not a gap but last frame's geometry, left in the
+        -- buffer past where this frame stopped writing.
+        glow = vec.layer("#glow", (select(2, world.fight_budget()))),
         -- The same falloff, on an interface that is mostly strokes: measured
         -- at every layout and both toggles, the busiest went from 2.1k
         -- vertices to 3639 against a ceiling of 4096, which is a margin too

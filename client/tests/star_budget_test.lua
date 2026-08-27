@@ -48,22 +48,38 @@ end
 -- costing two rects, or a halo that gained four segments, would fit inside
 -- that slack and be caught by nothing. Priced here, it is caught at once.
 --
--- Two segment counts are legitimate and no others: the eight the sky draws
--- almost everything at, and the twenty-four the two-thousand-pixel washes need
--- to stop being visible polygons. Both are published, and a third would mean
--- the budget is pricing a shape the drawing no longer uses.
+-- Three segment counts are legitimate and no others: the eight the sky draws
+-- almost everything at, the twenty-four the two-thousand-pixel washes need to
+-- stop being visible polygons, and the six the flare's ghosts are cut from,
+-- which are hexagons because the iris throwing them is. All three are
+-- published, and a fourth would mean the budget is pricing a shape the drawing
+-- no longer uses.
 local wrong = nil
+local function blades(segs)
+    return segs == world.HALO_SEGS or segs == world.WIDE_SEGS
+        or segs == world.IRIS_SEGS
+end
 local function counter()
     local L = {n = 0}
     function L:rect()
         self.n = self.n + 6
     end
     function L:halo(_, _, _, segs)
-        if segs ~= world.HALO_SEGS and segs ~= world.WIDE_SEGS and not wrong then
-            wrong = string.format("a halo of %d segments is priced at %d or %d",
-                                  segs, world.HALO_SEGS, world.WIDE_SEGS)
+        if not blades(segs) and not wrong then
+            wrong = string.format("a halo of %d segments is priced at %d, %d" ..
+                                  " or %d", segs, world.HALO_SEGS,
+                                  world.WIDE_SEGS, world.IRIS_SEGS)
         end
         self.n = self.n + segs * 3
+    end
+    -- A ring is a quad a segment, which is two triangles rather than one.
+    function L:ring(_, _, _, _, segs)
+        if not blades(segs) and not wrong then
+            wrong = string.format("a ring of %d segments is priced at %d, %d" ..
+                                  " or %d", segs, world.HALO_SEGS,
+                                  world.WIDE_SEGS, world.IRIS_SEGS)
+        end
+        self.n = self.n + segs * 6
     end
     function L:seg_fade()
         self.n = self.n + 12

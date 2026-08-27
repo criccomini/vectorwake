@@ -44,6 +44,10 @@ local function recorder()
         self.log[#self.log + 1] = string.format("h%.1f,%.1f,%.0f,%.3f",
                                                 x, y, r, col[4])
     end
+    function L:ring(x, y, r, w, _, col)
+        self.log[#self.log + 1] = string.format("o%.1f,%.1f,%.0f,%.1f,%.3f",
+                                                x, y, r, w, col[4])
+    end
     function L:seg_fade(x1, y1, x2, y2)
         self.segs = self.segs + 1
         self.log[#self.log + 1] = string.format("s%.1f,%.1f,%.1f,%.1f",
