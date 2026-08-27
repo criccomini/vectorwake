@@ -14,7 +14,7 @@ function M.new(state)
         -- `scale`, and not while the menu is up: the menu multiplies `scale`
         -- to set its type larger than the HUD's, and anything handed to the
         -- page has to be measured against the browser's own pixel rather than
-        -- against that. See `MENU_ZOOM` in ui.lua.
+        -- against that. See `MENU_SCALE` in ui.lua.
         density = 1,
         layer = nil,
         text = nil,

@@ -7158,7 +7158,14 @@ function pages.corner(v, right, cy)
     -- mouse crossing the name is not a claim about where you are.
     local on = v.head_sel == "pilot"
         or (v.pilot_hot and v.at ~= "pilot")
-    local px = TYPE.BODY * F.scale
+    -- LABEL rather than BODY, which is the one place on the ladder a name
+    -- steps down a rung. The head is a strip of fixed height sharing its
+    -- width with the way out at one end and the line meter at the other,
+    -- and this button grows with whatever is written on it: at BODY the
+    -- longest call sign anybody can register leaves a phone 54 points for a
+    -- readout that needs 80, so the meter stands down on a column that can
+    -- plainly afford it. A chip in a dense bar is what this rung is for.
+    local px = TYPE.LABEL * F.scale
     local bw = text_w(v.pilot.name, px, MENU_FONT, true) + 30 * F.scale
     local bx = rt - bw
     key_box(bx, by, bw, bh, pal.rgb(0x0a0f18, on and 0.95 or 0.7),

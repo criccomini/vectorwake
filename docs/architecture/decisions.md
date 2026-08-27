@@ -3999,3 +3999,58 @@ thing this decision is about.
 **Reconsider if:** the pilot page is ever wanted on the row a match gets. That
 is the one change that would let settings fold into it the way most phones do
 it, and the row would drop a stop rather than reorder one.
+
+## 84. The menu has one type system
+
+**Date:** 2026-08-27
+
+The menu was set in two faces, fifteen sizes and no contrast floor, and on a
+desktop it was small as well. Driving the shipped menu and reading back every
+run of type it asked for: 34 of 91 runs across the five pages landed under the
+4.5:1 that small type wants.
+
+Three rules replace all of it.
+
+**Face is decided by one question:** would you read it aloud as a sentence, or
+look it up in a column? Language takes the menu face, values take the mono. That
+rule was already written down in `docs/design/interface.md` and was followed in
+one place, so every sentence in the menu was set in DejaVu Sans Mono at 11.5
+points. Moving them is close to free: weighted by English letter frequency the
+menu face sets at 0.511 em against the mono's 0.602, so 14 points of it runs as
+wide as 11.9 points of mono. `wrapped` takes a face now, because a line has to
+be measured in the one it is set in.
+
+**Text draws at alpha 1,** and state says itself with a color instead. Every
+failing site was a fraction of alpha on a color with no headroom, so one rule
+deletes all of them. `pal.DIM` is that color: 4.68:1 on the column at full
+alpha, which cannot survive being drawn on a lit row, and thirty-three call
+sites passed it a fraction. `pal.READ` and `pal.MUTE` replace it in the menu at
+9.81 and 6.54, both measured on the three grounds a row actually has. The worst
+number in the menu is now 4.61.
+
+**Sizes come from a ladder of five:** LABEL 12, BODY 14, ROW 17, LEAD 21, PAGE
+26. There were fifteen, near enough all of them bare numbers at the call site,
+with four fifths of a page at 13 points or under.
+
+And the menu multiplies its whole scale by 1.25 on a window with room. It had a
+constant for this, `MENU_ZOOM` at 1.18, which went out with decision 63 and was
+never replaced, so for five decisions the menu was a phone screen shown on a
+desk. A phone keeps the measure it already had.
+
+**Cost:** a plain row name is 17 points against 18 on a phone, and the call sign
+in the head steps down a rung to LABEL. The head is a strip of fixed height
+sharing its width with the way out at one end and the line meter at the other,
+and at BODY the longest call sign anybody can register leaves a phone 54 points
+for a readout that needs 80. Everything else on a phone got larger.
+
+**What the sweep turned up:** `stage_row` wrote a room nobody is serving back a
+shade with `col = pal.a(col, 0.6)`, and both places that draw the name ask for
+`pal.a(col, label_a)`, which replaces an alpha rather than multiplying one. The
+0.6 was thrown away, so the name drew at the weight of a room you could join
+while the figures under it dimmed through a separate multiplier that worked,
+down to 1.97:1. The row said the wrong half of itself quietly. A register
+carries it now, which cannot be discarded by the next hand that sets an alpha.
+
+**Reconsider if:** a page turns up that needs a size between two rungs. The
+answer is to move a rung rather than add one, since fifteen sizes is what
+adding one looks like fifty edits later.

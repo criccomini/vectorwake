@@ -466,9 +466,10 @@ do
     check("and there is no button for it to run into",
           box("pilot_page") == nil, "a call sign was drawn")
     if switch then
+        local wide = measure(1440, 810)
         check("and it stays inside the column",
-              switch.x + switch.w <= DOCK + 0.01,
-              string.format("ends %.1f of %d", switch.x + switch.w, DOCK))
+              switch.x + switch.w <= wide + 0.01,
+              string.format("ends %.1f of %.1f", switch.x + switch.w, wide))
     end
 end
 
