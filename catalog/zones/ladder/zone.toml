@@ -14,10 +14,23 @@ label = "Duel"
 description = "every win is a harder rival; one death ends the streak"
 mode = "ladder"
 
-# Drydock is also the calibration ground. Keeping the live arena and the
-# measurement fixture aligned prevents a rating earned in open space from
-# pretending to describe a close fight around walls.
-maps = ["../melee/drydock.vwmap"]
+# The same five rooms Team Battle plays, so a pilot who learns a map learns it
+# once. A duel is two ships in a room built for eight, which is the point: the
+# room is bigger than the fight, and where the fight happens is a decision
+# rather than a spawn.
+#
+# Gantry is also the calibration ground, and calibration flies it alone.
+# Keeping the live arena and the measurement fixture aligned prevents a rating
+# earned in open space from pretending to describe a close fight around walls,
+# and holding the fixture to one map keeps a rating comparable from week to
+# week while the room a player lands in varies.
+maps = [
+  "../melee/maelstrom.vwmap",
+  "../melee/gantry.vwmap",
+  "../melee/warren.vwmap",
+  "../melee/redoubt.vwmap",
+  "../melee/ringworks.vwmap",
+]
 
 max_players = 1
 max_ships = 2

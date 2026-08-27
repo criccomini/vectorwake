@@ -453,40 +453,6 @@ impl Canvas {
         self.reserve_disk(self.w - 1 - x, self.h - 1 - y, 5);
     }
 
-    /// A filled diamond: slope faces on all four edges, full tiles at the
-    /// tips, generic wall inside, and a rock at the center. The rock is not
-    /// decoration: an interior wall tile with wall on all four sides trips
-    /// the shapeless-block gate, and the center of a filled diamond is
-    /// exactly that tile.
-    pub fn diamond(&mut self, cx: i32, cy: i32, r: i32) -> bool {
-        let (mx, my) = (self.w - 1 - cx, self.h - 1 - cy);
-        if !self.free_box(cx - r, cy - r, 2 * r + 1, 2)
-            || !self.free_box(mx - r, my - r, 2 * r + 1, 2)
-        {
-            return false;
-        }
-        for dy in -r..=r {
-            let half = r - dy.abs();
-            for dx in -half..=half {
-                let value = if dx == 0 && dy == 0 && r > 1 {
-                    tile(SOLID, ROCK_A)
-                } else if dx.abs() + dy.abs() == r && dx != 0 && dy != 0 {
-                    let corner = match (dx < 0, dy < 0) {
-                        (true, true) => 2,
-                        (false, true) => 3,
-                        (true, false) => 1,
-                        (false, false) => 0,
-                    };
-                    tile(SLOPE, corner)
-                } else {
-                    tile(SOLID, WALL)
-                };
-                self.pair(cx + dx, cy + dy, value);
-            }
-        }
-        true
-    }
-
     pub fn spawn_pair(&mut self, x: i32, y: i32) {
         self.pair(x, y, tile(SPAWN, 0));
         self.reserve_disk(x, y, 6);

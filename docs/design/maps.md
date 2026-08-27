@@ -385,17 +385,27 @@ make -C sim build/mapdump
 
 ## The match maps
 
-Six ship in the first melee rotation. They cross four topologies, four visual
-themes, three aspect ratios, and two arena silhouettes:
+Five ship, and Team Battle and Duel play the same five, so a pilot who learns
+a room learns it once. One theme apiece, because a theme is a whole geometry
+rather than a texture: these are five rooms a pilot can tell apart from the
+radar corner.
 
-| Map | Topology | Theme | Envelope |
+| Map | Theme | Envelope | What it is |
 |---|---|---|---|
-| drydock | three lanes | dockyard | 192 by 144, offset bays |
-| relay | ring and spokes | relay ring | 160 square, cut corners |
-| convoy | twin hubs | derelict convoy | 144 by 192, cut corners |
-| shoal | archipelago | asteroid reef | 192 by 144, offset bays |
-| breakwater | three lanes | asteroid reef | 160 square, cut corners |
-| switchyard | ring and spokes | dockyard | 144 by 192, cut corners |
+| maelstrom | spiral nebula | 160 square | two asteroid arms winding out of a wormhole core |
+| gantry | station yard | 192 by 144 | stations on a grid, gantry stubs, doored bays |
+| warren | maze | 160 square | brick-bond corridors, every third shortcut on a door |
+| redoubt | twin fortresses | 192 by 144 | a walled keep around each home, open ground between |
+| ringworks | rings | 160 square | concentric rings, gaps rotated, warps off the corridor |
+
+Between them they place every element a melee map is allowed. Maelstrom and
+ringworks carry the wormholes; gantry, warren, redoubt and ringworks the
+doors. Safe, goal and turf tiles stay out by gate, for the reasons under
+"what the reference arenas use".
+
+They replaced a rotation of six drawn by the scatter generator, which measured
+correctly and read as one room with six coats of paint. The old maps and their
+recipes are still in the tree and still verify; nothing plays them.
 
 They come from `mapforge`, the server binary's offline map tool. Each `.vwmap`
 has three files beside it: a `.recipe.toml` source, a `.metrics.json` review
@@ -432,20 +442,30 @@ Each theme also declares which elements it uses and what cover fraction it is
 held to, which is how doors and wormholes reach generated maps and how a maze
 is allowed five times the wall of a nebula.
 
-Thirteen themes ship: wide-open, nebula, gravity-wells, asteroid-belt,
-boulder-orchard, station-yard, maze, twin-fortresses, canyon, derelict,
-rings, crystal-lattice, and pinwheel. Doors belong to the yard, the maze, the
-fortresses, and the rings; wormholes to the nebula, the wells, and the rings;
-slope work to the canyon, the derelict, the crystal field, and the pinwheel.
-A wormhole here is a hazard and an ejector seat, not a gate: the core sends a
-ship that touches one back to its own team's spawn, so the travel-network
-theme became gravity wells, and making a wormhole lead anywhere else is a
-simulation decision no map brief can take.
+Five themes ship, one per map in the rotation: spiral-nebula, station-yard,
+maze, twin-fortresses, and rings. Thirteen were drawn and reviewed as
+pictures; the five that survived are the ones worth a slot, and the rest are
+in the history rather than in the enum, because a theme nothing plays is a
+pattern to maintain for nobody.
+
+A wormhole is a hazard and an ejector seat, not a gate. The core sends a ship
+that touches one back to its own team's start, so a warp is a way out of a
+fight rather than a way across the map, and making one lead anywhere else is
+a simulation decision no map brief can take. That fact drew the nebula: its
+core wears a rock collar with four diagonal mouths, and the middle lane bows
+around it, because a wormhole sitting on the shortest home-to-home route is a
+trap the route gate cannot see. A path search reads a warp as open ground.
+
+The spiral is integer arithmetic against a baked table of headings rather
+than a call to `sin`. A recipe pins the hash of the map it draws, and a libm
+that rounds one heading differently would move a rock a tile and fail
+verification on a machine that was not the one that pinned it. Same reason
+the simulation core has no floats in it.
 
 The scatter generator is frozen beside the new one, in
-`server/src/mapforge/legacy.rs`, because the shipped rotation's recipes pin
-hashes only it produces. It is the same arrangement `sim/tools/mapgen.c` has
-with the maps that preceded it: kept to reproduce, never the source of new
+`server/src/mapforge/legacy.rs`, and still reproduces the six maps that
+preceded this rotation. It is the same arrangement `sim/tools/mapgen.c` has
+with the maps that preceded those: kept to reproduce, never the source of new
 maps.
 
 The client gives those materials one visual grammar without flattening them
@@ -484,7 +504,16 @@ count, material mix, theme fidelity, and spawn exits. A batch can add two short
 bot drills, recording travel, fighting, crawling, bounces, weapon use, and map
 coverage across seeds.
 
-The review command produces 26 candidates, two seeds of each theme:
+Those scores compare seeds inside a theme, not themes against each other. A
+maze scores lower than a station yard on dead ends alone, and a maze without
+pockets is a set of rows. What decides whether a map is worth a slot is
+`vectorwake-server melee 20 <map>`, which flies the roster on it: the first
+draw of warren answered skill with a +0.69 correlation against the rotation's
++0.87 and threw a third fewer rounds, because its cross walls ran the whole
+way between rows and every pocket closed to three sides. Shortening them put
+it back at +0.89. That is the measurement a picture cannot make.
+
+The review command produces ten candidates, two seeds of each theme:
 
 ```sh
 cargo run --manifest-path server/Cargo.toml -- \
@@ -785,7 +814,7 @@ does and refuses anything whose bytes do not match the hash in its own header.
 A zone names its own in `zone.toml`, relative to the zone's directory:
 
 ```toml
-maps = ["drydock.vwmap", "relay.vwmap", "convoy.vwmap"]
+maps = ["maelstrom.vwmap", "gantry.vwmap", "warren.vwmap"]
 ```
 
 More than one is a rotation, and the room takes the next one at every whistle.

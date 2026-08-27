@@ -160,13 +160,23 @@ out here than in a more complicated mode.
 
 ## Maps
 
-Several small symmetric layouts rather than one: an open box that rewards aim, a
-pillared room that rewards positioning, a tunnel complex that rewards ship
-knowledge. The match picks at random, or a ladder can add a pick and ban phase
-later.
+Duel plays Team Battle's five, in the same rotation: maelstrom, gantry,
+warren, redoubt and ringworks. That was the plan here in a different form,
+which asked for several small symmetric layouts rather than one, each
+rewarding something different. The rooms that answer it are the melee
+rotation's, because a theme owns its geometry there now and the five already
+differ that way. A pilot learns a map once and knows it in both games.
 
-Small means roughly 64 by 64 tiles, an area a duel can cross in a few seconds.
-The 1024-tile world is for arenas.
+They are 160 square and 192 by 144 rather than the 64 tiles this section used
+to ask for, so a duel happens in a room built for eight. That is deliberate:
+two ships in a room bigger than the fight makes where to fight a decision.
+The one-life clock stops it becoming a chase.
+
+Wormholes were the open question, since maelstrom and ringworks carry them
+and a warp sends a ship to its own start, which in a first-to-five is a way
+out of a fight nobody can follow. Measured at one a side over thirty matches
+apiece, the two warp maps sit at 0.7 and 0.6 deaths per pilot-minute against
+0.6 to 0.7 for the three without. A duel on them is the same duel.
 
 ## Open questions
 

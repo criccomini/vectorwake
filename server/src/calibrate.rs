@@ -3458,14 +3458,14 @@ pub(crate) fn duel(
 pub const PILOT_CALIBRATION_SCHEMA: u32 = 4;
 pub const PILOT_ATTESTATION_SCHEMA: u32 = 1;
 pub const PILOT_CONTROLLER_VERSION: &str = "profile-brain-v2";
-pub const PILOT_MAP: &str = "drydock";
+pub const PILOT_MAP: &str = "gantry";
 pub const PILOT_ECONOMY: &str = "base-entitlement-personal-builds";
 const PILOT_ZONE: &str = "ladder";
 const PILOT_ZONE_FILE: &str = "catalog/zones/ladder/zone.toml";
-const PILOT_MAP_FILE: &str = "catalog/zones/melee/drydock.vwmap";
-const PILOT_ZONE_DECLARED_MAP: &str = "../melee/drydock.vwmap";
+const PILOT_MAP_FILE: &str = "catalog/zones/melee/gantry.vwmap";
+const PILOT_ZONE_DECLARED_MAP: &str = "../melee/gantry.vwmap";
 const PILOT_ZONE_BYTES: &[u8] = include_bytes!("../../catalog/zones/ladder/zone.toml");
-const PILOT_MAP_BYTES: &[u8] = include_bytes!("../../catalog/zones/melee/drydock.vwmap");
+const PILOT_MAP_BYTES: &[u8] = include_bytes!("../../catalog/zones/melee/gantry.vwmap");
 const PILOT_WORLD_SEED_LABEL: u64 = 0x0077_6f72_6c64;
 const PILOT_BOOTSTRAP_SEED_LABEL: u64 = 0x626f_6f74_7374_7261;
 /// A live tied Ladder has no overtime limit. The harness needs a finite stop
@@ -3763,16 +3763,18 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
             "the shipped Ladder is first to {first_to}, not single life"
         )));
     }
-    if definition.maps.len() != 1 {
+    // Calibration flies one fixed map, and that map has to be ground the
+    // live Ladder actually serves: a rating measured somewhere nobody plays
+    // describes nothing. The zone rotates now, so the fixture asks to be in
+    // the rotation rather than to be the whole of it.
+    if !definition
+        .maps
+        .iter()
+        .any(|name| name == PILOT_ZONE_DECLARED_MAP)
+    {
         return Err(PilotCalibrationError::InvalidFixture(format!(
-            "the shipped Ladder names {} maps; this fixture expects Drydock alone",
-            definition.maps.len()
-        )));
-    }
-    let declared_map = &definition.maps[0];
-    if declared_map != PILOT_ZONE_DECLARED_MAP {
-        return Err(PilotCalibrationError::InvalidFixture(format!(
-            "the shipped Ladder map is {declared_map:?}, not {PILOT_ZONE_DECLARED_MAP:?}"
+            "the shipped Ladder rotates {:?}, which does not include the calibration map {PILOT_ZONE_DECLARED_MAP:?}",
+            definition.maps
         )));
     }
     let map = PILOT_MAP_BYTES.to_vec();
@@ -3941,7 +3943,7 @@ pub(crate) fn runtime_pilot_fixture_matches(
     if zone.name != fixture.zone
         || zone.mode != fixture.mode
         || fingerprint(&[zone.zone_toml.as_bytes()]) != fixture.zone_fingerprint
-        || zone.maps_b64.len() != 1
+        || zone.maps_b64.is_empty()
     {
         return false;
     }
@@ -3957,8 +3959,12 @@ pub(crate) fn runtime_pilot_fixture_matches(
     {
         return false;
     }
-    crate::fleet::unb64(&zone.maps_b64[0])
-        .is_some_and(|map| fingerprint(&[&map]) == fixture.map_fingerprint)
+    // The calibration map has to be served, and served unaltered. Which slot
+    // of the rotation it arrives in is the zone's business.
+    zone.maps_b64.iter().any(|served| {
+        crate::fleet::unb64(served)
+            .is_some_and(|map| fingerprint(&[&map]) == fixture.map_fingerprint)
+    })
 }
 
 fn hypothesis_id(a: &PilotSpec, b: &PilotSpec) -> String {
