@@ -1,0 +1,18 @@
+version = 2
+name = "ringworks"
+seed = 2001
+mode = "melee"
+theme = "rings"
+symmetry = "half_turn"
+routes = 3
+min_opening_tiles = 7
+contact_seconds_min = 9.0
+contact_seconds_max = 22.0
+allow_doors = true
+allow_wormholes = true
+expected_hash = "99d9f9dd"
+
+[envelope]
+width = 160
+height = 160
+shape = "rectangle"

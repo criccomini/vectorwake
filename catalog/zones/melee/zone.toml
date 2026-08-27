@@ -18,17 +18,20 @@ description = "the longer your run, the bigger the bounty on you"
 # The clock and the score are the mode's; kills are what it counts.
 mode = "melee"
 
-# Six maps, each from the recipe and metrics beside it. The rotation crosses
-# four topologies, four visual themes, three arena envelopes, and two arena
-# silhouettes before it repeats a concept. `mapforge verify` proves that a map is
-# the exact output its recipe names.
+# Five maps, each from the recipe and metrics beside it. `mapforge verify`
+# proves that a map is the exact output its recipe names.
+#
+# One theme apiece, and a theme owns its geometry rather than scattering a
+# material over somebody else's topology: a pilot who has flown a room once
+# knows it from the radar corner. Between them they use every element a melee
+# map is allowed. Maelstrom and ringworks carry the only wormholes; gantry,
+# warren, redoubt and ringworks the only doors.
 maps = [
-  "drydock.vwmap",
-  "relay.vwmap",
-  "convoy.vwmap",
-  "shoal.vwmap",
-  "breakwater.vwmap",
-  "switchyard.vwmap",
+  "maelstrom.vwmap",
+  "gantry.vwmap",
+  "warren.vwmap",
+  "redoubt.vwmap",
+  "ringworks.vwmap",
 ]
 
 # Eight seats, all eight of them a person's if eight people want them. The bot

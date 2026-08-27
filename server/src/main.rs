@@ -4171,14 +4171,7 @@ mod tests {
     /// which is invisible in a generator line that says "8 spawns".
     #[test]
     fn the_melee_maps_are_two_homes_with_ground_between_them() {
-        for name in [
-            "drydock",
-            "relay",
-            "convoy",
-            "shoal",
-            "breakwater",
-            "switchyard",
-        ] {
+        for name in ["maelstrom", "gantry", "warren", "redoubt", "ringworks"] {
             let bytes = std::fs::read(format!("../catalog/zones/melee/{name}.vwmap"))
                 .unwrap_or_else(|e| panic!("{name} ships in this repository: {e}"));
             let w = sim::World::from_packed(0x5eed, &bytes).expect("a map");
@@ -8079,12 +8072,11 @@ mod tests {
         assert_eq!(
             z.maps,
             [
-                "drydock.vwmap",
-                "relay.vwmap",
-                "convoy.vwmap",
-                "shoal.vwmap",
-                "breakwater.vwmap",
-                "switchyard.vwmap",
+                "maelstrom.vwmap",
+                "gantry.vwmap",
+                "warren.vwmap",
+                "redoubt.vwmap",
+                "ringworks.vwmap",
             ],
             "the curated rotation"
         );

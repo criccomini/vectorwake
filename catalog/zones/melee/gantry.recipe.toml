@@ -1,0 +1,18 @@
+version = 2
+name = "gantry"
+seed = 2001
+mode = "melee"
+theme = "station_yard"
+symmetry = "half_turn"
+routes = 3
+min_opening_tiles = 7
+contact_seconds_min = 9.0
+contact_seconds_max = 17.6
+allow_doors = true
+allow_wormholes = false
+expected_hash = "369a19c5"
+
+[envelope]
+width = 192
+height = 144
+shape = "rectangle"

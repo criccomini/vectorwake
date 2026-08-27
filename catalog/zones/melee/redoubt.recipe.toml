@@ -1,0 +1,18 @@
+version = 2
+name = "redoubt"
+seed = 2001
+mode = "melee"
+theme = "twin_fortresses"
+symmetry = "half_turn"
+routes = 3
+min_opening_tiles = 7
+contact_seconds_min = 9.0
+contact_seconds_max = 22.0
+allow_doors = true
+allow_wormholes = false
+expected_hash = "2e11aa79"
+
+[envelope]
+width = 192
+height = 144
+shape = "rectangle"
