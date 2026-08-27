@@ -4269,3 +4269,41 @@ it loses the flip instead of firing it on every pair of quick presses.
 and nowhere else, and a stance no one sets is worth less than the corner of the
 screen it colors; the answer then is a control that says what it is rather than
 a longer sentence about this one.
+
+## 89. The landing carries the choices, and their lists open in place
+
+**What:** the landing's foot is a column now: the wordmark, three stops at the
+key's own width, and PLAY NOW. The stops are the choices the screen can make,
+in the order you would say them. Account shows the call sign and opens the
+drawer on the pilot page. Zone shows the game the stands are dialed to and
+drops the games list in place; picking one re-dials the stands to it, and PLAY
+NOW stays the press that commits. Ship shows the build the next deploy flies
+and drops the pilot's saved builds by name, no hulls anywhere in the list, with
+SPECTATE as the last row; picking a build saves it as the hull's kit exactly as
+the ship page's own row does, and picking SPECTATE is the ship page's old
+eighth cell moved to where it can be seen. PLAY NOW no longer forces a
+remembered spectate off, because the stop right over it says SPECTATE out loud.
+Three directions were mocked in `.design/start-flow`, a column, a rail along
+the foot and a sentence of pressable words; the column won on being the one a
+first visit cannot miss and the one that degrades best to a phone.
+
+**Why:** three observations from watching arrivals. The drawer went
+undiscovered, so most first visits never learned there was a second game or a
+different ship to be: PLAY NOW and a hamburger were the whole offer, and the
+hamburger lost. Choosing anything meant a round trip through the drawer that
+ended back on the landing, where a zone pressed in the games list left the
+player exactly where they started, in front of a key they had to press again.
+And there was no way to say what you would arrive as without finding the ship
+page. The stops put every choice on the screen the choice is about.
+
+**Cost:** the landing is taller, and the column covers fight the old two-piece
+landing left open. An open list stands the stops above it down, and the
+wordmark with them when it climbs that far, because glyphs draw over every
+mesh: a panel cannot cover text, so the text has to come off. The waiting
+screen keeps only the name and MENU, so the column is one more thing that
+appears when the room answers.
+
+**Reconsider if:** the stops outgrow three, at which point this is the drawer
+drawn twice and the landing should send people to the real one; or spectating
+via PLAY NOW turns out to read as a dead key despite the stop naming it, which
+is the trap the old forced `spectate = false` existed to avoid.
