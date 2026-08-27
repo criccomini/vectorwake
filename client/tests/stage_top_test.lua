@@ -136,13 +136,19 @@ end
 
 -- A list of games: the play page, whose rows carry a sentence and the format
 -- strip under it, which is the tallest row in the menu.
+-- The strip is label-and-value pairs in the order the directory sends them,
+-- which is the shape the row draws rather than a table keyed by name: handed a
+-- map, the row counts none of them, comes out shorter, and sets its name at
+-- the fraction a row with a sentence and no strip uses. That is the wrong
+-- number to measure the head against.
 local games = base({rows = {
     {label = "Duel", index = 1, pick = true, live = true,
      note = "every win is a harder rival",
-     specs = {teams = "1 v 1", time = "one life", scoring = "streak"}},
+     specs = {{"teams", "1 v 1"}, {"time", "one life"},
+              {"scoring", "streak"}}},
     {label = "Team Battle", index = 2, pick = true, live = true,
      note = "the longer your run, the bigger the bounty",
-     specs = {teams = "4 v 4", time = "3:00", scoring = "kills"}},
+     specs = {{"teams", "4 v 4"}, {"time", "3:00"}, {"scoring", "kills"}}},
 }})
 
 -- A list under section labels: settings, where the first thing on the page is

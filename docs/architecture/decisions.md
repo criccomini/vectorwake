@@ -3859,6 +3859,12 @@ every other label on that page sits where a section head puts one, so it is a
 section head now like the rest, with the head's own rule left to the one
 already drawn under the bar.
 
+And a section head is one object with one set of numbers. The list drew its
+rule at 0.45 of the head and its label at 0.85; the friends page drew the same
+head at 0.42 and 0.82, so the first label on the settings page and the first
+on the friends page sat most of a point apart for no reason either of them
+could give. Both read `pages.SECT_RULE` and `pages.SECT_LABEL` now.
+
 **Why:** the gap was three numbers with a branch in the middle. Eight points
 were taken where the stage begins, thirty more where the page begins, and ten
 instead of the thirty for a page carrying a band or a head of its own. Nobody
@@ -3871,15 +3877,21 @@ head row now beside the call sign. Its own comment still said so. What it left
 behind was thirty-eight points of nothing over the games list against eighteen
 over the hangar, and then each page's own lead-in on top of whichever it got.
 Measured off the head rule, the first word on a page landed anywhere from 42
-to 64 points under it depending on which stop you were standing on. Walking
-the tab row, the panel appeared to change height under a hand that had not
-moved.
+to 61 points under it depending on which stop you were standing on. It is 40.2
+to 44 now. Walking the tab row, the panel appeared to change height under a
+hand that had not moved.
 
 This is the same fault decision 80 found at the other end of the column, and
 the same sentence answers it: two numbers nobody had put beside each other.
 
 **Cost:** the pages that carried a band gain two points rather than losing
-any, since eighteen was under the new twenty. Nothing else in the menu moves
+any, since eighteen was under the new twenty. Nothing here makes the first
+word on a page land at the same height on all of them, and the four points
+left over are the objects rather than the gap: a 48-point band centers its key
+and sets its type at 24, a 24-point section head puts its label at 20, and a
+list row sets its name at a fraction of a row height that moves with what the
+row holds. Forcing those to agree would push the band's key off its own
+center, which is a worse fault than the one it would fix. Nothing else in the menu moves
 sideways or changes size, and the room a page has grows by what the gap gave
 back, which on a list is another row and a half on a phone.
 

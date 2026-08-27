@@ -5440,11 +5440,11 @@ function pages.friends(v, x, y, w, h, focused)
     local packed = w < 470 * F.scale
     local bh = pages.FIELD_TALL * F.scale
     local kh = 26 * F.scale
-    -- How tall a section head is here, and therefore how far into one its
-    -- label sits. Declared up here because the box at the top of the page is
-    -- a section head like any other on it: the same label on the same line,
-    -- with the head's rule left to the one already drawn under the bar.
-    local SECT = 24 * F.scale
+    -- How tall a section head is, and therefore how far into one its label
+    -- sits. Read up here because the box at the top of the page is a section
+    -- head like any other on it: the same label on the same line, with the
+    -- head's rule left to the one already drawn under the bar.
+    local SECT = pages.SECT * F.scale
 
     -- One button. Returns its left edge, so a row can lay them out from the
     -- right and stop where it stops.
@@ -5454,7 +5454,7 @@ function pages.friends(v, x, y, w, h, focused)
     -- box under it where a section's first row goes. It used to sit eight
     -- points down, which is a page whose first line is higher than its second
     -- section's for no reason either of them could give.
-    lbl("add friend", x, y + SECT * 0.82, pal.a(pal.DIM, 0.85))
+    lbl("add friend", x, y + SECT * pages.SECT_LABEL, pal.a(pal.DIM, 0.85))
     local fy = y + SECT + bh / 2
     local aw = text_w("add", 12 * F.scale) + 26 * F.scale
     local fw = math.min(300 * F.scale, w - aw - 12 * F.scale)
@@ -5571,12 +5571,13 @@ function pages.friends(v, x, y, w, h, focused)
             local sh = head_h(r)
             local hy = at - dy
             if hy >= top and hy + sh <= floor then
-                hrule(x, hy + SECT * 0.42, w)
-                lbl(r.sect, x, hy + SECT * 0.82)
+                hrule(x, hy + SECT * pages.SECT_RULE, w)
+                lbl(r.sect, x, hy + SECT * pages.SECT_LABEL)
                 if r.sect_note then
                     lbl(r.sect_note,
                         x + text_w(r.sect, LBL_PX * F.scale) + 12 * F.scale,
-                        hy + SECT * 0.82, pal.a(pal.FRIEND, 0.85))
+                        hy + SECT * pages.SECT_LABEL,
+                        pal.a(pal.FRIEND, 0.85))
                 end
                 if said then
                     -- Cased once over the whole sentence and drawn raw. Left
@@ -5988,6 +5989,17 @@ local STAGE_TOP = MENU_PAD
 -- STAGE_TOP because this file is at the two hundred locals a Lua chunk may
 -- hold. See client/tests/upvalues_test.lua.
 pages.FOOT_LINE = 26
+
+-- A section head: a hairline with a small label under it, which is how this
+-- menu groups a list. How tall one is, and how far into it the rule and the
+-- label sit. Two pages draw them, the list and the friends page, and they had
+-- a set of fractions each: 0.45 and 0.85 against 0.42 and 0.82, the same
+-- object measured two ways, so the first label on the settings page and the
+-- first on the friends page sat most of a point apart. On `pages` for the
+-- reason FOOT_LINE is.
+pages.SECT = 24
+pages.SECT_RULE = 0.45
+pages.SECT_LABEL = 0.85
 
 -- The strip down the left of the stage that the type does not enter. The mark
 -- on the row you are already in sits there, off the column rather than in it,
@@ -7796,7 +7808,7 @@ function M.menu(v)
         for _, r in ipairs(v.rows) do
             if r.sect then heads = heads + 1 end
         end
-        local SECT = 24 * F.scale
+        local SECT = pages.SECT * F.scale
         local rowh = math.min((wrapped_extra + (specced and 86 or noted and 58
                                or (M.compact and 46 or 40))) * F.scale,
                               math.max(30 * F.scale,
@@ -7858,8 +7870,8 @@ function M.menu(v)
                 -- stopped four points short of them, which is three
                 -- different right edges down one page once the selection
                 -- field is counted.
-                hrule(tx, at + SECT * 0.45, lw)
-                lbl(r.sect, tx, at + SECT * 0.85)
+                hrule(tx, at + SECT * pages.SECT_RULE, lw)
+                lbl(r.sect, tx, at + SECT * pages.SECT_LABEL)
                 at = at + SECT
             end
             local y = at
