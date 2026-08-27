@@ -121,6 +121,11 @@ local was_at = nil
 -- load the meta-layer will not notice.
 local friends_due = 0
 local FRIENDS_EVERY = 5
+-- And how often a guest with nothing recorded yet re-asks for their career,
+-- which is the figure the guest warning arms on. Slower than the friends
+-- list, because what it is watching for happens once in an account's life.
+local career_due = 0
+local CAREER_EVERY = 10
 -- Whether the games list has worked out where its cursor belongs since it was
 -- last opened. Declared up here because opening the menu clears it and the
 -- opening is written above the asking.
@@ -2894,6 +2899,28 @@ local function escape()
     return nil, true
 end
 
+-- Whether this guest has anything a lost account would cost: an upgrade
+-- bought past the baseline, a friend made, or a rated game flown. This is
+-- what arms the banner and the rail dot; before there is anything to lose
+-- they stay away, because a warning over an empty account is nagging.
+--
+-- Up here rather than beside the view that reads it, because `M.tick` reads
+-- it too: the career this asks about is fetched once a session, which is a
+-- session too late for the guest who flies their first game in it.
+local function guest_stakes()
+    if account.base == "" or account.claimed then return false end
+    if #(account.friends or {}) > 0 then return true end
+    if ((account.career or {}).games or 0) > 0 then return true end
+    local own = account.entitlements or {}
+    local core = _G.sim
+    local base = (core and core.base_entitlements and core.base_entitlements())
+        or {}
+    for i = 1, simn("SLOT_COUNT", 23) do
+        if (tonumber(own[i]) or 0) > (base[i] or 0) then return true end
+    end
+    return false
+end
+
 -- Put the cursor on the game you were in last, once the directory has
 -- answered. Called by the arena rather than worked out during a draw, because
 -- the list arrives on its own schedule and moving a selection out from under a
@@ -2977,6 +3004,26 @@ function M.tick(dt)
         friends_due = FRIENDS_EVERY
         account.refresh_friends()
     end
+    -- And the career, while a guest still has nothing a sweep would cost
+    -- them. One request per session was enough while the pilot page was the
+    -- only reader, since that page asks again on arrival; the guest warning
+    -- reads the same figure from every tab, and a guest's first rated game is
+    -- filed long after the session woke. So the copy this client held said no
+    -- games for the whole of the session the first game was flown in, and the
+    -- warning that is supposed to arrive the moment there is something to
+    -- lose arrived a session late, which for a player who never comes back is
+    -- never.
+    --
+    -- It stops as soon as it has an answer, and it never starts for a claimed
+    -- pilot or for a guest who has already made a friend or bought a rung.
+    career_due = career_due - (dt or 0)
+    if career_due <= 0 then
+        career_due = CAREER_EVERY
+        if account.base ~= "" and not account.claimed and not guest_stakes()
+        then
+            account.refresh_career()
+        end
+    end
     if M.at() ~= "play" then
         zone_synced = false
         -- And forget where the cursor was. Every other page is a place you
@@ -3013,24 +3060,6 @@ local function press_head(which)
     if which == "close" then return M.click_close() end
     if which == "pilot" then return M.click_pilot() end
     return nil, false
-end
-
--- Whether this guest has anything a lost account would cost: an upgrade
--- bought past the baseline, a friend made, or a rated game flown. This is
--- what arms the banner and the rail dot; before there is anything to lose
--- they stay away, because a warning over an empty account is nagging.
-local function guest_stakes()
-    if account.base == "" or account.claimed then return false end
-    if #(account.friends or {}) > 0 then return true end
-    if ((account.career or {}).games or 0) > 0 then return true end
-    local own = account.entitlements or {}
-    local core = _G.sim
-    local base = (core and core.base_entitlements and core.base_entitlements())
-        or {}
-    for i = 1, simn("SLOT_COUNT", 23) do
-        if (tonumber(own[i]) or 0) > (base[i] or 0) then return true end
-    end
-    return false
 end
 
 -- What the drawing code needs, and nothing about how it is drawn. `detail` is

@@ -83,9 +83,10 @@ function layer:arc(x, y, r, a0, a1)
     local s = put("arc", x - r, y - r, x + r, y + r)
     s.cx, s.cy, s.r, s.a0, s.a1 = x, H - y, r, a0, a1
 end
--- The boss a wing springs from and the core of a chip are both one of these,
--- so its corners are kept rather than collapsed: what is asked of each is
--- where its middle sits, and a bounding box has thrown the shape away.
+-- The ship a wing is drawn around and the core of a chip are both one of
+-- these, so the corners are kept rather than collapsed. A bounding box says
+-- how big the body is and nothing about its shape, and the shape is the
+-- difference between a craft and a gem.
 function layer:quad(x1, y1, x2, y2, x3, y3, x4, y4)
     local xs, ys = {x1, x2, x3, x4}, {y1, y2, y3, y4}
     local s = put("quad", math.min(unpack(xs)), math.min(unpack(ys)),
@@ -93,6 +94,7 @@ function layer:quad(x1, y1, x2, y2, x3, y3, x4, y4)
     s.top = H - math.max(unpack(ys))
     s.cx = (s.x0 + s.x1) / 2
     s.cy = (s.y0 + s.y1) / 2
+    s.pts = {{x1, H - y1}, {x2, H - y2}, {x3, H - y3}, {x4, H - y4}}
 end
 function layer:fan(pts)
     local o = {kind = "fan", pts = {}}
@@ -158,23 +160,32 @@ local function vertical(sh)
     return sh.kind == "seg" and math.abs(sh.ax - sh.bx) < 0.01
 end
 
--- A pair of wings, found by its fan: a solid boss with strokes thrown out of
--- it, capped round, three to a side and none of them level or upright.
+-- A pair of wings, found by its fan: a body with strokes thrown out of it,
+-- capped round, three to a side and none of them level or upright.
 --
--- The fan is what identifies it rather than the boss, because a small solid
--- quad is the commonest shape on these screens and a run of six strokes
--- leaving one point is not drawn anywhere else. Three a side is asked for
+-- The fan is what identifies it rather than the body, because a small solid
+-- shape is the commonest thing on these screens and a run of six strokes
+-- leaving one place is not drawn anywhere else. Three a side is asked for
 -- exactly: the gaps between the feathers are the whole of what makes this
 -- wings rather than a moustache, and a cut that loses one loses the mark.
+--
+-- The body is more than one piece, and the mark is found once all the same.
+-- The ship is an arrowhead with an engine block hung under it, which is two
+-- quads, and either of them sits close enough to the feathers to answer for
+-- the whole mark. Two pieces that claim the same six feathers are one mark,
+-- so the pieces are gathered by the feathers they share and measured
+-- together: what a reader sees is the union of them and not whichever of
+-- them was drawn first.
 local function wings(list)
-    local out = {}
+    local seen, out = {}, {}
     for _, q in ipairs(list) do
         if q.kind == "quad" then
             local left, right, span, lo, hi = 0, 0, 0, math.huge, -math.huge
             local reach = math.max(q.x1 - q.x0, q.y1 - q.y0) * 3
-            for _, sh in ipairs(list) do
+            local key = ""
+            for i, sh in ipairs(list) do
                 if sh.kind == "seg" and sh.round then
-                    -- The end that starts at the boss, whichever it is.
+                    -- The end that starts at the body, whichever it is.
                     local near_x, near_y, far_x = sh.ax, sh.ay, sh.bx
                     if math.abs(sh.bx - q.cx) < math.abs(sh.ax - q.cx) then
                         near_x, near_y, far_x = sh.bx, sh.by, sh.ax
@@ -186,16 +197,48 @@ local function wings(list)
                         span = math.max(span, math.abs(far_x - q.cx))
                         lo = math.min(lo, sh.y0)
                         hi = math.max(hi, sh.y1)
+                        key = key .. i .. ","
                     end
                 end
             end
             if left == 3 and right == 3 then
-                out[#out + 1] = {cx = q.cx, cy = q.cy, w = span * 2,
-                                 h = hi - lo, y0 = lo, y1 = hi, boss = q}
+                local m = seen[key]
+                if not m then
+                    m = {cx = q.cx, cy = q.cy, w = span * 2, h = hi - lo,
+                         y0 = lo, y1 = hi, body = {}}
+                    seen[key] = m
+                    out[#out + 1] = m
+                end
+                m.body[#m.body + 1] = q
             end
         end
     end
+    -- The body, as the reader sees it: every piece of it at once.
+    for _, m in ipairs(out) do
+        local bx0, bx1, by0, by1 = math.huge, -math.huge, math.huge, -math.huge
+        for _, q in ipairs(m.body) do
+            bx0, bx1 = math.min(bx0, q.x0), math.max(bx1, q.x1)
+            by0, by1 = math.min(by0, q.y0), math.max(by1, q.y1)
+        end
+        m.bx0, m.bx1, m.by0, m.by1 = bx0, bx1, by0, by1
+        m.body_w, m.body_h = bx1 - bx0, by1 - by0
+        m.cx, m.cy = (bx0 + bx1) / 2, (by0 + by1) / 2
+    end
     return out
+end
+
+-- How far down the body its widest point sits, as a share of its height. A
+-- craft comes to a point at the nose and carries its wings behind that, so
+-- the answer is well under the middle. A gem answers zero.
+local function widest_below_middle(m)
+    local best, at = 0, m.cy
+    for _, q in ipairs(m.body) do
+        for _, pt in ipairs(q.pts or {}) do
+            local dx = math.abs(pt[1] - m.cx)
+            if dx > best then best, at = dx, pt[2] end
+        end
+    end
+    return (at - (m.by0 + m.by1) / 2) / m.body_h
 end
 
 -- A chip, found by its package: a closed run of exactly four points, every
@@ -337,7 +380,6 @@ if rail_only[1] then
     -- drawn between, and the gaps are the mark: this is the one number in
     -- the drawing that trades legibility of the shape against weight of the
     -- line, and raising it to the pen closes the fan first.
-    local boss_h = wing.boss.y1 - wing.boss.y0
     local heaviest = 0
     for _, sh in ipairs(parts) do
         if sh.kind == "seg" and sh.round then
@@ -345,19 +387,30 @@ if rail_only[1] then
         end
     end
     check("and is cut lighter than the mark it sits in",
-          heaviest > 0 and heaviest < boss_h,
-          string.format("%.2f of line against a %.2f boss", heaviest, boss_h))
+          heaviest > 0 and heaviest < wing.body_h,
+          string.format("%.2f of line against a %.2f body", heaviest,
+                        wing.body_h))
 
-    -- And it springs from a body rather than from a speck. This first
-    -- shipped at under a fifth of the mark's width, which rounds to three
-    -- pixels by four beside a call sign: the feathers met at a hole where
-    -- the middle should have been, and at the size the rail draws it was the
-    -- one part of the badge a reader could not make out. What it is now has
-    -- points you can see. Shrinking it back is the regression this catches.
-    local boss_w = wing.boss.x1 - wing.boss.x0
-    check("and springs from a body with a shape to it",
-          boss_w > wing.w * 0.25,
-          string.format("%.2f of body across a %.2f mark", boss_w, wing.w))
+    -- And it is drawn around a body rather than a speck. This first shipped
+    -- at under a fifth of the mark's width, which rounds to three pixels by
+    -- four beside a call sign: the feathers met at a hole where the middle
+    -- should have been, and at the size the rail draws it was the one part
+    -- of the badge a reader could not make out. Shrinking it back is the
+    -- regression this catches.
+    check("and is drawn around a body with a shape to it",
+          wing.body_w > wing.w * 0.25,
+          string.format("%.2f of body across a %.2f mark", wing.body_w,
+                        wing.w))
+
+    -- And that body is a ship rather than a gem, which is a different
+    -- question and the one the first cut of it failed. A diamond is as
+    -- pointed at the back as at the front and says nothing about which way
+    -- it is flying: it is widest exactly halfway down, so it answers zero
+    -- here. A craft noses to a point and carries its wings behind that, so
+    -- its widest line sits well below its middle.
+    local sweep = widest_below_middle(wing)
+    check("and the body noses forward like a ship", sweep > 0.08,
+          string.format("widest %.3f of its height below the middle", sweep))
 
     -- Three feathers to a side, arriving apart. Both halves of that matter
     -- and the second is the one that walks: the gaps between the tips are

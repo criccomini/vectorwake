@@ -153,7 +153,7 @@ Four things down the screen, and nothing else
 1. A field that takes a call sign, under ADD FRIEND.
 2. RECEIVED: the adds waiting on an answer, each with accept and ignore.
 3. FRIENDS: one line each. A dot, a name, and the game they are in.
-4. A key at the foot that invites somebody who has never played.
+4. A band at the foot that invites somebody who has never played.
 
 The dot is the page. Solid green while they are flying, a hollow grey ring
 while they are not, so it says the same thing twice and survives a screen that
@@ -179,12 +179,19 @@ name adds that pilot by number. The cost is written down in decision 78.
 friend in a game reads as a green dot, their name and the game; the press
 raises the card, and the card's first key joins them.
 
-**Inviting somebody who is not here at all** is the key at the foot. It hands
+**Inviting somebody who is not here at all** is the band at the foot. It hands
 the site's address to the phone's share sheet, or copies it on a desktop, and
 the word is the same word: a friend on this page is somebody you fly with, and
 a friend at the foot of it is somebody you know. Nothing about the invite
 knows who sent it, so the person who opens it arrives as any other new pilot
 does.
+
+It wears the guest warning's shape: a band standing on the tab row, edge to
+edge of the column, a line saying what it is over a line saying to press, and
+the whole of it the press. It was a labeled key floating over a rule with the
+page's own ground under it, which read as a list that had run out rather than
+as the foot of the panel. The color is what separates the two bands where a
+guest opens this page and gets both: gold warns, green offers.
 
 **The page** is a tab of its own. It was a row on the play page first, for the
 reason [menu.md](menu.md) gave about the community section that used to sit

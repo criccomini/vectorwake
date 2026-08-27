@@ -3777,3 +3777,57 @@ its map names, which is the open question identity.md already carries about
 how much a zone gets to change. Or if the band's grain turns up in a profile
 on a real phone, where the crossings into the core to ask what is behind each
 star are the part that would show first.
+
+## 80. What the menu pins at a foot stands on the rail
+
+**Status:** accepted
+
+**Decision:** the column's page runs down to the rule the tab row hangs
+under, and the three things pinned at the foot of it are drawn against that
+rule: the guest warning, the friends page's invite, and the pilot page's
+account keys.
+
+The invite becomes a band of the guest warning's shape. Edge to edge of the
+column, standing on the rail, a line saying what the press is for over a line
+saying to press, the whole of it the target, and the browser's share anchor
+laid over the whole of it rather than over a key inside it. Both bands are 46
+points tall and both begin their words in the column every page's type stands
+in. The color is what tells them apart where a guest opens the friends page
+and gets both: gold warns, green offers.
+
+The keys at the foot of the pilot page stay keys, because a full-width band
+that is really two buttons is neither. They clear the rule by the twenty
+points the column keeps at its sides, which is the only margin this drawer
+has.
+
+**Why:** the guest warning sat on the rule and the other two stood forty
+points clear of it, which on a phone looks like furniture that has come away
+from the bottom of the panel it belongs to. The forty points were two numbers
+nobody had put beside each other. The stage stopped fourteen points short of
+the rail, and the room handed to a page took another twenty-six under that for
+the one line of notice drawn across the foot of the stage. That line is a
+refusal on the ship page or a confirmation on the bindings page, both of them
+answers to a press somebody just made, so nearly every frame of nearly every
+page had nothing to put there and paid for it anyway. The reservation is taken
+when there is something to say, and the pages get the rest.
+
+The invite had a second problem the spacing was hiding. It was a labeled key
+floating over a rule with the page's own ground under it, which reads as the
+last row of a list that has run out rather than as the foot of the panel, and
+it was the only thing in the menu shaped that way.
+
+**Cost:** two bands stacked is a lot of foot for one page, and the friends
+page is where it happens. A guest with something to lose loses 92 points of
+list to them on the one page whose list is the point. The alternative is
+suppressing one of the two, and neither is the one to suppress: the warning is
+about an account that can be swept, and the band under it is the page's only
+answer to an empty friends list.
+
+The one-line notice can now move a page. A frame that has something to say
+pulls the foot up 26 points for as long as it says it, where before the room
+was always missing and nothing ever moved. What that trades is a permanent
+strip of nothing for a rare step under a sentence somebody just caused.
+
+**Reconsider if:** the two bands on the friends page prove to be one too many
+in a real hand, at which point the invite is the one that gives way, since the
+empty state above it already offers the same act in words.
