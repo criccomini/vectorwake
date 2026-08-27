@@ -468,6 +468,16 @@ local function charge_row()
             -- same fifteen for everybody, so the rail drew a pilot carrying
             -- three repels as three of fifteen.
             max = sim.ship_kit(me, sim.SLOT_CHARGE0 + k),
+            -- How long until this kind may be thrown again, and how long it
+            -- waits when it is. A burst shuts its own key behind it and the
+            -- corner has to say so, or a pilot presses a key that does
+            -- nothing and learns nothing from it.
+            --
+            -- Off the hull rather than the copy above, because a death does
+            -- not clear this clock: the rack is not re-dealt at a respawn, so
+            -- neither is the wait in front of it.
+            wait = sim.ship_charge_wait(me, k),
+            delay = sim.charge_delay(k),
         }
     end
     return out
@@ -2018,10 +2028,14 @@ function update(self, dt)
         touch.charges = my_slots()
         touch.counts = {}
         touch.maxes = {}
+        touch.waits = {}
+        touch.delays = {}
         for _, k in ipairs(touch.charges) do
             touch.counts[k] = held_kit and held_kit.charge[k]
                 or sim.ship_charge(me, k)
             touch.maxes[k] = sim.ship_kit(me, sim.SLOT_CHARGE0 + k)
+            touch.waits[k] = sim.ship_charge_wait(me, k)
+            touch.delays[k] = sim.charge_delay(k)
         end
 
         -- Doors and wormholes: world geometry that moves, so it cannot live in

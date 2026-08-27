@@ -431,6 +431,9 @@ pub struct sim_ship {
     /// Charges in hand, and the one thing a death does not give back: the
     /// kit deals them once and the match spends them.
     pub charge: [u8; MAX_CHARGES],
+    /// Ticks until each kind may be thrown again. A clock per kind, so a
+    /// burst shutting its own key says nothing about the repel.
+    pub charge_cooldown: [u16; MAX_CHARGES],
     /// Kills since this hull last spawned, which is its whole bounty beyond
     /// the base. Cleared by death.
     pub run: u16,
@@ -660,7 +663,11 @@ extern "C" {
 }
 
 pub const PACK_MAX: usize = 64 * 1024;
-pub const STATE_PACK_MAX: usize = 66_198;
+/// `SIM_STATE_PACK_MAX` from sim/include/sim/pack.h, which is where the number
+/// is worked out: every seat carrying its owner-only tail. Grows whenever that
+/// tail does, and `a_full_private_snapshot_uses_the_state_bound` below is what
+/// notices when this copy has not kept up.
+pub const STATE_PACK_MAX: usize = 68_238;
 pub const PACK_PRIVATE_ALL: u8 = 0x01;
 pub const SETTINGS_PACK_MAX: usize = 8192;
 pub const UP_COUNT: usize = 5;

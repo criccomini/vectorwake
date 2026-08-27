@@ -192,7 +192,13 @@ void sim_deal_kit(sim_ship *sh, const sim_settings *cfg, int ammunition) {
     memset(sh->up, 0, sizeof sh->up);
     memset(sh->level, 0, sizeof sh->level);
     memset(sh->mods, 0, sizeof sh->mods);
-    if (ammunition) memset(sh->charge, 0, sizeof sh->charge);
+    if (ammunition) {
+        memset(sh->charge, 0, sizeof sh->charge);
+        /* The clocks go with the rack they belong to. A burst thrown in the
+         * last second of a match must not shut the key for the first second
+         * of the next one, and this is the only place a rack is refilled. */
+        memset(sh->charge_cooldown, 0, sizeof sh->charge_cooldown);
+    }
     for (int i = 0; i < SIM_SLOT_COUNT; i++) {
         if (i >= SIM_SLOT_CHARGE(0) && !ammunition) continue;
         for (int k = 0; k < sh->kit[i]; k++) sim_grant(sh, cfg, (uint8_t)i);
@@ -1722,6 +1728,8 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         uint16_t b = buttons[i];
         for (int k = 0; k < SIM_TRIG_COUNT; k++)
             if (sh->fire_cooldown[k] > 0) sh->fire_cooldown[k]--;
+        for (int k = 0; k < SIM_MAX_CHARGES; k++)
+            if (sh->charge_cooldown[k] > 0) sh->charge_cooldown[k]--;
 
         const int32_t e_rot = sim_eff_rot(cls, sh);
         int32_t e_thrust = sim_eff_thrust(cls, sh);
@@ -1803,11 +1811,14 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * to get wrong when a shot is replayed.
          *
          * It goes on the press, not while the key is down. A charge is a
-         * thing you have three of, and a trigger with no cooldown fired one
-         * every tick: a thumb held for thirty milliseconds spent the whole
-         * rack, and three bursts leaving one muzzle three ticks apart is
-         * three rounds down every angle of the rosette. It read as a burst
-         * that fires triple bullets, which is what it was.
+         * thing you have three of, and a key read on the hold spent one every
+         * tick: a thumb held for thirty milliseconds spent the whole rack, and
+         * three bursts leaving one muzzle three ticks apart is three rounds
+         * down every angle of the rosette. It read as a burst that fires
+         * triple bullets, which is what it was. The clock below is a floor
+         * under the interval and not a replacement for this: a kind whose
+         * delay is zero, which the repel is, has nothing else keeping a held
+         * key from emptying the rack.
          *
          * Edge-detected here for the same reason the multifire switch is.
          * A client that pulsed the button instead would spend two charges on
@@ -1817,7 +1828,8 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             uint8_t pat = cfg->charge[k];
             sim_fire_pattern cp;
             sim_weapon_spec cs;
-            if (sh->charge[k] > 0 && resolve(cfg, pat, 0, 0, &cp, &cs)
+            if (sh->charge[k] > 0 && sh->charge_cooldown[k] == 0
+                && resolve(cfg, pat, 0, 0, &cp, &cs)
                 && sh->energy > cp.energy) {
                 int32_t mx = sh->x + (int32_t)(((int64_t)(cls->fore + 512) * dx) >> 15);
                 int32_t my = sh->y + (int32_t)(((int64_t)(cls->fore + 512) * dy) >> 15);
@@ -1830,12 +1842,24 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                               ev);
                 sh->charge[k]--;
                 sh->energy -= cp.energy;
-                /* A carried charge is independent of the gun and bomb
-                 * clocks. Repel and burst are defensive answers a pilot may
-                 * need while either trigger is still shut, and neither has a
-                 * fire-delay setting in the original. */
                 sh->vx -= (int32_t)(((int64_t)cp.recoil * dx) >> 15);
                 sh->vy -= (int32_t)(((int64_t)cp.recoil * dy) >> 15);
+                /* A carried charge is independent of the gun and bomb clocks,
+                 * and keeps one of its own instead. Independent because a
+                 * repel is a defensive answer a pilot may need while either
+                 * trigger is still shut, and the original has no fire-delay
+                 * setting for either kind.
+                 *
+                 * Its own, because inventory alone was not a limit on the tick
+                 * scale a hand works at. The rack is three presses, they cost
+                 * a burst nothing in energy, and three of them together is
+                 * seventy-two rounds off one muzzle: a fly-in that ends
+                 * whoever it reaches and asks nothing of the pilot after the
+                 * first press. The clock puts a wait between them, so the
+                 * three are three presses to fly between and aim separately
+                 * rather than one gesture with a number on it. It is per kind,
+                 * so this says nothing about the repel, whose delay is zero. */
+                sh->charge_cooldown[k] = cp.delay;
                 emit(ev, SIM_EV_CHARGE, (uint8_t)i, (uint8_t)k, sh->charge[k]);
             }
         }
@@ -2562,6 +2586,8 @@ uint64_t sim_hash(const sim_state *s) {
         for (int t = 0; t < SIM_TRIG_COUNT; t++)
             h = hash_u32(h, (uint32_t)sh->level[t] | ((uint32_t)sh->mods[t] << 8));
         for (int k = 0; k < SIM_MAX_CHARGES; k++) h = hash_u32(h, sh->charge[k]);
+        for (int k = 0; k < SIM_MAX_CHARGES; k++)
+            h = hash_u32(h, sh->charge_cooldown[k]);
         /* What the next shot will be, and what the last press was. Both are
          * state: the second decides whether the next tick sees an edge, and a
          * client that guessed at it would toggle when the server did not. */

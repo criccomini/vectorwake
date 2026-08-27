@@ -4055,7 +4055,78 @@ carries it now, which cannot be discarded by the next hand that sets an alpha.
 answer is to move a rung rather than add one, since fifteen sizes is what
 adding one looks like fifty edits later.
 
-## 85. The dial hugs the corner the link bars left
+## 85. A burst shuts its own key for a second and a half
+
+**Status:** accepted
+
+**Decision:** every charge kind keeps a firing clock of its own, read off the
+same `delay` a trigger's pattern uses, and the burst's is 150 ticks, which is
+the bomb's own delay and the longest wait any weapon here asks for. The
+repel's stays at zero. Nothing else about a burst moves: the same twenty-four
+rounds at the same damage, the same rack of three, still dealt once a match and
+still not handed back by a death.
+
+The clock is per kind rather than one over the rack, and it is not cleared by
+dying. It belongs to the ammunition, and a match start is the only thing that
+refills the rack, so a whistle clears it along with the rest.
+
+A key that does nothing has to look like one, so the corner rail and the touch
+cells wash a kind's row down on the tick it goes and bring it back as the clock
+runs out. The ticks left travel in the owner-only tail of a snapshot, because
+the clock is set at a press that may be older than the tick a snapshot begins
+from and a client that could not read it would predict a key the zone has shut.
+That is protocol 26.
+
+**Why:** inventory was the whole limit, and inventory limits nothing at the
+scale a hand works at. Three presses take a tenth of a second, a burst costs no
+energy at all, and three rosettes thrown from one standing position is
+seventy-two rounds, of which three end anybody. So the play was to fly at
+somebody and empty the rack, and what it asked of the pilot was one approach:
+the second and third bursts asked nothing the first had not already asked. That
+is a weapon that beats a better pilot without out-flying them.
+
+The number prices the cadence and not the fight. Emptying the rack takes three
+seconds now, where three presses took a tenth of one, which is long enough that
+the second and third bursts are flown between and aimed separately, and short
+enough that all three are still available inside the exchange the first one was
+thrown into. A
+wait that pushed the next burst into the next fight is several times this: five
+seconds was written first and rejected, because it decides what a rack is for
+as well as how fast it may be spent, and that is a bigger rule than this one
+needs to be. The number to move if the fly-in survives is this one.
+
+Per kind, because the two kinds are opposite things. A repel is the answer to a
+round already in the air and is wanted precisely when a fight is going badly,
+so shutting it because a burst had just gone would take the answer away at the
+moment it is asked for. It also does no damage, which makes chaining repels a
+way of wasting them rather than a way of winning.
+
+**Cost:** a pilot who wants two bursts in one fight still has them, a second
+and a half apart. This does not end the fly-in on its own; it makes the pilot fly
+it for three seconds under fire rather than press a key three times, and
+whether that is enough is the open question here.
+
+The number is also argued rather than measured. The authored bots throw a burst
+only at close range on a nearly empty bar, so the melee probe has nothing to
+say about the case this fixes, and the evidence is the arithmetic above and not
+a run. Twenty matches on gantry either side of the change say only that the
+room still plays the same: 59.5 rounds in the air against 60.1, the repel rack
+spent at 61s, 102s and 131s against 58s, 100s and 129s, skill against k/d at
++0.86 against +0.93.
+
+The wire and the mirrors also grow: eight bytes on every owner record, one more
+array on the ship, and one more thing the two ends have to agree about, which
+is what the protocol number is for.
+
+**Reconsider if:** a pilot can still fly in and end somebody on two bursts a
+second and a half apart, which would be this number too short rather than the
+rule wrong, and the answer is a longer one. Or if matches start ending with bursts
+still in the rack, which is the same lever the other way. Or if the fly-in
+comes back off one burst alone, which would be what a burst does at contact
+range rather than how often it may be thrown, and the answer is its damage
+instead.
+
+## 86. The dial hugs the corner the link bars left
 
 **Status:** accepted
 
@@ -4102,7 +4173,7 @@ have to give up about a third of its width to pay for one, and it was cropped
 to 112 points on a phone already; the reach that crop bought back is worth
 more than a name that is on the board one press away.
 
-## 86. The tile readout goes
+## 87. The tile readout goes
 
 **Status:** accepted
 
@@ -4111,7 +4182,7 @@ Nothing is captioned in that corner now. The radar keeps its whole square, the
 feed starts a gap under it rather than under a line of type, and `radar_span`
 is the instrument and that gap.
 
-**Why:** asked for, one commit after decision 85 moved the readout under the
+**Why:** asked for, one commit after decision 86 moved the readout under the
 dial's foot. Moving it was what made it worth looking at, and what a look
 found is that the instrument it now hangs off already answers the question.
 The dial is a picture of where you are, sixty tiles wide with the terrain in

@@ -214,7 +214,14 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// 24 changes what the five flight-stat counts mean. Old tabs would send a
 /// legal byte vector that resolves to a different ship, so they must reload
 /// before joining or saving a kit under the new row.
-pub(crate) const CLIENT_PROTOCOL: u8 = 25;
+///
+/// 26 puts each charge kind's own cooldown in the owner-only tail of a
+/// snapshot. A burst now shuts its key behind it, and that clock is set at a
+/// press that may be older than the tick a snapshot starts from, so a client
+/// that could not read it would predict a key the zone has shut. An older tab
+/// would also read the tail eight bytes short from the kit onward, which is
+/// the class of fault this number exists to refuse.
+pub(crate) const CLIENT_PROTOCOL: u8 = 26;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
