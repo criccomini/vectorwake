@@ -4307,3 +4307,54 @@ appears when the room answers.
 drawn twice and the landing should send people to the real one; or spectating
 via PLAY NOW turns out to read as a dead key despite the stop naming it, which
 is the trap the old forced `spectate = false` existed to avoid.
+
+## 90. A duel stays open for two seconds after the death that decides it
+
+**Status:** accepted
+
+**Decision:** the deciding death no longer files a Duel life. The arena keeps
+running for two seconds afterwards, and a death of the other ship inside that
+window makes the life a draw rather than a win. The window survives the
+whistle: regulation running out inside one neither files the fight early nor
+takes the draw away. Nothing is announced during it, and a draw filed this way
+is the draw the mode already had, which moves no rung, breaks no streak, and
+puts the same rival back across the arena.
+
+A seat lost inside the window files the fight rather than voiding it, which is
+the one place this departs from the rule that a seat leaving mid-life voids it.
+Whoever left had already lost, and a draw needs both pilots on the field.
+
+The double death that was already a draw is the same rule seen at zero
+seconds. `Ladder::on_deaths` existed so that two deaths on one tick could not
+be settled by the order the core reported them in, and it is gone with the
+batch hook it overrode: a fight held open for two seconds is indifferent to
+event order by construction.
+
+**Why:** asked for, and it fixes an exchange the mode was reading wrong. A
+duel is one life at first to one, so the fight ended on the first death in the
+room. Kill somebody at close range with a bomb of theirs already in the air and
+the trade was scored as a clean win, because the shot that killed you landed in
+a room that had stopped listening a tenth of a second earlier. The pilot who
+died second won the rung.
+
+Two seconds is a bomb's flight, and it is also the zone's respawn delay, so the
+loser is still down when the fight is filed and never appears on the field for
+the frame before the podium. It buys something that was not the point and is
+worth keeping: the kill can be watched. The arena used to cut to the result on
+the tick of the explosion.
+
+**Cost:** the podium is two seconds later than the kill that earned it, which
+is two seconds of a decided fight. The scoreboard reads 1-0 through all of it,
+so nothing is hidden, but a pilot who has just won is flying a fight that is
+already over and can still lose it to a stray round. That is the rule rather
+than a side effect of it. A duel can now also be drawn by a bomb nobody aimed, which is a
+worse result than either pilot wanted and an honest description of what
+happened to them.
+
+Calibration keeps its own rule, as it already does for the whistle. The pilot
+harness stops a leg on the first tick with a death in it and calls that tick's
+mutual death a draw, because it is measuring which pilot wins a fight played
+out rather than what the mode does with the answer.
+
+**Reconsider if:** the window turns out to be long enough to draw fights that
+were not trades, at which point the length is wrong rather than the rule.

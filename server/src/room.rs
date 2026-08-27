@@ -4064,11 +4064,9 @@ impl Room {
                 close_match: false,
                 abort_match: false,
             };
-            let mode_deaths: Vec<(u8, u8)> = deaths
-                .iter()
-                .map(|(victim, killer, _)| (*victim, *killer))
-                .collect();
-            self.mode.on_deaths(&mut ctx, &mode_deaths);
+            for &(victim, killer, _) in &deaths {
+                self.mode.on_death(&mut ctx, victim, killer);
+            }
             self.banner = std::mem::take(&mut ctx.banner);
             mode_finished |= ctx.finished;
             close_match |= ctx.close_match;
