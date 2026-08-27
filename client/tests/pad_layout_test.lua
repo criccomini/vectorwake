@@ -177,11 +177,11 @@ local function reset(w, h, s)
     touch.counts = {[0] = 2, [1] = 1}
     touch.maxes = {[0] = 3, [1] = 3}
     touch.safe_l, touch.safe_r, touch.safe_b = 0, 0, 0
-    -- What the dial leaves: ui.radar_span() is 188 points on a phone, being
-    -- the top row it hangs under, the cropped 112 of dial, the tile readout
-    -- off its foot and a gap. Written out rather than imported, because
-    -- ui.lua drags the whole interface in and this is one number.
-    touch.ceiling = h - 188 * s
+    -- What the dial leaves: ui.radar_span() is 140 points on a phone, being
+    -- the margin it keeps from the top of the window, the cropped 112 of
+    -- dial, and a gap. Written out rather than imported, because ui.lua drags
+    -- the whole interface in and this is one number.
+    touch.ceiling = h - 140 * s
     MODS = {}
     LEVEL = {[0] = 0, [1] = 0}
     return w, h, s
@@ -489,9 +489,9 @@ end
 -- The row sits below the dial in either orientation. It never wraps because a
 -- wrap would make a slot's position depend on the available height.
 -- What ui.radar_span() leaves, either way up, at the two windows above: the
--- dial takes the same 376 pixels off the top whichever way the phone is held,
+-- dial takes the same 280 pixels off the top whichever way the phone is held,
 -- so the room under it is all the orientation changes.
-local TIGHT, ROOMY = 404, 1312
+local TIGHT, ROOMY = 500, 1408
 
 local function rows(l)
     local seen, n = {}, 0

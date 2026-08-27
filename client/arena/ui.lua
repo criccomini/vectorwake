@@ -1070,9 +1070,9 @@ end
 -- One table rather than four names at this scope, because the file is at
 -- Lua's ceiling of two hundred locals in a chunk and because these are one
 -- fact between them. The row is the way into the menu at the left, the clock
--- band in the middle and the dial's readouts at the right; it has a center
--- all of them share and an end at each side where a control stands, and a
--- window too narrow for all of it hands the readout a line under the dial.
+-- band in the middle and the dial itself at the right; it has a center the
+-- key and the band share, and an end at each side where an instrument stands
+-- and the band stops.
 local TOP = {
     -- How far the corner keys reach across the top left, filed by the thing
     -- that draws them rather than written down twice. It is a word's width,
@@ -1093,60 +1093,74 @@ end
 
 -- Where the row ends, which is what the clock band may grow into.
 --
--- It used to stop short of the link bars, which stood in this corner and are
--- in the menu's head now. Nothing is out here any more, so the band grows to
--- the same padding every other instrument keeps from the edge.
+-- The radar's left edge at rest. It stood in the strip a line below this row
+-- until the link bars went into the menu's head and it came up into the
+-- corner they left, and the band, which had grown to the window's own edge in
+-- the meantime, gives that width back. Measured at rest so that opening the
+-- map does not move it: the map hangs under the row (see `dial`) and has
+-- nothing to do with where the row ends.
+--
+-- A phone is where this bites. 390 points hold the way into the menu, a
+-- centered clock and a 112-point dial, and what is left over is not a call
+-- sign, so the band gives up its two names there. The figures under them
+-- always draw.
 function TOP.row_right()
-    local pad = (M.compact and 8 or PAD) * F.scale
-    return F.w - F.safe_r - pad
+    return F.w - F.safe_r - PAD * F.scale
+        - RADAR.side * RADAR.factor() * F.scale - KEY_GAP * F.scale
 end
 
--- The line the tile readout takes under the dial on a phone, and nothing on a
--- monitor, where the row itself has the width for that readout. See `coords`.
-function TOP.coord_line()
-    return M.compact and 22 * F.scale or 0
-end
-
+-- Both instruments this corner holds, since they are the same corner and one
+-- replaces the other: the radar at rest, and the map when a player has asked
+-- for it. They differ in the line they start on and in nothing else.
+--
 -- The map is about a quarter of the frame, capped three ways: against the
 -- window's width so it cannot run off the left edge, against its height so
 -- there is still room for the feed under it, and against the corner the MENU
 -- and PLAYERS keys stand in, since a hit box over those is two controls a
 -- pointer can no longer reach.
 local function dial()
-    local pad = (M.compact and 8 or PAD) * F.scale
+    local pad = PAD * F.scale
     local side = RADAR.side * RADAR.factor() * F.scale
+    -- Hard into the corner, at the margin the way into the menu keeps from
+    -- the other one. The radar started a row lower because the link bars
+    -- stood in the strip above it, and those are in the menu's head now: with
+    -- nothing left up there it was hanging off a row that had gone, which
+    -- read as the instrument having slipped down the screen. The two things
+    -- anchored to the top of the window are hung off one padding rather than
+    -- one of them off the other, so `PAD` here is the same `PAD` the key
+    -- uses, on both axes and at every window size.
+    local iy = F.safe_t + pad
     if M.map then
         side = math.max(side,
                         math.min(math.min(F.w, F.h) * 0.66, F.h * 0.66,
                                  F.w - F.safe_r - pad - math.max(TOP.chip_right + 8 * F.scale,
                                                          124 * F.scale)))
+        -- The map keeps the line under the row instead. The radar is narrow
+        -- enough to stand beside the clock band, and this is two thirds of
+        -- the short side of the window: on an upright phone it reaches past
+        -- the middle, so sharing the band's line would put the clock on top
+        -- of it. Capping its width to clear the band is not a way out, since
+        -- what that leaves at 390 points is narrower than the radar it grew
+        -- from.
+        iy = TOP.mid() + KEY_H * F.scale / 2
     end
     -- Whole pixels. The dial snaps its contents to its own origin, so an
     -- origin landing on a half pixel would put the fraction back into every
     -- blip it was taken out of. Density is not always a whole number and
     -- neither, then, is the padding.
-    -- The strip above the dial is the readouts', so the dial starts where
-    -- their row ends rather than at a padding of its own.
-    local ix, iy = math.floor(F.w - F.safe_r - pad - side),
-                   math.floor(TOP.mid() + KEY_H * F.scale / 2)
+    local ix = math.floor(F.w - F.safe_r - pad - side)
+    iy = math.floor(iy)
     side = math.floor(side)
-    -- Filed here rather than in the two functions that draw into it, because
-    -- the dial and the map are the same corner and want the same word beside
-    -- them.
-    -- The left edge and the whole vertical run of it, because the word beside
-    -- the dial wears a bar as tall as the dial: an instrument this size is not
-    -- named by a mark the height of one line of type.
-    zone("radar", ix, iy, side, side)
     return ix, iy, side
 end
 
 -- How much vertical room it takes, so the feed under it can be told rather
--- than guess. Its furniture counts: on a phone the tile readout hangs off the
--- dial's foot, and a feed measured off the instrument alone was drawn through
--- it.
+-- than guess. The square and a gap: nothing hangs off the dial's foot now
+-- that the tile readout has gone, so this is the instrument's own extent
+-- again.
 function M.radar_span()
     local _, iy, side = dial()
-    return iy + side + TOP.coord_line() + 14 * F.scale
+    return iy + side + 14 * F.scale
 end
 
 -- You, as an arrow. On any view of the arena the one thing worth knowing
@@ -1211,9 +1225,10 @@ local function radar(cx, cy, me)
     --
     -- A faint wash stays, because dots over a starfield are dots lost in a
     -- starfield -- but it is a wash rather than a panel.
-    -- The whole corner is the dial's. The link bars used to stand in the strip
-    -- above it and are in the menu's head now, so the only thing that strip
-    -- still holds is this instrument's own caption on a phone.
+    -- The whole corner is the dial's, hard into it. The link bars used to
+    -- stand in the strip above and are in the menu's head now, so there is no
+    -- strip: the square starts at the same margin the way into the menu keeps
+    -- from the corner opposite, and its caption hangs off its foot.
     local ix, iy, r = dial()
     rect(ix, iy, r, r, pal.a(pal.RADAR_BG, 0.55))
     -- The dial is the way in to the map: a thing you point at to see more of
@@ -1706,14 +1721,15 @@ end
 --
 -- A phone dropped it a line for a while. The band is centered and grows
 -- outward with two names and two numbers, and the top right of a 390-point
--- screen carried the link bars and the tile readout both: at that width the
+-- screen carried the link bars and a tile readout both: at that width the
 -- rival's name was drawn straight through the coordinates. The line under the
 -- row is where the dial is, though, so what that bought was the same
 -- collision against a bigger instrument, and it cost the one alignment the
--- row is for. The tile readout went under the dial instead (see `coords`),
--- the bars went into the menu's head (see `pages.link`), and a side with
--- nowhere left to grow drops its name rather than the whole band dropping a
--- line (see `match_clock`).
+-- row is for. Everything that was crowding it has since left the corner: the
+-- readout is gone outright, the bars went into the menu's head (see
+-- `pages.link`), and the dial came up into the space they left. A side with
+-- nowhere to grow drops its name rather than the whole band dropping a line
+-- (see `match_clock`).
 local function band_top()
     return F.safe_t + PAD * F.scale
 end
@@ -3758,37 +3774,6 @@ local function debug_hud(o, top)
     if not F.menu_up then hit(x, y, w, h, "debug", nil, nil, -1) end
 end
 
--- Where you are, off the dial's left edge: above it on a monitor, under it on
--- a phone.
---
--- In tiles, because that is the unit the map is laid out in and the unit a
--- player says out loud. Pixels would be the same place in numbers six digits
--- long that nobody can hold in their head or call across a room.
---
--- The strip above the dial is the top row, and a phone's is 390 points with
--- the way into the menu at one end and the clock band beside it. This is the
--- one thing up there the radar under it already says, so it goes and reads as
--- that instrument's caption instead. On a monitor the row has the width for
--- both and nothing moves. It stayed under the dial when the link bars left
--- the corner: what it collides with at 390 points is the band, which grows
--- from the middle, and that is unchanged.
-local function coords(me, boarded)
-    if not me then return end
-    -- Not while the board is up over it. On a phone this hangs off the dial's
-    -- foot, and the board opens down the middle of the window from the band
-    -- above it, so the two want the same strip. The blips beside it get away
-    -- with standing on a roster row because a mark is not a word; a line of
-    -- type does not. The board is the thing being read while it is up, and
-    -- this is the reading that waits.
-    if boarded and M.compact then return end
-    local x, y, side = dial()
-    local mid = M.compact and (y + side + TOP.coord_line() / 2) or TOP.mid()
-    txt("POS", x, mid, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.8))
-    txt(string.format("%d,%d", math.floor(sim.ship_x(me) / 16),
-                      math.floor(sim.ship_y(me) / 16)),
-        x + 26 * F.scale, mid, (FONT - 3) * F.scale, pal.a(pal.INK, 0.85))
-end
-
 -- The flags, as flags.
 --
 -- This was a sentence -- "flags  you 2 - 1 them   1 loose" -- which is three
@@ -3960,6 +3945,25 @@ local function match_clock(o, m, names, alone)
         if (a.team == mine) ~= (b.team == mine) then return a.team == mine end
         return a.team < b.team
     end)
+    -- How much room a name has, which is the tighter of the row's two ends
+    -- rather than each end's own.
+    --
+    -- The two ends are not the same width and never were: the way into the
+    -- menu is a small key and the dial is a square a third of a phone across.
+    -- Asking each side against the end it happens to face therefore dropped
+    -- the right name at widths where the left one still drew, which reads as
+    -- a fault rather than as a band running out of room, and an upright phone
+    -- hit it every match once the dial came up into the corner and took the
+    -- right end back. One measure for both sides means two names of a size
+    -- go together.
+    --
+    -- Two names of very different lengths still part company, and should: a
+    -- name that will not fit is a name that will not fit. What this stops is
+    -- the same name fitting on one side of the clock and not the other.
+    local gap = (M.compact and 14 or 22) * F.scale
+    local room = math.min(
+        F.w / 2 - half - gap - TOP.chip_right,
+        TOP.row_right() - (F.w / 2 + half + gap)) - KEY_GAP * F.scale
     for i, side in ipairs(sides) do
         local ours = side.team == mine
         local col = pal.a(ours and pal.FRIEND or pal.ENEMY, 0.95 * dim)
@@ -3984,23 +3988,18 @@ local function match_clock(o, m, names, alone)
         -- the numbers that matter sit against the numerals they are read with.
         --
         -- And only as far as the row lets it. The band is centered and grows
-        -- with whatever the sides are called, and what it grows toward on the
-        -- left is a control: a call sign runs to twenty four characters, and on
-        -- a phone that reached the way into the menu. To the right there is
-        -- nothing left to reach but the edge of the screen, since the link
-        -- bars that used to stand there are in the menu's head. A name with
-        -- nowhere to go is dropped, the way the ending's bar drops one that
-        -- will not fit its share. The number under it always draws: it is the
-        -- reading, and it is four characters.
-        local edge, pivot, room
+        -- with whatever the sides are called, and what it grows toward at
+        -- each end is an instrument: the way into the menu on the left, the
+        -- dial on the right. A name with nowhere to go is dropped, the way
+        -- the ending's bar drops one that will not fit its share. The number
+        -- under it always draws: it is the reading, and it is four characters.
+        local edge, pivot
         if i == 1 then
-            edge = F.w / 2 - half - (M.compact and 14 or 22) * F.scale
+            edge = F.w / 2 - half - gap
             pivot = "right"
-            room = edge - TOP.chip_right - KEY_GAP * F.scale
         else
-            edge = F.w / 2 + half + (M.compact and 14 or 22) * F.scale
+            edge = F.w / 2 + half + gap
             pivot = nil
-            room = TOP.row_right() - KEY_GAP * F.scale - edge
         end
         if label ~= "" and text_w(label, name_px) > room then label = "" end
         local wide = math.max(label ~= "" and text_w(label, name_px) or 0,
@@ -4530,8 +4529,8 @@ end
 -- place, and the same MENU in the same corner, so when the stands arrive the
 -- only thing that happens is that the room and the key appear. Nothing already
 -- on screen moves. The instruments a watcher gets are all about a room this
--- client has not found yet, so the radar, the coordinates and the roster are
--- simply absent rather than drawn empty.
+-- client has not found yet, so the radar and the roster are simply absent
+-- rather than drawn empty.
 --
 -- What used to be here was a lockup centered in the window, which was the
 -- loading screen held one beat longer and read as a third screen between the
@@ -4663,18 +4662,14 @@ function M.hud(o)
     -- whole thousand tiles, so it stands where the radar stands rather than
     -- somewhere else with the radar still lit beside it.
     -- The dial's corner, and nothing in it while the drawer is over it. On a
-    -- phone the drawer is the whole window, so the radar and the coordinates
-    -- were both drawn through the panel standing on top of them. On a monitor
+    -- phone the drawer is the whole window, so the radar was drawn straight
+    -- through the panel standing on top of it. On a monitor
     -- the drawer is 390 points of 1440 and never reaches this corner, so
     -- nothing there changes: the question is the overlap rather than whether a
     -- menu is open. See `M.drawer_over`.
     local dial_x = dial()
     if not M.drawer_over(dial_x, F.w - dial_x) then
         if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
-        -- The roster is the board a press on the band opens, and the whistle
-        -- brings up the same panel without being asked. Either is a board over
-        -- the corner this readout drops into on a phone.
-        coords(me, M.details or ending)
     end
     -- Under the dial, wherever the dial now ends: it lost its panel and its
     -- padding, so a constant here would have left a gap or an overlap. Not on

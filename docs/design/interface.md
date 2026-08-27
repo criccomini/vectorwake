@@ -24,7 +24,7 @@ mid-fight, out of the corner of an eye. The menu is read, parked, between
 matches. Everything else in this document follows from that split.
 
 The HUD speaks in capitals, because capitals are the case an instrument is
-labeled in: LINK, POS, MENU, PILOTS, DESTROYED. The menu speaks in a
+labeled in: MENU, PILOTS, STREAK, DESTROYED. The menu speaks in a
 sentence's case, one capital at the front of a line and nothing else, because
 a page of capitals is a page nobody reads twice. The switch is made in one
 place (`cased` in ui.lua), set by whichever surface is drawing, never written
@@ -344,17 +344,28 @@ The constants that repeat, from ui.lua:
 
 The HUD has a fixed geography, and it is the prototype's. Top left: the button
 row (MENU, ROOM, the on-air or watching chip) and the rooms panel under it.
-Top right: the LINK bars, then the radar or the map (one corner, one
-instrument), with POS on the dial's other shoulder and the feed hanging under
-it. Bottom left: the corner stack, what your triggers do and what you carry,
-growing upward.
+Top right: the radar or the map (one corner, one instrument), with the feed
+hanging under it. The radar is hard into the corner at the same PAD the button
+row keeps from the other one; the map, which is two thirds of the window's
+short side and reaches past the middle of an upright phone, starts on the line
+under the row instead. Nothing is captioned up there. The instrument draws
+where you are, and a pair of tile numbers beside it was the same fact in the
+form nobody reads. Bottom left: the corner stack, what your triggers do and
+what you carry, growing upward.
 
-The top of that geography is a row, and everything standing in it shares one
-center: the corner key at the left, the band in the middle where there is room
-for it, and the LINK and POS readouts at the right. A key's height is what the
-row takes from, and the dial starts where the row ends. Anything up there that
-works its own vertical out of the padding drifts, because the padding is a
-horizontal measurement.
+The top of that geography is a row with an instrument at each end. The corner
+key and the band share one center, a key's height is what that center is taken
+from, and the band grows outward from the middle until it reaches the key on
+one side or the dial on the other. Anything up there that works its own
+vertical out of the padding drifts, because the padding is a horizontal
+measurement.
+
+A band with nowhere left to grow gives up the two side names rather than the
+line it stands on, and gives up both or neither: the row's ends are a small
+key and a square a third of a phone across, so measuring each name against the
+end it happens to face drew one and dropped the other. An upright phone is the
+window that runs out, and reads as the clock with a figure either side of it.
+The names are on the board a press on the band opens.
 
 The match ending is the board again rather than a page of its own: at the
 whistle it comes up whether or not anybody asked for it, in a column of its
