@@ -348,6 +348,17 @@ if rail_only[1] then
           heaviest > 0 and heaviest < boss_h,
           string.format("%.2f of line against a %.2f boss", heaviest, boss_h))
 
+    -- And it springs from a body rather than from a speck. This first
+    -- shipped at under a fifth of the mark's width, which rounds to three
+    -- pixels by four beside a call sign: the feathers met at a hole where
+    -- the middle should have been, and at the size the rail draws it was the
+    -- one part of the badge a reader could not make out. What it is now has
+    -- points you can see. Shrinking it back is the regression this catches.
+    local boss_w = wing.boss.x1 - wing.boss.x0
+    check("and springs from a body with a shape to it",
+          boss_w > wing.w * 0.25,
+          string.format("%.2f of body across a %.2f mark", boss_w, wing.w))
+
     -- Three feathers to a side, arriving apart. Both halves of that matter
     -- and the second is the one that walks: the gaps between the tips are
     -- what makes this wings rather than one blunt spread, and two feathers

@@ -453,20 +453,32 @@ local function pilot_mark(cx, cy, col, k, line)
     line = (line or pen(k, 0.11)) * 0.85
     local function px(t) return cx + t * k end
     local function py(t) return ry(cy + t * k) end
-    -- The boss the feathers spring from, and the only solid piece here. It
+    -- The body the feathers spring from, and the only solid piece here. It
     -- holds the middle of the mark at the size where each feather is two
     -- pixels of line and there is nothing else to hold it.
-    F.layer:quad(px(0), py(-0.13), px(0.093), py(0.01),
-                 px(0), py(0.15), px(-0.093), py(0.01), col)
+    --
+    -- Struck about its own waist at 1.7 times what it first shipped at. At
+    -- eleven points the old one rounded to three pixels by four, which is
+    -- not a shape: it read as a speck the feathers happened to meet at, and
+    -- the mark had a hole where its middle should be. This is a diamond you
+    -- can see the points of, and it carries the badge at the nameplate size
+    -- where the feathers themselves go faint.
+    --
+    -- Grown to the edge of what the fan allows rather than as far as it
+    -- would go. A wider body swallows the inner ends of the innermost
+    -- feathers, and three feathers with their roots eaten is a solid spread
+    -- with a lump in it.
+    F.layer:quad(px(0), py(-0.228), px(0.158), py(0.01),
+                 px(0), py(0.248), px(-0.158), py(0.01), col)
     -- Swept back and fanned, longest on top. A rank of parallel strokes is a
     -- chevron; what makes a wing is that the three of them disagree about
     -- where they are going.
     for _, s in ipairs({1, -1}) do
-        F.layer:seg(px(s * 0.102), py(-0.06), px(s * 0.500), py(-0.30),
+        F.layer:seg(px(s * 0.168), py(-0.06), px(s * 0.500), py(-0.30),
                     line, col, true)
-        F.layer:seg(px(s * 0.102), py(0.06), px(s * 0.463), py(-0.10),
+        F.layer:seg(px(s * 0.168), py(0.06), px(s * 0.463), py(-0.10),
                     line, col, true)
-        F.layer:seg(px(s * 0.102), py(0.18), px(s * 0.389), py(0.09),
+        F.layer:seg(px(s * 0.168), py(0.18), px(s * 0.389), py(0.09),
                     line, col, true)
     end
     return k
