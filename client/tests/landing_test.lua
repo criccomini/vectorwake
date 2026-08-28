@@ -132,9 +132,12 @@ local function frame(w, h, o)
     ui.details = o.details or false
     -- Which stop's list is down, the way the arena leaves it between frames.
     ui.land_open = o.land_open or nil
-    -- And what the pointer is resting on, which the arena publishes from the
-    -- same pick a press goes through. See `land_hover` in arena.script.
-    ui.land_hot, ui.land_hot_value = o.hot, o.hot_value
+    -- And where the cursor is standing, which both hands write: the pointer
+    -- through `land_hover` in arena.script, the arrows through `land_step`.
+    -- `keep` is for the checks that walk it and then look at what was drawn.
+    if not o.keep then
+        ui.land_sel, ui.land_sel_value = o.sel, o.sel_value
+    end
     ui.begin(layer, w, h, o.density or 1, false, 0)
     ui.hud({
         me = 0,
@@ -501,7 +504,7 @@ do
           not lit(box("land_zone"), CURSOR)
           and not lit(box("land_account"), CURSOR))
 
-    frame(1440, 810, {hot = "land_zone"})
+    frame(1440, 810, {sel = "land_zone"})
     check("the stop under the pointer wears the menu's own field",
           lit(box("land_zone"), CURSOR))
     check("and its neighbors do not",
@@ -511,15 +514,15 @@ do
     -- The key is lit already and breathing on its own clock, so holding it
     -- still says nothing on its own: it wears the cursor's field over that
     -- ground, which is what says "a press lands here" everywhere else.
-    frame(1440, 810, {hot = "play_now"})
+    frame(1440, 810, {sel = "play_now"})
     check("the key stands still and lit under the pointer",
           lit(box("play_now"), CURSOR))
 
     -- A row of an open list, told from its neighbors by the value its box
     -- carries: two rows publish the same action and only one of them is under
     -- the pointer.
-    frame(1440, 810, {land_open = "zone", hot = "land_pick_zone",
-                      hot_value = "duel"})
+    frame(1440, 810, {land_open = "zone", sel = "land_pick_zone",
+                      sel_value = "duel"})
     local rows = {}
     for _, r in ipairs(ui.hits) do
         if r.action == "land_pick_zone" then rows[r.value] = r end
@@ -528,6 +531,161 @@ do
           lit(rows.duel, CURSOR), "the second game did not light")
     check("and the row above it does not",
           not lit(rows.melee, CURSOR))
+
+    -- --- and the arrows put it in the same place --------------------------
+    --
+    -- One cursor, two hands. What up and down move is what a pointer resting
+    -- somewhere moves, so a walk to a control lights exactly what a hover on
+    -- it lights.
+    frame(1440, 810)
+    ui.land_sel, ui.land_sel_value = nil, nil
+    ui.land_step(1)
+    ui.land_step(1)
+    frame(1440, 810, {keep = true})
+    check("a walk to the zone stop lights what a hover on it lights",
+          lit(box("land_zone"), CURSOR),
+          "walked to " .. tostring(ui.land_sel))
+end
+
+-- --- the keyboard walks the same controls -----------------------------------
+--
+-- Out here the stops and the key are the menu: they are everything a first
+-- visit presses, and a hand on the arrows has to reach all of them. The walk
+-- is read off the boxes the frame published, so what it can reach is what is
+-- on the screen.
+do
+    local function walk_of()
+        local out = {}
+        for i, r in ipairs(ui.land_walk()) do out[i] = r.action end
+        return table.concat(out, " ")
+    end
+    local function step(dir, n)
+        for _ = 1, (n or 1) do ui.land_step(dir) end
+        return ui.land_sel
+    end
+
+    for _, shape in ipairs({{1440, 810, "desktop"}, {844, 390, "sideways"}}) do
+        frame(shape[1], shape[2])
+        check(shape[3] .. " walks the stops in the order they are said",
+              walk_of() == "land_account land_zone land_ship play_now",
+              walk_of())
+    end
+
+    -- A first press lands on the end the arrow came from, and the ends wrap,
+    -- so nothing out here is more than two presses away.
+    frame(1440, 810)
+    ui.land_sel, ui.land_sel_value = nil, nil
+    check("down with nothing lit lands on the first stop",
+          step(1) == "land_account")
+    check("and walks the column", step(1) == "land_zone")
+    check("down to the key", step(1, 2) == "play_now")
+    check("and off the end back to the top", step(1) == "land_account")
+    ui.land_sel, ui.land_sel_value = nil, nil
+    check("up with nothing lit lands on the key",
+          step(-1) == "play_now")
+
+    -- Enter presses what the cursor is on, and the key when nothing is lit:
+    -- there is one thing this screen exists for and a keyboard that had to
+    -- walk to it would be a front page nobody can start the game from.
+    ui.land_sel, ui.land_sel_value = nil, nil
+    check("enter with nothing lit is the key", ui.land_go() == "play_now")
+    step(1, 2)
+    check("and otherwise is whatever is lit", ui.land_go() == "land_zone")
+
+    -- A game the fleet is not serving is not a stop the walk can land on. It
+    -- publishes no box, because it cannot be pressed either.
+    frame(1440, 810, {land_open = "zone", land = {
+        name = LAND.name, zone = LAND.zone, ship = LAND.ship,
+        ships = LAND.ships,
+        zones = {
+            {label = "Team Battle", zone = "melee", live = true, here = true},
+            {label = "Duel", zone = "duel", live = true},
+            {label = "Gauntlet", zone = "gauntlet", live = false},
+        }}})
+    check("a dark game is not walked onto",
+          walk_of() == "land_zone land_pick_zone land_pick_zone",
+          walk_of())
+
+    -- Inside an open list the walk is that list: the stop it hangs off, which
+    -- is the way back out, and then its rows.
+    frame(1440, 810, {land_open = "zone"})
+    check("an open list is the whole of the walk",
+          walk_of() == "land_zone land_pick_zone land_pick_zone",
+          walk_of())
+    ui.land_sel, ui.land_sel_value = "land_zone", nil
+    step(1)
+    check("down off the stop goes into the list",
+          ui.land_sel == "land_pick_zone" and ui.land_sel_value == "melee",
+          tostring(ui.land_sel) .. " " .. tostring(ui.land_sel_value))
+    step(1)
+    check("and along it", ui.land_sel_value == "duel")
+    local act, value = ui.land_go()
+    check("enter on a row picks that game",
+          act == "land_pick_zone" and value == "duel",
+          tostring(act) .. " " .. tostring(value))
+    step(-1, 2)
+    check("and up off the first row is the stop again",
+          ui.land_sel == "land_zone")
+    check("where enter shuts the list", ui.land_go() == "land_zone")
+
+    -- The one case where falling back to the key would be wrong: a press
+    -- meant for a row would deploy instead of picking one.
+    ui.land_sel, ui.land_sel_value = "land_account", nil
+    check("enter in an open list never reaches the key",
+          ui.land_go() == nil, tostring(ui.land_go()))
+
+    -- The ship list walks the same way, sitting out included: it is a row
+    -- like the rest, held apart by a rule that is not one.
+    frame(1440, 810, {land_open = "ship"})
+    check("the ship list walks its builds and sitting out",
+          walk_of()
+          == "land_ship land_pick_ship land_pick_ship land_pick_ship",
+          walk_of())
+    ui.land_sel, ui.land_sel_value = "land_ship", nil
+    step(1, 3)
+    local sact, svalue = ui.land_go()
+    check("and enter on the last row sits out",
+          sact == "land_pick_ship" and svalue == "spectate",
+          tostring(sact) .. " " .. tostring(svalue))
+end
+
+-- --- and both hands arrive at the same place --------------------------------
+--
+-- `ui.land_go` names an action and `land_act` in arena.script is what runs
+-- it, so an action this screen publishes that the arena has no branch for is
+-- enter pressing nothing at all, silently, on the one screen that has to
+-- work. That file is a Defold script and cannot be loaded here, so this reads
+-- it, which is what constant_drift_test does with the numbers kept in two
+-- languages for the same reason: a comment is not a check.
+do
+    local f = assert(io.open("client/arena/arena.script"))
+    local src = f:read("*a")
+    f:close()
+    -- The function's own body, ending at the one `end` in the first column.
+    local body = src:match("function land_act%(self, action, value%)(.-)\nend\n")
+    check("the arena has a landing handler to read", body ~= nil)
+
+    -- Every action the landing publishes, over the three screens it has: no
+    -- list, and each of the two open. Named off what was drawn rather than
+    -- written down twice.
+    local acts = {}
+    for _, o in ipairs({{}, {land_open = "zone"}, {land_open = "ship"}}) do
+        frame(1440, 810, o)
+        for _, r in ipairs(ui.hits) do
+            if r.action == "play_now" or r.action:sub(1, 5) == "land_" then
+                acts[r.action] = true
+            end
+        end
+    end
+    local missing = {}
+    for action in pairs(acts) do
+        if body and not body:find('"' .. action .. '"', 1, true) then
+            missing[#missing + 1] = action
+        end
+    end
+    table.sort(missing)
+    check("and it answers every control the landing publishes",
+          #missing == 0, "no branch for " .. table.concat(missing, ", "))
 end
 
 -- --- and a rail's list opens from its own cell ------------------------------

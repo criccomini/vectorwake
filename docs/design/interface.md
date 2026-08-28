@@ -493,6 +493,14 @@ a grid is the one place arrows mean rows and columns. A pointer is additive:
 resting on a row moves the same cursor the arrows move, and lights it the
 same way.
 
+The landing answers the same hands. Its stops and its key are a page of rows
+with no panel around them, so up and down walk them in the order they are
+said and enter presses what the cursor is on, opening a stop's list and then
+walking that. Enter with nothing lit is PLAY NOW, because a keyboard that had
+to walk to it would be a front page nobody can start the game from. Left and
+right are not read out there: there is no tab row and no row with a value to
+set, which is the work those two do inside the panel.
+
 Hit boxes are rectangles resolved by one function, `ui.pick`, which the press
 path, the hover pass and the tests all ask. Containment decides by rank:
 a backdrop (a panel's ground, the screen-wide box that shuts the menu)

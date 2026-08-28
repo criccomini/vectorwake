@@ -227,6 +227,10 @@ local static = {tx = nil, ty = nil}
 -- a menu action means.
 local apply_menu
 local go_home
+-- And the landing's own presses, which both hands reach: the pointer path is
+-- written where every other press is, a long way below the frame loop that
+-- reads the keyboard.
+local land_act
 
 -- HTML5 builds run Lua 5.1, which has no bitwise operators. Every bitfield in
 -- this client is a sum of distinct powers of two, so a digit test is exact.
@@ -518,7 +522,23 @@ local function shut_panels()
     ui.rooms_open = false
     ui.room_ask = nil
     -- The landing's open list is a panel like the rest: the drawer coming up
-    -- stands it down rather than leaving it to reappear underneath.
+    -- stands it down rather than leaving it to reappear underneath, and the
+    -- cursor goes with it: a lit stop under a panel that covers it is the
+    -- interface drawn twice.
+    ui.land_open = nil
+    ui.land_sel, ui.land_sel_value = nil, nil
+end
+
+-- Put a stop's list away and leave the cursor on the stop it hung off.
+--
+-- That is where a hand walking the column is standing: the rows it was in
+-- have gone and the stop is what took their place on the screen. A pointer
+-- that picked a row and moved on loses the mark on its next move, since the
+-- pointer gives up the cursor when it leaves a control. See `land_hover`.
+local function land_shut()
+    if ui.land_open then
+        ui.land_sel, ui.land_sel_value = "land_" .. ui.land_open, nil
+    end
     ui.land_open = nil
 end
 
@@ -580,6 +600,8 @@ TUNE.PANEL_HANDLERS = {
             ui.inspect = nil
         elseif ui.help then
             ui.help = false
+        elseif ui.land_open then
+            land_shut()
         elseif ui.details then
             toggle_details()
         elseif ui.rooms_open then
@@ -710,18 +732,27 @@ end
 -- than on the mouse event, since the zone list is refilled off the directory
 -- for as long as it is open; and the answer is whether the pointer arrived
 -- somewhere, so the caller can make the noise a key makes.
+--
+-- Where it parts company with `hover_menu` is that the cursor it writes is
+-- also the arrows', so what it compares against is the pointer's own last
+-- answer rather than the cursor itself. A hand lying still moves nothing,
+-- which is what lets the arrows walk away from a pointer parked on a stop,
+-- and a hand that leaves a control and comes back makes the noise again.
 local LAND_HOT = {
     play_now = true, land_account = true, land_zone = true, land_ship = true,
     land_pick_zone = true, land_pick_ship = true,
 }
+local land_over, land_over_value = nil, nil
 local function land_hover(x, y, vh)
     local act, val = nil, nil
     if x and not menu.open and not touch.used then
         local r = ui.pick(x, vh - y, false)
         if r and LAND_HOT[r.action] then act, val = r.action, r.value end
     end
-    if act == ui.land_hot and val == ui.land_hot_value then return false end
-    ui.land_hot, ui.land_hot_value = act, val
+    if act == land_over and val == land_over_value then return false end
+    land_over, land_over_value = act, val
+    -- The pointer takes the cursor on arrival and gives it up on the way out.
+    ui.land_sel, ui.land_sel_value = act, val
     return act ~= nil
 end
 
@@ -862,6 +893,7 @@ local function leave_world()
     ui.map = false
     ui.room_ask = nil
     ui.land_open = nil
+    ui.land_sel, ui.land_sel_value = nil, nil
 end
 
 -- Everything that ends a session: a leave, a drop, a give-up on a join.
@@ -1594,11 +1626,23 @@ function update(self, dt)
         })
         if moved then sfx.ui(act and "ui_go" or "ui_move") end
         if act then apply_menu(self, act) end
-    elseif self.attract and tapped[hash("select")] then
-        -- Enter on the landing presses the landing's key. There is exactly one
-        -- thing to press out here, and a keyboard that had to open a menu to
-        -- reach it would be a front page nobody can start the game from.
-        session.deploy(self)
+    elseif self.attract then
+        -- The landing walks under the same inputs the menu does, because out
+        -- here the stops and the key are the menu: they are everything a
+        -- first visit presses. Up and down move the one cursor a pointer
+        -- moves and enter presses what it is on, which with nothing lit is
+        -- still the key. See `ui.land_step` and `ui.land_go`.
+        --
+        -- Left and right are not read. There is no tab row out here and no
+        -- row with a value to set, which is the work those two do inside the
+        -- panel.
+        local dir = (tapped[hash("k_down")] and 1)
+            or (tapped[hash("k_up")] and -1) or 0
+        if dir ~= 0 and ui.land_step(dir) then sfx.ui("ui_move") end
+        if tapped[hash("select")] then
+            local action, value = ui.land_go()
+            if action then land_act(self, action, value) end
+        end
     end
 
     -- And what the pointer is resting on in the corner stack, which is the
@@ -2846,7 +2890,7 @@ function apply_menu(self, act)
         -- attract loop would dial it right back. What it can put away is a
         -- stop's open list, which is the nearest thing to a panel up here.
         if self.attract then
-            ui.land_open = nil
+            land_shut()
             return
         end
         if self.online then
@@ -2984,6 +3028,84 @@ local function in_list(self, sx, sy)
     return nil
 end
 
+-- What a press on one of the landing's controls does, named by the action
+-- its box publishes rather than by which hand made it. A pointer lands on a
+-- box and enter lands on whatever the cursor is standing on, and both arrive
+-- here: a keyboard that reached the same controls down a path of its own
+-- would be a second front end to keep in step with this one.
+--
+-- Answers whether it recognized the action, so the pointer's own handler can
+-- carry on down its list of everything else on the screen.
+function land_act(self, action, value)
+    -- The landing's one key. See session.deploy.
+    if action == "play_now" then
+        ui.land_open = nil
+        ui.land_sel, ui.land_sel_value = nil, nil
+        session.deploy(self)
+        return true
+    end
+    -- The landing's stops. Account is a door rather than a list: the drawer
+    -- already has the page that answers who you are, so the press opens it
+    -- there.
+    if action == "land_account" then
+        ui.land_open = nil
+        menu.show("pilot")
+        shut_panels()
+        sfx.ui("ui_go")
+        return true
+    end
+    -- Zone and ship open their lists in place, and the same press again puts
+    -- one away, like every other toggle here. That is also how a hand on the
+    -- arrows gets out of a list it has opened: enter on the stop it hangs off
+    -- shuts it, and so does escape.
+    if action == "land_zone" or action == "land_ship" then
+        local which = action == "land_zone" and "zone" or "ship"
+        if ui.land_open == which then
+            land_shut()
+        else
+            ui.land_open = which
+        end
+        sfx.ui("ui_move")
+        return true
+    end
+    -- The backdrop behind an open list: a press outside it puts the list away
+    -- instead of pulling a trigger.
+    if action == "land_shut" then
+        land_shut()
+        sfx.ui("ui_move")
+        return true
+    end
+    -- A game picked from the zone stop's list. The stands re-dial to it at
+    -- once, so the fight behind the glass becomes the one the key would join;
+    -- PLAY NOW stays the press that commits.
+    if action == "land_pick_zone" then
+        land_shut()
+        if value and value ~= ""
+           and value ~= (self.attract_zone or menu.zone) then
+            self.land_zone = value
+            if self.attract then session.attract_drop(self) end
+            self.attract_wait = 0
+        end
+        sfx.ui("ui_go")
+        return true
+    end
+    -- A build picked from the ship stop's list, or sitting out. Both run the
+    -- acts the drawer's own rows run, so the choice reaches the account and
+    -- the join exactly as it would from there.
+    if action == "land_pick_ship" then
+        land_shut()
+        if value == "spectate" then
+            apply_menu(self, "spectate")
+        else
+            local act = menu.pick_profile(value)
+            if act then apply_menu(self, act) end
+        end
+        sfx.ui("ui_go")
+        return true
+    end
+    return false
+end
+
 function on_input(self, action_id, action)
     -- What a keyboard typed, while something is waiting to be typed into.
     -- This is the only text entry in the client and it exists for exactly
@@ -3033,66 +3155,9 @@ function on_input(self, action_id, action)
                 sfx.ui("ui_go")
                 return true
             end
-            -- The landing's one key. See session.deploy.
-            if r.action == "play_now" then
-                ui.land_open = nil
-                session.deploy(self)
-                return true
-            end
-            -- The landing's stops. Account is a door rather than a list: the
-            -- drawer already has the page that answers who you are, so the
-            -- press opens it there.
-            if r.action == "land_account" then
-                ui.land_open = nil
-                menu.show("pilot")
-                shut_panels()
-                sfx.ui("ui_go")
-                return true
-            end
-            -- Zone and ship open their lists in place, and the same press
-            -- again puts one away, like every other toggle here.
-            if r.action == "land_zone" or r.action == "land_ship" then
-                local which = r.action == "land_zone" and "zone" or "ship"
-                ui.land_open = ui.land_open ~= which and which or nil
-                sfx.ui("ui_move")
-                return true
-            end
-            -- The backdrop behind an open list: a press outside it puts the
-            -- list away instead of pulling a trigger.
-            if r.action == "land_shut" then
-                ui.land_open = nil
-                sfx.ui("ui_move")
-                return true
-            end
-            -- A game picked from the zone stop's list. The stands re-dial to
-            -- it at once, so the fight behind the glass becomes the one the
-            -- key would join; PLAY NOW stays the press that commits.
-            if r.action == "land_pick_zone" then
-                ui.land_open = nil
-                local zone = r.value
-                if zone and zone ~= ""
-                   and zone ~= (self.attract_zone or menu.zone) then
-                    self.land_zone = zone
-                    if self.attract then session.attract_drop(self) end
-                    self.attract_wait = 0
-                end
-                sfx.ui("ui_go")
-                return true
-            end
-            -- A build picked from the ship stop's list, or sitting out. Both
-            -- run the acts the drawer's own rows run, so the choice reaches
-            -- the account and the join exactly as it would from there.
-            if r.action == "land_pick_ship" then
-                ui.land_open = nil
-                if r.value == "spectate" then
-                    apply_menu(self, "spectate")
-                else
-                    local act = menu.pick_profile(r.value)
-                    if act then apply_menu(self, act) end
-                end
-                sfx.ui("ui_go")
-                return true
-            end
+            -- The landing's own controls, which the keyboard reaches
+            -- through the same function. See `land_act`.
+            if land_act(self, r.action, r.value) then return true end
             if r.action == "keep_pilot" then
                 menu.ask_password()
                 menu.open = true

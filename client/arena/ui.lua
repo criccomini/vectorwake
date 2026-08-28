@@ -147,13 +147,16 @@ M.room_ask = nil
 -- lands here. Owned by this module the way `rooms_open` is: the arena flips
 -- it on a press and everything that leaves the landing clears it.
 M.land_open = nil
--- Which of the landing's controls the pointer is resting on: the action its
--- box publishes, and the value that box carries so one row of an open list is
--- told from the next. Set by the arena through the same `M.pick` a press goes
+-- Where a press would land on the landing: the action a box publishes, and
+-- the value that box carries so one row of an open list is told from the next.
+--
+-- One cursor, moved by either hand, which is the rule a page of the menu
+-- follows. The pointer takes it through the same `M.pick` a press goes
 -- through, so a row lights instead of the stop behind it and a pointer over
--- an open list's ground lights nothing at all. Nil while the drawer is up or
--- a thumb is driving, since neither has a pointer to rest.
-M.land_hot, M.land_hot_value = nil, nil
+-- an open list's ground lights nothing at all; the arrows walk it through
+-- `M.land_step` and enter presses whatever it names. Nil for nothing lit,
+-- which is where the screen starts and what leaves enter meaning the key.
+M.land_sel, M.land_sel_value = nil, nil
 
 -- --- primitives ------------------------------------------------------------
 
@@ -4586,7 +4589,7 @@ local function land_stop(x, y, w, h, label, value, action, lit, stacked, raw)
     -- Where a press would land, at the weight every row of the menu is lit
     -- at. Under the outline rather than over it: the edge is the brighter
     -- half of the same signal, and a wash laid over it would mute it.
-    local hot = M.land_hot == action
+    local hot = M.land_sel == action
     rect(x, y, w, h, pal.a(pal.BTN_BG, 0.6))
     if hot then rect(x, y, w, h, pal.a(pal.FRIEND, LIT.CURSOR)) end
     key_box(x, y, w, h, nil,
@@ -4640,8 +4643,8 @@ local function land_list(kx, kw, bottom, list, drh)
             hrule(kx + pad, y + 4.5 * F.scale, kw - 2 * pad, 0.6)
             y = y + 9 * F.scale
         else
-            local hov = not r.dim and M.land_hot == r.action
-                and M.land_hot_value == r.value
+            local hov = not r.dim and M.land_sel == r.action
+                and M.land_sel_value == r.value
             if hov then
                 rect(kx, y, kw, drh, pal.a(pal.FRIEND, 0.18))
             elseif r.here then
@@ -4696,7 +4699,7 @@ local function landing(land)
     -- should never be the thing you are already on. Standing still says
     -- little by itself, this being the one control out here that is lit to
     -- begin with, so the cursor's own field goes over that ground as well.
-    local key_hot = M.land_hot == "play_now"
+    local key_hot = M.land_sel == "play_now"
     local swell = key_hot and 1 or breath
     rect(g.kx, g.ky, g.kw, g.kh, pal.a(pal.FRIEND, 0.06 + 0.12 * swell))
     if key_hot then
@@ -4787,6 +4790,90 @@ local function landing(land)
         end
     end
     if not mark_down then landing_mark() end
+end
+
+-- The landing's controls in the order they are said, which is not the order
+-- they are published in: the key is drawn before the stops that stand over
+-- it. An arrow means the direction it points, and saying order is top to
+-- bottom down the column and left to right along the rail, so one list
+-- answers both shapes.
+local LAND_WALK = {"land_account", "land_zone", "land_ship", "play_now"}
+
+-- What a keyboard walks out here, read off the boxes the last frame
+-- published rather than off a second list of controls kept beside the
+-- drawing. What is on the screen is a fact the drawing has already decided: a
+-- stop the open list stands over is not drawn, and a game the fleet is not
+-- serving publishes no box because it cannot be picked.
+--
+-- With a list open the walk is that list, and only it: the stop the list
+-- hangs off, which is the way back out, and then its rows in the order they
+-- are drawn, which is the order they were published in.
+function M.land_walk()
+    local out = {}
+    if M.land_open == "zone" or M.land_open == "ship" then
+        local stop = "land_" .. M.land_open
+        local pick = "land_pick_" .. M.land_open
+        for _, r in ipairs(M.hits) do
+            if r.action == stop or r.action == pick then out[#out + 1] = r end
+        end
+        return out
+    end
+    for _, action in ipairs(LAND_WALK) do
+        for _, r in ipairs(M.hits) do
+            if r.action == action then
+                out[#out + 1] = r
+                break
+            end
+        end
+    end
+    return out
+end
+
+-- Where the cursor is standing in that walk, or nil for nowhere. Nowhere is
+-- an ordinary answer: nothing is lit until a hand puts something there, and
+-- a control can go off the screen under a hand that is not looking.
+local function land_at(walk)
+    for i, r in ipairs(walk) do
+        if r.action == M.land_sel and r.value == M.land_sel_value then
+            return i
+        end
+    end
+    return nil
+end
+
+-- An arrow, `dir` being 1 for down and -1 for up. Answers whether it moved,
+-- so the caller can make the noise a key makes.
+--
+-- The ends wrap, the way every list in the menu wraps, so nothing on this
+-- screen is more than two presses away. A first press with nothing lit lands
+-- on the end the arrow came from.
+function M.land_step(dir)
+    local walk = M.land_walk()
+    if #walk == 0 then return false end
+    local at = land_at(walk)
+    if at then
+        at = (at - 1 + dir) % #walk + 1
+    else
+        at = dir > 0 and 1 or #walk
+    end
+    M.land_sel, M.land_sel_value = walk[at].action, walk[at].value
+    return true
+end
+
+-- What enter presses: whatever the cursor is standing on, and the key itself
+-- when nothing is lit. There is one thing this screen exists for, and a
+-- keyboard that had to walk to it would be a front page nobody can start the
+-- game from.
+--
+-- Nothing at all when a list is open and the cursor is not in it, which is
+-- the one case where that fallback would be wrong: a press meant for a row
+-- would deploy instead of picking one.
+function M.land_go()
+    local walk = M.land_walk()
+    local at = land_at(walk)
+    if at then return walk[at].action, walk[at].value end
+    if M.land_open then return nil end
+    return "play_now", nil
 end
 
 -- Before a room answers: the landing with everything that needs a room taken
