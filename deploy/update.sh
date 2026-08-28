@@ -96,7 +96,18 @@ if [ -z "$meta_verify" ] && [ "$(sed -n 's/^VW_ROLE=//p' .env)" = arena ]; then
 	mv -f "$env_tmp" .env || { rm -f "$env_tmp"; exit 1; }
 fi
 
-if ! docker compose --env-file .env up -d >>"$LOG" 2>&1; then
+# `--remove-orphans` because a release that drops a service has to drop its
+# container too. Without it the container keeps running on the image it was
+# started with, and an arena is the worst thing to leave behind: it is still
+# registered, so the fleet's own view counts it as covering a zone, while the
+# Caddy route the same release deleted means no player can reach it. Every
+# other arena then reads that zone as served and stands down, and the games
+# list goes empty while every process looks healthy. That is how removing a
+# second arena took the fleet down for three hours.
+#
+# Scoped to this host's own COMPOSE_FILE, which `.env` pins per role, so what
+# it removes is what this role stopped declaring and nothing else.
+if ! docker compose --env-file .env up -d --remove-orphans >>"$LOG" 2>&1; then
 	logger -t vw-update "release $after failed during compose converge"
 	exit 1
 fi

@@ -76,13 +76,19 @@ fi
 [ ! -e "$TMP/state/release" ]
 grep -q '^VW_META_VERIFY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa$' \
 	"$TMP/root/deploy/.env"
-grep -q 'compose --env-file .env up -d' "$CALLS"
+grep -q 'compose --env-file .env up -d --remove-orphans' "$CALLS"
 grep -q 'compose --env-file .env exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile' "$CALLS"
 
 : >"$CALLS"
 FAIL_RELOAD=0; export FAIL_RELOAD
 "$UPDATE"
 [ "$(cat "$TMP/state/release")" = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ]
-grep -q 'ghcr.io/criccomini/vectorwake:sha-bbbbbbbbbbbb|ghcr.io/criccomini/vectorwake-client:sha-bbbbbbbbbbbb|compose --env-file .env up -d' "$CALLS"
+grep -q 'ghcr.io/criccomini/vectorwake:sha-bbbbbbbbbbbb|ghcr.io/criccomini/vectorwake-client:sha-bbbbbbbbbbbb|compose --env-file .env up -d --remove-orphans' "$CALLS"
 grep -q 'compose --env-file .env exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile' "$CALLS"
+
+# A release that stops declaring a service has to stop its container. Left
+# running, a dropped arena keeps its registration and holds a zone in the
+# fleet's view that no player can reach, and every other arena stands down
+# from a game that looks served.
+grep -q -- '--remove-orphans' "$CALLS"
 echo "paired release and Caddy reload gate passed"
