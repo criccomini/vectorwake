@@ -40,8 +40,21 @@ somebody else arrives, not because a timer ran.
 until the seat across from them has been open that long. Long enough that two
 people pressing play within a breath of each other meet, short enough that
 somebody alone on the zone is not left looking at an empty room wondering
-whether it is broken. The wait is visible: the clock reads dashes and the room
-says it is waiting.
+whether it is broken.
+
+The hold says when a bot is sent. It does not say whether the one already
+flying is still wanted, and reading it as both is what broke the mode on the
+day it shipped: a room that stopped asking the moment its opponent landed left
+that opponent spare, the director stood it down thirty seconds later, and a
+player watched their rival break off in the middle of a fight and leave. One
+person in a duel room wants one bot for as long as they are the only person in
+it.
+
+**The wait says what it is.** The clock reads dashes, and the middle of the
+screen says the room is looking for a rival and that a house pilot takes the
+seat if nobody comes. Both seats are benched until the fight opens, which the
+core reports as a hull that is not alive, so what that screen said before was
+DESTROYED, to somebody who had not flown anywhere yet.
 
 **A person arriving later takes the seat from the bot.** That is the eviction
 path a room full of AI already had, so the upgrade needs no new machinery. The

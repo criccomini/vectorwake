@@ -3504,6 +3504,32 @@ local function stack_card(o, me)
     F.case = was
 end
 
+-- What a duelist reads while the room looks for somebody to fight.
+--
+-- The room benches both seats until the fight opens, and a benched hull is a
+-- dead one as far as the core is concerned, so this used to be the word
+-- DESTROYED: a player's first ten seconds of the game were spent being told
+-- they had been shot before they had flown anywhere. The clock reads dashes
+-- above, which says something is not running but not what.
+--
+-- The second line is why nothing is happening. The seat across the arena is
+-- held open for a person for ten seconds before a house pilot is sent to it,
+-- so a player who arrives to an empty room is looking at a wait with an end
+-- on it rather than at a zone that is broken. See `DUEL_HOLD_TICKS` in
+-- server/src/arena.rs.
+--
+-- Not spaced out the way DESTROYED is: that is one word standing on its own,
+-- and a whole sentence set letter by letter is a thing to decode. The same
+-- treatment SAFE ZONE gets, in the same place, for the same reason.
+local function rival_note()
+    local y = F.h * 0.46
+    txt("WAITING FOR A RIVAL", F.w / 2, y, (M.compact and 12 or 16) * F.scale,
+        pal.a(pal.INK, 0.9), "center")
+    txt("a house pilot takes the seat if nobody does", F.w / 2,
+        y + (M.compact and 15 or 20) * F.scale,
+        (M.compact and 10 or 12) * F.scale, pal.a(pal.DIM, 0.9), "center")
+end
+
 local function safe_note(spent, limit)
     local y = F.h * 0.62
     txt("SAFE ZONE", F.w / 2, y, (M.compact and 12 or 16) * F.scale,
@@ -5143,8 +5169,16 @@ function M.hud(o)
             pal.a(pal.HURT, 0.95), "center")
     end
     if not o.watch and sim.ship_alive(me) == 0 then
-        txt("D E S T R O Y E D", F.w / 2, F.h * 0.46, (M.compact and 15 or 22) * F.scale,
-            pal.ENEMY, "center")
+        -- Down because the room has nobody to fight yet is not down because
+        -- somebody shot you, and the two are the same benched hull from here.
+        -- The room is the only thing that can tell them apart, and it does:
+        -- see `duel_waiting`.
+        if duel_waiting(o.match) then
+            rival_note()
+        else
+            txt("D E S T R O Y E D", F.w / 2, F.h * 0.46,
+                (M.compact and 15 or 22) * F.scale, pal.ENEMY, "center")
+        end
     elseif not o.watch and (o.safe or 0) > 0 then
         safe_note(o.safe, o.safe_limit or 0)
     end

@@ -2436,6 +2436,37 @@ mod tests {
         );
     }
 
+    /// The opponent the door sent is still the opponent the room wants once it
+    /// has landed. The hold is about when a bot is asked for, not about
+    /// whether the seat it took is still wanted: a room that stops asking the
+    /// moment the bot arrives has its own opponent taken off it again by the
+    /// director, mid-fight, as surplus.
+    #[test]
+    fn a_duel_keeps_the_opponent_the_hold_asked_for() {
+        let mut z = duel_serving_with_accounts();
+        let room = z.rooms[0].number;
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        z.rooms[0]
+            .join(Seat::guest("Climber", false), 0, 2, tx)
+            .expect("the human seat");
+        wait_out_the_duel_hold(&mut z);
+        let slot = z.status().bot_requests.expect("a request")[0]
+            .target_slot
+            .expect("named by strength");
+
+        join_duel_bot(&mut z, 5_001, slot, 0);
+        z.rooms[0].tick();
+        assert_eq!(
+            z.status().bot_requests,
+            Some(vec![fleet::BotRequest {
+                room,
+                count: 1,
+                target_slot: Some(slot),
+            }]),
+            "the fight in progress is the population this room wants"
+        );
+    }
+
     /// The play page watches the room it would deploy you into, so a duel zone
     /// with nobody in it is an empty arena on the menu of everybody deciding
     /// whether to press play. The room fights on without them.

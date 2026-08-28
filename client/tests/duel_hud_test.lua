@@ -37,14 +37,17 @@ end
 
 -- One person and one house rival, which is the only field shape this mode
 -- has. Ship 0 is the climber on side 0; ship 1 is the bot on side 1.
-local room = {count = 2, teams = {[0] = 0, 1}}
+-- `alive` is the one row a test moves: a duelist waiting for an opponent is
+-- benched by the room, which is the same dead hull the core reports after
+-- somebody shoots you.
+local room = {count = 2, teams = {[0] = 0, 1}, alive = {}}
 _G.sim = {
     ship_count = function() return room.count end,
     ship_x = function(i) return 100 + i * 180 end,
     ship_y = function(i) return 100 + i * 120 end,
     ship_heading = function() return 0 end,
     ship_active = function() return 1 end,
-    ship_alive = function() return 1 end,
+    ship_alive = function(i) return room.alive[i] == false and 0 or 1 end,
     ship_team = function(i) return room.teams[i] or 0 end,
     ship_class = function() return 0 end,
     ship_energy = function() return 100 end,
@@ -394,6 +397,35 @@ check("a short screen draws fewer fights rather than running off the bottom",
       table.concat(narrow, ","))
 check("and keeps the readings whatever it drops",
       said("STREAK") ~= nil, table.concat(words(), " | "))
+
+-- --- the wait for a rival --------------------------------------------------
+--
+-- The room benches both seats until it has two of them, so a pilot who
+-- arrives before their opponent is a dead hull as far as the core is
+-- concerned. That is not the same fact as having been shot, and the screen
+-- said it was: DESTROYED, in the largest type there is, for the ten seconds
+-- the door holds the seat open for a person. It is the first thing a new
+-- player sees of this game.
+ui.details = false
+room.alive[0] = false
+frame({match = {playing = false, left = 180, score = {[0] = 0, [1] = 0},
+                duel = {streak = 0, best_streak = 0, waiting = true,
+                        legs = 0, log = {}}}})
+check("a pilot waiting for an opponent is not told they were destroyed",
+      exactly("D E S T R O Y E D") == nil, table.concat(words(), " | "))
+check("the middle of the screen says what the room is doing",
+      said("WAITING FOR A RIVAL") ~= nil, table.concat(words(), " | "))
+check("and that the wait ends whether or not a person turns up",
+      said("house pilot") ~= nil, table.concat(words(), " | "))
+
+-- The word itself is not going anywhere: dying is what a fight is for, and
+-- the room says it is playing while the loser watches their own wreck.
+frame({match = a_fight()})
+check("a pilot shot down in a live fight still reads DESTROYED",
+      exactly("D E S T R O Y E D") ~= nil, table.concat(words(), " | "))
+check("and is not told the room is looking for somebody",
+      said("WAITING FOR A RIVAL") == nil, table.concat(words(), " | "))
+room.alive[0] = nil
 
 if fails > 0 then
     print(fails .. " failed")

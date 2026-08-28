@@ -386,10 +386,11 @@ has to say. The band is also the control: a press opens the board under it,
 which is the roster, then whatever else the zone keeps (a run of fights, in
 the mode that is a run), then the pilot box a row was pressed on. While that
 board is up the fight behind it is washed and every other instrument's type
-recedes, because the board is the thing being read. Dead center is reserved for the two big
-statements, DESTROYED and SAFE ZONE, and for the cards and tables a player asks
-for. On a touchscreen the bottom of the screen belongs to the thumbs and
-everything else lifts out of their way.
+recedes, because the board is the thing being read. Dead center is reserved for
+the big statements, DESTROYED, SAFE ZONE and the line a duel draws while it
+looks for a rival, and for the cards and tables a player asks for. On a
+touchscreen the bottom of the screen belongs to the thumbs and everything else
+lifts out of their way.
 
 Panels in the left column size themselves to their content, count their rows,
 and measure their columns against the widest thing actually in them, headed

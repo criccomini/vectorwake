@@ -3,7 +3,8 @@
 --     lua5.1 client/tools/hud_svg.lua <out.svg> [scenario] [root] [w] [h]
 --
 -- Scenarios: after (an evening with fights behind it), fresh (its first), deep
--- (far enough to have a floor), before (with the banner the server used to
+-- (far enough to have a floor), rival (a duel holding the second seat open),
+-- before (with the banner the server used to
 -- send), ending and duel-ending (a room at the whistle), landing (the front end,
 -- watched from the stands; landing-zones and landing-ships open a stop's
 -- list), waiting (what the loader hands off to before a
@@ -102,7 +103,7 @@ end
 
 -- --- the engine, as much of it as ui.lua touches ---------------------------
 
-local room = {count = 2, teams = {[0] = 0, 1}}
+local room = {count = 2, teams = {[0] = 0, 1}, alive = {}}
 _G.sim = {
     ship_count = function() return room.count end,
     ship_x = function(i) return 3000 + i * 180 end,
@@ -111,7 +112,7 @@ _G.sim = {
     ship_y_raw = function(i) return 3000 + i * 120 end,
     ship_heading = function() return 0 end,
     ship_active = function() return 1 end,
-    ship_alive = function() return 1 end,
+    ship_alive = function(i) return room.alive[i] == false and 0 or 1 end,
     ship_team = function(i) return room.teams[i] or 0 end,
     ship_class = function() return 0 end,
     ship_energy = function() return 780 end,
@@ -232,6 +233,18 @@ if scenario == "deep" then
     duel.legs = 23
     match.left = 91
     match.score = {[0] = 0, [1] = 0}
+end
+
+-- The ten seconds before a fight: one pilot in the room and the seat across
+-- from them still open. Both seats are benched until it fills, so this is the
+-- frame where a hull that has never flown reads as a hull that has been shot,
+-- and the only thing that says otherwise is what is written in the middle of
+-- the screen.
+if scenario == "rival" then
+    room.count, room.alive[0] = 1, false
+    match = {playing = false, left = 180, score = {[0] = 0, [1] = 0},
+             duel = {streak = 0, best_streak = 0, waiting = true,
+                     legs = 0, log = {}}}
 end
 
 -- What the old build put across the middle of the screen every second of

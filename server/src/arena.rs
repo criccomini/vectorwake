@@ -473,7 +473,13 @@ impl ArenaServer {
         if room.humans() >= 2 {
             0
         } else if room.humans() == 1 {
-            usize::from(self.duel_hold_elapsed(index))
+            // The hold decides when a bot is sent, not whether the one
+            // already flying is still wanted. A room that stopped asking the
+            // moment its opponent landed left that opponent spare, so the
+            // director stood it down thirty seconds later: a rival that broke
+            // off mid-fight and vanished, and then ten more seconds of empty
+            // room before the next one was asked for.
+            usize::from(room.bot_count() > 0 || self.duel_hold_elapsed(index))
         } else if self.wants_stand_in(index) {
             2
         } else {
