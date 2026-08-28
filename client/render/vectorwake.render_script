@@ -18,12 +18,9 @@
 -- The sky goes first because it is behind the map, and it was not always. It
 -- used to share the fill layer with everything else, over the wall interiors,
 -- and each star asked the core whether it stood on a solid tile so it could
--- take itself out of the drawing. That works for a star and cannot work for a
--- sun: a set piece two hundred pixels across is over a wall and behind it at
--- the same time, and no single answer about one point covers it. Drawn under
--- the map, the wall occludes the sky because it is in front of it, which also
--- costs nothing per star and clips to the wall's real edge rather than to the
--- tile the wall is standing in.
+-- take itself out of the drawing. Drawn under the map, the wall occludes the
+-- sky because it is in front of it, which costs nothing per star and clips to
+-- the wall's real edge rather than to the tile the wall is standing in.
 --
 -- The camera holds a fixed zoom. A bigger window shows more of the arena
 -- rather than the same arena drawn larger, which is what the original did and

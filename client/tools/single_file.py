@@ -271,8 +271,7 @@ SHIM = """
     // The same three depths of star world.lua uses, at the same density and
     // in the same colors, so the moment the engine takes over the sky carries
     // on looking like itself. The engine draws more than this behind them,
-    // clouds and a band and whatever set pieces the map hangs out at its rim,
-    // and those arrive with the first real frame.
+    // the clouds and the band, and those arrive with the first real frame.
     var LAYERS = [
       {k: 0.18, cell: 54, size: 1.1, col: "#2a3a58", fill: 13},
       {k: 0.36, cell: 92, size: 1.6, col: "#4a6089", fill: 11},

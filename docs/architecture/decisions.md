@@ -3710,14 +3710,19 @@ somewhere quieter than the page it used to close.
 
 ## 79. The sky is the map's, and it has weather in it
 
-**Status:** accepted
+**Status:** accepted, amended by
+[decision 93](#93-the-sky-has-nothing-in-it-with-a-shape)
 
 **Decision:** the background is no longer three layers of star and a round
 fade. It draws, from the back forward: two enormous washes under everything, a
 band of fine grain and dust filaments along one diagonal, clouds strung out as
-runs of knots rather than round smudges, suns and comets, three depths of
-star in four temperatures with a rare one burning a four-point cross, and a
-near layer of dust that draws as dots standing still and as streaks under way.
+runs of knots rather than round smudges, three depths of star in four
+temperatures with a rare one burning a four-point cross, and a near layer of
+dust that draws as dots standing still and as streaks under way.
+
+The suns, the comets and the lens flare described below are gone; decision 93
+says why. The rest of this stands, and everything it says about the set pieces
+is the record of what was tried.
 
 Everything that is not hashed from its own position is placed from the map's
 name: the band's angle and where it runs, the two washes, and how many set
@@ -4480,3 +4485,56 @@ rather than merely wide, at which point the number is wrong rather than the rule
 and a deployment-wide queue in the meta-layer starts to earn its keep. Or if the
 hold turns out to be the thing players notice about the mode, in which case it
 belongs on a clock the zone file sets rather than a constant.
+
+## 93. The sky has nothing in it with a shape
+
+**Status:** accepted, amending
+[decision 79](#79-the-sky-is-the-maps-and-it-has-weather-in-it)
+
+**Decision:** the suns and the comets are out of the sky, and so is the lens
+flare the brightest sun threw. What is left is what does not have an outline:
+the two washes under the black, the diagonal band with its grain and
+filaments, the knotted clouds, the three depths of star in four temperatures,
+and the near dust that streaks along the camera's motion. A map's name still
+places the band and the washes, so a room still has a sky of its own.
+
+Everything the set pieces needed goes with them: the counts and kinds a name
+was dealt from, the per-piece size, color, depth and distance, the hexagonal
+ghost chain and the gate that faded it as the light left the frame, and the
+budget lines that priced all of it. `world.IRIS_SEGS` is not published any
+more, and the two segment counts left are the ones the sky actually draws at.
+
+**Why:** asked for, after playing it. The reason given is that they are not
+working, and that is the whole of what was said, so what follows is the file's
+reading rather than the request's.
+
+The set pieces are the part of decision 79 that was already closest to the line
+identity.md draws, and they had been argued with once before this. They shipped
+one to a map at one size in one color, and flying that turned up rooms that all
+looked like each other; the answer was to deal each one from the map's name,
+which made every room's version different rather than making the objection go
+away. Two goes at the same complaint is usually the shape of a thing that is
+wrong rather than mistuned.
+
+The rest of the sky is kept because the objection does not reach it. A wash, a
+cloud and a band have no edge to find and no size to judge, so they stay
+distance no matter how long they are looked at, which is what the field is for.
+A sun is a shape at a size, and this game spends shape and brightness on ships
+and shots.
+
+**Cost:** the reason the set pieces were placed at a quarter and two fifths of
+the camera's rate was to give a room a fixed point, something a side could be
+told to regroup under. Nothing in the sky answers that now, so where you are is
+a question for the dial and the map, both of which are pictures you have to
+look away from the fight to read. If that turns out to be a real loss it is a
+landmark question rather than a sky question, and the answer is a named thing
+in the terrain rather than a light painted on the distance.
+
+**Measured:** 726 vertices off the glow layer's reservation at every window
+size, which on a 1920 by 1080 window drops the stepped layer from 11264 to
+10240. Frame time does not move outside the noise, and should not have: a
+handful of set pieces was never what the sky cost, the thousands of hashed
+cells behind them are.
+
+**Reconsider if:** a mode arrives that wants a fixed point to call, and the
+thing to call turns out to belong in the sky rather than on the map.
