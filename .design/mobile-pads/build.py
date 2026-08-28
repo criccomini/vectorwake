@@ -662,15 +662,15 @@ def controls_cluster(reversed_=False):
     bx, by = pt(gx, gy, 83, 165)
     out.append(cluster_key(bx, by, 22, BOMB, "go",
                            bomb_mark(bx, by, 15, BOMB, HOT[BOMB])))
-    out.append(key_label(bx, by, 30, "BOMB", top=True))
+    out.append(key_label(bx, by, 33, "BOMB"))
     rx, ry = pt(gx, gy, 83, 215)
     out.append(cluster_key(rx, ry, 22, CHARGE, "gg",
                            repel_glyph(rx, ry, 12), segs=(2, 3)))
-    out.append(key_label(rx, ry, 30, "REPEL", top=True))
+    out.append(key_label(rx, ry, 33, "REPEL"))
     ux, uy = pt(gx, gy, 83, 265)
     out.append(cluster_key(ux, uy, 22, CHARGE, "gg",
                            burst_glyph(ux, uy, 12), segs=(3, 3)))
-    out.append(key_label(ux, uy, 30, "BURST", top=True))
+    out.append(key_label(ux, uy, 33, "BURST"))
     if reversed_:
         out.append(cluster_stick(96, 300, 54, engaged=(130, 276),
                                  reversed_=True))
