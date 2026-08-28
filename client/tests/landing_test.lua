@@ -196,16 +196,19 @@ end
 -- --- every window carries the key and the name -----------------------------
 
 -- Desktop, a phone on its side, a phone held upright, and the shortest screen
--- the interface claims to support.
+-- the interface claims to support. Two of them have the height for the
+-- column and two do not, which is most of what this loop is about: the same
+-- four pieces laid out two ways, and neither way over the middle of the
+-- screen.
 local SHAPES = {
     {1440, 810, "desktop"},
-    {844, 390, "sideways"},
+    {844, 390, "sideways", rail = true},
     {390, 844, "portrait"},
-    {320, 480, "small"},
+    {320, 480, "small", rail = true},
 }
 
 for _, s in ipairs(SHAPES) do
-    local w, h, shape = s[1], s[2], s[3]
+    local w, h, shape, rail = s[1], s[2], s[3], s.rail
     frame(w, h)
     local key = box("play_now")
     check(shape .. " publishes one key to press",
@@ -219,26 +222,19 @@ for _, s in ipairs(SHAPES) do
         -- A thumb's worth. Anything smaller is a control a phone cannot hit.
         check(shape .. " gives the key a thumb to land on",
               key.h >= 44, string.format("%.0f tall", key.h))
-        check(shape .. " centers the key",
-              math.abs((key.x + key.w / 2) - w / 2) < 1,
-              string.format("middle at %.0f of %d", key.x + key.w / 2, w))
         check(shape .. " presses the key where it is drawn",
               press(key.x + key.w / 2, key.y + key.h / 2) == "play_now")
     end
     local name = word("vectorwake")
     check(shape .. " says what the game is", name ~= nil, "no wordmark")
-    -- The name sits over the column rather than in a corner: a stranger's
-    -- eye ends on the pulsing thing at the foot, climbs the stops, and the
-    -- name has to be where that look ends. Placement A of the three drawn
-    -- for decision 61, with the stops of .design/start-flow between.
+    -- The name sits over the block rather than in a corner: a stranger's eye
+    -- ends on the pulsing thing at the foot, climbs the stops, and the name
+    -- has to be where that look ends. Placement A of the three drawn for
+    -- decision 61, with the stops of .design/start-flow under it.
     if name and key then
         check(shape .. " puts the name above the key",
               name.y < key.y,
               string.format("name at %.0f, key top %.0f", name.y, key.y))
-        check(shape .. " sets the name on the key's own middle",
-              math.abs(name.x - (key.x + key.w / 2)) < key.w / 2,
-              string.format("name at %.0f, key middle %.0f",
-                            name.x, key.x + key.w / 2))
     end
     -- The three stops, in the order you would say them: who you are, where
     -- you are going, what you arrive as, then the key that commits.
@@ -247,31 +243,90 @@ for _, s in ipairs(SHAPES) do
     check(shape .. " publishes the three stops",
           acct ~= nil and zone ~= nil and ship ~= nil, "a stop is missing")
     if key and acct and zone and ship then
-        check(shape .. " stacks the stops over the key in saying order",
-              acct.y < zone.y and zone.y < ship.y
-              and ship.y + ship.h <= key.y + 1,
-              string.format("account %.0f zone %.0f ship %.0f key %.0f",
-                            acct.y, zone.y, ship.y, key.y))
-        for _, b in ipairs({acct, zone, ship}) do
-            check(shape .. " gives a stop the key's own width",
-                  math.abs(b.w - key.w) < 1 and math.abs(b.x - key.x) < 1,
-                  string.format("%.0f wide at %.0f against %.0f at %.0f",
-                                b.w, b.x, key.w, key.x))
+        if rail then
+            -- Lying down: the stops run left to right in the same order and
+            -- the key ends the line, so the whole front end is one band along
+            -- the foot.
+            check(shape .. " lays the stops along one line in saying order",
+                  acct.x < zone.x and zone.x < ship.x
+                  and math.abs(acct.y - zone.y) < 1
+                  and math.abs(zone.y - ship.y) < 1,
+                  string.format("account %.0f,%.0f zone %.0f,%.0f "
+                                .. "ship %.0f,%.0f", acct.x, acct.y,
+                                zone.x, zone.y, ship.x, ship.y))
+            for _, b in ipairs({acct, zone, ship}) do
+                check(shape .. " gives every cell the same measure",
+                      math.abs(b.w - acct.w) < 1
+                          and math.abs(b.h - acct.h) < 1,
+                      string.format("%.0fx%.0f against %.0fx%.0f",
+                                    b.w, b.h, acct.w, acct.h))
+            end
+            check(shape .. " keeps the key clear of the cells",
+                  ship.x + ship.w <= key.x + 1
+                  or ship.y + ship.h <= key.y + 1,
+                  string.format("ship ends %.0f,%.0f, key at %.0f,%.0f",
+                                ship.x + ship.w, ship.y + ship.h,
+                                key.x, key.y))
+        else
+            check(shape .. " stacks the stops over the key in saying order",
+                  acct.y < zone.y and zone.y < ship.y
+                  and ship.y + ship.h <= key.y + 1,
+                  string.format("account %.0f zone %.0f ship %.0f key %.0f",
+                                acct.y, zone.y, ship.y, key.y))
+            for _, b in ipairs({acct, zone, ship}) do
+                check(shape .. " gives a stop the key's own width",
+                      math.abs(b.w - key.w) < 1 and math.abs(b.x - key.x) < 1,
+                      string.format("%.0f wide at %.0f against %.0f at %.0f",
+                                    b.w, b.x, key.w, key.x))
+            end
+            check(shape .. " centers the key",
+                  math.abs((key.x + key.w / 2) - w / 2) < 1,
+                  string.format("middle at %.0f of %d",
+                                key.x + key.w / 2, w))
+            if name then
+                check(shape .. " sets the name on the key's own middle",
+                      math.abs(name.x - (key.x + key.w / 2)) < key.w / 2,
+                      string.format("name at %.0f, key middle %.0f",
+                                    name.x, key.x + key.w / 2))
+            end
+        end
+        -- Whichever way it lies, the block is centered on the window and the
+        -- name heads it.
+        local left = math.min(acct.x, key.x)
+        local right = math.max(ship.x + ship.w, key.x + key.w)
+        check(shape .. " centers the block it draws",
+              math.abs((left + right) / 2 - w / 2) < 1.5,
+              string.format("%.0f..%.0f of %d", left, right, w))
+        if name then
+            check(shape .. " heads the block with the name",
+                  name.x > left and name.x < right,
+                  string.format("name at %.0f, block %.0f..%.0f",
+                                name.x, left, right))
+            check(shape .. " keeps the name with the block",
+                  acct.y - name.y < 60 or key.y - name.y < 60,
+                  string.format("name at %.0f, stops at %.0f, key at %.0f",
+                                name.y, acct.y, key.y))
         end
         check(shape .. " presses a stop where it is drawn",
               press(zone.x + zone.w / 2, zone.y + zone.h / 2) == "land_zone")
+        -- The one thing this whole layout exists for. The camera stands
+        -- behind the hull the stands are watching, so the middle of the
+        -- screen is that hull, and nothing the landing draws may reach it.
+        -- The column did on any window under about 530 points tall: at 390
+        -- it put the wordmark on the ship and the account stop on its call
+        -- sign.
         if name then
-            check(shape .. " keeps the name with the stack",
-                  name.y < acct.y and acct.y - name.y < 60,
-                  string.format("name at %.0f, stack top %.0f",
-                                name.y, acct.y))
+            check(shape .. " keeps the whole of it out of the middle",
+                  name.y - name.px / 2 > h / 2,
+                  string.format("reaches %.0f of %d",
+                                name.y - name.px / 2, h))
         end
-        -- The stops say their answers, in the case the HUD sets everything.
-        check(shape .. " says who you are", word("VESPER 412") ~= nil)
-        check(shape .. " says where you are going",
-              word("TEAM BATTLE") ~= nil)
-        check(shape .. " says what you arrive as", word("GUNNER") ~= nil)
     end
+    -- The stops say their answers, in the case the HUD sets everything.
+    check(shape .. " says who you are", word("VESPER 412") ~= nil)
+    check(shape .. " says where you are going",
+          word("TEAM BATTLE") ~= nil)
+    check(shape .. " says what you arrive as", word("GUNNER") ~= nil)
 end
 
 -- --- the rest of the HUD is the rest of the screen --------------------------
@@ -382,6 +437,44 @@ do
     -- hangar's business.
     check("and no hull is named in it",
           word("APEX") == nil and word("WEDGE") == nil)
+end
+
+-- --- and a rail's list opens from its own cell ------------------------------
+--
+-- Lying down changes where a list hangs from. Down the column it drops out of
+-- a stop the key's own width and covers the stops above it; along the rail it
+-- opens over the fight from a cell 120 points wide, held to a measure a build
+-- name can be read at, and there is nothing above the open cell to cover.
+do
+    frame(844, 390, {land_open = "ship"})
+    local cell, key = box("land_ship"), box("play_now")
+    local rows = {}
+    for _, r in ipairs(ui.hits) do
+        if r.action == "land_pick_ship" then rows[#rows + 1] = r end
+    end
+    check("a rail's list has the builds in it", #rows >= 3,
+          #rows .. " rows")
+    if cell and #rows > 0 then
+        local top, foot = rows[1], rows[#rows]
+        check("the list hangs off the cell it belongs to",
+              math.abs(top.x - cell.x) < 1.5,
+              string.format("list at %.0f, cell at %.0f", top.x, cell.x))
+        check("and opens upward, clear of the band",
+              foot.y + foot.h <= cell.y,
+              string.format("list ends %.0f, cell top %.0f",
+                            foot.y + foot.h, cell.y))
+        check("and is wider than the cell, a name being the thing to read",
+              top.w > cell.w and top.x + top.w <= 844,
+              string.format("%.0f wide at %.0f of 844", top.w, top.x))
+        check("and every row is pressable where it is drawn",
+              press(top.x + 5, top.y + top.h / 2) == "land_pick_ship")
+    end
+    check("the stops beside it stay on the rail",
+          box("land_account") ~= nil and box("land_zone") ~= nil,
+          "a stop stood down with nothing over it")
+    check("and the key still answers through it",
+          key and press(key.x + key.w / 2, key.y + key.h / 2) == "play_now")
+    check("and open sky still puts it away", press(400, 100) == "land_shut")
 end
 
 -- --- a phone's top row -----------------------------------------------------

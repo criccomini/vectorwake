@@ -2373,10 +2373,10 @@ local LEG_WORD = {
 --
 -- What used to be here was a rung number at the head and another on every
 -- row, with a scoreline between them. None of the three said anything a
--- player could act on: a rung is a roster slot, the floor beside it was a save
--- point a loss could not cross and was never explained on screen, and the
--- scoreline is 1-0 or 0-1 in a mode that is first to one. See decision 74. The
--- floor is gone from the game as well now, under decision 91.
+-- player could act on: a rung was a roster slot, the floor beside it a save
+-- point a loss could not cross, and the scoreline is 1-0 or 0-1 in a mode that
+-- is first to one. See decision 74. All three are gone from the game as well
+-- now, with the ladder they belonged to: decision 92.
 
 -- One table for the run's two sections, because ui.lua sits on Lua's ceiling
 -- of two hundred locals in a chunk and four names here would put it over.
@@ -4461,42 +4461,93 @@ end
 -- Where the front end's pieces sit. One function because the waiting screen
 -- draws the same wordmark in the same place as the landing does, and a logo
 -- that jumps when the room arrives is the reason this is shared rather than
--- written twice. The name stands clear of the three stops even on the
--- waiting screen, where the stops are not drawn yet: when the room answers,
--- the stops and the key appear and nothing already on screen moves.
+-- written twice. The name stands clear of the stops even on the waiting
+-- screen, where the stops are not drawn yet: when the room answers, the stops
+-- and the key appear and nothing already on screen moves.
+--
+-- The window is asked two questions here, the way it is for the menu. Width
+-- decides how wide the key is: edge to edge on a phone held upright, where a
+-- centered key of fixed width leaves two margins of nothing either side of
+-- the only control on the screen, and a measured key everywhere else, since a
+-- monitor's width of PLAY NOW is a banner rather than a button.
+--
+-- Height decides the shape, and used to decide nothing. The column costs
+-- about 260 points whatever the window is: a third of a monitor, and more
+-- than half of a phone held sideways. The camera stands behind the hull the
+-- stands are watching, so the middle of the screen is that hull, and on a
+-- short window the column is drawn straight across it with the name landing
+-- on the ship. Where it would climb that far the same pieces lie down into a
+-- rail along the foot: three cells beside the key, one line high, with the
+-- name over them. Height is what a window held sideways is short of and width
+-- is what it has going spare, so the rail spends the one it has. Drawn as
+-- direction B in `.design/start-flow`, where the column won the upright case.
 local function landing_geom()
     local pts_w = F.w / math.max(F.density, 0.0001)
-    -- Edge to edge on a phone held upright, where a centered key of fixed
-    -- width leaves two margins of nothing either side of the only control on
-    -- the screen, and a measured key everywhere else: a monitor's width of
-    -- PLAY NOW is a banner rather than a button.
     local narrow = pts_w < 620
     local kh = (narrow and 50 or (M.compact and 44 or 54)) * F.scale
     local margin = 14 * F.scale
-    local kw = narrow and (F.w - F.safe_l - F.safe_r - 2 * margin)
-               or (M.compact and 240 or 320) * F.scale
-    local kx = F.safe_l + (F.w - F.safe_l - F.safe_r - kw) / 2
+    local span = F.w - F.safe_l - F.safe_r - 2 * margin
+    local kw = narrow and span or (M.compact and 240 or 320) * F.scale
+    local mid = F.safe_l + (F.w - F.safe_l - F.safe_r) / 2
     -- `y` counts down from the top here, as it does everywhere in this file,
     -- so the foot of the screen is measured back from `F.h`.
-    local ky = F.h - F.safe_b - (M.compact and 18 or 22) * F.scale - kh
-    -- The stops: three rows the key's own width, stacked over it. A finger
-    -- gets the touch floor; a pointer gets a slimmer row and `M.pick` grows
-    -- it when a finger arrives anyway.
-    local rh = (narrow and 44 or (M.compact and 30 or 36)) * F.scale
+    local foot = F.h - F.safe_b - (M.compact and 18 or 22) * F.scale
     local rgap = 8 * F.scale
     local size = (M.compact and 20 or 26) * F.scale
     -- `txt` sets a string on the middle of its line, so half the type goes
-    -- back to put the baseline where it belongs above the stack.
-    local wy = ky - 12 * F.scale - 3 * rh - 2 * rgap
-               - (M.compact and 16 or 20) * F.scale - size / 2
-    return kx, ky, kw, kh, size, wy,
-           (narrow and 16 or (M.compact and 14 or 19)) * F.scale, rh, rgap
+    -- back to put the baseline where it belongs above what it heads.
+    local mgap = (M.compact and 16 or 20) * F.scale + size / 2
+    local g = {narrow = narrow, size = size, kh = kh, kw = kw,
+               kx = mid - kw / 2, ky = foot - kh, rgap = rgap,
+               kpx = (narrow and 16 or (M.compact and 14 or 19)) * F.scale,
+               mark_x = mid - M.wordmark_w(size) / 2, stops = {}}
+    -- The column: three rows at the key's own width stacked over it, in the
+    -- order you would say them. A finger gets the touch floor; a pointer gets
+    -- a slimmer row and `M.pick` grows it when a finger arrives anyway.
+    local rh = (narrow and 44 or (M.compact and 30 or 36)) * F.scale
+    local top = g.ky - 12 * F.scale - 3 * rh - 2 * rgap
+    -- Measured from the name's own top, which is the highest thing the
+    -- landing draws, against the middle of the screen and a hull's clearance
+    -- under it: the camera stands behind the hull the stands are watching, so
+    -- the column stands only where it keeps off that hull and its call sign.
+    if top - mgap - size / 2 >= F.h / 2 + 40 * F.scale then
+        g.rh, g.mark_y = rh, top - mgap
+        for i = 1, 3 do
+            g.stops[i] = {x = g.kx, y = top + (i - 1) * (rh + rgap),
+                          w = kw, h = rh}
+        end
+        return g
+    end
+    -- The rail. A cell carries its question over its answer rather than
+    -- beside it, so three of them and the key fit one line; where that line
+    -- is wider than the window, the cells take a line of their own over the
+    -- key rather than shrinking past reading. A cell stands as tall as the
+    -- key beside it, floored at what a thumb needs: a band drawn at two
+    -- heights reads as a key with smaller apparatus parked next to it.
+    local ch = math.max(44 * F.scale, kh)
+    local cw = (M.compact and 120 or 140) * F.scale
+    local band = 3 * cw + 2 * rgap + 14 * F.scale + kw
+    g.rail, g.rh = true, ch
+    local cx, cy
+    if band <= span then
+        cy = foot - ch
+        cx, g.kx, g.ky = mid - band / 2, mid + band / 2 - kw,
+                         cy + (ch - kh) / 2
+    else
+        cw = (span - 2 * rgap) / 3
+        cx, cy = F.safe_l + margin, g.ky - 10 * F.scale - ch
+    end
+    g.mark_y = cy - mgap
+    for i = 1, 3 do
+        g.stops[i] = {x = cx + (i - 1) * (cw + rgap), y = cy, w = cw, h = ch}
+    end
+    return g
 end
 
 -- The name, where it sits whether or not there is a room to join yet.
 local function landing_mark()
-    local kx, _, kw, _, size, wy = landing_geom()
-    M.wordmark(kx + kw / 2 - M.wordmark_w(size) / 2, wy, size)
+    local g = landing_geom()
+    M.wordmark(g.mark_x, g.mark_y, g.size)
 end
 
 -- A stop's caret: the two strokes that say a press here opens downward into
@@ -4509,19 +4560,41 @@ local function land_caret(cx, cy, col)
                 1.3 * F.scale, col, true)
 end
 
--- One stop of the landing's column: the question at the left edge, the
--- current answer and a caret at the right, in the same stroked rectangle
--- every key here wears. `lit` is the stop whose list is open.
-local function land_stop(kx, y, kw, rh, label, value, action, lit)
-    key_box(kx, y, kw, rh, pal.a(pal.BTN_BG, 0.6),
+-- One stop of the landing: the question, the answer it currently holds and a
+-- caret, in the same stroked rectangle every key here wears. `lit` is the
+-- stop whose list is open.
+--
+-- A column row sets the question at its left edge and the answer at its
+-- right. A rail cell has no width for the two side by side, so the question
+-- goes over the answer the way a gauge's caption goes over its reading, and
+-- an answer with no room left is cut at the cell's edge: a long call sign
+-- walking into the next cell is worse than a call sign that says it is longer
+-- than the cell.
+local function land_stop(x, y, w, h, label, value, action, lit, stacked)
+    key_box(x, y, w, h, pal.a(pal.BTN_BG, 0.6),
             lit and pal.a(pal.FRIEND, 0.8) or pal.a(pal.RADAR_TILE, 0.75))
     local pad = 12 * F.scale
-    lbl(label, kx + pad, y + rh / 2)
-    local cx = kx + kw - pad - 3 * F.scale
-    land_caret(cx, y + rh / 2, pal.a(pal.INK, 0.75))
-    txt(value or "", cx - 11 * F.scale, y + rh / 2,
-        (M.compact and 11 or 12) * F.scale, pal.a(pal.INK, 0.95), "right")
-    hit(kx, y, kw, rh, action)
+    local cx = x + w - pad - 3 * F.scale
+    local px = (M.compact and 11 or 12) * F.scale
+    if stacked then
+        -- The caret rides the question's line rather than the answer's, so
+        -- the answer has the cell's whole width to be read across. At the
+        -- narrowest a cell gets there is barely room for a zone's name, and
+        -- what would have paid for the caret is those last two letters.
+        pad = 8 * F.scale
+        lbl(label, x + pad, y + h * 0.33)
+        land_caret(cx, y + h * 0.33, pal.a(pal.INK, 0.75))
+        local kept = F.clip_r
+        F.clip_r = x + w - pad
+        txt(value or "", x + pad, y + h * 0.68, px, pal.a(pal.INK, 0.95))
+        F.clip_r = kept
+    else
+        lbl(label, x + pad, y + h / 2)
+        land_caret(cx, y + h / 2, pal.a(pal.INK, 0.75))
+        txt(value or "", cx - 11 * F.scale, y + h / 2, px,
+            pal.a(pal.INK, 0.95), "right")
+    end
+    hit(x, y, w, h, action)
 end
 
 -- A stop's open list, upward over the glass so it never covers the key. Rows
@@ -4593,36 +4666,36 @@ end
 -- decision 61 for why a spectator's view of a game beats a panel describing
 -- one as a front page.
 local function landing(land)
-    local kx, ky, kw, kh, _, _, kpx, rh, rgap = landing_geom()
+    local g = landing_geom()
     -- The key breathes on the same clock the on-air tally swells at, and the
     -- edge is floored well above dark so the trough never reads as a key that
     -- has stopped working. `F.now` is zero under the test harness, which is
     -- what keeps the layout tests still.
     local breath = 0.5 + 0.5 * math.sin(F.now * 2.6)
-    key_box(kx, ky, kw, kh, pal.a(pal.FRIEND, 0.06 + 0.12 * breath),
+    key_box(g.kx, g.ky, g.kw, g.kh, pal.a(pal.FRIEND, 0.06 + 0.12 * breath),
             pal.a(pal.FRIEND, 0.62 + 0.38 * breath))
-    txt("PLAY NOW", kx + kw / 2, ky + kh / 2, kpx, pal.a(pal.INK, 1), "center")
-    hit(kx, ky, kw, kh, "play_now")
+    txt("PLAY NOW", g.kx + g.kw / 2, g.ky + g.kh / 2, g.kpx,
+        pal.a(pal.INK, 1), "center")
+    hit(g.kx, g.ky, g.kw, g.kh, "play_now")
     local mark_down = false
     if land then
-        local ship_y = ky - 12 * F.scale - rh
-        local zone_y = ship_y - rgap - rh
-        local acct_y = zone_y - rgap - rh
+        local acct_box, zone_box, ship_box =
+            g.stops[1], g.stops[2], g.stops[3]
         -- The open list first, as rows and a height, because whatever it
         -- covers has to stand down: glyphs come from the gui and the gui
         -- draws over every mesh, so a stop drawn under the panel would read
         -- through it. Same rule the clock band follows under the drawer.
-        local open, list, bottom = M.land_open, nil, nil
-        local drh = (rh >= 44 * F.scale) and 40 * F.scale or 30 * F.scale
+        local open, list, from = M.land_open, nil, nil
+        local drh = g.narrow and 40 * F.scale or 30 * F.scale
         if open == "zone" and land.zones then
-            list, bottom = {}, zone_y - 6 * F.scale
+            list, from = {}, zone_box
             for _, z in ipairs(land.zones) do
                 list[#list + 1] = {label = z.label, value = z.zone,
                                    action = "land_pick_zone", here = z.here,
                                    dim = not z.live, note = z.format}
             end
         elseif open == "ship" and land.ships then
-            list, bottom = {}, ship_y - 6 * F.scale
+            list, from = {}, ship_box
             for _, s in ipairs(land.ships) do
                 -- Sitting out is the list's last answer, held apart from the
                 -- builds by a rule: it is a different kind of thing to be.
@@ -4633,35 +4706,47 @@ local function landing(land)
         else
             open = nil
         end
-        local ptop = nil
+        -- Where the panel stands and how far up it reaches. It hangs off the
+        -- stop it belongs to, at the key's width down the column and at its
+        -- own cell's on the rail, held to a measure a row can be read at and
+        -- kept inside the window.
+        local ptop, lx, lw, bottom = nil, g.kx, g.kw, nil
         if list then
             local h = 10 * F.scale
             for _, r in ipairs(list) do
                 h = h + (r.rule and 9 * F.scale or drh)
             end
+            if g.rail then
+                lw = math.max(from.w, (M.compact and 200 or 220) * F.scale)
+                lx = math.min(from.x,
+                              F.w - F.safe_r - 14 * F.scale - lw)
+                lx = math.max(lx, F.safe_l + 14 * F.scale)
+            end
+            bottom = from.y - 6 * F.scale
             ptop = bottom - h
         end
-        -- The stops the panel does not cover. A list opens upward from its
-        -- own stop, so the stops above the open one are the covered ones.
-        if open ~= "zone" and open ~= "ship" then
-            land_stop(kx, acct_y, kw, rh, "account", land.name,
-                      "land_account", false)
+        -- The stops the panel does not cover. Down the column a list opens
+        -- upward from its own stop, so the stops above the open one are the
+        -- covered ones; along the rail it opens over the fight and covers no
+        -- stop at all, the three of them standing side by side.
+        if g.rail or (open ~= "zone" and open ~= "ship") then
+            land_stop(acct_box.x, acct_box.y, acct_box.w, acct_box.h,
+                      "account", land.name, "land_account", false, g.rail)
         end
-        if open ~= "ship" then
-            land_stop(kx, zone_y, kw, rh, "zone", land.zone, "land_zone",
-                      open == "zone")
+        if g.rail or open ~= "ship" then
+            land_stop(zone_box.x, zone_box.y, zone_box.w, zone_box.h,
+                      "zone", land.zone, "land_zone", open == "zone", g.rail)
         end
-        land_stop(kx, ship_y, kw, rh, "ship", land.ship, "land_ship",
-                  open == "ship")
+        land_stop(ship_box.x, ship_box.y, ship_box.w, ship_box.h,
+                  "ship", land.ship, "land_ship", open == "ship", g.rail)
         -- The list itself, its rows published above the stops (`pri` 1) and
         -- a screen-wide backdrop behind everything (`pri` -1), so a press
         -- outside it puts it away instead of pulling a trigger.
         if list then
             hit(0, 0, F.w, F.h, "land_shut", nil, nil, -1)
-            land_list(kx, kw, bottom, list, drh)
+            land_list(lx, lw, bottom, list, drh)
             -- And the name stands down when the panel climbs into it.
-            local _, _, _, _, size, wy = landing_geom()
-            mark_down = ptop < wy + size
+            mark_down = ptop < g.mark_y + g.size
         end
     end
     if not mark_down then landing_mark() end
@@ -4707,8 +4792,8 @@ function M.waiting(note)
     -- noise. A fleet that is down is different, and silence there would be a
     -- client that looks like it is still trying.
     if note and note ~= "" then
-        local _, ky, _, kh = landing_geom()
-        txt(note, F.w / 2, ky + kh / 2, (M.compact and 11 or 13) * F.scale,
+        local g = landing_geom()
+        txt(note, F.w / 2, g.ky + g.kh / 2, (M.compact and 11 or 13) * F.scale,
             pal.a(pal.DIM, 0.9), "center", MENU_FONT, true)
     end
 end

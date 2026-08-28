@@ -209,11 +209,10 @@ check("a match with no run draws no ratings beside its clock",
 -- --- what the band no longer says ------------------------------------------
 --
 -- The rung, the streak and the floor were a line under the clock, in the band
--- itself. The rung and the floor have left the client entirely: a rung is a
--- roster slot, the floor was a save point a loss could not cross, and neither
--- was ever explained on the screen that named them. What is left of the three
--- is the streak, and it is a reading on the board rather than a word in the
--- band. See decision 74. The floor itself went with decision 91.
+-- itself. The rung and the floor left the client first, under decision 74, and
+-- then left the game with the ladder under decision 92. What is left of the
+-- three is the streak, and it is a reading on the board rather than a word in
+-- the band.
 ui.details = false
 frame({match = a_fight({streak = 2}),
        ratings = {[0] = 1183, [1] = 1347}})

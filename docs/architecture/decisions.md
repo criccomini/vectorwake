@@ -4359,55 +4359,40 @@ out rather than what the mode does with the answer.
 **Reconsider if:** the window turns out to be long enough to draw fights that
 were not trades, at which point the length is wrong rather than the rule.
 
-## 91. The duel has no save points, and every run starts at the bottom
+## 91. The landing lies down where the column would cover the ship
 
-**Status:** accepted
+**What:** the landing asks the window two questions instead of one. Width still
+decides how wide PLAY NOW is. Height decides the shape: where the column of
+decision 89 would reach the middle of the screen, the same four pieces lie down
+into a rail along the foot, three stops as cells beside the key with the name
+over them. A cell carries its question over its answer with the caret on the
+question's line, which is what lets three of them and the key share one line;
+where that line is wider than the window the cells take a line of their own
+over the key. A list opens upward from the cell it hangs on rather than from
+the key, at a width a build name can be read at. What a stop is and what
+pressing it does are the same either way.
 
-**Decision:** a Ladder run always opens on the first rung, and a loss drops
-`ladder_loss_drop` rungs with nothing under it but the bottom. The checkpoint
-is gone: from the progression, from the wire, from the zone file, and from the
-`ladder_progress` table. A new session no longer resumes anywhere. Clearing the
-whole roster also starts the next run at the bottom rather than at a floor.
+**Why:** the column is a fixed 260 points tall and the window is not. That is a
+third of a monitor, which is what it was drawn against, but 55% of a phone held
+sideways and 69% of a browser window 315 points tall. The camera stands behind
+the hull the stands are watching, so the middle of the screen is that hull: at
+844 by 390 the wordmark was drawn across the ship and the account stop across
+its call sign, which is a front page that hides the one thing it is supposed to
+be showing off. The interface already asks height and width separately for the
+menu, where height decides how much room there is to spend; the landing asked
+about width alone. The rail is direction B of the mocks the column won, in
+`.design/start-flow`, so the look was drawn before it was needed.
 
-What stays durable is the record. Best rung is still kept per account per zone,
-still carried in the token, and still filed at a whistle. It is a number about
-a climb rather than a place to resume one, which is the difference that makes
-it worth keeping.
+**Cost:** two layouts to keep working rather than one, and the landing's
+regression tests now ask each window which of them it should be getting. PLAY
+NOW is no longer centered on the window when the rail is up: it ends the band,
+and the band is what is centered. Opening a list takes the name off the screen
+every time, because the list opens over the band the name sits directly above,
+where the column only lost it when a list climbed that far. A cell is 120
+points wide, so an answer longer than that is cut at the cell's edge; a 24
+character call sign is shown as much of itself as fits.
 
-**Why:** asked for, after the floor did something nobody designed. Rungs were
-banked at every fifth, and the roster has eight, so a climb produced exactly
-one save point, five rungs up, which is precisely `ladder_loss_drop` below the
-top. Every loss from rungs six, seven and eight therefore landed on rung six.
-The upper third of the ladder collapsed into two opponents a climber met
-alternately for as long as they kept playing, and the loss penalty was
-arithmetically free exactly where the fights were hardest.
-
-The session rule compounded it. `restore_ladder` reopened a run at the saved
-floor, so a player who had banked rung six started there every evening,
-for ever, whatever they did in between. The two names were not a bad run. They
-were the whole game from then on.
-
-That could have been fixed by moving the interval, and moving it would have
-bought one number that happens not to collide with the drop on a roster of this
-size. The floor is the part that does not survive the question of what it is
-for: on a ladder short enough to clear in an evening, a save point is a way of
-not playing most of it.
-
-**Cost:** a run is a sitting now, and a pilot who reached rung seven last night
-fights Kestrel tonight. The first rungs are the ones a good player beats
-without thinking, so every session opens with fights that are not in doubt. The
-record is what carries their evening across, and it is a number the board does
-not yet draw, which is the obvious next thing to look at.
-
-Losing three in a row from the middle of the ladder now walks a run all the way
-down, where before it stopped. That is the drop doing what it says.
-
-The Ladder body is four bytes shorter, so `CLIENT_PROTOCOL` moves to 27 and a
-stale tab is refused rather than reading the leg count and the whole run log
-from the wrong offset. The catalog goes to 33 for the key that left the zone
-file, and `ladder_progress` drops its column on the next boot.
-
-**Reconsider if:** opening at the bottom reads as busywork rather than as a
-warm-up, at which point the answer is a shorter run to the interesting rungs,
-not a floor. Or if the roster grows past what one sitting can clear, which is
-the condition under which resuming somewhere was a real idea.
+**Reconsider if:** the rail turns out to read better on a monitor too, at which
+point the column is the special case and the question is whether an upright
+phone still wants it; or the stops outgrow three, which is the reconsider
+decision 89 already carries.
