@@ -168,6 +168,30 @@ local function rect(x, y, w, h, col)
     F.layer:rect(x, ry(y, h), w, h, col)
 end
 
+-- Frost: this box's worth of the scene behind it, blurred.
+--
+-- A panel over a live fight used to dim what was under it and nothing else, so
+-- a stop with a rock passing behind it had a rock in it, sharp, competing with
+-- the word it was there to hold. Frosting is what a pane of glass does: the
+-- light comes through and the picture does not. The wash and the frame go over
+-- the top exactly as they did, and this is the ground they now sit on.
+--
+-- At alpha one the box holds the blurred scene alone; below one, some of the
+-- sharp picture comes through with it. Its own layer because it is its own
+-- material, and the blurred copy it reads is made by the render script, which
+-- is the only thing that can read a frame it has just drawn.
+local function frost(x, y, w, h, a)
+    if not F.frost then return end
+    -- The rule the hit boxes follow, for the reason they follow it: what the
+    -- column has cut away is not on screen, and glass past that edge would be
+    -- a blurred stripe lying over the fight beside it.
+    if F.clip_r then
+        if x >= F.clip_r then return end
+        if x + w > F.clip_r then w = F.clip_r - x end
+    end
+    F.frost:rect(x, ry(y, h), w, h, pal.a(pal.WHITE, a or 1))
+end
+
 -- How heavy to draw a mark of this size.
 --
 -- Against the mark rather than against the window, which is the difference
@@ -1061,8 +1085,8 @@ end
 -- `now` is the frame's clock in seconds, for the few things on screen that
 -- move on their own. Nothing that is laid out depends on it, so a caller with
 -- no clock draws the same interface at rest.
-function M.begin(layer, w, h, density, touching, now)
-    F:begin(layer, w, h, density, now)
+function M.begin(layer, w, h, density, touching, now, frost_layer)
+    F:begin(layer, w, h, density, now, frost_layer)
     -- Points of screen rather than pixels: a phone at two device pixels per
     -- point is a small screen, not a large one, and laying the interface out
     -- against the pixel count is how it ends up drawn at half size on the
@@ -4595,6 +4619,7 @@ local function land_stop(x, y, w, h, label, value, action, lit, stacked, raw)
     -- at. Under the outline rather than over it: the edge is the brighter
     -- half of the same signal, and a wash laid over it would mute it.
     local hot = M.land_sel == action
+    frost(x, y, w, h)
     rect(x, y, w, h, pal.a(pal.BTN_BG, 0.6))
     if hot then rect(x, y, w, h, pal.a(pal.FRIEND, LIT.CURSOR)) end
     key_box(x, y, w, h, nil,
@@ -4706,6 +4731,7 @@ local function landing(land)
     -- begin with, so the cursor's own field goes over that ground as well.
     local key_hot = M.land_sel == "play_now"
     local swell = key_hot and 1 or breath
+    frost(g.kx, g.ky, g.kw, g.kh)
     rect(g.kx, g.ky, g.kw, g.kh, pal.a(pal.FRIEND, 0.06 + 0.12 * swell))
     if key_hot then
         rect(g.kx, g.ky, g.kw, g.kh, pal.a(pal.FRIEND, LIT.CURSOR))

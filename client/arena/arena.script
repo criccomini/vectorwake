@@ -1254,6 +1254,11 @@ function init(self)
         -- to 928, 1376 and 2195 of them, so 24576 holds the worst of those
         -- with the rest of the interface still under it.
         ui = vec.layer("#ui", 24576),
+        -- The glass under a button, which is the blurred scene drawn inside
+        -- the box that asked for it. A handful of rectangles: the landing has
+        -- four, and there is no case where an interface wants dozens, because
+        -- a screen of glass is a screen of nothing legible.
+        frost = vec.layer("#frost", 384),
     }
 
     -- A generated call sign, restored if this browser has one already. The
@@ -2175,7 +2180,8 @@ function update(self, dt)
                    vl = self.vp_layout or 0, vv = self.vp_visual or 0,
                    vi = self.vp_inner or 0, vo = self.vp_outer or 0,
                    vs = self.vp_screen or 0, vt = self.vp_top or 0}
-    ui.begin(layers.ui, ww, wh, density, touch.used, self.clock or 0)
+    ui.begin(layers.ui, ww, wh, density, touch.used, self.clock or 0,
+             layers.frost)
     -- The interface stays up under the menu. Nothing is paused, so hiding the
     -- scoreboard and the radar behind a panel would be a lie about what is
     -- happening: you can be shot while reading this.
@@ -2393,6 +2399,23 @@ function update(self, dt)
         touch.draw(layers.ui, ww, wh, density)
     end
     session.browser.finish(self, dt, wh, html5, touch, ui, menu, sfx, apply_menu)
+
+    -- Whether anything on screen this frame is frosted, which the render
+    -- script has to know before it draws the world: a frame with frost in it
+    -- is drawn into a texture so the blur has something to read, and a frame
+    -- without it goes straight at the screen as it always has. Read off the
+    -- layer rather than kept as a second copy, because the layer already
+    -- knows: what the flush counted is exactly what will be drawn.
+    --
+    -- Posted only when the answer changes, like the viewport message the
+    -- render script sends back the other way. Nothing in a fight asks to be
+    -- read through, and a fight should not pay for the machinery, down to the
+    -- table this would put in the queue every frame.
+    local frosted = layers.frost.n > 0
+    if frosted ~= self.frosted then
+        self.frosted = frosted
+        msg.post("@render:", "frost", {on = frosted})
+    end
 
 end
 

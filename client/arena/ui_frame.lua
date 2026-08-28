@@ -17,6 +17,12 @@ function M.new(state)
         -- against that. See `MENU_SCALE` in ui.lua.
         density = 1,
         layer = nil,
+        -- The glass layer: the blurred scene, drawn inside the box of anything
+        -- meant to be read through rather than over. A layer of its own
+        -- because it is a different material and a different pass, and nil
+        -- wherever the interface is drawn without an engine under it, which is
+        -- every test and every tool. See `frost` in ui.lua.
+        frost = nil,
         text = nil,
         text_count = 0,
         -- The right edge everything drawn is cut against, or nil for the
@@ -45,8 +51,9 @@ function M:safe(left, right, top, bottom, installed)
     self.installed = installed and true or false
 end
 
-function M:begin(layer, w, h, density, now)
+function M:begin(layer, w, h, density, now, frost)
     self.layer = layer
+    self.frost = frost
     self.w = w
     self.h = h
     self.scale = density
@@ -56,6 +63,7 @@ function M:begin(layer, w, h, density, now)
     self.text_count = 0
     self.zones = {}
     layer:reset()
+    if frost then frost:reset() end
     -- Nothing is cut until something asks. The reset above uncovers the
     -- layer's own writers, so the two cannot come into a frame disagreeing.
     self.clip_r = nil
@@ -65,6 +73,7 @@ function M:finish()
     self.state.n = self.text_count
     self.state.version = self.state.version + 1
     self.layer:flush()
+    if self.frost then self.frost:flush() end
 end
 
 function M:ry(y, height)
