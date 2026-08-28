@@ -161,10 +161,10 @@ impl ZoneDef {
     /// has no words for sends empty strings and the row draws no strip.
     pub fn format(&self) -> (String, String, String) {
         match self.mode.as_str() {
-            // One life against one measured rival, and what a run is played
+            // One life against one other pilot, and what an evening is played
             // for is how many of them you take without dying. The shape is
             // validated, so the words never have to be derived.
-            "ladder" => ("1 v 1".into(), "one life".into(), "streak".into()),
+            "duel" => ("1 v 1".into(), "one life".into(), "streak".into()),
             "melee" => {
                 // Only what the zone actually states. A melee without a
                 // per-side cap or a clock has no honest number to print,
@@ -588,22 +588,22 @@ fn validate_zone(name: &str, z: &ZoneDef, zdir: &Path) -> Result<(), String> {
             ));
         }
     }
-    if z.mode == "ladder"
+    if z.mode == "duel"
         && (z.teams.len() != 2
             || z.max_teams() != 2
-            || z.max_players() != 1
+            || z.max_players() != 2
             || z.max_ships.unwrap_or(64) != 2
             || z.max_humans_per_team() != 1
             || z.max_bots_per_team() != 1
             || z.arena
-                .ladder_first_to
-                .unwrap_or(crate::modes::DEFAULT_LADDER_FIRST_TO)
+                .duel_first_to
+                .unwrap_or(crate::modes::DEFAULT_DUEL_FIRST_TO)
                 != 1
             || z.arena.spawn_radius.unwrap_or(0) != 0)
     {
         return Err(format!(
-            "zone {name:?}: Ladder requires exactly two named teams, max_teams=2, \
-             max_players=1, max_ships=2, both per-team caps at 1, ladder_first_to=1, \
+            "zone {name:?}: a duel requires exactly two named teams, max_teams=2, \
+             max_players=2, max_ships=2, both per-team caps at 1, duel_first_to=1, \
              and spawn_radius=0"
         ));
     }
@@ -871,24 +871,24 @@ mod tests {
             "catalog.toml",
             "version = 3\n\
                                    [[zone]]\nname = \"war\"\n\
-                                   [[zone]]\nname = \"duel\"\n",
+                                   [[zone]]\nname = \"open\"\n",
         );
         write(
             &d,
-            "zones/duel/zone.toml",
-            "mode = \"duel\"\nmaps = [\"d.vwmap\"]\n\
+            "zones/open/zone.toml",
+            "mode = \"arena\"\nmaps = [\"d.vwmap\"]\n\
                                            max_rooms = 100\nfill_target = 2\n\
                                            max_players = 2\n",
         );
-        write(&d, "zones/duel/d.vwmap", "x");
+        write(&d, "zones/open/d.vwmap", "x");
         let c = load(&d).expect("loads");
         assert_eq!(c.version, 3);
         assert_eq!(
             c.order,
-            vec!["war", "duel"],
+            vec!["war", "open"],
             "declared order is the tie-break"
         );
-        assert_eq!(c.zone("duel").unwrap().max_rooms(), 100);
+        assert_eq!(c.zone("open").unwrap().max_rooms(), 100);
         assert_eq!(c.zone("war").unwrap().max_rooms(), 1, "absent means one");
         assert_eq!(
             c.fallback_zone().as_deref(),
@@ -911,7 +911,7 @@ mod tests {
             toml::from_str(&text).expect(&path)
         };
         assert_eq!(read("melee").label("melee"), "Team Battle");
-        assert_eq!(read("ladder").label("ladder"), "Duel");
+        assert_eq!(read("duel").label("duel"), "Duel");
         // And a zone that sets none reads as its own key, which is what every
         // zone did before labels existed.
         assert_eq!(ZoneDef::default().label("chaos"), "chaos");
@@ -924,7 +924,7 @@ mod tests {
             ("4 v 4".into(), "3:00".into(), "kills".into())
         );
         assert_eq!(
-            read("ladder").format(),
+            read("duel").format(),
             ("1 v 1".into(), "one life".into(), "streak".into())
         );
     }
@@ -950,30 +950,30 @@ mod tests {
     }
 
     #[test]
-    fn ladder_rejects_every_shape_that_breaks_a_two_role_fight() {
-        let d = tmp("ladder-shape");
+    fn a_duel_rejects_every_shape_that_breaks_a_two_seat_fight() {
+        let d = tmp("duel-shape");
         write(&d, "duel.vwmap", "map");
-        let valid = "mode = \"ladder\"\n\
+        let valid = "mode = \"duel\"\n\
                      maps = [\"duel.vwmap\"]\n\
                      admission = \"any\"\n\
                      teams = [\"Pilot\", \"Rival\"]\n\
                      max_teams = 2\n\
-                     max_players = 1\n\
+                     max_players = 2\n\
                      max_ships = 2\n\
                      fill_target = 1\n\
                      max_humans_per_team = 1\n\
                      max_bots_per_team = 1\n\
                      [arena]\n\
-                     ladder_first_to = 1\n\
+                     duel_first_to = 1\n\
                      spawn_radius = 0\n";
         let good: ZoneDef = toml::from_str(valid).unwrap();
-        validate_zone("ladder", &good, &d).expect("the exact Ladder shape");
-        // Admission is the operator's call rather than the mode's. A run
+        validate_zone("duel", &good, &d).expect("the exact duel shape");
+        // Admission is the operator's call rather than the mode's. A fight
         // belongs to whatever account is flying it, and a guest has one.
         let shut: ZoneDef =
             toml::from_str(&valid.replacen("admission = \"any\"", "admission = \"claimed\"", 1))
                 .unwrap();
-        validate_zone("ladder", &shut, &d).expect("a Ladder zone may still want claimed pilots");
+        validate_zone("duel", &shut, &d).expect("a duel zone may still want claimed pilots");
 
         for (tag, from, to) in [
             (
@@ -982,7 +982,7 @@ mod tests {
                 "teams = [\"Pilot\"]",
             ),
             ("team count", "max_teams = 2", "max_teams = 3"),
-            ("people", "max_players = 1", "max_players = 2"),
+            ("people", "max_players = 2", "max_players = 3"),
             ("seats", "max_ships = 2", "max_ships = 3"),
             (
                 "human side cap",
@@ -994,13 +994,13 @@ mod tests {
                 "max_bots_per_team = 1",
                 "max_bots_per_team = 2",
             ),
-            ("series", "ladder_first_to = 1", "ladder_first_to = 3"),
+            ("series", "duel_first_to = 1", "duel_first_to = 3"),
             ("placement", "spawn_radius = 0", "spawn_radius = 4"),
         ] {
             let broken: ZoneDef = toml::from_str(&valid.replacen(from, to, 1)).unwrap();
-            let error = validate_zone("ladder", &broken, &d)
-                .expect_err("an invalid Ladder shape must not load");
-            assert!(error.contains("Ladder requires"), "{tag}: {error}");
+            let error = validate_zone("duel", &broken, &d)
+                .expect_err("an invalid duel shape must not load");
+            assert!(error.contains("a duel requires"), "{tag}: {error}");
         }
         let _ = std::fs::remove_dir_all(&d);
     }

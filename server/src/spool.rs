@@ -193,17 +193,6 @@ impl Spool<crate::pilot::Event> {
     pub fn pilot(dir: &str) -> Spool<crate::pilot::Event> {
         Spool::open(dir, "pilot.jsonl", "/v1/pilot-events", "pilot event")
     }
-
-    /// Ladder progress is projected from match rows. These are the rows that
-    /// must be acknowledged before the account's exclusive rated lease can be
-    /// released and reclaimed with a fresh progress snapshot.
-    fn ladder_batches(&self, account: u64) -> Vec<Batch<crate::pilot::Event>> {
-        self.batches_matching(|event| {
-            event.pilot == Some(account)
-                && event.kind == crate::pilot::MATCH
-                && event.detail.get("ladder").is_some()
-        })
-    }
 }
 
 impl Spool<crate::growth::Artifact> {
@@ -532,28 +521,7 @@ pub async fn settle_account(
     settle_batches(batches, base, pool_token, "/v1/events", "event").await
 }
 
-/// Acknowledge every Ladder-bearing match row for this account before its
-/// lease is released. The ordinary drain still removes the queue entries.
-pub async fn settle_ladder_account(
-    spool: &Arc<Mutex<Spool<crate::pilot::Event>>>,
-    base: &str,
-    pool_token: &str,
-    account: u64,
-) -> Result<(), String> {
-    let batches = spool
-        .lock()
-        .map_err(|_| "pilot event spool lock failed".to_string())?
-        .ladder_batches(account);
-    settle_batches(
-        batches,
-        base,
-        pool_token,
-        "/v1/pilot-events",
-        "Ladder event",
-    )
-    .await
-}
-
+/// Post a set of batches and drop what the far end acknowledged.
 async fn settle_batches<T: Serialize>(
     batches: Vec<Batch<T>>,
     base: &str,
@@ -687,32 +655,6 @@ mod tests {
                 after: 1216.0,
             }],
             bots_only: false,
-        }
-    }
-
-    fn ladder_event(account: u64, rung: u32, best: u32) -> crate::pilot::Event {
-        crate::pilot::Event {
-            id: rand::random(),
-            at: 1_700_000_000_000,
-            session: "ladder-session".into(),
-            kind: crate::pilot::MATCH.into(),
-            pilot: Some(account),
-            name: "Climber".into(),
-            bot: false,
-            room: Some(7),
-            tick: 900,
-            detail: serde_json::json!({
-                "match": 4,
-                "completed": true,
-                "won": true,
-                "assists": 0,
-                "played_ticks": 4_000,
-                "ladder": {
-                    "best": best,
-                    "rung": rung,
-                    "streak": 0,
-                },
-            }),
         }
     }
 
@@ -1050,40 +992,6 @@ mod tests {
         assert!(error.contains("invalid victim"));
         assert_eq!(spool.lock().unwrap().len(), 1);
         server.join().unwrap();
-        let _ = std::fs::remove_dir_all(&d);
-    }
-
-    #[tokio::test]
-    async fn the_release_barrier_acknowledges_ladder_progress_before_reconnect() {
-        let d = tmp("ladder-account-ack");
-        let (base, server) = reply_once(r#"{"stored":1,"rejected":[]}"#);
-        let mut s = Spool::pilot(d.to_str().unwrap());
-        s.aim(&base, "tok", "ladder", "ladder", "i1");
-        let mut unrelated = ladder_event(22, 5, 7);
-        unrelated.name = "Somebody else".into();
-        s.push(unrelated);
-        s.push(crate::pilot::Event {
-            kind: crate::pilot::JOIN.into(),
-            detail: serde_json::json!({ "class": 0 }),
-            ..ladder_event(11, 0, 0)
-        });
-        s.push(ladder_event(11, 10, 13));
-        let spool = Arc::new(Mutex::new(s));
-
-        settle_ladder_account(&spool, &base, "tok", 11)
-            .await
-            .expect("meta acknowledged the record before lease release");
-
-        let request = server.join().unwrap();
-        assert!(request.starts_with("POST /v1/pilot-events HTTP/1.1"));
-        assert!(request.contains("\"rung\":10"));
-        assert!(!request.contains("Somebody else"));
-        assert!(!request.contains("\"kind\":\"join\""));
-        assert_eq!(
-            spool.lock().unwrap().len(),
-            3,
-            "the ordinary drain still owns queue removal"
-        );
         let _ = std::fs::remove_dir_all(&d);
     }
 

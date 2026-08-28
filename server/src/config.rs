@@ -126,11 +126,9 @@ pub struct ArenaConfig {
     /// a bad one is nearly over. Melee and Ladder both read them.
     pub match_seconds: Option<u16>,
     pub intermission_seconds: Option<u16>,
-    /// Ladder series and run rules. Missing values are single-life play and a
-    /// two-rung loss. Nothing floors that loss: a run always opens on the
-    /// bottom rung and can fall back to it.
-    pub ladder_first_to: Option<u16>,
-    pub ladder_loss_drop: Option<u32>,
+    /// How many deaths take a duel. Missing means single-life play, which is
+    /// the only shape the catalog accepts for the mode.
+    pub duel_first_to: Option<u16>,
     /// What a pilot is worth the moment they spawn, and what each kill on a
     /// run adds to that. A bounty is the run rather than the kit: the kit is
     /// the same every life, so it is what a pilot has done since their last
@@ -443,17 +441,15 @@ gun_mods = { multi = 2, barrel = 2 }
     }
 
     #[test]
-    fn ladder_rules_parse_as_arena_settings() {
+    fn duel_rules_parse_as_arena_settings() {
         let src = r#"
 [arena]
-mode = "ladder"
-ladder_first_to = 5
-ladder_loss_drop = 1
+mode = "duel"
+duel_first_to = 5
 "#;
-        let c: ZoneConfig = toml::from_str(src).expect("Ladder settings parse");
-        assert_eq!(c.arena.mode, "ladder");
-        assert_eq!(c.arena.ladder_first_to, Some(5));
-        assert_eq!(c.arena.ladder_loss_drop, Some(1));
+        let c: ZoneConfig = toml::from_str(src).expect("duel settings parse");
+        assert_eq!(c.arena.mode, "duel");
+        assert_eq!(c.arena.duel_first_to, Some(5));
     }
 
     #[test]

@@ -28,7 +28,7 @@ use crate::catalog::sha256_hex;
 use crate::pilot;
 use crate::rating;
 use crate::sim;
-use crate::token::{self, Claims, ClassRating, Kind, LadderProgress};
+use crate::token::{self, Claims, ClassRating, Kind};
 
 mod growth;
 mod maps;
@@ -43,7 +43,7 @@ pub const DEFAULT_CLASS: &str = "arena";
 pub const LADDER_CLASS: &str = "ladder";
 
 pub(crate) fn house_rating_class(name: &str) -> &'static str {
-    if crate::pilots::ladder_archetype_for_callsign(name).is_some() {
+    if crate::pilots::archetype_for_callsign(name).is_some() {
         LADDER_CLASS
     } else {
         DEFAULT_CLASS
@@ -132,18 +132,10 @@ create table if not exists ratings (
     games    integer not null,
     primary key (account, class)
 );
-create table if not exists ladder_progress (
-    account     bigint not null references accounts(id) on delete cascade,
-    zone        text not null,
-    best        integer not null default 0,
-    updated     timestamptz not null default now(),
-    primary key (account, zone)
-);
--- The save point went with decision 91. A run opens on the bottom rung
--- whoever is flying it, so the only durable thing left about a climb is how
--- high it ever got, and a column nothing reads is a column that misleads the
--- next person to read the schema.
-alter table ladder_progress drop column if exists checkpoint;
+-- Per-account duel progress is gone with the ladder it measured (decision 92).
+-- A duel is one sitting against whoever the door sent, and the only number it
+-- leaves behind is a rating, which lives in `ratings` with every other class.
+drop table if exists ladder_progress;
 create table if not exists rated_events (
     id             bigserial primary key,
     at             timestamptz not null default now(),
@@ -1308,21 +1300,6 @@ async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
         })
         .collect();
 
-    let rows = db
-        .query(
-            "select zone, best from ladder_progress where account = $1",
-            &[&account],
-        )
-        .await
-        .map_err(|e| format!("cannot read Ladder progress: {e}"))?;
-    let ladders = rows
-        .iter()
-        .map(|row| LadderProgress {
-            zone: row.get(0),
-            best: row.get::<_, i32>(1).clamp(0, u16::MAX as i32) as u16,
-        })
-        .collect();
-
     // What this account may slot, which is the baseline plus whatever it has
     // bought. An account with an empty row owns the baseline, so a pilot who
     // has never bought anything still flies a whole ship.
@@ -1341,7 +1318,6 @@ async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
         expires: token::now_secs() + token::LIFETIME_SECS,
         ratings,
         entitlements,
-        ladders,
     })
 }
 
@@ -4950,7 +4926,7 @@ pub async fn claim_rated_session(
     session: &str,
     instance: &str,
     zone: &str,
-) -> Result<(bool, Vec<ClassRating>, Vec<LadderProgress>), String> {
+) -> Result<(bool, Vec<ClassRating>), String> {
     let body = serde_json::json!({
         "pool_token": pool_token,
         "account": account,
@@ -4982,21 +4958,7 @@ pub async fn claim_rated_session(
                 .collect()
         })
         .unwrap_or_default();
-    let ladders = reply
-        .get("ladders")
-        .and_then(|value| value.as_array())
-        .map(|rows| {
-            rows.iter()
-                .filter_map(|row| {
-                    Some(LadderProgress {
-                        zone: row.get("zone")?.as_str()?.to_string(),
-                        best: row.get("best")?.as_u64()?.min(u16::MAX as u64) as u16,
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    Ok((claimed, ratings, ladders))
+    Ok((claimed, ratings))
 }
 
 /// Release a rated seat. The route is idempotent, so cleanup can call it
@@ -5727,28 +5689,6 @@ mod tests {
     #[test]
     fn a_well_formed_pilot_event_is_accepted() {
         assert_eq!(settlement::validate_pilot_event(&pilot_event()), Ok(()));
-    }
-
-    #[test]
-    fn ladder_progress_is_bounded() {
-        let mut event = pilot_event();
-        event["detail"] = serde_json::json!({
-            "ladder": { "best": 14 }
-        });
-        assert_eq!(settlement::validate_pilot_event(&event), Ok(()));
-
-        event["detail"]["ladder"]["best"] = serde_json::json!(u16::MAX as u64 + 1);
-        assert_eq!(
-            settlement::validate_pilot_event(&event),
-            Err("invalid Ladder best".into())
-        );
-
-        event["detail"]["ladder"] = serde_json::json!({});
-        assert_eq!(
-            settlement::validate_pilot_event(&event),
-            Err("invalid Ladder best".into()),
-            "a run that files no record files nothing this route can store"
-        );
     }
 
     #[test]

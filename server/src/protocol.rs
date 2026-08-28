@@ -215,11 +215,12 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// legal byte vector that resolves to a different ship, so they must reload
 /// before joining or saving a kit under the new row.
 ///
-/// 27 takes the checkpoint out of the Ladder body. A run has no floor to
-/// report any more, and an older tab would read the four bytes that carried it
-/// as the account's best rung and then take every field after it, the leg
-/// count and the whole run log included, from the wrong offset.
-pub(crate) const CLIENT_PROTOCOL: u8 = 27;
+/// 28 is the duel. The Ladder body carried a rung, a best rung, two opponent
+/// slots and a first-to that no client ever drew; what is left is the card of
+/// whoever is reading it, which now differs per pilot because both seats hold
+/// one. An older tab would read a shorter body from the wrong offset and draw
+/// somebody else's evening.
+pub(crate) const CLIENT_PROTOCOL: u8 = 28;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
@@ -295,21 +296,23 @@ pub(crate) const S2C_TEAMS: u8 = 12;
 /// they are told.
 pub(crate) const S2C_ONAIR: u8 = 13;
 /// `[S2C_MATCH, flags, seconds left, sides, score per side as u16,
-/// optional artifact id as u64, optional Ladder body]`.
+/// optional artifact id as u64, optional duel body]`.
 ///
 /// Flag bit 0 says the match is playing, bit 1 says an artifact follows the
-/// scores, and bit 2 says the Ladder body follows that. The Ladder body is
-/// `[status, rung, streak, best streak, best, active opponent, desired
-/// opponent, first-to, legs, logged, log[logged]]`. Status bit 0 says the
-/// requested rival is seated, bit 1 says the finite roster was cleared, and bit
-/// 2 says the room is waiting for a rival rather than counting down. The six
-/// progression fields are u32 and first-to is u16.
+/// scores, and bit 2 says the duel body follows that. The duel body is
+/// `[status, streak, best streak, legs, logged, log[logged]]`, where status
+/// bit 0 says the room is waiting for a second pilot rather than counting
+/// down, and the three readings are u32.
 ///
-/// `legs` is a u32 count of every life this run has finished and `logged` is a
-/// byte saying how many of them the window still holds, oldest first. A leg is
-/// `[result, seconds as u16, call sign length, call sign]`, where result is 0
-/// lost, 1 cleared, 2 drawn, so it is four bytes plus a name as long as its
-/// owner made it. The body is 32 bytes before the first of them.
+/// `legs` is a u32 count of every fight this pilot has finished here and
+/// `logged` is a byte saying how many of them the window still holds, oldest
+/// first. A leg is `[result, seconds as u16, call sign length, call sign]`,
+/// where result is 0 lost, 1 won, 2 drawn, so it is four bytes plus a name as
+/// long as its owner made it. The body is 14 bytes before the first of them.
+///
+/// The duel body is the one part of any message that differs per recipient: a
+/// duel has two pilots in it and the card belongs to whoever is reading it.
+/// See `Room::broadcast_match`.
 ///
 /// One packet owns the clock, result artifact, Ladder transition, and the run
 /// log. Queue pressure can delay the newest answer, but it cannot combine
@@ -320,7 +323,7 @@ pub(crate) const S2C_ONAIR: u8 = 13;
 pub(crate) const S2C_MATCH: u8 = 14;
 pub(crate) const MATCH_PLAYING: u8 = 1 << 0;
 pub(crate) const MATCH_HAS_ARTIFACT: u8 = 1 << 1;
-pub(crate) const MATCH_HAS_LADDER: u8 = 1 << 2;
+pub(crate) const MATCH_HAS_DUEL: u8 = 1 << 2;
 /// `[S2C_CHARGE, ship, slot, x, y, tick]`, a public action without the private
 /// inventory count. Sent only to views whose fixed fairness circle contains
 /// the firing ship; x and y are signed Q8 positions.

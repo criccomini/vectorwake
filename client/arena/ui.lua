@@ -2395,8 +2395,8 @@ M.RUN = RUN
 -- Its own function because the match ending measures the whole block before
 -- it places any of it, exactly as it does with the roster above this.
 function RUN.shown(o, y0, cap)
-    local ladder = o.match and o.match.ladder
-    local log = ladder and ladder.log or {}
+    local duel = o.match and o.match.duel
+    local log = duel and duel.log or {}
     -- The ending hands down a cap, and that cap is the answer: it was measured
     -- against the whole block before any of it was placed, and the block is
     -- centered rather than hung off the top of the screen. Intersecting it
@@ -2421,7 +2421,7 @@ end
 -- Above the fights rather than below them, because the streak is what the
 -- mode is played for and the fights are how it got there.
 function RUN.readings(o, top)
-    local ladder = o.match.ladder
+    local duel = o.match.duel
     local x, w = board.x, board.w
     local h = RUN.READ_H * F.scale
     local small = LBL_PX * F.scale
@@ -2430,11 +2430,11 @@ function RUN.readings(o, top)
     vrule(x, top, h, pal.a(pal.RADAR_TILE, 0.7))
 
     local at = x + 12 * F.scale
-    local streak = ladder.streak or 0
+    local streak = duel.streak or 0
     local stacks = {
         {"streak", streak, streak > 0 and pal.FRIEND or pal.DIM},
-        {"best", math.max(ladder.best_streak or 0, streak), pal.INK},
-        {"fights", ladder.legs or #(ladder.log or {}), pal.INK},
+        {"best", math.max(duel.best_streak or 0, streak), pal.INK},
+        {"fights", duel.legs or #(duel.log or {}), pal.INK},
     }
     for i, stack in ipairs(stacks) do
         if i > 1 then
@@ -2465,7 +2465,7 @@ end
 -- as is a column of "0:44". The rival is set in the menu face because it is a
 -- name being read, and the two beside it in the mono every number wears.
 function RUN.fights(o, top, shown)
-    local log = o.match.ladder.log or {}
+    local log = o.match.duel.log or {}
     local num = (FONT - 2) * F.scale
     local x, w = board.x, board.w
     local h = shown * LINE * F.scale + 12 * F.scale
@@ -2518,8 +2518,8 @@ end
 
 local function run_log(o, top, always, cap)
     if not (M.details or always) then return top end
-    local ladder = o.match and o.match.ladder
-    if not ladder then return top end
+    local duel = o.match and o.match.duel
+    if not duel then return top end
     -- The readings draw with nothing under them. A run that has not finished a
     -- fight yet is still a run, and a streak of zero is a reading rather than
     -- an absence: the shipped panel hid it at zero, so the one number this
@@ -3807,15 +3807,15 @@ local function flag_strip(me)
     end
 end
 
-local function ladder_waiting(m)
-    return m ~= nil and not m.playing and m.ladder ~= nil
-        and m.ladder.waiting == true
+local function duel_waiting(m)
+    return m ~= nil and not m.playing and m.duel ~= nil
+        and m.duel.waiting == true
 end
 
 local function match_ended(m)
     if m == nil or m.playing then return false end
-    if m.ladder == nil then return true end
-    return m.artifact ~= nil and not ladder_waiting(m)
+    if m.duel == nil then return true end
+    return m.artifact ~= nil and not duel_waiting(m)
 end
 -- The arena asks the same question, to keep the touch pads off the ending:
 -- the whistle benched every hull, so the pads have nothing to drive, and the
@@ -3879,7 +3879,7 @@ local function match_clock(o, m, names, alone)
         return
     end
     local left = m.left or 0
-    local clock = ladder_waiting(m) and "--:--"
+    local clock = duel_waiting(m) and "--:--"
         or string.format("%d:%02d", math.floor(left / 60), left % 60)
     local big, name_px, under_px = band_type()
     local top = band_top()
@@ -3928,7 +3928,7 @@ local function match_clock(o, m, names, alone)
     -- A rival search is not a scored life, and it is not a named one either:
     -- the room has not chosen who is across the arena yet, so both sides would
     -- be last fight's. The clock alone until it has.
-    if ladder_waiting(m) then
+    if duel_waiting(m) then
         press()
         return
     end
@@ -3941,7 +3941,7 @@ local function match_clock(o, m, names, alone)
     -- first-to-one has nothing to say until it is over, and the board behind
     -- the band says it better: which fight, won or lost, and how long it
     -- took.
-    local duel = m.ladder ~= nil
+    local duel = m.duel ~= nil
     local mine = view_team
     local sides = {}
     for team, n in pairs(m.score or {}) do
@@ -4056,11 +4056,10 @@ local function match_note(o, m)
     if band_r > band_l and M.drawer_over(band_l, band_r - band_l) then
         return
     end
-    -- In ink rather than in the warning color. Two of the three lines left,
-    -- a rival who disconnected and a clock that has run out, would wear red
-    -- well enough, and the third is a ladder cleared, which is the best thing
-    -- that happens in that mode. The lag notice under this one is the red one,
-    -- and two reds in a column would stop meaning anything.
+    -- In ink rather than in the warning color. The lines left, an opponent
+    -- who left mid-fight and a clock that has run out, would wear red well
+    -- enough, but the lag notice under this one is the red one and two reds in
+    -- a column would stop meaning anything.
     local px = (M.compact and 9 or 11) * F.scale
     txt(line, F.w / 2, band_bottom() + 8 * F.scale, px,
         pal.a(pal.INK, 0.9), "center")
@@ -4147,28 +4146,24 @@ function END.result(o, m, names)
         if n > best then best, best_at, drawn = n, team, false
         elseif n == best then drawn = true end
     end
-    if m.ladder then
+    local last = m.duel and (m.duel.log or {})[#(m.duel.log or {})]
+    if last and last.rival ~= "" then
         -- A duel's result is about the two people in it, so it is said the way
-        -- melee says one: a name and a verb. The name comes off the leg the
-        -- room just filed rather than off the roster, because the rival's seat
-        -- is handed to the next rung within seconds of the whistle and a name
-        -- read late is the wrong one.
-        local log = m.ladder.log or {}
-        local rival = log[#log] and log[#log].rival or ""
-        if m.ladder.cleared then
-            return "every rival beaten", pal.PAID, best_at, false
-        end
-        if drawn or rival == "" then
+        -- melee says one: a name and a verb. Both come off the fight the room
+        -- just filed on this viewer's own card, which already knows which side
+        -- of it they were on. Off the card rather than off the roster, because
+        -- the seat across the arena is handed to somebody else within seconds
+        -- of the whistle and a name read late is the wrong one.
+        --
+        -- A watcher's card is empty, so they fall through to the side naming
+        -- below: nobody in the stands has a side in this.
+        if last.result == "drawn" then
             return "drawn", pal.DIM, best_at, false
         end
-        -- Against the climber's own seat rather than the camera's side. One
-        -- person climbs and the house rival holds the other side, so a run is
-        -- taken or dropped whoever is watching it; a viewer behind the rival
-        -- is still watching somebody else's run.
-        if best_at == 0 then
-            return rival, pal.FRIEND, best_at, "beaten"
+        if last.result == "cleared" then
+            return last.rival, pal.FRIEND, best_at, "beaten"
         end
-        return rival, pal.ENEMY, best_at, "takes it"
+        return last.rival, pal.ENEMY, best_at, "takes it"
     end
     if drawn or best_at == nil then return "drawn", pal.INK, nil, false end
     -- The side keeps the case it was supplied in; the verb is the interface
@@ -4369,8 +4364,8 @@ local function podium(o, m, names)
     -- including one with no finished fight in it. The fights under them take
     -- whatever is left.
     local legs = 0
-    if m.ladder then
-        local log = m.ladder.log or {}
+    if m.duel then
+        local log = m.duel.log or {}
         h = h + gap + RUN.READ_H * F.scale
         local spare = F.h - 2 * (F.safe_t + 18 * F.scale) - h - 8 * F.scale
         legs = math.max(0, math.floor(spare / (LINE * F.scale)))
@@ -4440,7 +4435,7 @@ local function podium(o, m, names)
     top_side = nil
     -- Both sections, or the readings alone where the window had no room for
     -- a fight under them. `legs` is what the measure above found space for.
-    if m.ladder then bottom = run_log(o, bottom, true, legs) end
+    if m.duel then bottom = run_log(o, bottom, true, legs) end
     END.foot(o, m, x, bottom + gap, w)
     F.scale = was_scale
 end
@@ -6411,7 +6406,7 @@ function pages.pilot(v, x, y, w, h, focused)
     end
     local career = c.career
     if career and career.class then
-        local word = career.class == "ladder" and "Duel rating"
+        local word = career.class == "duel" and "Duel rating"
             or "Arena rating"
         local val = "provisional"
         if career.rating then

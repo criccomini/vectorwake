@@ -15,6 +15,12 @@ use std::collections::{HashMap, HashSet};
 /// yet believe.
 pub const PROVISIONAL_GAMES: u32 = 10;
 
+/// Where a pilot nobody has measured sits. The middle of the scale, which is
+/// also where the anchor is pinned, so an unrated pilot's first opponent is
+/// the reference personality and their first few deaths move them fast enough
+/// to find their real level in an evening. See `K_NEW`.
+pub const UNRATED: f64 = 1200.0;
+
 /// K starts high so a new pilot finds their level in an evening, and settles
 /// low so a settled one stops bouncing. Bots move slowly by comparison: a
 /// human should move against a bot far more than the bot moves against them.
@@ -146,7 +152,7 @@ impl Rating {
     }
 
     pub fn rating_of(&self, who: &str) -> f64 {
-        *self.score.get(who).unwrap_or(&1200.0)
+        *self.score.get(who).unwrap_or(&UNRATED)
     }
 
     pub fn games_of(&self, who: &str) -> u32 {

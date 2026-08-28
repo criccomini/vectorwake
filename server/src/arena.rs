@@ -85,7 +85,6 @@ pub(crate) struct RatedLease {
     pub(crate) account: u64,
     pub(crate) session: String,
     pub(crate) spool: std::sync::Arc<std::sync::Mutex<spool::Spool<spool::Event>>>,
-    pub(crate) pilot_spool: std::sync::Arc<std::sync::Mutex<spool::Spool<crate::pilot::Event>>>,
     pub(crate) touched: std::time::Instant,
 }
 
@@ -116,22 +115,14 @@ impl RatedLease {
         account: u64,
         session: String,
         spool: std::sync::Arc<std::sync::Mutex<spool::Spool<spool::Event>>>,
-        pilot_spool: std::sync::Arc<std::sync::Mutex<spool::Spool<crate::pilot::Event>>>,
-    ) -> Result<
-        Option<(
-            RatedLease,
-            Vec<token::ClassRating>,
-            Vec<token::LadderProgress>,
-        )>,
-        String,
-    > {
+    ) -> Result<Option<(RatedLease, Vec<token::ClassRating>)>, String> {
         // A reconnect can reach the door just before the old connection's
         // cleanup releases its row. Give that settlement a brief chance to
         // finish instead of turning a millisecond race into a denial. The row
         // is never stolen: another live session waits through the same grace
         // and is still refused.
         let mut waits = 0;
-        let (claimed, ratings, ladders) = loop {
+        let (claimed, ratings) = loop {
             let result =
                 meta::claim_rated_session(&base, &pool_token, account, &session, &instance, &zone)
                     .await?;
@@ -151,11 +142,9 @@ impl RatedLease {
                     account,
                     session,
                     spool,
-                    pilot_spool,
                     touched: std::time::Instant::now(),
                 },
                 ratings,
-                ladders,
             )
         }))
     }
@@ -171,7 +160,7 @@ impl RatedLease {
             &self.zone,
         )
         .await
-        .map(|(claimed, _, _)| claimed)
+        .map(|(claimed, _)| claimed)
     }
 
     pub(crate) async fn release(self) {
@@ -181,21 +170,9 @@ impl RatedLease {
     pub(crate) async fn release_after_settlement(mut self) {
         let mut attempts = 0u32;
         loop {
-            let rated =
-                spool::settle_account(&self.spool, &self.base, &self.pool_token, self.account)
-                    .await;
-            let ladder = if rated.is_ok() {
-                spool::settle_ladder_account(
-                    &self.pilot_spool,
-                    &self.base,
-                    &self.pool_token,
-                    self.account,
-                )
+            match spool::settle_account(&self.spool, &self.base, &self.pool_token, self.account)
                 .await
-            } else {
-                Ok(())
-            };
-            match rated.and(ladder) {
+            {
                 Ok(()) => break,
                 Err(e) => {
                     attempts += 1;
@@ -282,16 +259,88 @@ impl ArenaServer {
     /// answers instead and the welcome says where they actually are. A refusal
     /// would be the honest-looking answer and the wrong one: the player asked
     /// to play this game, and the room was how they said it.
-    pub(crate) fn room_wanted(&mut self, want: u32) -> Option<usize> {
-        if want == 0 {
-            return self.room_for_join();
-        }
+    pub(crate) fn room_wanted(&mut self, want: u32, seat: &Seat) -> Option<usize> {
         let cap = self.max_players();
-        if let Some(i) = self.rooms.iter().position(|r| r.number == want) {
-            if self.rooms[i].humans() < cap {
-                return Some(i);
+        if want != 0 {
+            if let Some(i) = self.rooms.iter().position(|r| r.number == want) {
+                if self.rooms[i].humans() < cap {
+                    return Some(i);
+                }
             }
         }
+        // A duel is one fight against one person, so who is already waiting
+        // decides where an arrival goes. Every other zone wants the fullest
+        // room, because what it is filling is a crowd.
+        if self.rooms.iter().any(|room| room.is_duel()) {
+            let class = self.rating_class();
+            let rating = self
+                .token_rating(seat, &class)
+                .map(|(rating, _)| rating)
+                .unwrap_or(rating::UNRATED);
+            return self.duel_room_for_join(rating);
+        }
+        self.room_for_join()
+    }
+
+    /// How far apart two ratings may be and still be called a match.
+    ///
+    /// About two of the five visible tiers. Wide, deliberately: on a zone this
+    /// size the choice is usually between one waiting person and no waiting
+    /// person, and a fight against somebody a tier off is a better evening
+    /// than a fight against the AI. What the band is really for is the case
+    /// worth refusing, which is a Legend and a newcomer meeting because they
+    /// happened to press play in the same minute.
+    const DUEL_PAIR_BAND: f64 = 300.0;
+
+    /// Who to put an arriving duellist with.
+    ///
+    /// The nearest rating among the rooms holding one person and a free seat,
+    /// as long as it is inside the band. Rooms still waiting for anybody are
+    /// preferred over rooms where a bot has already taken the seat, because
+    /// taking that seat back costs the pair in it their fight.
+    ///
+    /// There is no queue and no widening band. A player who finds nobody opens
+    /// their own room and becomes the person the next arrival is matched
+    /// against, which is the same rule read from the other side, and the wait
+    /// is bounded by the bot the arena sends after `DUEL_HOLD_TICKS`.
+    fn duel_room_for(&self, rating: f64) -> Option<usize> {
+        let mut best: Option<(usize, bool, f64)> = None;
+        for (index, room) in self.rooms.iter().enumerate() {
+            if room.humans() != 1 || room.humans() >= self.max_players() {
+                continue;
+            }
+            let Some(theirs) = room.lone_human_rating() else {
+                continue;
+            };
+            let gap = (theirs - rating).abs();
+            if gap > Self::DUEL_PAIR_BAND {
+                continue;
+            }
+            let free = room.bot_count() == 0;
+            let better =
+                best.is_none_or(|(_, best_free, best_gap)| (free, -gap) > (best_free, -best_gap));
+            if better {
+                best = Some((index, free, gap));
+            }
+        }
+        best.map(|(index, _, _)| index)
+    }
+
+    /// Where an arriving duellist goes: beside the nearest-rated person
+    /// waiting, or into a room of their own to become that person.
+    pub(crate) fn duel_room_for_join(&mut self, rating: f64) -> Option<usize> {
+        if let Some(index) = self.duel_room_for(rating) {
+            return Some(index);
+        }
+        if self.rooms.len() < self.max_rooms() {
+            match self.open_room() {
+                Ok(index) => return Some(index),
+                Err(e) => println!("cannot open another room: {e}"),
+            }
+        }
+        // Every room is taken and none of them is a match. A fight against
+        // somebody far off is still a fight, and refusing at the door would be
+        // the arena telling a player the zone is full when it is not.
         self.room_for_join()
     }
 
@@ -352,16 +401,12 @@ impl ArenaServer {
 
     /// Honor a room named by the bot director. Zero keeps the old behavior for
     /// ordinary zones whose directors only understand an instance-wide count.
-    /// Ladder requires an exact room and the signed house identity measured for
-    /// that room's requested rung. A stale or manual director therefore cannot
-    /// fill a live run with a pilot from another difficulty band.
+    /// A duel zone requires an exact room, because which room a bot lands in
+    /// decides who it is fighting.
     pub(crate) fn room_for_bot_request(&self, room: u32, seat: &Seat) -> Option<usize> {
+        let _ = seat;
         if room == 0 {
-            if self
-                .rooms
-                .iter()
-                .any(|candidate| candidate.ladder_state().is_some())
-            {
+            if self.rooms.iter().any(|candidate| candidate.is_duel()) {
                 return None;
             }
             return self.room_for_bot();
@@ -374,21 +419,6 @@ impl ArenaServer {
             .iter()
             .enumerate()
             .find(|(_, candidate)| candidate.number == room)?;
-        if found.ladder_state().is_some() {
-            if self.bots_requested_by(index) == 0 {
-                return None;
-            }
-            // Which of the room's two seats this pilot is for, and whether
-            // that one is free. A shortfall in the count is the ordinary
-            // rooms' rule and the wrong question here: a room holding a
-            // stand-in is a room still waiting for its rival.
-            let free = if found.accepts_ladder_rival(seat) {
-                found.ladder_rival().is_none()
-            } else {
-                self.wants_stand_in(index) && found.accepts_stand_in(seat)
-            };
-            return free.then_some(index);
-        }
         (self.bots_requested_by(index) > found.bot_count()).then_some(index)
     }
 
@@ -397,33 +427,53 @@ impl ArenaServer {
     /// browsing client watches, and only while nobody is playing in it.
     ///
     /// Only the first, because a room is given back when it empties and one
-    /// with a stand-in flying in it never empties. One duel is also all this
-    /// is for: the play page watches a single room.
+    /// with bots flying in it never empties. One duel is also all this buys:
+    /// the menu shows the room it would deploy you into.
     fn wants_stand_in(&self, index: usize) -> bool {
         index == 0
             && self
                 .rooms
                 .first()
-                .is_some_and(|room| room.ladder_state().is_some() && room.humans() == 0)
+                .is_some_and(|room| room.is_duel() && room.humans() == 0)
+    }
+
+    /// How long a lone pilot holds the other seat open for a person before the
+    /// arena sends a bot to it.
+    ///
+    /// Ten seconds. Long enough that two people pressing play within a breath
+    /// of each other meet, short enough that somebody alone on the zone is not
+    /// left looking at an empty room wondering whether it is broken. The wait
+    /// is visible: the clock reads dashes and the mode says it is waiting.
+    ///
+    /// It is not the only chance at a person. A human arriving later takes the
+    /// seat from the bot, which is what `Room::join` already does when a room
+    /// is full of AI and somebody is at the door.
+    pub(crate) const DUEL_HOLD_TICKS: u32 = 10 * modes::TICKS_PER_SECOND;
+
+    /// Whether this duel room has waited out its hold and should be given a
+    /// bot. A room whose seat has only just emptied keeps holding.
+    fn duel_hold_elapsed(&self, index: usize) -> bool {
+        let Some(room) = self.rooms.get(index) else {
+            return false;
+        };
+        room.duel_alone_ticks() >= Self::DUEL_HOLD_TICKS
     }
 
     fn bots_requested_by(&self, index: usize) -> usize {
         let Some(room) = self.rooms.get(index) else {
             return 0;
         };
-        if room.ladder_state().is_none() {
+        if !room.is_duel() {
             return room.bots_wanted();
         }
-        // A Ladder room is one climber and the rival their rung named. While a
-        // person is climbing it holds that rival and nothing else: a second
-        // bot would be a third ship in a duel.
-        //
-        // With nobody climbing, the room the menu watches gets both: a
-        // stand-in and the rival it is up against. Every other room gets
-        // neither, and the rival of the person who just left goes home rather
-        // than waiting alone in a room nobody can see.
-        if room.humans() > 0 {
-            1
+        // A duel is two ships. Two people in it want no bot at all; one person
+        // wants one, but not before the seat has been held open for a person
+        // first; and a room with nobody in it gets the pair that keep the zone
+        // playing for whoever is reading the menu.
+        if room.humans() >= 2 {
+            0
+        } else if room.humans() == 1 {
+            usize::from(self.duel_hold_elapsed(index))
         } else if self.wants_stand_in(index) {
             2
         } else {
@@ -443,21 +493,28 @@ impl ArenaServer {
                 if count == 0 {
                     return Vec::new();
                 }
-                let Some(ladder) = room.ladder_state() else {
+                if !room.is_duel() {
                     return vec![fleet::BotRequest {
                         room: room.number,
                         count: count as u32,
                         target_slot: None,
                     }];
-                };
+                }
+                // An opponent for the person waiting, named by strength: the
+                // authored archetype whose rating sits closest to theirs. The
+                // director sends a replica of that pilot, and a near miss is a
+                // slightly uneven fight rather than a wrong answer.
+                //
+                // The pair that keep an empty room playing name nobody. They
+                // are a demonstration rather than a match, and drawing them
+                // from the whole roster keeps the menu from showing the same
+                // two pilots every time somebody looks.
+                let target_slot = room.lone_human_rating().map(archetype_nearest_rating);
                 let mut asked = vec![fleet::BotRequest {
                     room: room.number,
                     count: 1,
-                    target_slot: Some(ladder.state.desired_opponent_slot),
+                    target_slot: target_slot.map(|slot| slot as u32),
                 }];
-                // The stand-in names no slot. It is climbing the ladder rather
-                // than standing on one, so the director draws it from the same
-                // roster every other room's bots come from.
                 if count > 1 {
                     asked.push(fleet::BotRequest {
                         room: room.number,
@@ -644,7 +701,6 @@ impl ArenaServer {
             rid: name.to_string(),
             account: None,
             carried: None,
-            carried_ladders: Vec::new(),
             entitlements: sim::World::base_entitlements(),
             pending_kit: None,
             kitted: false,
@@ -698,7 +754,6 @@ impl ArenaServer {
             rid: account_rid(claims.account),
             account: Some(claims.account),
             carried: Some(claims.ratings),
-            carried_ladders: claims.ladders,
             entitlements,
             pending_kit: None,
             kitted: false,
@@ -737,17 +792,6 @@ impl ArenaServer {
     pub(crate) fn token_rating(&self, seat: &Seat, class: &str) -> Option<(f64, u32)> {
         let r = seat.carried.as_ref()?.iter().find(|r| r.class == class)?;
         Some((r.rating, r.games))
-    }
-
-    /// The best rung this account has taken in the zone currently served. A
-    /// record from another Ladder zone is a different progression and never
-    /// crosses over by accident.
-    pub(crate) fn token_ladder(&self, seat: &Seat) -> Option<u32> {
-        let saved = seat
-            .carried_ladders
-            .iter()
-            .find(|progress| progress.zone == self.zone_name)?;
-        Some(saved.best as u32)
     }
 
     /// Tell the spool where to send, which cannot be known until a catalog
@@ -816,11 +860,11 @@ impl ArenaServer {
     }
 
     pub(crate) fn accepts_bot_seat(&self, seat: &Seat) -> bool {
-        let ladder = self
+        let duel = self
             .wire_zone()
-            .map(|zone| zone.mode == "ladder")
-            .unwrap_or_else(|| self.cfg.current.arena.mode == "ladder");
-        !ladder || seat.label == token::Label::HouseBot.to_byte()
+            .map(|zone| zone.mode == "duel")
+            .unwrap_or_else(|| self.cfg.current.arena.mode == "duel");
+        !duel || seat.label == token::Label::HouseBot.to_byte()
     }
 
     /// The class this zone rates into. One number per kind of game, per
@@ -1000,9 +1044,8 @@ impl ArenaServer {
         // next drain. A catalog edit is not a reason to disconnect anybody.
         if !self.zone_name.is_empty() {
             if let Some(z) = c.zone(&self.zone_name).cloned() {
-                let protects_certified_fixture =
-                    self.rooms.iter().any(|room| room.ladder_state().is_some())
-                        && !certified_pilot_fixture_allows(&z);
+                let protects_certified_fixture = self.rooms.iter().any(|room| room.is_duel())
+                    && !certified_pilot_fixture_allows(&z);
                 if protects_certified_fixture {
                     println!(
                         "catalog: Ladder update does not match the certified pilot fixture; \
@@ -1404,10 +1447,6 @@ pub(crate) fn prime_ratings(r: &mut rating::Rating, ladder: &HashMap<String, f64
     r.set_anchor(ai::ANCHOR, ai::ANCHOR_RATING);
 }
 
-/// The checked-in rating seed. A powered `calibrate pilots` run may replace it
-/// only when the report passes every certification gate. The repository ships
-/// the anchor alone until that has happened.
-pub(crate) const LADDER: &str = include_str!("../../zone/ladder.json");
 /// Compact release-time attestation. `null` means no powered roster has passed
 /// against the content in this binary yet.
 pub(crate) const PILOT_CALIBRATION: &str = include_str!("../../zone/pilot-calibration.json");
@@ -1507,7 +1546,7 @@ fn certified_pilot_ratings() -> &'static HashMap<String, f64> {
 /// moment their rating started being filed under an account rather than a name:
 /// a room primes what it knows, and it no longer knows them by name.
 pub(crate) fn calibrated_rating_from(name: &str, ratings: &HashMap<String, f64>) -> Option<f64> {
-    let authored = pilots::ladder_archetype_for_callsign(name)
+    let authored = pilots::archetype_for_callsign(name)
         .and_then(|archetype| ai::CALIBRATED.get(archetype))
         .map(|(callsign, _, _)| *callsign)
         .or_else(|| {
@@ -1526,6 +1565,32 @@ pub(crate) fn calibrated_rating_from(name: &str, ratings: &HashMap<String, f64>)
 
 pub fn calibrated_rating(name: &str) -> Option<f64> {
     calibrated_rating_from(name, certified_pilot_ratings())
+}
+
+/// What one authored archetype is rated, measured where a certified tournament
+/// has measured it and provisional where it has not.
+pub(crate) fn archetype_rating(archetype: usize) -> f64 {
+    ai::CALIBRATED
+        .get(archetype)
+        .and_then(|(callsign, _, _)| calibrated_rating(callsign))
+        .unwrap_or_else(|| ai::provisional_rating(archetype))
+}
+
+/// The authored archetype closest in strength to a given rating.
+///
+/// This is the whole of duel matchmaking against the AI: a person waiting for
+/// an opponent gets the house pilot nearest their own number. The roster is
+/// eight, so the answer is a scan, and ties go to the weaker pilot because an
+/// opponent slightly under a pilot's level is a better first guess than one
+/// slightly over it.
+pub(crate) fn archetype_nearest_rating(rating: f64) -> usize {
+    (0..pilots::AUTHORED_PILOT_COUNT)
+        .min_by(|a, b| {
+            let d = |n: &usize| (archetype_rating(*n) - rating).abs();
+            d(a).total_cmp(&d(b))
+                .then_with(|| archetype_rating(*a).total_cmp(&archetype_rating(*b)))
+        })
+        .unwrap_or(0)
 }
 
 /// Read a certified seed an operator placed beside the arena, falling back to
@@ -1641,7 +1706,7 @@ impl ArenaServer {
                         full: r.humans() >= self.max_players(),
                         clock: m.as_ref().map(|m| m.seconds_left as u32).unwrap_or(0),
                         playing: m.is_some_and(|m| m.playing),
-                        waiting: r.ladder_state().is_some_and(|ladder| ladder.state.waiting),
+                        waiting: r.duel_state().is_some_and(|duel| duel.state.waiting),
                     }
                 })
                 .collect(),

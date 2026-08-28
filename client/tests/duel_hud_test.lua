@@ -1,6 +1,6 @@
 -- What a Ladder run says about itself.
 --
---     lua5.1 client/tests/ladder_hud_test.lua
+--     lua5.1 client/tests/duel_hud_test.lua
 --
 -- A Ladder screen used to carry three overlapping statements at once: the
 -- clock with a score either side, a readout under it repeating the rung and
@@ -117,7 +117,7 @@ local function frame(o)
         half_w = 640, half_h = 400,
         banner = o.banner or "",
         rtt = 4,
-        zone = "ladder",
+        zone = "duel",
         fps = 60, frame_ms = 16.7, rx_rate = 0, tx_rate = 0,
     })
     ui.finish()
@@ -164,12 +164,9 @@ local A_RUN = {
 
 local function a_fight(over)
     local m = {playing = true, left = 166, score = {[0] = 0, [1] = 0},
-               ladder = {rung = 4, streak = 1, best_streak = 3,
-                         best = 6,
-                         active_opponent = 4, desired_opponent = 4,
-                         opponent_ready = true, waiting = false,
-                         legs = 19, log = A_RUN}}
-    for k, v in pairs(over or {}) do m.ladder[k] = v end
+               duel = {streak = 1, best_streak = 3, waiting = false,
+                       legs = 19, log = A_RUN}}
+    for k, v in pairs(over or {}) do m.duel[k] = v end
     return m
 end
 
@@ -218,14 +215,14 @@ check("a match with no run draws no ratings beside its clock",
 -- is the streak, and it is a reading on the board rather than a word in the
 -- band. See decision 74. The floor itself went with decision 91.
 ui.details = false
-frame({match = a_fight({rung = 7, streak = 2}),
+frame({match = a_fight({streak = 2}),
        ratings = {[0] = 1183, [1] = 1347}})
 check("the band says nothing about a run at all",
       said("RUNG") == nil and said("STREAK") == nil and said("FLOOR") == nil,
       table.concat(words(), " | "))
 
 ui.details = true
-frame({match = a_fight({rung = 7, streak = 2}),
+frame({match = a_fight({streak = 2}),
        ratings = {[0] = 1183, [1] = 1347}})
 check("the board carries the streak the band gave up",
       said("STREAK") ~= nil and exactly("2") ~= nil,

@@ -9,10 +9,8 @@
 //! direct Rust state, strings, and slices, so it is an internal surface and not
 //! a module ABI; see decision 6.
 
-use crate::{
-    pilots,
-    sim::{self, World},
-};
+use crate::sim::{self, World};
+use std::collections::HashMap;
 
 pub struct ModeCtx<'a> {
     pub world: &'a mut World,
@@ -20,16 +18,11 @@ pub struct ModeCtx<'a> {
     /// the room does not consider ready yet. Match modes use this snapshot to
     /// decide whether the opponents a life needs are actually on the field.
     pub seats: &'a [u8],
-    /// Which of those seats holds the Ladder rival: the house pilot the room
-    /// seated for the rung being played. Whoever else is in the room is
-    /// climbing, and that is a person when one is here and the stand-in when
-    /// nobody is. `None` in every other mode, and in a Ladder room still
-    /// waiting on its rival.
-    pub rival: Option<u8>,
-    /// And what that seat is called. The mode files a leg naming whoever was
-    /// across the arena, and cannot ask the room for a name after the fact:
-    /// the rung is over in seconds and the seat goes to the next rival.
-    pub rival_name: Option<&'a str>,
+    /// What each of those seats is called, in no particular order. A duel
+    /// files a leg naming whoever was across the arena, and cannot ask the
+    /// room for a name after the fact: the fight is over in seconds and the
+    /// seat goes to whoever is next.
+    pub seat_names: &'a [(u8, &'a str)],
     /// The zone's own sides, by name, in the order it scores them. A mode
     /// writes banners about the game, and a side is a name to everybody
     /// reading one: "Vantage holds all four flags" is news, "team 1 holds all
@@ -77,8 +70,7 @@ pub struct MatchState {
 /// counted in and every clock out of here is reported in.
 pub const TICKS_PER_SECOND: u32 = 100;
 
-pub const DEFAULT_LADDER_FIRST_TO: u16 = 1;
-pub const DEFAULT_LADDER_LOSS_DROP: u32 = 2;
+pub const DEFAULT_DUEL_FIRST_TO: u16 = 1;
 
 /// How long a duel keeps flying after the death that decides it.
 ///
@@ -86,121 +78,30 @@ pub const DEFAULT_LADDER_LOSS_DROP: u32 = 2;
 /// from it: a kill that opens this window and a death inside it are a draw
 /// rather than a win. It is also the zone's respawn delay, so the pilot who
 /// went down is still down when the fight is filed.
-pub const LADDER_DEATH_PAUSE_TICKS: u32 = 2 * TICKS_PER_SECOND;
+pub const DUEL_DEATH_PAUSE_TICKS: u32 = 2 * TICKS_PER_SECOND;
 
-/// The rules that turn one completed Ladder series into run progress.
+/// The rules one completed duel is settled under.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LadderRules {
-    /// Points needed to take one opponent. Clamped to one when the mode starts.
+pub struct DuelRules {
+    /// Deaths needed to take a fight. Clamped to one when the mode starts.
     pub first_to: u16,
-    /// Rungs lost after a defeat in the ordinary mode.
-    pub loss_drop: u32,
 }
 
-impl Default for LadderRules {
+impl Default for DuelRules {
     fn default() -> Self {
         Self {
-            first_to: DEFAULT_LADDER_FIRST_TO,
-            loss_drop: DEFAULT_LADDER_LOSS_DROP,
+            first_to: DEFAULT_DUEL_FIRST_TO,
         }
     }
 }
 
-/// Pure Ladder progression. Rung zero is the base opponent, and the rung is
-/// also the roster slot requested for the next series.
+/// How one finished fight ended, from the side of the pilot whose card it is.
+/// The byte is what rides the wire, so the values are pinned rather than
+/// derived from the declaration order.
 ///
-/// There is no floor under a loss and no ground a run resumes on: every run
-/// opens at rung zero, and a defeat falls the full drop. Rungs used to be
-/// banked at an interval and a loss stopped at the last one, which on an
-/// eight-rung ladder meant one checkpoint five rungs up, exactly the loss drop
-/// below the top. Losses above it cost nothing, so the last three rungs
-/// collapsed into two names a climber saw for ever. See decision 91.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LadderProgression {
-    rung: u32,
-    streak: u32,
-    best_streak: u32,
-    best: u32,
-    rules: LadderRules,
-}
-
-impl LadderProgression {
-    pub fn new(rules: LadderRules) -> Self {
-        Self {
-            rung: 0,
-            streak: 0,
-            best_streak: 0,
-            best: 0,
-            rules,
-        }
-    }
-
-    /// Open a run for a pilot who has climbed here before. The climb itself is
-    /// not restored: they start at the bottom like everybody else, and the only
-    /// thing carried across a session is the highest rung the account has ever
-    /// reached, which is a record rather than a position.
-    pub fn restore(rules: LadderRules, best: u32) -> Self {
-        Self {
-            rung: 0,
-            streak: 0,
-            best_streak: 0,
-            best: best.min(pilots::PROVISIONAL_LADDER_RUNG_COUNT as u32),
-            rules,
-        }
-    }
-
-    pub fn rung(&self) -> u32 {
-        self.rung
-    }
-
-    pub fn streak(&self) -> u32 {
-        self.streak
-    }
-
-    pub fn best(&self) -> u32 {
-        self.best
-    }
-
-    /// The longest streak this run has managed, which is the one number on the
-    /// board that a broken streak does not take away. The rung and the floor
-    /// are the machine's own bookkeeping and no longer reach a screen; this
-    /// does, so it is kept rather than derived.
-    pub fn best_streak(&self) -> u32 {
-        self.best_streak
-    }
-
-    /// Advance once, returning true when that win cleared the finite roster.
-    /// A clear starts the next run at the bottom instead of silently repeating
-    /// the strongest band under a larger rung number.
-    pub fn win(&mut self) -> bool {
-        let rung_count = pilots::PROVISIONAL_LADDER_RUNG_COUNT as u32;
-        let next = self.rung.saturating_add(1);
-        self.best = self.best.max(next).min(rung_count);
-        if next >= rung_count {
-            // Clearing the roster is still a win, so the streak it finished on
-            // counts before the next run starts from nothing.
-            self.streak = self.streak.saturating_add(1);
-            self.best_streak = self.best_streak.max(self.streak);
-            self.rung = 0;
-            self.streak = 0;
-            return true;
-        }
-
-        self.rung = next;
-        self.streak = self.streak.saturating_add(1);
-        self.best_streak = self.best_streak.max(self.streak);
-        false
-    }
-
-    pub fn loss(&mut self) {
-        self.streak = 0;
-        self.rung = self.rung.saturating_sub(self.rules.loss_drop);
-    }
-}
-
-/// How one finished life ended, from the climbing pilot's side. The byte is
-/// what rides the wire, so the values are pinned rather than derived from the
-/// declaration order.
+/// `Won` is spelled `Cleared` on the wire for no reason worth keeping; the
+/// byte has been 1 since the first Ladder and renaming it here would be a
+/// protocol change for a word.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LegResult {
     Lost,
@@ -220,10 +121,10 @@ impl LegResult {
 
 /// A call sign as a leg keeps it.
 ///
-/// Fixed width rather than a `String`, because `LadderState` is a snapshot the
-/// room copies whole out of the mode every tick it sends a clock. A heap
-/// string in it would make that read a clone, and the widest thing that can
-/// land here is a name the meta-layer already caps at `MAX` bytes.
+/// Fixed width rather than a `String`, because `DuelState` is a snapshot the
+/// room copies whole out of the mode for every pilot it sends a clock to. A
+/// heap string in it would make each of those a clone, and the widest thing
+/// that can land here is a name the meta-layer already caps at `MAX` bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct CallSign {
     bytes: [u8; Self::MAX],
@@ -255,31 +156,31 @@ impl CallSign {
     }
 }
 
-/// One finished life of the run in progress.
+/// One finished fight on one pilot's card.
 ///
-/// A run is an evening of ten second fights, so the thing a climber wants back
-/// is the shape of how it went: who they took, who took them, how long each
-/// one ran. The room is the only thing that sees all of that, so it keeps it.
+/// An evening here is a string of ten second fights, so the thing a pilot
+/// wants back is the shape of how it went: who they took, who took them, how
+/// long each one ran. The room is the only thing that sees all of that, so it
+/// keeps it.
 ///
-/// The rival's name is captured here rather than looked up when the board
-/// draws, because by then they may have left the room: a rung is over in
-/// seconds and the seat is handed to the next one.
+/// The opponent's name is captured here rather than looked up when the board
+/// draws, because by then they may have left: a fight is over in seconds and
+/// the seat across the arena is handed to whoever is next.
 ///
-/// Void lives are not legs. A rival who leaves mid-fight files no result and
-/// changes no progress, and a log that recorded it would be a log of things
-/// that did not count.
+/// Void fights are not legs. An opponent who leaves mid-fight files no result,
+/// and a log that recorded it would be a log of things that did not count.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LadderLeg {
-    /// Who was across the arena. Empty only for a leg filed with no rival
-    /// seated, which the mode does not do.
+pub struct DuelLeg {
+    /// Who was across the arena. Empty only for a leg filed with nobody
+    /// seated there, which the mode does not do.
     pub rival: CallSign,
     pub result: LegResult,
-    /// How long the life lasted, in whole seconds, rounded the way the clock
+    /// How long the fight lasted, in whole seconds, rounded the way the clock
     /// rounds. Bounded by the match timer, which a drawn leg reads exactly.
     pub seconds: u16,
 }
 
-impl Default for LadderLeg {
+impl Default for DuelLeg {
     fn default() -> Self {
         Self {
             rival: CallSign::default(),
@@ -289,50 +190,91 @@ impl Default for LadderLeg {
     }
 }
 
-/// How many finished legs the room carries. The log rides in every clock
+/// How many finished legs a pilot's card carries. The log rides in every clock
 /// packet, so it is a fixed window rather than a growing list: a long evening
-/// is bounded at the most recent legs and the total count says what fell off
+/// is bounded at the most recent fights and the total count says what fell off
 /// the end.
 ///
-/// Five, because five is what the board draws. It used to be twelve, sized to
-/// what a desktop column could hold, and a desktop column could hold twelve
-/// rows of a rung number nobody could read anything into. A list of the last
-/// five fights is the whole of what the panel is now, so a window wider than
-/// that is bytes a second nobody sees.
-pub const LADDER_LOG_LEGS: usize = 5;
+/// Five, because five is what the board draws.
+pub const DUEL_LOG_LEGS: usize = 5;
 
-/// A structured Ladder snapshot for the room, bot assignment, and future
-/// client message. Scores are always `[human, bot]`.
+/// What one pilot has done in this room, which is what their card is about.
+///
+/// Held per seat rather than per room, because a duel has two pilots in it and
+/// each of them has their own evening. The room used to hold exactly one of
+/// these, which worked only while the other seat was guaranteed to be a bot
+/// nobody was drawing a card for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LadderState {
-    pub playing: bool,
-    /// The room is holding for the requested rival rather than counting down.
-    pub waiting: bool,
-    pub rung: u32,
+pub struct DuelRun {
     pub streak: u32,
-    /// The longest streak this run has had, which is the reading that survives
-    /// a broken one.
+    /// The longest streak this pilot has had here, which is the reading that
+    /// survives a broken one.
     pub best_streak: u32,
-    /// The highest rung this account has ever reached, which is the one number
-    /// that outlives a run. Every run itself starts at rung zero.
-    pub best: u32,
-    pub score: [u16; 2],
-    pub first_to: u16,
-    /// The roster slot locked for the series currently on the field.
-    pub active_opponent_slot: u32,
-    /// The slot wanted next. It changes only after the current series ends.
-    pub desired_opponent_slot: u32,
-    /// Whether the mode currently sees exactly one person and one bot.
-    pub opponent_ready: bool,
-    /// The result on the podium completed the finite provisional roster.
-    pub cleared: bool,
-    /// Finished legs of this run, oldest first, most recent last.
-    pub log: [LadderLeg; LADDER_LOG_LEGS],
+    /// Fights finished in total, which is larger than `logged` once an evening
+    /// outlives the window.
+    pub legs: u32,
+    /// Finished fights, oldest first, most recent last.
+    pub log: [DuelLeg; DUEL_LOG_LEGS],
     /// How many of `log` are filled.
     pub logged: u8,
-    /// Legs this run has finished in total, which is larger than `logged` once
-    /// a run outlives the window.
-    pub legs: u32,
+}
+
+impl Default for DuelRun {
+    fn default() -> Self {
+        Self {
+            streak: 0,
+            best_streak: 0,
+            legs: 0,
+            log: [DuelLeg::default(); DUEL_LOG_LEGS],
+            logged: 0,
+        }
+    }
+}
+
+impl DuelRun {
+    /// File a finished fight. The window keeps the most recent legs, so an
+    /// evening long enough to fill it drops its oldest rather than its newest:
+    /// what a pilot is looking back at is the stretch they are in.
+    fn file(&mut self, result: LegResult, rival: &str, seconds: u16) {
+        let leg = DuelLeg {
+            rival: CallSign::new(rival),
+            result,
+            seconds,
+        };
+        self.legs = self.legs.saturating_add(1);
+        let logged = self.logged as usize;
+        if logged == DUEL_LOG_LEGS {
+            self.log.rotate_left(1);
+            self.log[DUEL_LOG_LEGS - 1] = leg;
+        } else {
+            self.log[logged] = leg;
+            self.logged += 1;
+        }
+        match result {
+            LegResult::Cleared => {
+                self.streak = self.streak.saturating_add(1);
+                self.best_streak = self.best_streak.max(self.streak);
+            }
+            // A draw moves no rung and, now that there are no rungs, still
+            // breaks nothing: nobody won it, so nobody's run ended on it.
+            LegResult::Drawn => {}
+            LegResult::Lost => self.streak = 0,
+        }
+    }
+}
+
+/// A structured duel snapshot for one viewer: what the room is doing, and the
+/// card of whichever seat is reading it.
+///
+/// Per viewer rather than per room, because the two halves answer to different
+/// people. A watcher gets the room's half and an empty card.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DuelState {
+    pub playing: bool,
+    /// The room is holding for a second pilot rather than counting down.
+    pub waiting: bool,
+    /// The reader's own evening in this room.
+    pub run: DuelRun,
 }
 
 impl ModeCtx<'_> {
@@ -349,7 +291,7 @@ impl ModeCtx<'_> {
 /// Every mode a zone may name. The catalog checks against this rather than
 /// falling back to warzone, which is exactly how `arena.mode` came to be a key
 /// that parsed and did nothing for months.
-pub const NAMES: [&str; 5] = ["arena", "warzone", "duel", "melee", "ladder"];
+pub const NAMES: [&str; 4] = ["arena", "warzone", "duel", "melee"];
 
 pub fn exists(name: &str) -> bool {
     NAMES.contains(&name)
@@ -365,7 +307,7 @@ pub struct Setup {
     /// match game reads these.
     pub match_ticks: u32,
     pub intermission_ticks: u32,
-    pub ladder: LadderRules,
+    pub duel: DuelRules,
 }
 
 /// Build the mode a zone asked for.
@@ -378,14 +320,14 @@ pub fn build(name: &str, s: &Setup) -> Box<dyn Mode> {
             s.match_ticks.max(1),
             s.intermission_ticks.max(1),
         )),
-        "ladder" => Box::new(Ladder::new(
-            s.ladder,
+        "duel" => Box::new(Duel::new(
+            s.duel,
             s.match_ticks.max(1),
             s.intermission_ticks.max(1),
         )),
-        // Duel is deferred; see docs/design/duel-mode.md. Naming it in a zone
-        // gets a free-for-all rather than a refusal, because the catalog has
-        // already accepted the name and a running room beats a dead one.
+        // An unknown name gets a free-for-all rather than a refusal, because
+        // the catalog has already accepted the name and a running room beats
+        // a dead one.
         _ => Box::new(FreeForAll),
     }
 }
@@ -395,7 +337,7 @@ pub trait Mode: Send {
     /// One death, in the order the tick that produced it emitted them. A mode
     /// that decides a whole result on a death has to be indifferent to that
     /// order, because two ships killing each other is one exchange and the
-    /// core reports it as two events: Ladder answers by holding the fight
+    /// core reports it as two events: a duel answers by holding the fight
     /// open for a window rather than filing it on the first of the two.
     fn on_death(&mut self, ctx: &mut ModeCtx, victim: u8, killer: u8);
     /// A seat left while the room still holds its mutex. Match modes that
@@ -414,23 +356,11 @@ pub trait Mode: Send {
     fn match_state(&self) -> Option<MatchState> {
         None
     }
-    /// Structured Ladder state. Other modes return none, so callers can ask
-    /// through the common trait without downcasting a mode object.
-    fn ladder_state(&self) -> Option<LadderState> {
+    /// Structured duel state for one viewer, or for a watcher when no seat is
+    /// named. Other modes return none, so callers can ask through the common
+    /// trait without downcasting a mode object.
+    fn duel_state(&self, _viewer: Option<u8>) -> Option<DuelState> {
         None
-    }
-    /// Restore the durable part of a Ladder run, which is the account's best
-    /// rung and nothing else. Returns false for modes that do not own Ladder
-    /// progression.
-    fn restore_ladder(&mut self, _best: u32) -> bool {
-        false
-    }
-    /// Open a run already standing on a chosen rung. The only way to reach one
-    /// in play is to win the series below it, which a test about rival
-    /// replacement should not have to fly first.
-    #[cfg(test)]
-    fn set_ladder_rung(&mut self, _rung: u32) -> bool {
-        false
     }
     /// A room went from bots only to holding a person. A mode whose contest is
     /// that person's own starts it over for them and answers true, which is
@@ -609,7 +539,7 @@ impl Mode for Melee {
 
 /// A duel in its last two seconds: decided, and still being flown.
 ///
-/// The life belongs to whoever the deciding death named, unless the other
+/// The fight belongs to whoever the deciding death named, unless the other
 /// ship goes down before the window runs out, in which case it belongs to
 /// nobody. Killing somebody and dying to the shot they had already fired is a
 /// trade, and it used to be scored as a clean win because the fight was filed
@@ -617,213 +547,205 @@ impl Mode for Melee {
 /// second one landed.
 #[derive(Clone, Copy, Debug)]
 struct Settling {
-    /// Which way the fight goes if nothing else happens.
-    human_won: bool,
+    /// The side the fight goes to if nothing else happens.
+    winner: usize,
     /// Ticks left before that is filed.
     left: u32,
 }
 
-/// Ladder: one climber against one house pilot, first to a configured score.
+/// Who a fight is between, captured when it opens.
 ///
-/// A series is the indivisible difficulty step. The active opponent slot is
-/// copied from the run when the series opens and cannot move while it is being
-/// played. A result changes only the desired slot, giving the room's future bot
-/// assignment path the whole intermission to seat the next opponent.
+/// Held rather than read back off the seats, because a fight outlives them: a
+/// pilot who leaves a decided fight has still lost it, and the card the winner
+/// keeps has to name somebody who is no longer in the room. Reading the seats
+/// at filing time meant a fight abandoned inside its own draw window was filed
+/// against nobody, on nobody's card.
+#[derive(Clone, Copy, Debug)]
+struct Bout {
+    /// Each side's ship, indexed by the side it is on.
+    ships: [u8; 2],
+    /// And what that pilot is called.
+    names: [CallSign; 2],
+}
+
+/// Duel: two pilots, one life each, first to a configured score.
 ///
-/// The climber is a person wherever there is one, and the room's stand-in
-/// where there is not: the play page watches the room it would deploy you
-/// into, so a zone with nobody in it is an empty arena on the menu of anyone
-/// deciding whether to press play. Nothing here knows which it has. A run
-/// belongs to whoever is flying it, and the mode starts a new one whenever
-/// that seat changes hands.
+/// Both seats are the same kind of thing. Whoever is in them is whoever the
+/// door sent: a person paired against another person of about their rating
+/// where one was available, and a house pilot of about their rating where one
+/// was not. Nothing in here can tell those apart, and nothing in here should:
+/// a duel is two ships and a clock, and which of them has somebody breathing
+/// behind it is the door's business.
 ///
-/// A life is not filed on the death that decides it. The arena keeps running
-/// for `LADDER_DEATH_PAUSE_TICKS` first, and a second death inside that window
-/// draws the fight: see `Settling`.
-pub struct Ladder {
-    rules: LadderRules,
-    run: LadderProgression,
+/// That is the whole of what replaced the Ladder. This mode used to be a solo
+/// climb through eight authored opponents in a fixed order, seated by rung,
+/// with a run that persisted per account. See decision 92.
+///
+/// A fight is not filed on the death that decides it. The arena keeps running
+/// for `DUEL_DEATH_PAUSE_TICKS` first, and a second death inside that window
+/// draws it: see `Settling`.
+pub struct Duel {
+    rules: DuelRules,
     match_ticks: u32,
     intermission_ticks: u32,
     left: u32,
     playing: bool,
     opened: bool,
+    /// Deaths by side, in the order the zone names its two.
     score: [u16; 2],
-    active_opponent_slot: u32,
     /// The death that ended the fight, waiting out its draw window. `None`
-    /// during an ordinary life and from the whistle onwards.
+    /// during an ordinary fight and from the whistle onwards.
     settling: Option<Settling>,
-    result: Option<bool>,
-    cleared: bool,
     interrupted: bool,
-    opponent_ready: bool,
-    /// A changed slot is not accepted until the old seat has gone away once.
-    replacement_vacated: bool,
-    /// The run so far, oldest first, and how many legs it has really had.
-    log: [LadderLeg; LADDER_LOG_LEGS],
-    logged: usize,
-    legs: u32,
+    /// Both seats were filled on the last tick, which is what a departure is
+    /// measured against.
+    paired: bool,
+    /// Who the fight on the field is between. `None` between fights.
+    bout: Option<Bout>,
+    /// Each seat's own evening. Keyed by ship, and dropped when that ship
+    /// leaves: an evening belongs to the pilot who flew it, and the next
+    /// person into the seat is not standing where they were.
+    runs: HashMap<u8, DuelRun>,
 }
 
-impl Ladder {
-    pub fn new(mut rules: LadderRules, match_ticks: u32, intermission_ticks: u32) -> Self {
+impl Duel {
+    pub fn new(mut rules: DuelRules, match_ticks: u32, intermission_ticks: u32) -> Self {
         rules.first_to = rules.first_to.max(1);
         Self {
             rules,
-            run: LadderProgression::new(rules),
             match_ticks: match_ticks.max(1),
             intermission_ticks: intermission_ticks.max(1),
             left: match_ticks.max(1),
             playing: false,
             opened: false,
             score: [0, 0],
-            active_opponent_slot: 0,
             settling: None,
-            result: None,
-            cleared: false,
             interrupted: false,
-            opponent_ready: false,
-            replacement_vacated: false,
-            log: [LadderLeg::default(); LADDER_LOG_LEGS],
-            logged: 0,
-            legs: 0,
+            paired: false,
+            bout: None,
+            runs: HashMap::new(),
         }
     }
 
-    /// File a finished life. The window keeps the most recent legs, so a run
-    /// long enough to fill it drops its oldest rather than its newest: what a
-    /// climber is looking back at is the stretch they are in.
+    /// The two ships in the fight, and which side each is on.
     ///
-    /// The seconds come off the clock rather than being counted beside it.
-    /// `left` moves only while a rival is seated, and this runs while the life
-    /// is still live, before the intermission clock takes `left` over, so the
-    /// difference is exactly what was flown. That includes the window a
-    /// decided fight is held open for, because the room is live through it and
-    /// the pilots are still flying. A life drawn at the whistle files the whole
-    /// match timer.
-    fn log_leg(&mut self, result: LegResult, rival: &str) {
-        let flown = self.match_ticks.saturating_sub(self.left);
-        let leg = LadderLeg {
-            rival: CallSign::new(rival),
-            result,
-            seconds: flown.div_ceil(TICKS_PER_SECOND).min(u16::MAX as u32) as u16,
-        };
-        self.legs = self.legs.saturating_add(1);
-        if self.logged == LADDER_LOG_LEGS {
-            self.log.rotate_left(1);
-            self.log[LADDER_LOG_LEGS - 1] = leg;
-        } else {
-            self.log[self.logged] = leg;
-            self.logged += 1;
+    /// The only supported field shape is exactly two occupied seats on two
+    /// different sides. An accidental third seat must not turn an unrelated
+    /// death into somebody's result, and two ships that the room has put on
+    /// one side are not opponents.
+    fn opponents(ctx: &ModeCtx) -> Option<[(u8, usize); 2]> {
+        let mut seats = ctx.seats.iter().copied();
+        let first = seats.next()?;
+        let second = seats.next()?;
+        if seats.next().is_some() {
+            return None;
         }
+        let side_of = |ship: u8| {
+            ctx.world
+                .state
+                .ships
+                .get(ship as usize)
+                .map(|s| s.team as usize)
+                .filter(|team| *team < 2)
+        };
+        let (a, b) = (side_of(first)?, side_of(second)?);
+        (a != b).then_some([(first, a), (second, b)])
     }
 
-    /// Put a fresh run on the board and take the room back to the edge it
-    /// starts from: nothing flying, the full clock, and the first life of that
-    /// run waiting on its rival. Every run opens on the bottom rung, whether
-    /// the pilot is new or has cleared the roster twice.
-    fn open_run(&mut self, run: LadderProgression) {
-        self.active_opponent_slot = run.rung();
-        self.run = run;
-        self.clear_log();
+    fn name_of<'a>(ctx: &ModeCtx<'a>, ship: u8) -> &'a str {
+        ctx.seat_names
+            .iter()
+            .find_map(|(seat, name)| (*seat == ship).then_some(*name))
+            .unwrap_or_default()
+    }
+
+    /// Take the room back to the edge a fight starts from: nothing flying, the
+    /// full clock, and both seats waited on.
+    fn reopen(&mut self) {
         self.playing = false;
         self.left = self.match_ticks;
         self.score = [0, 0];
         self.settling = None;
-        self.result = None;
-        self.cleared = false;
         self.interrupted = false;
-        self.opponent_ready = false;
-        self.replacement_vacated = false;
+        self.paired = false;
+        self.bout = None;
         self.opened = false;
     }
 
-    /// Start the run's log over. A run is the unit the log is about, so a new
-    /// session starts with an empty one rather than with the tail of somebody
-    /// else's evening.
-    fn clear_log(&mut self) {
-        self.log = [LadderLeg::default(); LADDER_LOG_LEGS];
-        self.logged = 0;
-        self.legs = 0;
-    }
-
-    fn begin_series(&mut self) {
-        // A cleared roster ends a run, and the next life is the next run's
-        // first. The log survives the podium that reports the clear and is
-        // emptied here, so the card still shows the evening it is about.
-        if self.cleared {
-            self.clear_log();
+    fn begin_fight(&mut self, ctx: &ModeCtx) {
+        let Some(pair) = Self::opponents(ctx) else {
+            return;
+        };
+        let mut bout = Bout {
+            ships: [0; 2],
+            names: [CallSign::default(); 2],
+        };
+        for (ship, side) in pair {
+            bout.ships[side] = ship;
+            bout.names[side] = CallSign::new(Self::name_of(ctx, ship));
         }
+        self.bout = Some(bout);
         self.playing = true;
         self.left = self.match_ticks;
         self.score = [0, 0];
         self.settling = None;
-        self.active_opponent_slot = self.run.rung();
-        self.result = None;
-        self.cleared = false;
         self.interrupted = false;
-        self.opponent_ready = true;
-        self.replacement_vacated = false;
+        self.paired = true;
     }
 
-    fn finish_series(&mut self, human_won: bool, ctx: &mut ModeCtx) {
+    /// File the fight on both cards, each from its own side.
+    ///
+    /// `winner` is a side, or `None` for a draw. The seconds come off the
+    /// clock rather than being counted beside it: `left` moves only while both
+    /// seats are filled, and this runs while the fight is still live, before
+    /// the intermission clock takes `left` over, so the difference is exactly
+    /// what was flown. That includes the window a decided fight is held open
+    /// for, because the room is live through it and the pilots are still
+    /// flying. A fight drawn at the whistle files the whole match timer.
+    fn file_fight(&mut self, winner: Option<usize>, ctx: &mut ModeCtx) {
         if !self.playing {
             return;
         }
-        self.log_leg(
-            if human_won {
-                LegResult::Cleared
-            } else {
-                LegResult::Lost
-            },
-            ctx.rival_name.unwrap_or_default(),
-        );
-        self.cleared = if human_won {
-            self.run.win()
-        } else {
-            self.run.loss();
-            false
-        };
-        self.playing = false;
-        self.left = self.intermission_ticks;
-        self.settling = None;
-        self.result = Some(human_won);
-        self.interrupted = false;
-        self.replacement_vacated = false;
-        ctx.close_match = true;
-    }
-
-    fn draw_series(&mut self, ctx: &mut ModeCtx) {
-        if !self.playing {
-            return;
+        let flown = self.match_ticks.saturating_sub(self.left);
+        let seconds = flown.div_ceil(TICKS_PER_SECOND).min(u16::MAX as u32) as u16;
+        if let Some(bout) = self.bout {
+            for side in 0..2 {
+                let result = match winner {
+                    None => LegResult::Drawn,
+                    Some(w) if w == side => LegResult::Cleared,
+                    Some(_) => LegResult::Lost,
+                };
+                self.runs.entry(bout.ships[side]).or_default().file(
+                    result,
+                    bout.names[1 - side].as_str(),
+                    seconds,
+                );
+            }
         }
-        self.log_leg(LegResult::Drawn, ctx.rival_name.unwrap_or_default());
         self.playing = false;
         self.left = self.intermission_ticks;
         self.settling = None;
-        self.result = None;
-        self.cleared = false;
         self.interrupted = false;
-        self.replacement_vacated = false;
+        self.bout = None;
         ctx.close_match = true;
     }
 
-    /// A seat has gone. File the life if the window already decided it, and
+    /// A seat has gone. File the fight if the window already decided it, and
     /// void it if it did not.
     ///
     /// Whoever left a decided fight had lost it before they went, and the only
     /// thing its window could still have changed is a draw, which needs both
-    /// pilots on the field. Voiding it instead would hand a climber's win back
-    /// on a rival that dropped in the two seconds after it, and would let a
+    /// pilots on the field. Voiding it instead would hand a win back on an
+    /// opponent that dropped in the two seconds after it, and would let a
     /// pilot who has just died dodge the loss by pulling the plug.
     fn seat_gone(&mut self, ctx: &mut ModeCtx) {
         match self.settling {
-            Some(settling) => self.finish_series(settling.human_won, ctx),
-            None => self.interrupt_series(ctx),
+            Some(settling) => self.file_fight(Some(settling.winner), ctx),
+            None => self.void_fight(ctx),
         }
     }
 
-    fn interrupt_series(&mut self, ctx: &mut ModeCtx) {
+    fn void_fight(&mut self, ctx: &mut ModeCtx) {
         if !self.playing {
             return;
         }
@@ -831,82 +753,48 @@ impl Ladder {
         self.left = self.intermission_ticks;
         self.score = [0, 0];
         self.settling = None;
-        self.result = None;
-        self.cleared = false;
         self.interrupted = true;
-        self.opponent_ready = false;
-        self.replacement_vacated = true;
+        self.paired = false;
+        self.bout = None;
         ctx.abort_match = true;
-    }
-
-    /// The only supported field shape is the seated rival and one climber. An
-    /// accidental extra seat must not turn an unrelated death into Ladder
-    /// progress, and a rival the room has not called ready is not on the
-    /// field at all: it is missing from `seats` until its calibrated build is
-    /// dealt.
-    fn opponents(seats: &[u8], rival: Option<u8>) -> Option<(u8, u8)> {
-        let rival = rival?;
-        if !seats.contains(&rival) {
-            return None;
-        }
-        let mut climbing = seats.iter().copied().filter(|ship| *ship != rival);
-        let climber = climbing.next()?;
-        climbing.next().is_none().then_some((climber, rival))
     }
 
     /// The one line the client puts under the band, and only what the board
     /// behind the band cannot already say.
     ///
-    /// It used to read "Ladder rung 5: first to 1, 0 to 0" through every second
-    /// of every life: the score is on either side of the clock and first-to is
-    /// a rule of the mode that never moves, so it was facts already on screen,
-    /// in the largest type on it, over the fight they were about. An ordinary
-    /// life gets no banner.
+    /// An ordinary fight gets no banner: the score is on either side of the
+    /// clock and first-to is a rule of the mode that never moves. Nor does an
+    /// ordinary result, which is the top row of the card, saying who and won,
+    /// lost or drew.
     ///
-    /// Nor does an ordinary result. The fight that just ended is the top row
-    /// of the run on the board, saying who and won, lost or drew, and the
-    /// streak is the section under it. A sentence restating a panel a press
-    /// away is the same reading twice. A drawn life is an ordinary result on
-    /// that same row, so the whistle says nothing either.
-    ///
-    /// What is left is what nothing else says: that the rival went away
-    /// mid-life, and that every rival has been beaten.
+    /// What is left is what nothing else says: that the fight was voided
+    /// because the other seat emptied under it.
     fn banner(&self) -> String {
-        if !self.opened || self.playing {
-            // A life being flown says nothing over the fight it is about, and
-            // before the room opens the clock reads dashes while it looks for
-            // a rival. A sentence repeating either is the interface reading
-            // its own label back.
-            String::new()
-        } else if self.interrupted {
-            // Named rather than numbered, because a rung is not a word this
-            // game says any more and the replacement is a person either way.
-            "Rival disconnected. Replaying that fight".to_string()
-        } else if self.cleared {
-            "Every rival beaten. A new run starts now".to_string()
+        if self.interrupted && !self.playing && self.opened {
+            "Opponent left. Replaying that fight".to_string()
         } else {
             String::new()
         }
     }
 }
 
-impl Mode for Ladder {
+impl Mode for Duel {
     fn tick(&mut self, ctx: &mut ModeCtx) {
-        let was_ready = self.opponent_ready;
-        let opponent_ready = Self::opponents(ctx.seats, ctx.rival).is_some();
-        self.opponent_ready = opponent_ready;
+        let was_paired = self.paired;
+        let paired = Self::opponents(ctx).is_some();
+        self.paired = paired;
         if !self.opened {
             self.playing = false;
             self.left = self.match_ticks;
-            if opponent_ready {
+            if paired {
                 self.opened = true;
-                self.begin_series();
+                self.begin_fight(ctx);
                 ctx.open_match = true;
             }
         } else if self.playing {
-            if was_ready && !opponent_ready {
+            if was_paired && !paired {
                 self.seat_gone(ctx);
-            } else if opponent_ready {
+            } else if paired {
                 self.left = self.left.saturating_sub(1);
                 if let Some(settling) = self.settling {
                     // A fight that has already been decided plays its window
@@ -916,30 +804,26 @@ impl Mode for Ladder {
                     // dying too.
                     let left = settling.left.saturating_sub(1);
                     if left == 0 {
-                        self.finish_series(settling.human_won, ctx);
+                        self.file_fight(Some(settling.winner), ctx);
                     } else {
                         self.settling = Some(Settling { left, ..settling });
                     }
                 } else if self.left == 0 {
-                    // The whistle settles a life the pilots did not: whoever
-                    // is ahead takes it, and a life nobody has scored in is a
-                    // draw, which moves no rung and breaks no streak.
-                    if self.score[0] == self.score[1] {
-                        self.draw_series(ctx);
-                    } else {
-                        self.finish_series(self.score[0] > self.score[1], ctx);
-                    }
+                    // The whistle settles a fight the pilots did not: whoever
+                    // is ahead takes it, and a fight nobody has scored in is a
+                    // draw, which breaks no streak.
+                    let winner = match self.score[0].cmp(&self.score[1]) {
+                        std::cmp::Ordering::Greater => Some(0),
+                        std::cmp::Ordering::Less => Some(1),
+                        std::cmp::Ordering::Equal => None,
+                    };
+                    self.file_fight(winner, ctx);
                 }
             }
         } else {
             self.left = self.left.saturating_sub(1);
-            if !opponent_ready {
-                self.replacement_vacated = true;
-            }
-            let desired_changed = self.active_opponent_slot != self.run.rung();
-            let replacement_ready = !desired_changed || self.replacement_vacated;
-            if self.left == 0 && opponent_ready && replacement_ready {
-                self.begin_series();
+            if self.left == 0 && paired {
+                self.begin_fight(ctx);
                 ctx.open_match = true;
             }
         }
@@ -950,52 +834,47 @@ impl Mode for Ladder {
         if !self.playing {
             return;
         }
-        let Some((climber, rival)) = Self::opponents(ctx.seats, ctx.rival) else {
+        let Some(bout) = self.bout else {
             return;
         };
-        let side = if victim == rival {
-            0
-        } else if victim == climber {
-            1
-        } else {
+        let Some(down) = (0..2).find(|side| bout.ships[*side] == victim) else {
             return;
         };
-        self.score[side] = self.score[side].saturating_add(1);
-        let human_won = side == 0;
+        // A death scores for the other side, which is the side that is still
+        // flying. Ships, not kills: a duel is decided by who is left.
+        let scored = 1 - down;
+        self.score[scored] = self.score[scored].saturating_add(1);
         if let Some(settling) = self.settling {
             // The other ship went down inside the window the deciding death
-            // opened. Neither pilot came out of the life, so neither of them
+            // opened. Neither pilot came out of the fight, so neither of them
             // took it, and that holds whichever order the two deaths arrive
             // in, including both on one tick.
-            if settling.human_won != human_won {
-                self.draw_series(ctx);
+            if settling.winner != scored {
+                self.file_fight(None, ctx);
             }
-        } else if self.score[side] >= self.rules.first_to {
+        } else if self.score[scored] >= self.rules.first_to {
             self.settling = Some(Settling {
-                human_won,
-                left: LADDER_DEATH_PAUSE_TICKS,
+                winner: scored,
+                left: DUEL_DEATH_PAUSE_TICKS,
             });
         }
         ctx.banner = self.banner();
     }
 
-    /// A rival leaving voids the life and the same rung reopens against the
-    /// replacement, unless the life was already decided: see `seat_gone`. A
-    /// climber leaving ends the run either way: the rung, the streak and the
-    /// log are one pilot's evening, and the next person through the door, or
-    /// the stand-in that takes the seat back when they go, is not standing
-    /// where they were.
+    /// A departure voids the fight unless it was already decided: see
+    /// `seat_gone`. The leaver's card goes with them, because an evening
+    /// belongs to the pilot who flew it and the next person into that seat is
+    /// not standing where they were. Whoever is left keeps theirs and fights
+    /// whoever the door sends next.
     fn on_departure(&mut self, ctx: &mut ModeCtx, ship: u8, _bot: bool) {
         self.seat_gone(ctx);
-        if ctx.rival != Some(ship) {
-            self.open_run(LadderProgression::new(self.rules));
-        }
+        self.runs.remove(&ship);
         ctx.banner = self.banner();
     }
 
     #[cfg(test)]
     fn name(&self) -> &'static str {
-        "ladder"
+        "duel"
     }
 
     fn match_state(&self) -> Option<MatchState> {
@@ -1006,51 +885,28 @@ impl Mode for Ladder {
         })
     }
 
-    fn ladder_state(&self) -> Option<LadderState> {
-        let desired_changed = self.active_opponent_slot != self.run.rung();
-        let waiting = !self.playing
-            && (!self.opened
-                || (self.left == 0
-                    && (!self.opponent_ready || (desired_changed && !self.replacement_vacated))));
-        Some(LadderState {
-            playing: self.playing,
-            waiting,
-            rung: self.run.rung(),
-            streak: self.run.streak(),
-            best_streak: self.run.best_streak(),
-            best: self.run.best(),
-            score: self.score,
-            first_to: self.rules.first_to,
-            active_opponent_slot: self.active_opponent_slot,
-            desired_opponent_slot: self.run.rung(),
-            opponent_ready: self.opponent_ready,
-            cleared: self.cleared,
-            log: self.log,
-            logged: self.logged.min(u8::MAX as usize) as u8,
-            legs: self.legs,
-        })
-    }
-
+    /// A room that was two bots keeping the zone playing has just been given
+    /// to somebody. Their fight starts now rather than partway through one
+    /// they did not join, and the podium the room is holding is about a match
+    /// they were not in.
     fn first_human(&mut self) -> bool {
-        self.open_run(LadderProgression::new(self.rules));
+        self.runs.clear();
+        self.reopen();
         true
     }
 
-    fn restore_ladder(&mut self, best: u32) -> bool {
-        self.open_run(LadderProgression::restore(self.rules, best));
-        true
-    }
-
-    #[cfg(test)]
-    fn set_ladder_rung(&mut self, rung: u32) -> bool {
-        // Climbed rather than assigned, so the record and the rung agree the
-        // way they would have if somebody had really flown it.
-        let mut run = LadderProgression::new(self.rules);
-        for _ in 0..rung {
-            run.win();
-        }
-        self.open_run(run);
-        true
+    fn duel_state(&self, viewer: Option<u8>) -> Option<DuelState> {
+        Some(DuelState {
+            playing: self.playing,
+            // Waiting rather than counting down: the room has not opened, or
+            // it has and the seat across the arena is empty. The client draws
+            // dashes for the clock through it, because there is no fight for
+            // one to be about.
+            waiting: !self.playing && (!self.opened || !self.paired),
+            run: viewer
+                .and_then(|ship| self.runs.get(&ship).copied())
+                .unwrap_or_default(),
+        })
     }
 }
 
@@ -1202,8 +1058,7 @@ mod melee_tests {
         ModeCtx {
             world,
             seats: &[],
-            rival: None,
-            rival_name: None,
+            seat_names: &[],
             team_names: names,
             banner: String::new(),
             finished: false,
@@ -1356,36 +1211,58 @@ mod melee_tests {
             teams: 2,
             match_ticks: 18_000,
             intermission_ticks: 2_500,
-            ladder: LadderRules::default(),
+            duel: DuelRules::default(),
         };
         assert_eq!(build("melee", &setup).name(), "melee");
         assert_eq!(build("warzone", &setup).name(), "warzone");
         assert_eq!(build("arena", &setup).name(), "arena");
-        assert_eq!(build("ladder", &setup).name(), "ladder");
+        assert_eq!(build("duel", &setup).name(), "duel");
         assert!(exists("melee"), "and the catalog will accept the name");
-        assert!(exists("ladder"), "and the catalog will accept Ladder");
+        assert!(exists("duel"), "and the catalog will accept a duel");
     }
 }
 
 #[cfg(test)]
-mod ladder_tests {
+mod duel_tests {
     use super::*;
 
-    /// The house rival's seat throughout these tests. A seat list without it
-    /// is a room whose rival has gone, which is what the mode is watching for
-    /// between rungs.
-    const RIVAL: u8 = 9;
+    /// The two seats every test in here fights over, one to a side.
+    const LEFT: u8 = 3;
+    const RIGHT: u8 = 9;
+    const LEFT_NAME: &str = "Climber";
+    const RIGHT_NAME: &str = "Tessellate 0001";
 
-    /// A Ladder room's ready seats as the room reports them, and which of
-    /// them the room seated as the rival.
-    fn ctx<'a>(world: &'a mut World, seats: &'a [u8]) -> ModeCtx<'a> {
+    /// A room with both seats taken, one on each side. Which of them is a
+    /// person is not something the mode can see, and that is the point of it.
+    fn paired_world() -> World {
+        let mut w = World::new(7);
+        for (ship, team) in [(LEFT, 0u8), (RIGHT, 1u8)] {
+            let seat = w.spawn(0, team, 500, 500, 0);
+            assert!(seat >= 0, "a seat");
+            // `spawn` hands out the lowest free ship, and these tests name
+            // theirs, so the row is moved to the number they use.
+            let row = w.state.ships[seat as usize];
+            w.state.ships[ship as usize] = row;
+            if seat as u8 != ship {
+                w.state.ships[seat as usize].team = 0;
+            }
+        }
+        w
+    }
+
+    fn names() -> Vec<(u8, &'static str)> {
+        vec![(LEFT, LEFT_NAME), (RIGHT, RIGHT_NAME)]
+    }
+
+    fn ctx<'a>(
+        world: &'a mut World,
+        seats: &'a [u8],
+        seat_names: &'a [(u8, &'a str)],
+    ) -> ModeCtx<'a> {
         ModeCtx {
             world,
             seats,
-            rival: seats.contains(&RIVAL).then_some(RIVAL),
-            // Every rung in these tests is the same seat, so it is the same
-            // name: what matters here is that a leg gets one at all.
-            rival_name: seats.contains(&RIVAL).then_some("Tessellate 0001"),
+            seat_names,
             team_names: &[],
             banner: String::new(),
             finished: false,
@@ -1395,926 +1272,328 @@ mod ladder_tests {
         }
     }
 
-    #[test]
-    fn wins_advance_the_rung_and_streak() {
-        let mut run = LadderProgression::new(LadderRules::default());
-        run.win();
-        run.win();
-        assert_eq!(run.rung(), 2);
-        assert_eq!(run.streak(), 2);
-    }
-
-    #[test]
-    fn a_loss_resets_the_streak_and_drops_the_configured_rungs() {
-        let rules = LadderRules {
-            loss_drop: 3,
-            ..LadderRules::default()
-        };
-        let mut run = LadderProgression::new(rules);
-        for _ in 0..6 {
-            run.win();
-        }
-        run.loss();
-        assert_eq!(run.rung(), 3);
-        assert_eq!(run.streak(), 0);
-    }
-
-    /// Nothing holds a loss up. The drop applies at every height and the run
-    /// walks all the way back to the first opponent, which is what makes the
-    /// rungs above the middle of the ladder reachable by more than one route.
-    #[test]
-    fn a_loss_has_no_floor_under_it() {
-        let rules = LadderRules {
-            loss_drop: 2,
-            ..LadderRules::default()
-        };
-        let mut run = LadderProgression::new(rules);
-        for _ in 0..5 {
-            run.win();
-        }
-        assert_eq!(run.rung(), 5);
-        run.loss();
-        assert_eq!(run.rung(), 3, "the configured drop, with nothing under it");
-        run.loss();
-        assert_eq!(run.rung(), 1, "and the one below that");
-        run.loss();
-        assert_eq!(run.rung(), 0, "down to the bottom rung");
-        run.loss();
-        assert_eq!(run.rung(), 0, "which is as far as a run can fall");
-        assert_eq!(run.streak(), 0);
-    }
-
-    #[test]
-    fn clearing_the_top_starts_the_next_run_at_the_bottom() {
-        let mut run = LadderProgression::new(LadderRules::default());
-        for _ in 0..pilots::PROVISIONAL_LADDER_RUNG_COUNT - 1 {
-            run.win();
-        }
-        assert!(run.win(), "the last opponent completes the finite roster");
-        assert_eq!(run.rung(), 0, "the next run starts over");
-        assert_eq!(run.streak(), 0);
-        assert_eq!(
-            run.best(),
-            pilots::PROVISIONAL_LADDER_RUNG_COUNT as u32,
-            "the record includes the final cleared opponent"
-        );
-    }
-
-    /// The only thing a returning pilot brings back is the record. A run they
-    /// abandoned six rungs up is not a place they resume from.
-    #[test]
-    fn restore_opens_at_the_bottom_and_carries_only_the_record() {
-        let run = LadderProgression::restore(LadderRules::default(), 6);
-        assert_eq!(run.rung(), 0);
-        assert_eq!(run.streak(), 0);
-        assert_eq!(run.best(), 6);
-    }
-
-    #[test]
-    fn restore_cannot_claim_a_record_above_the_roster() {
-        let run = LadderProgression::restore(LadderRules::default(), 900);
-        assert_eq!(run.best(), pilots::PROVISIONAL_LADDER_RUNG_COUNT as u32);
-    }
-
-    #[test]
-    fn configured_first_to_three_changes_the_slot_only_after_the_series() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(
-            LadderRules {
-                first_to: 3,
-                ..LadderRules::default()
-            },
-            1_000,
-            2,
-        );
-
-        let mut opening = ctx(&mut world, &seats);
-        ladder.tick(&mut opening);
-        assert!(opening.open_match);
-
-        for expected in 1..3 {
-            let mut point = ctx(&mut world, &seats);
-            ladder.on_death(&mut point, 9, 3);
-            assert!(!point.close_match);
-            let state = ladder.ladder_state().unwrap();
-            assert_eq!(state.score, [expected, 0]);
-            assert_eq!(state.active_opponent_slot, 0);
-            assert_eq!(state.desired_opponent_slot, 0);
-        }
-
-        assert!(deciding_death(&mut ladder, &mut world, &seats, 9, 3));
-        let state = ladder.ladder_state().unwrap();
-        assert!(!state.playing);
-        assert_eq!(state.rung, 1);
-        assert_eq!(state.streak, 1);
-        assert_eq!(state.score, [3, 0]);
-        assert_eq!(
-            state.active_opponent_slot, 0,
-            "the finished foe stays named"
-        );
-        assert_eq!(
-            state.desired_opponent_slot, 1,
-            "the next foe is now requested"
-        );
-
-        let rival_gone = [3];
-        let mut waiting = ctx(&mut world, &rival_gone);
-        ladder.tick(&mut waiting);
-        assert!(!waiting.open_match);
-        let mut next = ctx(&mut world, &seats);
-        ladder.tick(&mut next);
-        assert!(next.open_match);
-        let state = ladder.ladder_state().unwrap();
-        assert!(state.playing);
-        assert_eq!(state.score, [0, 0]);
-        assert_eq!(state.active_opponent_slot, 1);
-        assert_eq!(state.desired_opponent_slot, 1);
-    }
-
-    /// The death that decides a life, and the window the mode holds the fight
-    /// open for afterwards. Answers whether the life was filed on the far side
-    /// of it, because that is where the result now lands rather than on the
-    /// death itself.
-    fn deciding_death(
-        ladder: &mut Ladder,
-        world: &mut World,
-        seats: &[u8],
-        victim: u8,
-        killer: u8,
-    ) -> bool {
-        ladder.on_death(&mut ctx(world, seats), victim, killer);
-        let mut closed = false;
-        for _ in 0..LADDER_DEATH_PAUSE_TICKS {
-            let mut c = ctx(world, seats);
-            ladder.tick(&mut c);
-            closed |= c.close_match;
-        }
-        closed
-    }
-
-    /// One life from the whistle to its deciding death, flown for `ticks`.
-    ///
-    /// The rival's seat is emptied on the way in, because the room refuses to
-    /// open the next rung until it has watched the last one's bot leave. That
-    /// is the director's swap, and a run of lives has to include it.
-    fn one_life(ladder: &mut Ladder, world: &mut World, seats: &[u8], ticks: u32, won: bool) {
-        let rival_gone = [3];
-        for _ in 0..4 {
-            ladder.tick(&mut ctx(world, &rival_gone));
-        }
-        for _ in 0..4 {
-            if ladder.ladder_state().unwrap().playing {
-                break;
-            }
-            ladder.tick(&mut ctx(world, seats));
-        }
-        assert!(
-            ladder.ladder_state().unwrap().playing,
-            "the replacement rival should have opened a life"
-        );
-        for _ in 0..ticks {
-            ladder.tick(&mut ctx(world, seats));
-        }
-        let (victim, killer) = if won { (9, 3) } else { (3, 9) };
-        assert!(
-            deciding_death(ladder, world, seats, victim, killer),
-            "the deciding death should have filed the life"
-        );
-    }
-
-    #[test]
-    fn every_finished_life_lands_in_the_run_log() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
-
-        one_life(&mut ladder, &mut world, &seats, 250, true);
-        one_life(&mut ladder, &mut world, &seats, 1_050, false);
-        let state = ladder.ladder_state().unwrap();
-        assert_eq!(state.legs, 2);
-        assert_eq!(state.logged, 2);
-
-        let won = state.log[0];
-        assert_eq!(won.result, LegResult::Cleared);
-        assert_eq!(
-            won.rival.as_str(),
-            "Tessellate 0001",
-            "the leg names whoever was across the arena, since by the time \
-             the board draws it the seat belongs to the next rival"
-        );
-        assert_eq!(
-            won.seconds, 5,
-            "250 ticks and the window it ended in, rounded up"
-        );
-
-        let lost = state.log[1];
-        assert_eq!(lost.result, LegResult::Lost);
-        assert_eq!(lost.rival.as_str(), "Tessellate 0001");
-        assert_eq!(lost.seconds, 13, "and a life is rounded up, like the clock");
-    }
-
-    /// A call sign longer than the buffer loses its tail rather than becoming
-    /// bytes nothing can decode, and the cut lands on a character boundary.
-    #[test]
-    fn a_call_sign_is_cut_on_a_character_boundary() {
-        assert_eq!(CallSign::new("Sable 0001").as_str(), "Sable 0001");
-        assert_eq!(CallSign::default().as_str(), "");
-        let long = "x".repeat(CallSign::MAX + 6);
-        assert_eq!(CallSign::new(&long).as_str().len(), CallSign::MAX);
-        // Three-byte characters over a boundary that does not divide by three.
-        let wide = "\u{4e16}".repeat(CallSign::MAX);
-        let cut = CallSign::new(&wide);
-        assert!(cut.as_str().len() <= CallSign::MAX);
-        assert_eq!(cut.as_str().chars().count(), CallSign::MAX / 3);
-    }
-
-    /// A rival who leaves mid-life voids it. Nothing is filed, nothing is
-    /// paid, and nothing is logged: a log of lives that did not count would
-    /// make the run read as longer and worse than it was.
-    #[test]
-    fn a_void_life_is_not_a_leg() {
-        let seats = [3, RIVAL];
-        let rival_gone = [3];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
-
-        ladder.tick(&mut ctx(&mut world, &seats));
-        for _ in 0..400 {
-            ladder.tick(&mut ctx(&mut world, &seats));
-        }
-        ladder.tick(&mut ctx(&mut world, &rival_gone));
-        let state = ladder.ladder_state().unwrap();
-        assert_eq!(state.legs, 0);
-        assert_eq!(state.logged, 0);
-    }
-
-    /// The whistle settles a life the pilots did not. Two who never land the
-    /// kill get a draw and the timer they spent, rather than an overtime that
-    /// runs until one of them makes a mistake.
-    #[test]
-    fn a_full_clock_with_nobody_dead_is_a_draw() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let match_ticks = 3 * 60 * TICKS_PER_SECOND;
-        let mut ladder = Ladder::new(LadderRules::default(), match_ticks, 200);
-        ladder.tick(&mut ctx(&mut world, &seats));
-        for _ in 0..match_ticks {
-            ladder.tick(&mut ctx(&mut world, &seats));
-        }
-
-        let state = ladder.ladder_state().unwrap();
-        assert!(!state.playing, "the whistle ends the life");
-        assert_eq!(state.logged, 1);
-        assert_eq!(state.log[0].result, LegResult::Drawn);
-        assert_eq!(state.log[0].seconds, 180, "the leg lasted the whole timer");
-        assert_eq!(state.rung, 0, "a draw moves nothing");
-    }
-
-    /// A whistle with somebody ahead hands them the life rather than drawing
-    /// it. Nothing reaches this at first-to-one, where the leading death has
-    /// already ended the fight, so it takes a configured first-to to see.
-    #[test]
-    fn a_lead_at_the_whistle_takes_the_life() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let match_ticks = 400;
-        let mut ladder = Ladder::new(
-            LadderRules {
-                first_to: 3,
-                ..LadderRules::default()
-            },
-            match_ticks,
-            200,
-        );
-        ladder.tick(&mut ctx(&mut world, &seats));
-        ladder.on_death(&mut ctx(&mut world, &seats), 9, 3);
-        for _ in 0..match_ticks {
-            ladder.tick(&mut ctx(&mut world, &seats));
-        }
-
-        let state = ladder.ladder_state().unwrap();
-        assert!(!state.playing);
-        assert_eq!(state.log[0].result, LegResult::Cleared);
-        assert_eq!(state.rung, 1, "the lead took the rung");
-    }
-
-    /// Nothing is said over a fight that is still being flown, and the whistle
-    /// that draws it says nothing either: the drawn leg is the board's own top
-    /// row.
-    #[test]
-    fn a_drawn_life_says_nothing_over_the_arena() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let match_ticks = 400;
-        let mut ladder = Ladder::new(LadderRules::default(), match_ticks, 200);
-        ladder.tick(&mut ctx(&mut world, &seats));
-        for _ in 0..match_ticks {
-            let mut c = ctx(&mut world, &seats);
-            ladder.tick(&mut c);
-            assert!(c.banner.is_empty(), "banner: {:?}", c.banner);
-        }
-        assert_eq!(
-            ladder.ladder_state().unwrap().log[0].result,
-            LegResult::Drawn
-        );
-    }
-
-    /// A duel is not filed on the death that decides it. The arena keeps
-    /// running for two seconds first, which is what a bomb already in the air
-    /// needs to finish the journey it was on.
-    #[test]
-    fn the_deciding_death_holds_the_fight_open_for_two_seconds() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
-        ladder.tick(&mut ctx(&mut world, &seats));
-
-        let mut kill = ctx(&mut world, &seats);
-        ladder.on_death(&mut kill, RIVAL, 3);
-        assert!(!kill.close_match, "the kill does not end the fight");
-        let held = ladder.ladder_state().unwrap();
-        assert!(held.playing, "both pilots are still on the clock");
-        assert_eq!(held.score, [1, 0], "and the score already says who leads");
-        assert_eq!(held.rung, 0, "the rung waits for the window");
-        assert_eq!(held.logged, 0, "so does the log");
-
-        for elapsed in 1..LADDER_DEATH_PAUSE_TICKS {
-            let mut c = ctx(&mut world, &seats);
-            ladder.tick(&mut c);
-            assert!(!c.close_match, "filed {elapsed} ticks into the window");
-            assert!(ladder.ladder_state().unwrap().playing);
-        }
-        let mut closing = ctx(&mut world, &seats);
-        ladder.tick(&mut closing);
-        assert!(closing.close_match, "the window is what files it");
-        let state = ladder.ladder_state().unwrap();
-        assert!(!state.playing);
-        assert_eq!(state.rung, 1);
-        assert_eq!(state.log[0].result, LegResult::Cleared);
-    }
-
-    /// Dying inside that window is what it is for. A pilot who takes the kill
-    /// and goes down to the shot that was already coming has traded, and a
-    /// trade is a draw however far apart the two deaths land.
-    #[test]
-    fn a_death_inside_the_window_draws_the_life() {
-        let seats = [3, RIVAL];
-        for after in [
-            0,
-            1,
-            LADDER_DEATH_PAUSE_TICKS / 2,
-            LADDER_DEATH_PAUSE_TICKS - 1,
-        ] {
-            let mut world = World::new(7);
-            let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
-            ladder.tick(&mut ctx(&mut world, &seats));
-            ladder.on_death(&mut ctx(&mut world, &seats), RIVAL, 3);
-            for _ in 0..after {
-                ladder.tick(&mut ctx(&mut world, &seats));
-            }
-
-            let mut trade = ctx(&mut world, &seats);
-            ladder.on_death(&mut trade, 3, RIVAL);
-            assert!(trade.close_match, "the trade files it at {after}");
-            let state = ladder.ladder_state().unwrap();
-            assert!(!state.playing);
-            assert_eq!(state.score, [1, 1]);
-            assert_eq!(state.logged, 1);
-            assert_eq!(state.log[0].result, LegResult::Drawn);
-            assert_eq!(state.rung, 0, "a draw moves nothing");
-            assert_eq!(state.streak, 0);
+    /// Run one fight to its end: open it, kill `victim`, and tick out the
+    /// window the result waits in. Returns the mode with the fight filed.
+    fn one_fight(duel: &mut Duel, world: &mut World, seats: &[u8], victim: u8) {
+        let names = names();
+        duel.tick(&mut ctx(world, seats, &names));
+        let mut point = ctx(world, seats, &names);
+        duel.on_death(&mut point, victim, 0);
+        for _ in 0..=DUEL_DEATH_PAUSE_TICKS {
+            duel.tick(&mut ctx(world, seats, &names));
         }
     }
 
-    /// And dying after it is not. The window closed, the win is filed, and the
-    /// next thing to happen in that room belongs to the next life.
-    #[test]
-    fn a_death_after_the_window_cannot_take_the_win_back() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 20);
-        ladder.tick(&mut ctx(&mut world, &seats));
-        assert!(deciding_death(&mut ladder, &mut world, &seats, RIVAL, 3));
-
-        ladder.on_death(&mut ctx(&mut world, &seats), 3, RIVAL);
-        let state = ladder.ladder_state().unwrap();
-        assert_eq!(state.score, [1, 0], "the intermission scores nothing");
-        assert_eq!(state.logged, 1);
-        assert_eq!(state.log[0].result, LegResult::Cleared);
-        assert_eq!(state.rung, 1);
+    fn run_of(duel: &Duel, ship: u8) -> DuelRun {
+        duel.duel_state(Some(ship)).expect("a duel").run
     }
 
-    /// The window outlives regulation. A kill in the last second of a duel is
-    /// as tradeable as one in the first, so the clock running out inside the
-    /// window neither files the fight early nor takes the draw away.
+    /// Nothing opens until both seats are taken, and the clock does not burn
+    /// while one of them is empty.
     #[test]
-    fn the_whistle_does_not_cut_the_window_short() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let match_ticks = 300;
-        let mut ladder = Ladder::new(LadderRules::default(), match_ticks, 2);
-        ladder.tick(&mut ctx(&mut world, &seats));
-        for _ in 0..match_ticks - 50 {
-            ladder.tick(&mut ctx(&mut world, &seats));
-        }
-        assert_eq!(ladder.left, 50, "half a second of regulation left");
-
-        ladder.on_death(&mut ctx(&mut world, &seats), RIVAL, 3);
-        for _ in 0..60 {
-            let mut past = ctx(&mut world, &seats);
-            ladder.tick(&mut past);
-            assert!(!past.close_match);
-        }
-        assert_eq!(ladder.left, 0, "the clock ran out inside the window");
-        assert!(
-            ladder.ladder_state().unwrap().playing,
-            "and the fight it is holding open outlived it"
-        );
-
-        let mut trade = ctx(&mut world, &seats);
-        ladder.on_death(&mut trade, 3, RIVAL);
-        assert!(trade.close_match);
-        let state = ladder.ladder_state().unwrap();
-        assert_eq!(state.log[0].result, LegResult::Drawn);
-        assert_eq!(state.rung, 0);
-    }
-
-    /// A seat vanishing inside the window does not hand the fight back. The
-    /// pilot who left had already lost it, and the only thing the window could
-    /// still have done is draw it, which needs both of them on the field. This
-    /// is the tick edge, which is how a seat that stops counting goes.
-    #[test]
-    fn a_seat_lost_inside_the_window_files_the_fight_it_decided() {
-        let seats = [3, RIVAL];
-        let rival_gone = [3];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
-        ladder.tick(&mut ctx(&mut world, &seats));
-        ladder.on_death(&mut ctx(&mut world, &seats), RIVAL, 3);
-
-        let mut went = ctx(&mut world, &rival_gone);
-        ladder.tick(&mut went);
-        assert!(went.close_match, "the win is filed rather than voided");
-        assert!(!went.abort_match);
-        let state = ladder.ladder_state().unwrap();
-        assert!(!state.playing);
-        assert_eq!(state.rung, 1);
-        assert_eq!(state.logged, 1);
-        assert_eq!(state.log[0].result, LegResult::Cleared);
-    }
-
-    /// And the same through the departure hook, which is the path a disconnect
-    /// takes. A pilot who has just died cannot dodge the loss by pulling the
-    /// plug inside the two seconds it is held open for.
-    #[test]
-    fn a_departure_inside_the_window_cannot_dodge_the_loss() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
-        ladder.tick(&mut ctx(&mut world, &seats));
-        ladder.on_death(&mut ctx(&mut world, &seats), 3, RIVAL);
-
-        let mut gone = ctx(&mut world, &seats);
-        ladder.on_departure(&mut gone, RIVAL, true);
-        assert!(gone.close_match);
-        assert!(!gone.abort_match);
-        let state = ladder.ladder_state().unwrap();
-        assert_eq!(state.logged, 1);
-        assert_eq!(state.log[0].result, LegResult::Lost);
-    }
-
-    /// A draw is a real result at this table: both pilots died on the same
-    /// tick, the same rival is fought again, and the log says it happened.
-    #[test]
-    fn a_double_death_logs_a_drawn_leg() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
-        ladder.tick(&mut ctx(&mut world, &seats));
-        let mut same_tick = ctx(&mut world, &seats);
-        ladder.on_death(&mut same_tick, 3, 9);
-        ladder.on_death(&mut same_tick, 9, 3);
-        let state = ladder.ladder_state().unwrap();
-        assert_eq!(state.logged, 1);
-        assert_eq!(state.log[0].result, LegResult::Drawn);
-        assert_eq!(state.log[0].rival.as_str(), "Tessellate 0001");
-        assert_eq!(state.rung, 0, "a draw moves nothing");
-    }
-
-    /// An evening longer than the window keeps its most recent legs, and the
-    /// total says how much fell off the front.
-    #[test]
-    fn a_long_run_keeps_its_newest_legs() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
-        for _ in 0..LADDER_LOG_LEGS + 3 {
-            one_life(&mut ladder, &mut world, &seats, 100, false);
-        }
-        let state = ladder.ladder_state().unwrap();
-        assert_eq!(state.legs, LADDER_LOG_LEGS as u32 + 3);
-        assert_eq!(state.logged, LADDER_LOG_LEGS as u8);
-        assert!(
-            state.log.iter().all(|leg| leg.result == LegResult::Lost),
-            "every leg in the window is one that was really flown"
-        );
-    }
-
-    /// A run is what the log is about. Clearing the roster ends one, and the
-    /// first life of the next starts the log over rather than continuing an
-    /// evening that already finished.
-    #[test]
-    fn a_cleared_roster_starts_the_next_run_with_an_empty_log() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
-        for _ in 0..pilots::PROVISIONAL_LADDER_RUNG_COUNT {
-            one_life(&mut ladder, &mut world, &seats, 100, true);
-        }
-        assert!(
-            ladder.ladder_state().unwrap().cleared,
-            "the finite roster is finished"
-        );
-        assert_eq!(
-            ladder.ladder_state().unwrap().legs,
-            pilots::PROVISIONAL_LADDER_RUNG_COUNT as u32,
-            "and the card that reports it still counts the whole run"
-        );
-        assert_eq!(
-            ladder.ladder_state().unwrap().logged,
-            LADDER_LOG_LEGS as u8,
-            "with the window's worth of it to look at"
-        );
-
-        one_life(&mut ladder, &mut world, &seats, 100, true);
-        let state = ladder.ladder_state().unwrap();
-        assert_eq!(state.legs, 1, "the next run counts from its own first life");
-        assert_eq!(state.logged, 1);
-    }
-
-    /// The streak is what the board is played for, so the run keeps the
-    /// longest it managed. A loss takes the streak and leaves the best.
-    #[test]
-    fn a_run_remembers_its_longest_streak() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
-        for _ in 0..3 {
-            one_life(&mut ladder, &mut world, &seats, 100, true);
-        }
-        let climbing = ladder.ladder_state().unwrap();
-        assert_eq!(climbing.streak, 3);
-        assert_eq!(climbing.best_streak, 3);
-
-        one_life(&mut ladder, &mut world, &seats, 100, false);
-        let broken = ladder.ladder_state().unwrap();
-        assert_eq!(broken.streak, 0, "a loss ends the streak");
-        assert_eq!(
-            broken.best_streak, 3,
-            "and leaves the reading that says how big it was"
-        );
-
-        one_life(&mut ladder, &mut world, &seats, 100, true);
-        let again = ladder.ladder_state().unwrap();
-        assert_eq!(again.streak, 1);
-        assert_eq!(again.best_streak, 3, "a shorter run does not lower it");
-    }
-
-    /// A new session opens at the bottom rung with a streak of zero, and with
-    /// nobody else's evening behind it.
-    #[test]
-    fn restoring_progress_starts_a_fresh_log() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
-        one_life(&mut ladder, &mut world, &seats, 100, true);
-        assert_eq!(ladder.ladder_state().unwrap().logged, 1);
-
-        assert!(ladder.restore_ladder(3));
-        let state = ladder.ladder_state().unwrap();
-        assert_eq!(state.legs, 0);
-        assert_eq!(state.logged, 0);
-
-        ladder.first_human();
-        assert_eq!(ladder.ladder_state().unwrap().logged, 0);
-    }
-
-    /// A run belongs to whoever is flying it. The seat changes hands when a
-    /// person arrives and again when they go and the stand-in takes it back,
-    /// and neither of them inherits the other's rung.
-    #[test]
-    fn a_departing_climber_ends_the_run() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
-        ladder.tick(&mut ctx(&mut world, &seats));
-        deciding_death(&mut ladder, &mut world, &seats, RIVAL, 3);
-        assert_eq!(ladder.ladder_state().unwrap().rung, 1, "one rung climbed");
-
-        let mut gone = ctx(&mut world, &seats);
-        ladder.on_departure(&mut gone, 3, false);
-        let state = ladder.ladder_state().unwrap();
-        assert_eq!(state.rung, 0, "the next pilot in that seat starts over");
-        assert_eq!(state.legs, 0, "and the log is not their evening");
-        assert!(!state.playing);
-    }
-
-    /// The rival is the one departure that is not the end of a run: the same
-    /// rung reopens against the replacement.
-    #[test]
-    fn a_departing_rival_keeps_the_run_where_it_was() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
-        ladder.tick(&mut ctx(&mut world, &seats));
-        deciding_death(&mut ladder, &mut world, &seats, RIVAL, 3);
-        let climbed = ladder.ladder_state().unwrap();
-
-        let mut gone = ctx(&mut world, &seats);
-        ladder.on_departure(&mut gone, RIVAL, true);
-        let state = ladder.ladder_state().unwrap();
-        assert_eq!(state.rung, climbed.rung);
-        assert_eq!(state.streak, climbed.streak);
-        assert_eq!(state.legs, climbed.legs);
-    }
-
-    /// Nothing here asks whether the climber is a person. Two bots in the
-    /// room, one of them the rung's own rival, is a life like any other.
-    #[test]
-    fn a_stand_in_climbs_the_same_ladder_a_person_would() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
-        let mut opening = ctx(&mut world, &seats);
-        ladder.tick(&mut opening);
-        assert!(opening.open_match);
-
-        assert!(deciding_death(&mut ladder, &mut world, &seats, RIVAL, 3));
-        let state = ladder.ladder_state().unwrap();
-        assert_eq!(state.score, [1, 0], "the climber's side scores first");
-        assert_eq!(state.rung, 1);
-        assert_eq!(state.log[0].result, LegResult::Cleared);
-    }
-
-    /// A cleared rung says nothing across the screen. It used to read "Rung 3
-    /// cleared. Next rung 4, streak 3" in the largest type the client draws,
-    /// over the arena, while the next life was starting. Every number in it is
-    /// on the board a press away: the rung and the streak head the run, and
-    /// the fight that just ended is the row under them. The banner is for what
-    /// nothing else says.
-    #[test]
-    fn an_ordinary_result_says_nothing_over_the_arena() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
-        ladder.tick(&mut ctx(&mut world, &seats));
-
-        let mut cleared = ctx(&mut world, &seats);
-        ladder.on_death(&mut cleared, RIVAL, 3);
-        assert_eq!(cleared.banner, "", "nor is the kill that decided it");
-        for _ in 0..LADDER_DEATH_PAUSE_TICKS {
-            let mut c = ctx(&mut world, &seats);
-            ladder.tick(&mut c);
-            assert_eq!(c.banner, "", "a won rung is not an announcement");
-        }
-        assert_eq!(ladder.ladder_state().unwrap().rung, 1, "and it advanced");
-
-        // And a lost one is not either: the row says lost, and the standing
-        // above it says what the run fell to.
-        one_life(&mut ladder, &mut world, &seats, 10, false);
-        assert_eq!(
-            ladder.ladder_state().unwrap().log[1].result,
-            LegResult::Lost
-        );
-        let mut after = ctx(&mut world, &seats);
-        ladder.tick(&mut after);
-        assert_eq!(after.banner, "", "a lost rung is not one either");
-    }
-
-    /// A rival the room has not called ready is not on the field: its seat is
-    /// taken and its client is connected, and until the calibrated build is
-    /// dealt there is nobody to fight.
-    #[test]
-    fn an_unready_rival_is_not_an_opponent() {
-        assert_eq!(
-            Ladder::opponents(&[3, RIVAL], Some(RIVAL)),
-            Some((3, RIVAL))
-        );
-        assert_eq!(
-            Ladder::opponents(&[3], Some(RIVAL)),
-            None,
-            "the rival is seated but not dealt"
-        );
-        assert_eq!(
-            Ladder::opponents(&[3, RIVAL], None),
-            None,
-            "no rival is seated at all"
-        );
-        assert_eq!(
-            Ladder::opponents(&[RIVAL], Some(RIVAL)),
-            None,
-            "and a rival alone has nobody to climb over it"
-        );
-    }
-
-    #[test]
-    fn an_extra_seat_cannot_score_ladder_progress() {
-        let seats = [3, 9, 10];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
-        ladder.tick(&mut ctx(&mut world, &seats));
-        ladder.on_death(&mut ctx(&mut world, &seats), 9, 3);
-        assert_eq!(ladder.ladder_state().unwrap().score, [0, 0]);
-    }
-
-    #[test]
-    fn first_human_starts_a_new_run() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(
-            LadderRules {
-                first_to: 1,
-                ..LadderRules::default()
-            },
-            1_000,
-            2,
-        );
-        ladder.tick(&mut ctx(&mut world, &seats));
-        deciding_death(&mut ladder, &mut world, &seats, 9, 3);
-        assert_eq!(ladder.ladder_state().unwrap().rung, 1);
-
-        assert!(ladder.first_human(), "a run is the arriving pilot's own");
-        ladder.tick(&mut ctx(&mut world, &seats));
-        let state = ladder.ladder_state().unwrap();
-        assert_eq!(state.rung, 0);
-        assert_eq!(state.streak, 0);
-        assert_eq!(state.score, [0, 0]);
-        assert_eq!(state.active_opponent_slot, 0);
-    }
-
-    #[test]
-    fn default_ladder_is_single_life() {
-        assert_eq!(LadderRules::default().first_to, 1);
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
-        ladder.tick(&mut ctx(&mut world, &seats));
-
-        assert!(deciding_death(&mut ladder, &mut world, &seats, 9, 3));
-        assert_eq!(ladder.ladder_state().unwrap().rung, 1);
-    }
-
-    #[test]
-    fn the_top_opponent_produces_a_clear_instead_of_a_plateau() {
-        let seats = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
-        let last = pilots::PROVISIONAL_LADDER_RUNG_COUNT as u32 - 1;
-        let mut climbed = LadderProgression::new(LadderRules::default());
-        for _ in 0..last {
-            climbed.win();
-        }
-        ladder.run = climbed;
-        ladder.tick(&mut ctx(&mut world, &seats));
-
-        assert!(deciding_death(&mut ladder, &mut world, &seats, 9, 3));
-        let state = ladder.ladder_state().unwrap();
-        assert!(state.cleared);
-        assert_eq!(state.active_opponent_slot, last);
-        assert_eq!(state.desired_opponent_slot, 0);
-        assert_eq!(state.best, last + 1);
-        assert_eq!(state.rung, 0, "a cleared roster starts over at the bottom");
-
-        let rival_gone = [3];
-        ladder.tick(&mut ctx(&mut world, &rival_gone));
-        let mut replacement = ctx(&mut world, &seats);
-        ladder.tick(&mut replacement);
-        assert!(replacement.open_match);
-        let next = ladder.ladder_state().unwrap();
-        assert!(!next.cleared);
-        assert_eq!(next.active_opponent_slot, 0);
-    }
-
-    /// A returning pilot's record comes back. Their position does not: the
-    /// room opens them on the first rung and asks for its opponent.
-    #[test]
-    fn restore_starts_at_the_bottom_rung_with_no_streak() {
-        let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
-        assert!(ladder.restore_ladder(7));
-        let state = ladder.ladder_state().unwrap();
-        assert!(!state.playing);
-        assert_eq!(state.rung, 0);
-        assert_eq!(state.streak, 0);
-        assert_eq!(state.best, 7);
-        assert_eq!(state.score, [0, 0]);
-        assert_eq!(state.active_opponent_slot, 0);
-        assert_eq!(state.desired_opponent_slot, 0);
-        assert!(!FreeForAll.restore_ladder(7));
-    }
-
-    #[test]
-    fn a_series_waits_at_full_time_until_both_opponents_arrive() {
-        let rival_gone = [3];
-        let pair = [3, RIVAL];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 500, 20);
-        assert!(ladder.first_human());
+    fn a_fight_waits_for_a_second_pilot() {
+        let mut world = paired_world();
+        let mut duel = Duel::new(DuelRules::default(), 500, 20);
+        let alone = [LEFT];
+        let names = names();
 
         for _ in 0..300 {
-            let mut waiting = ctx(&mut world, &rival_gone);
-            ladder.tick(&mut waiting);
+            let mut waiting = ctx(&mut world, &alone, &names);
+            duel.tick(&mut waiting);
             assert!(!waiting.open_match);
         }
-        assert_eq!(ladder.left, 500, "the match clock has not burned");
-        assert!(!ladder.ladder_state().unwrap().opponent_ready);
+        assert_eq!(duel.left, 500, "the match clock has not burned");
+        let state = duel.duel_state(Some(LEFT)).expect("a duel");
+        assert!(state.waiting, "and it says so");
+        assert!(!state.playing);
 
-        let mut ready = ctx(&mut world, &pair);
-        ladder.tick(&mut ready);
-        assert!(ready.open_match);
-        assert_eq!(ladder.left, 500, "the series opens at full length");
-        assert!(ladder.ladder_state().unwrap().opponent_ready);
+        let mut arrived = ctx(&mut world, &[LEFT, RIGHT], &names);
+        duel.tick(&mut arrived);
+        assert!(arrived.open_match);
+        assert!(duel.duel_state(Some(LEFT)).expect("a duel").playing);
     }
 
+    /// A third ship is not a duel. Nothing about the room is a fight the mode
+    /// will score while one is in it.
     #[test]
-    fn a_departed_opponent_invalidates_and_replays_the_life() {
-        let pair = [3, RIVAL];
-        let rival_gone = [3];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 500, 20);
-        ladder.tick(&mut ctx(&mut world, &pair));
-        ladder.tick(&mut ctx(&mut world, &pair));
-        assert_eq!(ladder.left, 499);
-
-        let before = ladder.ladder_state().unwrap();
-        let mut interrupted = ctx(&mut world, &rival_gone);
-        ladder.tick(&mut interrupted);
-        assert!(interrupted.abort_match);
-        assert!(!interrupted.close_match);
-        assert!(interrupted.banner.contains("disconnected"));
-        let stopped = ladder.ladder_state().unwrap();
-        assert!(!stopped.playing);
-        assert_eq!(stopped.score, [0, 0]);
-        assert_eq!(stopped.rung, before.rung);
-        assert_eq!(stopped.streak, before.streak);
-        assert_eq!(stopped.best, before.best);
-
-        for _ in 0..20 {
-            ladder.tick(&mut ctx(&mut world, &rival_gone));
-        }
-        let mut replacement = ctx(&mut world, &pair);
-        ladder.tick(&mut replacement);
-        assert!(replacement.open_match);
-        let replay = ladder.ladder_state().unwrap();
-        assert!(replay.playing);
-        assert_eq!(replay.active_opponent_slot, before.active_opponent_slot);
-        assert_eq!(replay.rung, before.rung);
-        assert_eq!(ladder.left, 500, "the replay starts with a fresh clock");
+    fn a_third_seat_is_not_a_duel() {
+        let mut world = paired_world();
+        let extra = world.spawn(0, 0, 400, 400, 0);
+        assert!(extra >= 0);
+        let mut duel = Duel::new(DuelRules::default(), 500, 20);
+        let crowd = [LEFT, RIGHT, extra as u8];
+        let names = names();
+        let mut c = ctx(&mut world, &crowd, &names);
+        duel.tick(&mut c);
+        assert!(!c.open_match, "three ships never opened a fight");
     }
 
+    /// Both seats on one side are not opponents either, whatever the room
+    /// thinks it did when it seated them.
     #[test]
-    fn opponent_change_waits_at_zero_for_the_replacement() {
-        let pair = [3, RIVAL];
-        let rival_gone = [3];
-        let mut world = World::new(7);
-        let mut ladder = Ladder::new(LadderRules::default(), 500, 2);
-        ladder.tick(&mut ctx(&mut world, &pair));
-        deciding_death(&mut ladder, &mut world, &pair, 9, 3);
-
-        ladder.tick(&mut ctx(&mut world, &pair));
-        let mut zero = ctx(&mut world, &pair);
-        ladder.tick(&mut zero);
-        assert!(!zero.open_match, "the old pair cannot open the next rung");
-        assert_eq!(ladder.left, 0);
-
-        ladder.tick(&mut ctx(&mut world, &rival_gone));
-        assert_eq!(ladder.left, 0, "the wait stays at zero");
-        let mut replacement = ctx(&mut world, &pair);
-        ladder.tick(&mut replacement);
-        assert!(replacement.open_match);
-        assert_eq!(ladder.ladder_state().unwrap().active_opponent_slot, 1);
+    fn two_pilots_on_one_side_are_not_opponents() {
+        let mut world = paired_world();
+        world.state.ships[RIGHT as usize].team = 0;
+        let mut duel = Duel::new(DuelRules::default(), 500, 20);
+        let names = names();
+        let mut c = ctx(&mut world, &[LEFT, RIGHT], &names);
+        duel.tick(&mut c);
+        assert!(!c.open_match);
     }
 
+    /// One death takes the fight, after the window it is held open for. Both
+    /// cards are written, each from its own side.
     #[test]
-    fn a_mutual_kill_is_a_draw_in_either_event_order() {
-        let seats = [3, RIVAL];
-        for deaths in [[(3, 9), (9, 3)], [(9, 3), (3, 9)]] {
-            let mut world = World::new(7);
-            let mut ladder = Ladder::new(LadderRules::default(), 500, 2);
-            ladder.tick(&mut ctx(&mut world, &seats));
+    fn one_death_settles_the_fight_on_both_cards() {
+        let mut world = paired_world();
+        let mut duel = Duel::new(DuelRules::default(), 100_000, 2);
+        one_fight(&mut duel, &mut world, &[LEFT, RIGHT], RIGHT);
 
-            let mut same_tick = ctx(&mut world, &seats);
-            for (victim, killer) in deaths {
-                ladder.on_death(&mut same_tick, victim, killer);
+        let won = run_of(&duel, LEFT);
+        assert_eq!(won.streak, 1);
+        assert_eq!(won.legs, 1);
+        assert_eq!(won.log[0].result, LegResult::Cleared);
+        assert_eq!(
+            won.log[0].rival.as_str(),
+            RIGHT_NAME,
+            "a card names who was across the arena, not who is reading it"
+        );
+
+        let lost = run_of(&duel, RIGHT);
+        assert_eq!(lost.streak, 0);
+        assert_eq!(lost.legs, 1);
+        assert_eq!(lost.log[0].result, LegResult::Lost);
+        assert_eq!(lost.log[0].rival.as_str(), LEFT_NAME);
+    }
+
+    /// The deciding death does not file the fight. Two seconds of arena
+    /// follow it, and the pilot who fired the bomb already in the air is not
+    /// safe from it: a death inside the window is a trade, and a trade is a
+    /// draw on both cards.
+    #[test]
+    fn a_death_inside_the_window_draws_the_fight() {
+        for order in [[RIGHT, LEFT], [LEFT, RIGHT]] {
+            let mut world = paired_world();
+            let mut duel = Duel::new(DuelRules::default(), 100_000, 2);
+            let seats = [LEFT, RIGHT];
+            let names = names();
+            duel.tick(&mut ctx(&mut world, &seats, &names));
+
+            let mut first = ctx(&mut world, &seats, &names);
+            duel.on_death(&mut first, order[0], 0);
+            assert!(!first.close_match, "not filed on the deciding death");
+            duel.tick(&mut ctx(&mut world, &seats, &names));
+
+            let mut second = ctx(&mut world, &seats, &names);
+            duel.on_death(&mut second, order[1], 0);
+            assert!(second.close_match, "the trade files it at once");
+
+            for ship in seats {
+                let run = run_of(&duel, ship);
+                assert_eq!(run.log[0].result, LegResult::Drawn, "ship {ship}");
+                assert_eq!(run.streak, 0, "a draw is nobody's win");
             }
-            assert!(same_tick.close_match);
-            let state = ladder.ladder_state().unwrap();
-            assert!(!state.playing);
-            assert_eq!(state.score, [1, 1]);
-            assert_eq!(state.rung, 0, "a draw does not move the run");
-            assert_eq!(state.streak, 0);
-            assert_eq!(state.desired_opponent_slot, 0);
         }
+    }
+
+    /// Both pilots dying on one tick is the same rule read at zero seconds,
+    /// and it holds whichever order the core reports them in.
+    #[test]
+    fn two_deaths_on_one_tick_are_a_draw() {
+        for order in [[LEFT, RIGHT], [RIGHT, LEFT]] {
+            let mut world = paired_world();
+            let mut duel = Duel::new(DuelRules::default(), 100_000, 2);
+            let seats = [LEFT, RIGHT];
+            let names = names();
+            duel.tick(&mut ctx(&mut world, &seats, &names));
+            let mut both = ctx(&mut world, &seats, &names);
+            for &(victim, killer) in &[(order[0], 0), (order[1], 0)] {
+                Mode::on_death(&mut duel, &mut both, victim, killer);
+            }
+            assert!(both.close_match);
+            assert_eq!(run_of(&duel, LEFT).log[0].result, LegResult::Drawn);
+            assert_eq!(run_of(&duel, RIGHT).log[0].result, LegResult::Drawn);
+        }
+    }
+
+    /// The whistle settles a fight the pilots did not. Nobody scoring in it is
+    /// a draw; anybody ahead takes it.
+    #[test]
+    fn the_whistle_draws_a_fight_nobody_won() {
+        let mut world = paired_world();
+        let mut duel = Duel::new(DuelRules::default(), 3, 20);
+        let seats = [LEFT, RIGHT];
+        let names = names();
+        for _ in 0..5 {
+            duel.tick(&mut ctx(&mut world, &seats, &names));
+        }
+        assert_eq!(run_of(&duel, LEFT).log[0].result, LegResult::Drawn);
+        assert_eq!(run_of(&duel, RIGHT).log[0].result, LegResult::Drawn);
+        assert_eq!(
+            run_of(&duel, LEFT).log[0].seconds,
+            1,
+            "a drawn fight files the whole match timer"
+        );
+    }
+
+    /// A departure voids the fight rather than handing it to whoever is left,
+    /// and the pilot who stayed keeps their card.
+    #[test]
+    fn a_departure_mid_fight_voids_it() {
+        let mut world = paired_world();
+        let mut duel = Duel::new(DuelRules::default(), 500, 20);
+        let seats = [LEFT, RIGHT];
+        let names = names();
+        duel.tick(&mut ctx(&mut world, &seats, &names));
+        duel.tick(&mut ctx(&mut world, &seats, &names));
+
+        let mut gone = ctx(&mut world, &[LEFT], &names);
+        duel.on_departure(&mut gone, RIGHT, false);
+        assert!(gone.abort_match);
+        assert!(!gone.close_match, "a voided fight files nothing");
+        assert!(gone.banner.contains("Opponent left"));
+        assert_eq!(run_of(&duel, LEFT).legs, 0, "and lands on no card");
+    }
+
+    /// Except when the window already decided it. Whoever left had lost, and
+    /// pulling the plug is not a way out of the loss.
+    #[test]
+    fn leaving_a_decided_fight_still_files_it() {
+        let mut world = paired_world();
+        let mut duel = Duel::new(DuelRules::default(), 100_000, 2);
+        let seats = [LEFT, RIGHT];
+        let names = names();
+        duel.tick(&mut ctx(&mut world, &seats, &names));
+        let mut point = ctx(&mut world, &seats, &names);
+        duel.on_death(&mut point, RIGHT, 0);
+
+        let mut gone = ctx(&mut world, &[LEFT], &names);
+        duel.on_departure(&mut gone, RIGHT, false);
+        assert!(gone.close_match, "the fight was already decided");
+        assert_eq!(run_of(&duel, LEFT).log[0].result, LegResult::Cleared);
+    }
+
+    /// A card belongs to the pilot who flew it. The next person into that seat
+    /// is not standing where they were.
+    #[test]
+    fn a_leaving_pilot_takes_their_card_with_them() {
+        let mut world = paired_world();
+        let mut duel = Duel::new(DuelRules::default(), 100_000, 2);
+        one_fight(&mut duel, &mut world, &[LEFT, RIGHT], RIGHT);
+        assert_eq!(run_of(&duel, LEFT).legs, 1);
+
+        let names = names();
+        let mut gone = ctx(&mut world, &[RIGHT], &names);
+        duel.on_departure(&mut gone, LEFT, false);
+        assert_eq!(run_of(&duel, LEFT).legs, 0, "the seat starts empty");
+        assert_eq!(
+            run_of(&duel, RIGHT).legs,
+            1,
+            "and the pilot still here keeps theirs"
+        );
+    }
+
+    /// Wins in a row are the reading the mode is played for. A loss breaks the
+    /// streak and a draw leaves it alone, because nobody won a draw.
+    #[test]
+    fn the_streak_counts_wins_in_a_row() {
+        let mut world = paired_world();
+        let mut duel = Duel::new(DuelRules::default(), 100_000, 2);
+        let seats = [LEFT, RIGHT];
+        for _ in 0..3 {
+            one_fight(&mut duel, &mut world, &seats, RIGHT);
+        }
+        assert_eq!(run_of(&duel, LEFT).streak, 3);
+        assert_eq!(run_of(&duel, LEFT).best_streak, 3);
+
+        one_fight(&mut duel, &mut world, &seats, LEFT);
+        let run = run_of(&duel, LEFT);
+        assert_eq!(run.streak, 0, "a loss breaks it");
+        assert_eq!(run.best_streak, 3, "and the best of it survives");
+        assert_eq!(run.legs, 4);
+    }
+
+    /// The card is a window on the most recent fights, and the count says what
+    /// fell off the end of it.
+    #[test]
+    fn the_card_keeps_the_most_recent_fights() {
+        let mut world = paired_world();
+        let mut duel = Duel::new(DuelRules::default(), 100_000, 2);
+        let seats = [LEFT, RIGHT];
+        for _ in 0..DUEL_LOG_LEGS + 2 {
+            one_fight(&mut duel, &mut world, &seats, RIGHT);
+        }
+        let run = run_of(&duel, LEFT);
+        assert_eq!(run.logged as usize, DUEL_LOG_LEGS);
+        assert_eq!(run.legs, DUEL_LOG_LEGS as u32 + 2);
+        assert!(
+            run.log.iter().all(|leg| leg.result == LegResult::Cleared),
+            "the window holds real fights rather than defaults"
+        );
+    }
+
+    /// A watcher gets the room's half and nobody's card, which is the whole of
+    /// what a spectator is owed.
+    #[test]
+    fn a_watcher_reads_the_room_and_no_card() {
+        let mut world = paired_world();
+        let mut duel = Duel::new(DuelRules::default(), 100_000, 2);
+        one_fight(&mut duel, &mut world, &[LEFT, RIGHT], RIGHT);
+        let watching = duel.duel_state(None).expect("a duel");
+        assert_eq!(watching.run, DuelRun::default());
+        assert!(!watching.playing);
+        assert_eq!(run_of(&duel, LEFT).legs, 1, "the pilots still have theirs");
+    }
+
+    /// A configured first-to keeps the fight open until it is reached.
+    #[test]
+    fn a_longer_series_needs_every_point() {
+        let mut world = paired_world();
+        let mut duel = Duel::new(DuelRules { first_to: 3 }, 100_000, 2);
+        let seats = [LEFT, RIGHT];
+        let names = names();
+        duel.tick(&mut ctx(&mut world, &seats, &names));
+        for point in 1..3 {
+            let mut c = ctx(&mut world, &seats, &names);
+            duel.on_death(&mut c, RIGHT, 0);
+            assert!(!c.close_match, "point {point} is not the fight");
+            assert!(duel.settling.is_none());
+        }
+        let mut last = ctx(&mut world, &seats, &names);
+        duel.on_death(&mut last, RIGHT, 0);
+        assert!(duel.settling.is_some(), "the third opens the window");
+    }
+
+    /// First to one is the floor. A zone asking for none gets it anyway.
+    #[test]
+    fn a_zero_first_to_is_clamped_to_one() {
+        let duel = Duel::new(DuelRules { first_to: 0 }, 100, 2);
+        assert_eq!(duel.rules.first_to, 1);
+    }
+
+    /// The room hands a duel to its first person: the pair of bots that were
+    /// keeping it playing are not the fight they came for.
+    #[test]
+    fn the_first_person_gets_a_fight_of_their_own() {
+        let mut world = paired_world();
+        let mut duel = Duel::new(DuelRules::default(), 100_000, 2);
+        one_fight(&mut duel, &mut world, &[LEFT, RIGHT], RIGHT);
+        assert_eq!(run_of(&duel, LEFT).legs, 1);
+
+        assert!(duel.first_human());
+        assert_eq!(run_of(&duel, LEFT).legs, 0, "nobody else's evening");
+        let state = duel.duel_state(Some(LEFT)).expect("a duel");
+        assert!(state.waiting);
+        assert!(!state.playing);
+    }
+
+    /// Every other mode answers nothing, so a caller can ask through the trait
+    /// without knowing what it is holding.
+    #[test]
+    fn only_a_duel_has_a_duel_state() {
+        assert!(FreeForAll.duel_state(None).is_none());
+        assert!(Melee::new(2, 10, 2).duel_state(None).is_none());
+        assert!(Warzone::new(4, 2).duel_state(None).is_none());
     }
 }
 
@@ -2335,8 +1614,7 @@ mod warzone_tests {
         ModeCtx {
             world,
             seats: &[],
-            rival: None,
-            rival_name: None,
+            seat_names: &[],
             team_names: &[],
             banner: String::new(),
             finished: false,

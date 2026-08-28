@@ -75,7 +75,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 27
+local CLIENT_PROTOCOL = 28
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -809,42 +809,35 @@ local function on_match(s)
         artifact = lo + hi * 4294967296
         at = at + 8
     end
-    local ladder = nil
+    local duel = nil
     if math.floor(flags / 4) % 2 == 1 then
-        if #s < at + 31 then return end
+        if #s < at + 13 then return end
         local status = string.byte(s, at)
-        ladder = {
-            opponent_ready = status % 2 == 1,
-            cleared = math.floor(status / 2) % 2 == 1,
-            waiting = math.floor(status / 4) % 2 == 1,
-            rung = u32(string.byte(s, at + 1, at + 4)),
-            streak = u32(string.byte(s, at + 5, at + 8)),
-            -- The longest this run has managed, which is the reading a broken
-            -- streak does not take away.
-            best_streak = u32(string.byte(s, at + 9, at + 12)),
-            -- The highest rung the account has ever taken. A run always opens
-            -- on the first one, so this is a record and never a position.
-            best = u32(string.byte(s, at + 13, at + 16)),
-            active_opponent = u32(string.byte(s, at + 17, at + 20)),
-            desired_opponent = u32(string.byte(s, at + 21, at + 24)),
-            first_to = u16(string.byte(s, at + 25, at + 26)),
-            -- Every life this run has finished, which is larger than the log
-            -- once a long evening outruns the window the room carries.
-            legs = u32(string.byte(s, at + 27, at + 30)),
+        duel = {
+            -- The room is looking for a second pilot rather than counting
+            -- down, so there is no fight for the clock to be about.
+            waiting = status % 2 == 1,
+            streak = u32(string.byte(s, at + 1, at + 4)),
+            -- The longest this pilot has managed here, which is the reading a
+            -- broken streak does not take away.
+            best_streak = u32(string.byte(s, at + 5, at + 8)),
+            -- Every fight finished here, which is larger than the log once a
+            -- long evening outruns the window the room carries.
+            legs = u32(string.byte(s, at + 9, at + 12)),
             log = {},
         }
-        local logged = string.byte(s, at + 31)
+        local logged = string.byte(s, at + 13)
         -- Walked rather than indexed, because a leg carries a call sign and a
         -- call sign is as long as its owner made it. A body that promises more
         -- legs than it carries is a truncated message rather than a short run,
         -- and half a log is worse than none: the panel would draw an evening
         -- that stopped where the packet did.
-        local o = at + 32
+        local o = at + 14
         for k = 1, logged do
             if #s < o + 3 then return end
             local n = string.byte(s, o + 3)
             if #s < o + 3 + n then return end
-            ladder.log[k] = {
+            duel.log[k] = {
                 result = LEG_RESULT[string.byte(s, o)] or "drawn",
                 seconds = u16(string.byte(s, o + 1, o + 2)),
                 rival = string.sub(s, o + 4, o + 3 + n),
@@ -857,7 +850,7 @@ local function on_match(s)
         left = string.byte(s, 3),
         score = score,
         artifact = artifact,
-        ladder = ladder,
+        duel = duel,
     }
 end
 

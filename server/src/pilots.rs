@@ -12,12 +12,14 @@ pub const PILOT_SPEC_VERSION: u16 = 1;
 /// Distinct ordinary house pilots the population director may claim.
 pub const HOUSE_PILOT_POOL: usize = 65_536;
 /// One Ladder rung for each authored pilot the tournament measures.
-pub const PROVISIONAL_LADDER_RUNG_COUNT: usize = CALIBRATED.len();
+/// How many pilots were written by hand rather than generated. They are the
+/// ones a tournament measures and the ones a duel draws an opponent from.
+pub const AUTHORED_PILOT_COUNT: usize = CALIBRATED.len();
 /// Distinct persistent identities available at one measured rung.
-pub const LADDER_REPLICAS_PER_RUNG: usize = 1_024;
+pub const REPLICAS_PER_ARCHETYPE: usize = 1_024;
 /// Separates Ladder placement from every other deterministic random stream.
 pub const LADDER_START_NAMESPACE: u64 = 0x6c61_6464_6572_2d31;
-const LADDER_ID_BASE: u32 = 0x8000_0000;
+const REPLICA_ID_BASE: u32 = 0x8000_0000;
 
 /// Pick one start for each Ladder side from the same policy used by the
 /// calibration harness. Consecutive scenario seeds walk every Cartesian pair
@@ -429,23 +431,23 @@ pub fn individual(n: usize) -> PilotSpec {
 ///
 /// Replicas have separate accounts and callsigns, but their controller inputs
 /// stay byte-for-byte equivalent to the archetype the tournament measured.
-pub fn ladder_replica(archetype: usize, replica: usize) -> Option<PilotSpec> {
-    if replica >= LADDER_REPLICAS_PER_RUNG {
+pub fn replica(archetype: usize, replica: usize) -> Option<PilotSpec> {
+    if replica >= REPLICAS_PER_ARCHETYPE {
         return None;
     }
     let mut spec = calibrated(archetype)?;
     let family = spec.id.0.checked_sub(1)?;
     let offset = family
-        .checked_mul(LADDER_REPLICAS_PER_RUNG as u32)?
+        .checked_mul(REPLICAS_PER_ARCHETYPE as u32)?
         .checked_add(replica as u32)?;
-    spec.id = PilotId(LADDER_ID_BASE.checked_add(offset)?);
+    spec.id = PilotId(REPLICA_ID_BASE.checked_add(offset)?);
     spec.callsign = format!("{} {:04}", spec.callsign, replica + 1);
     Some(spec)
 }
 
 /// Resolve the authored controller family behind a Ladder replica callsign.
 /// The four-digit suffix is part of the generated identity contract.
-pub fn ladder_archetype_for_callsign(name: &str) -> Option<usize> {
+pub fn archetype_for_callsign(name: &str) -> Option<usize> {
     CALIBRATED
         .iter()
         .enumerate()
@@ -457,7 +459,7 @@ pub fn ladder_archetype_for_callsign(name: &str) -> Option<usize> {
                 && suffix.bytes().all(|byte| byte.is_ascii_digit())
                 && suffix
                     .parse::<usize>()
-                    .is_ok_and(|replica| (1..=LADDER_REPLICAS_PER_RUNG).contains(&replica)))
+                    .is_ok_and(|replica| (1..=REPLICAS_PER_ARCHETYPE).contains(&replica)))
             .then_some(archetype)
         })
 }
@@ -468,7 +470,7 @@ pub fn is_house_callsign(name: &str) -> bool {
     if CALIBRATED.iter().any(|(callsign, _, _)| *callsign == name) {
         return true;
     }
-    if ladder_archetype_for_callsign(name).is_some() {
+    if archetype_for_callsign(name).is_some() {
         return true;
     }
 
@@ -620,8 +622,8 @@ mod tests {
     fn ladder_replicas_keep_the_exact_authored_controller_and_build() {
         for archetype in 0..CALIBRATED.len() {
             let authored = individual(archetype);
-            let first = ladder_replica(archetype, 0).unwrap();
-            let last = ladder_replica(archetype, LADDER_REPLICAS_PER_RUNG - 1).unwrap();
+            let first = replica(archetype, 0).unwrap();
+            let last = replica(archetype, REPLICAS_PER_ARCHETYPE - 1).unwrap();
             for replica in [&first, &last] {
                 assert_eq!(replica.version, authored.version);
                 assert_eq!(replica.hull, authored.hull);
@@ -634,8 +636,8 @@ mod tests {
             assert_ne!(first.id, last.id);
             assert_ne!(first.callsign, last.callsign);
         }
-        assert!(ladder_replica(CALIBRATED.len(), 0).is_none());
-        assert!(ladder_replica(0, LADDER_REPLICAS_PER_RUNG).is_none());
+        assert!(replica(CALIBRATED.len(), 0).is_none());
+        assert!(replica(0, REPLICAS_PER_ARCHETYPE).is_none());
     }
 
     #[test]
@@ -650,10 +652,10 @@ mod tests {
         ));
         assert!(!is_house_callsign(&individual(HOUSE_PILOT_POOL).callsign));
         assert!(!is_house_callsign("Definitely Not A House Pilot"));
-        assert_eq!(ladder_archetype_for_callsign("Ozone 0001"), Some(5));
-        assert_eq!(ladder_archetype_for_callsign("Ozone 1024"), Some(5));
-        assert_eq!(ladder_archetype_for_callsign("Ozone"), None);
-        assert_eq!(ladder_archetype_for_callsign("Ozone 1025"), None);
+        assert_eq!(archetype_for_callsign("Ozone 0001"), Some(5));
+        assert_eq!(archetype_for_callsign("Ozone 1024"), Some(5));
+        assert_eq!(archetype_for_callsign("Ozone"), None);
+        assert_eq!(archetype_for_callsign("Ozone 1025"), None);
     }
 
     #[test]

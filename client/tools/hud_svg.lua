@@ -2,7 +2,7 @@
 --
 --     lua5.1 client/tools/hud_svg.lua <out.svg> [scenario] [root] [w] [h]
 --
--- Scenarios: after (a Ladder run five rungs in), fresh (its first life), deep
+-- Scenarios: after (an evening with fights behind it), fresh (its first), deep
 -- (far enough to have a floor), before (with the banner the server used to
 -- send), ending and duel-ending (a room at the whistle), landing (the front end,
 -- watched from the stands; landing-zones and landing-ships open a stop's
@@ -21,7 +21,7 @@
 -- skirt is a falloff here, not a gradient) and there is no arena behind them.
 --
 -- Worth having because a collision is invisible to a test that reads strings.
--- The Ladder readout grew past the ratings beside the clock once a run earned
+-- The duel readout grew past the ratings beside the clock once an evening earned
 -- a floor, which no assertion had thought to make and one look found.
 
 local out_path = assert(arg[1], "an output path")
@@ -192,49 +192,44 @@ local state = package.loaded["arena.state"]
 local W = tonumber(arg[4]) or 1280
 H = tonumber(arg[5]) or 800
 
-local function leg(rung, result, kills, deaths, seconds)
-    return {rung = rung, result = result, kills = kills, deaths = deaths,
-            seconds = seconds}
+local function leg(rival, result, seconds)
+    return {rival = rival, result = result, seconds = seconds}
 end
 
--- A run five rungs in: three taken, one lost, one drawn, and back up.
+-- An evening of eight fights: six taken, one lost, one drawn.
 local RUN = {
-    leg(0, "cleared", 1, 0, 33),
-    leg(1, "cleared", 1, 0, 58),
-    leg(2, "drawn", 1, 1, 12),
-    leg(2, "cleared", 1, 0, 71),
-    leg(3, "lost", 0, 1, 9),
-    leg(1, "cleared", 1, 0, 25),
-    leg(2, "cleared", 1, 0, 44),
-    leg(3, "cleared", 1, 0, 39),
+    leg("Kestrel 0001", "cleared", 33),
+    leg("Cirrus 0001", "cleared", 58),
+    leg("Halcyon 0001", "drawn", 12),
+    leg("Ozone 0001", "cleared", 71),
+    leg("Vantage 0001", "lost", 9),
+    leg("Tessellate 0001", "cleared", 25),
+    leg("Ridgeline 0001", "cleared", 44),
+    leg("Sable 0001", "cleared", 39),
 }
 
-local ladder = {
-    rung = 4, streak = 4, best = 6,
-    active_opponent = 4, desired_opponent = 4,
-    opponent_ready = true, waiting = false, cleared = false,
-    first_to = 1, legs = 8, log = RUN,
+local duel = {
+    streak = 4, best_streak = 6, waiting = false,
+    legs = 8, log = RUN,
 }
 
 -- The frame from the screenshot: rung 5, streak 4, 2:46 on the clock, nobody
 -- dead yet.
 local match = {playing = true, left = 166, score = {[0] = 0, [1] = 0},
-               ladder = ladder}
+               duel = duel}
 
 -- The first life of a run, which is what every run opens on. Nothing behind
 -- it: no streak, no record, no legs to look back at.
 if scenario == "fresh" then
-    ladder.rung, ladder.streak, ladder.best = 0, 0, 0
-    ladder.active_opponent, ladder.desired_opponent = 0, 0
-    ladder.legs, ladder.log = 0, {}
+    duel.streak, duel.best_streak = 0, 0
+    duel.legs, duel.log = 0, {}
     match.left = 180
 end
 
--- A run far enough up the ladder to have an evening behind it.
+-- An evening with a real stretch of fights behind it.
 if scenario == "deep" then
-    ladder.rung, ladder.streak, ladder.best = 7, 2, 7
-    ladder.active_opponent, ladder.desired_opponent = 7, 7
-    ladder.legs = 23
+    duel.streak, duel.best_streak = 2, 7
+    duel.legs = 23
     match.left = 91
     match.score = {[0] = 0, [1] = 0}
 end
@@ -243,7 +238,7 @@ end
 -- every life. The server sends it; the client draws whatever arrives.
 local banner = ""
 if scenario == "before" then
-    banner = "Ladder rung 5: first to 1, 0 to 0"
+    banner = "Opponent left. Replaying that fight"
 end
 
 -- The front end: a melee room watched from the stands, with the game's name
@@ -259,7 +254,7 @@ if scenario == "duel-ending" then
     -- The same whistle in the mode that keeps a run: two rows and the fights
     -- behind them, which is the section the board adds for this zone.
     match = {playing = false, left = 8, artifact = 1,
-             score = {[0] = 1, [1] = 0}, ladder = ladder}
+             score = {[0] = 1, [1] = 0}, duel = duel}
 end
 if scenario == "ending" then
     room.count = 8
@@ -290,7 +285,7 @@ local land = landing and {
     zones = {
         {label = "Team Battle", zone = "melee", live = true,
          format = "4v4 · 3:00", here = true},
-        {label = "Duel", zone = "ladder", live = true, format = "1v1"},
+        {label = "Duel", zone = "duel", live = true, format = "1v1"},
     },
     ships = {
         {label = "Gunner", value = 1, here = true},
@@ -364,7 +359,7 @@ ui.hud({
     lag_notice = "",
     match_url = ending and "https://vectorwake.net/m/42" or nil,
     rtt = 22,
-    zone = (landing or scenario == "ending") and "melee" or "ladder",
+    zone = (landing or scenario == "ending") and "melee" or "duel",
     room = 1,
     fps = 60, frame_ms = 16.7, rx_rate = 31000, tx_rate = 700,
 })

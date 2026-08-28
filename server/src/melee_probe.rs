@@ -49,7 +49,7 @@ const BOMB_RUNG: usize = sim::slot_level(sim::TRIG_BOMB) as usize;
 
 /// The pilots a Team Battle room draws from. `bots::claim` walks the pool from
 /// the front, so the authored eight are the ones a live room actually seats.
-const ROSTER: usize = pilots::PROVISIONAL_LADDER_RUNG_COUNT;
+const ROSTER: usize = pilots::AUTHORED_PILOT_COUNT;
 
 /// The room, unpacked and tuned. `Arena::build` salts the same way, and the
 /// salt is what makes twenty matches twenty matches rather than one repeated.

@@ -32,7 +32,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
@@ -887,12 +887,12 @@ struct Instance {
 struct Assignment {
     room: u32,
     target_slot: Option<u32>,
-    /// A slot-less seat in a room that is also asking for a rung: Ladder's
-    /// stand-in, the pilot that keeps a duel in the zone while nobody is
-    /// playing. It draws from the generated roster rather than the eight
-    /// authored personalities, because those eight are the rungs it is
-    /// climbing and one of them is the fixed point every rating is measured
-    /// against. Nothing else about the flight differs from an ordinary fill.
+    /// A slot-less seat in a duel room: one of the pair that keep the zone
+    /// playing while nobody is here. It draws from the generated roster rather
+    /// than the eight authored personalities, because one of those eight is
+    /// the fixed point every rating in the fleet is measured against and a
+    /// demonstration match should not be moving it. Nothing else about the
+    /// flight differs from an ordinary fill.
     stand_in: bool,
 }
 
@@ -957,11 +957,11 @@ impl ArenaWant {
             &self.pilot_attestation,
             crate::arena::certified_pilot_attestation_id(),
         );
-        // Which rooms are running Ladder, which is a thing only a rung can
-        // say: no other room ever names a slot. It decides both what a
-        // slot-less seat there means and whether this release may fill one at
-        // all, since the stand-in has nothing to climb without its rival.
-        let ladder: HashSet<u32> = requests
+        // Which rooms are running a duel, which is a thing only a named
+        // archetype can say: no other room ever names a slot. It decides both
+        // what a slot-less seat there means and whether this release may fill
+        // one at all.
+        let duel: HashSet<u32> = requests
             .iter()
             .filter(|request| request.target_slot.is_some())
             .map(|request| request.room)
@@ -970,10 +970,10 @@ impl ArenaWant {
             .into_iter()
             .filter(|request| {
                 (1..=crate::MAX_ROOM_NUMBER).contains(&request.room)
-                    && (!ladder.contains(&request.room) || certified_release)
+                    && (!duel.contains(&request.room) || certified_release)
             })
             .flat_map(|request| {
-                let stand_in = request.target_slot.is_none() && ladder.contains(&request.room);
+                let stand_in = request.target_slot.is_none() && duel.contains(&request.room);
                 (0..request.count).map(move |_| Assignment {
                     room: request.room,
                     target_slot: request.target_slot,
@@ -1007,10 +1007,10 @@ struct Reconciliation {
 }
 
 /// Match the live population to the final room-scoped population an arena
-/// requested. A yielding ordinary bot no longer fills a request. A new rival
-/// waits until the old room task is gone, because Ladder's one rival seat is
-/// still held; the stand-in beside it names no slot and is not what that wait
-/// is about, so only a rival's own flight holds the seat.
+/// requested. A yielding ordinary bot no longer fills a request. A duel room
+/// that has changed which archetype it wants replaces the seat at once rather
+/// than waiting for the ordinary surplus drain, because a person is sitting in
+/// that room waiting for an opponent.
 fn reconcile_assignments(current: &[(Assignment, bool)], desired: &[Assignment]) -> Reconciliation {
     let mut remaining = desired.to_vec();
     let mut kept = vec![false; current.len()];
@@ -1032,12 +1032,12 @@ fn reconcile_assignments(current: &[(Assignment, bool)], desired: &[Assignment])
         if *yielding || kept[index] {
             continue;
         }
-        let ladder_changed = desired.iter().any(|wanted| {
+        let opponent_changed = desired.iter().any(|wanted| {
             wanted.room == assignment.room
                 && wanted.target_slot.is_some()
                 && wanted.target_slot != assignment.target_slot
         });
-        if ladder_changed {
+        if opponent_changed {
             plan.immediate.push(index);
         } else {
             plan.surplus.push(index);
@@ -1284,73 +1284,9 @@ pub async fn run() {
 }
 
 /// Ordinary rooms draw from the authored roster and then a large generated
-/// population. Ladder uses persistent replicas of only the authored pilots.
+/// population. A duel draws its opponent from persistent replicas of the
+/// authored pilots alone, because those are the ones whose strength is known.
 const PILOT_POOL: usize = pilots::HOUSE_PILOT_POOL;
-type LadderOrder = [usize; pilots::PROVISIONAL_LADDER_RUNG_COUNT];
-
-/// Order the authored archetypes by a complete, verified tournament seed.
-/// Missing certification or content verification falls back as one unit.
-fn ladder_order_from_seed(seed: &str, verified_current_content: bool) -> LadderOrder {
-    let roster = pilots::roster();
-    let provisional: LadderOrder = pilots::provisional_ladder_order(&roster)
-        .try_into()
-        .expect("the authored roster has the declared Ladder rung count");
-
-    if !verified_current_content {
-        return provisional;
-    }
-    let Ok(ratings) = serde_json::from_str::<HashMap<String, f64>>(seed) else {
-        return provisional;
-    };
-    if !roster.iter().all(|pilot| {
-        ratings
-            .get(&pilot.callsign)
-            .is_some_and(|rating| rating.is_finite())
-    }) {
-        return provisional;
-    }
-
-    let mut measured = provisional;
-    measured.sort_by(|&left, &right| {
-        ratings[&roster[left].callsign]
-            .total_cmp(&ratings[&roster[right].callsign])
-            .then_with(|| {
-                roster[left]
-                    .ordering_prior()
-                    .total_cmp(&roster[right].ordering_prior())
-            })
-            .then_with(|| roster[left].id.0.cmp(&roster[right].id.0))
-    });
-    measured
-}
-
-fn ladder_order() -> &'static LadderOrder {
-    static ORDER: OnceLock<LadderOrder> = OnceLock::new();
-    ORDER.get_or_init(|| {
-        let Some(entries) =
-            crate::arena::certified_pilot_attestation().map(|release| &release.certified_ladder)
-        else {
-            return ladder_order_from_seed(crate::arena::LADDER, false);
-        };
-        let roster = pilots::roster();
-        let measured: Vec<usize> = entries
-            .iter()
-            .filter_map(|entry| {
-                roster.iter().position(|pilot| {
-                    pilot.id.0 == entry.pilot_id && pilot.callsign == entry.callsign
-                })
-            })
-            .collect();
-        measured
-            .try_into()
-            .unwrap_or_else(|_| ladder_order_from_seed(crate::arena::LADDER, false))
-    })
-}
-
-pub(crate) fn ladder_archetype_for_slot(slot: u32) -> Option<usize> {
-    ladder_order().get(slot as usize).copied()
-}
-
 fn claim(
     taken: &Arc<Mutex<HashSet<pilots::PilotId>>>,
     blocked: &Arc<Mutex<HashMap<String, u64>>>,
@@ -1373,12 +1309,12 @@ fn claim(
     };
 
     let Some(target_slot) = want.target_slot else {
-        // Ladder's stand-in starts past the authored eight. Those are the
-        // rungs, so one of them climbing would put a pilot on the field
-        // against a replica of itself, and one of them is the rating anchor,
-        // which a room that never empties would hold for ever.
+        // A duel's stand-ins start past the authored eight. Those eight are
+        // the opponents a duel draws from, so one of them here could meet a
+        // replica of itself, and one of them is the rating anchor, which a
+        // room that never empties would hold for ever.
         let from = if want.stand_in {
-            pilots::PROVISIONAL_LADDER_RUNG_COUNT
+            pilots::AUTHORED_PILOT_COUNT
         } else {
             0
         };
@@ -1386,9 +1322,14 @@ fn claim(
             .map(pilots::individual)
             .find_map(&mut take);
     };
-    let archetype = ladder_archetype_for_slot(target_slot)?;
-    (0..pilots::LADDER_REPLICAS_PER_RUNG)
-        .filter_map(|replica| pilots::ladder_replica(archetype, replica))
+    // The slot is the authored archetype itself now. It used to be a rung, and
+    // the roster order between the two was the whole of the Ladder.
+    let archetype = usize::try_from(target_slot).ok()?;
+    if archetype >= pilots::AUTHORED_PILOT_COUNT {
+        return None;
+    }
+    (0..pilots::REPLICAS_PER_ARCHETYPE)
+        .filter_map(|replica| pilots::replica(archetype, replica))
         .find_map(&mut take)
 }
 
@@ -2775,13 +2716,13 @@ mod tests {
         let got = claim(&taken, &blocked, 10_000, want).expect("the roster is not empty");
         assert_eq!(
             got.callsign,
-            pilots::individual(pilots::PROVISIONAL_LADDER_RUNG_COUNT).callsign,
+            pilots::individual(pilots::AUTHORED_PILOT_COUNT).callsign,
             "the first pilot past the authored roster"
         );
         assert!(pilots::CALIBRATED
             .iter()
             .all(|(callsign, _, _)| *callsign != got.callsign));
-        assert!(pilots::ladder_archetype_for_callsign(&got.callsign).is_none());
+        assert!(pilots::archetype_for_callsign(&got.callsign).is_none());
         assert_ne!(
             got.callsign,
             crate::ai::ANCHOR,
@@ -3610,67 +3551,43 @@ mod tests {
         assert_eq!(got.callsign, pilots::individual(1).callsign);
     }
 
+    /// A named slot is the authored archetype itself. It used to be a rung,
+    /// with a certified roster order in between.
     #[test]
-    fn an_incomplete_ladder_seed_uses_the_whole_provisional_order() {
-        let provisional = ladder_order_from_seed("{}", false);
-        let partial = serde_json::to_string(&HashMap::from([(
-            pilots::roster()[0].callsign.clone(),
-            -100_000.0,
-        )]))
-        .unwrap();
-        assert_eq!(ladder_order_from_seed(&partial, true), provisional);
-        for pair in provisional.windows(2) {
-            let lower = pilots::individual(pair[0]);
-            let higher = pilots::individual(pair[1]);
-            assert!(
-                lower.ordering_prior() <= higher.ordering_prior(),
-                "the fallback must not use authored roster order"
-            );
-        }
-    }
-
-    #[test]
-    fn only_a_verified_complete_seed_orders_authored_archetypes_by_rating() {
-        let roster = pilots::roster();
-        let provisional = ladder_order_from_seed("{}", false);
-        let expected: LadderOrder = std::array::from_fn(|rank| {
-            provisional[pilots::PROVISIONAL_LADDER_RUNG_COUNT - rank - 1]
-        });
-        let ratings: HashMap<String, f64> = expected
-            .iter()
-            .enumerate()
-            .map(|(rank, &archetype)| (roster[archetype].callsign.clone(), rank as f64))
-            .collect();
-        let seed = serde_json::to_string(&ratings).unwrap();
-        assert_eq!(
-            ladder_order_from_seed(&seed, false),
-            provisional,
-            "a complete rating map is still not proof of certification"
-        );
-        assert_eq!(ladder_order_from_seed(&seed, true), expected);
-    }
-
-    #[test]
-    fn a_ladder_target_resolves_into_its_ordered_archetype() {
+    fn a_named_slot_resolves_into_that_archetype() {
         let taken = Arc::new(Mutex::new(HashSet::new()));
         let blocked = Arc::new(Mutex::new(HashMap::new()));
         let target = 7usize;
-        let expected = pilots::ladder_replica(ladder_order()[target], 0).unwrap();
+        let expected = pilots::replica(target, 0).unwrap();
         let got = claim(&taken, &blocked, 10_000, rung(target as u32)).unwrap();
         assert_eq!(got.id, expected.id);
+        assert_eq!(
+            got.callsign,
+            format!("{} 0001", pilots::individual(target).callsign)
+        );
+    }
+
+    /// A slot past the authored roster names nobody, rather than wrapping
+    /// round to a pilot the arena did not ask for.
+    #[test]
+    fn a_slot_past_the_roster_names_nobody() {
+        let taken = Arc::new(Mutex::new(HashSet::new()));
+        let blocked = Arc::new(Mutex::new(HashMap::new()));
+        let past = pilots::AUTHORED_PILOT_COUNT as u32;
+        assert!(claim(&taken, &blocked, 10_000, rung(past)).is_none());
     }
 
     #[test]
-    fn concurrent_ladder_rooms_get_distinct_persistent_replicas() {
-        let target = 7usize;
-        let archetype = ladder_order()[target];
+    fn concurrent_duel_rooms_get_distinct_persistent_replicas() {
+        let archetype = 7usize;
+        let target = archetype;
         let taken = Arc::new(Mutex::new(HashSet::new()));
         let blocked = Arc::new(Mutex::new(HashMap::new()));
         let first = claim(&taken, &blocked, 10_000, rung(target as u32)).unwrap();
         let second = claim(&taken, &blocked, 10_000, rung(target as u32)).unwrap();
         assert_ne!(first.id, second.id);
-        assert_eq!(first.id, pilots::ladder_replica(archetype, 0).unwrap().id);
-        assert_eq!(second.id, pilots::ladder_replica(archetype, 1).unwrap().id);
+        assert_eq!(first.id, pilots::replica(archetype, 0).unwrap().id);
+        assert_eq!(second.id, pilots::replica(archetype, 1).unwrap().id);
         assert_eq!(first.hull, second.hull);
         assert_eq!(first.competence, second.competence);
         // Behavior covers taste as well now: a kit is derived from it.
@@ -3679,13 +3596,13 @@ mod tests {
     }
 
     #[test]
-    fn an_exhausted_ladder_rung_does_not_change_archetypes() {
+    fn an_exhausted_archetype_does_not_change_to_another() {
         let target = 7u32;
-        let archetype = ladder_order()[target as usize];
-        let occupied: HashSet<pilots::PilotId> = (0..pilots::LADDER_REPLICAS_PER_RUNG)
-            .map(|replica| pilots::ladder_replica(archetype, replica).unwrap().id)
+        let archetype = target as usize;
+        let occupied: HashSet<pilots::PilotId> = (0..pilots::REPLICAS_PER_ARCHETYPE)
+            .map(|replica| pilots::replica(archetype, replica).unwrap().id)
             .collect();
-        assert_eq!(occupied.len(), pilots::LADDER_REPLICAS_PER_RUNG);
+        assert_eq!(occupied.len(), pilots::REPLICAS_PER_ARCHETYPE);
         let taken = Arc::new(Mutex::new(occupied));
         let blocked = Arc::new(Mutex::new(HashMap::new()));
         assert!(claim(&taken, &blocked, 10_000, rung(target)).is_none());

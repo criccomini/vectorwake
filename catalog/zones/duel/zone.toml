@@ -1,15 +1,17 @@
-# One life against one measured house pilot. A win puts a harder one across the
-# arena and a loss puts back an easier one, all the way down to the first if a
-# run keeps losing. Neither number reaches a screen: what the board says is the
-# streak, and who you beat to get it.
+# One life against one other pilot.
 #
-# With nobody here the room climbs anyway, against the same rivals, so the play
-# page has a fight to show whoever is deciding what to press. That is why both
-# sides below take a bot as well as a person: the stand-in flies the climber's
-# seat and gives it back the moment somebody wants it.
+# Who that is comes from the door rather than from a roster: a person of about
+# your rating where one is waiting, and a house pilot of about your rating
+# where none is. The seat is held open for a person for ten seconds first, and
+# a person arriving later takes it from the bot. What the board says is your
+# streak and who you beat to get it.
+#
+# With nobody here two bots fly it anyway, so the play page has a fight to show
+# whoever is deciding what to press. That is why both sides below take a bot as
+# well as a person.
 
 label = "Duel"
-mode = "ladder"
+mode = "duel"
 
 # The same five rooms Team Battle plays, so a pilot who learns a map learns it
 # once. A duel is two ships in a room built for eight, which is the point: the
@@ -29,7 +31,7 @@ maps = [
   "../melee/ringworks.vwmap",
 ]
 
-max_players = 1
+max_players = 2
 max_ships = 2
 bot_fill = 1.0
 fill_target = 1
@@ -40,12 +42,10 @@ max_teams = 2
 max_humans_per_team = 1
 max_bots_per_team = 1
 
-# A guest is an account: the meta-layer mints one per device, and the best rung
-# a climb reaches hangs off whatever account id is flying. Nobody has to claim a
-# pilot before their first climb. A guest account is swept after a week away and
-# its record goes with it; claiming the pilot is what makes that record
-# permanent. The run itself is one sitting either way, and always opens on the
-# first rung.
+# A guest is an account: the meta-layer mints one per device, and the rating a
+# duel moves hangs off whatever account id is flying. Nobody has to claim a
+# pilot before their first fight. A guest account is swept after a week away
+# and its rating goes with it; claiming the pilot is what makes it permanent.
 admission = "any"
 max_watchers = 8
 
@@ -53,22 +53,16 @@ max_watchers = 8
 match_seconds = 180
 intermission_seconds = 8
 
-# Ladder is one life. Catalog validation refuses any other value for this mode.
-#
-# Nothing floors the drop. Rungs used to be banked every five, which on an
-# eight-rung ladder is one save point sitting exactly `ladder_loss_drop` below
-# the top, so every loss from the last three rungs landed on the same opponent
-# and a climber met two names for ever. See decision 91.
-ladder_first_to = 1
-ladder_loss_drop = 2
+# A duel is one life. Catalog validation refuses any other value for this mode.
+duel_first_to = 1
 
-# The same movement, collision, weapon, and kit economy used in melee. A rung
-# should measure the opponent, not a private ruleset the player never sees in
-# the main game.
+# The same movement, collision, weapon, and kit economy used in melee. A duel
+# should measure the pilot, not a private ruleset the player never sees in the
+# main game.
 #
 # `a_duel_runs_the_melee_economy` holds every line below against melee's own,
 # because this was prose and prose does not fail a build: melee's spray tuning
-# moved and these did not, and for a while a rung was measuring a ruleset
+# moved and these did not, and for a while a duel was measuring a ruleset
 # nobody played anywhere else.
 bounce = 12
 friction = 12

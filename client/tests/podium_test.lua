@@ -235,8 +235,8 @@ check("nothing is settled while the clock is running",
       tostring(said("takes it") or said("next match in")))
 
 frame({match = {playing = true, left = 96, score = {[0] = 0, [1] = 0},
-                ladder = {rung = 7, streak = 3, best = 7,
-                          opponent_ready = true, waiting = false}},
+                duel = {streak = 3, best_streak = 7, waiting = false,
+                        legs = 3, log = {}}},
        side_names = NAMES, side = 0})
 -- The rung, the streak and the floor were a line under the clock. They are
 -- rows on the board behind the band now, and the band carries the two pilots
@@ -246,9 +246,8 @@ check("a live Ladder fight keeps the rung off the band",
       table.concat(words(), " | "))
 
 frame({match = {playing = false, left = 180, score = {[0] = 0, [1] = 0},
-                ladder = {rung = 0, streak = 0, best = 0,
-                          active_opponent = 0, desired_opponent = 0,
-                          opponent_ready = false, waiting = true}},
+                duel = {streak = 0, best_streak = 0, waiting = true,
+                        legs = 0, log = {}}},
        side_names = NAMES, side = 0})
 -- A room still looking for a rival is not a room that just lost one. The
 -- clock reads dashes and the band says nothing else at all: whoever is about
@@ -266,30 +265,28 @@ check("and says nothing about the rung while it waits",
 
 frame({match = {playing = false, left = 0, artifact = 1,
                 score = {[0] = 1, [1] = 0},
-                ladder = {rung = 1, streak = 1, best = 1,
-                          active_opponent = 0, desired_opponent = 1,
-                          opponent_ready = true, waiting = true}},
+                duel = {streak = 1, best_streak = 1, waiting = true,
+                        legs = 1, log = {}}},
        side_names = NAMES, side = 0})
 check("an overdue old rival becomes a waiting state",
       said("--:--") ~= nil and said("rung 1 cleared") == nil,
       table.concat(words(), " | "))
 
 -- A duel's result is the two people in it, so it reads the way melee's does:
--- a name and a verb. The name comes off the leg the room just filed rather
--- than off the roster, because the rival's seat goes to the next one within
--- seconds of the whistle.
+-- a name and a verb. Both come off the fight the room just filed on this
+-- viewer's own card, because the seat across the arena goes to somebody else
+-- within seconds of the whistle.
 local function a_leg(rival, result)
     return {rival = rival, result = result, seconds = 26}
 end
 
 frame({match = {playing = false, left = 8, artifact = 1,
                 score = {[0] = 1, [1] = 0},
-                ladder = {rung = 7, active_opponent = 6, streak = 3,
-                          best_streak = 3, legs = 9,
-                          log = {a_leg("Vantage 0001", "cleared")},
-                          opponent_ready = false, waiting = false}},
+                duel = {streak = 3, best_streak = 3, legs = 9,
+                        log = {a_leg("Vantage 0001", "cleared")},
+                        waiting = false}},
        side_names = NAMES, side = 0})
-check("a Ladder result remains up while the next rival leaves",
+check("a duel result remains up while the next opponent leaves",
       said("Vantage 0001") ~= nil and said("beaten") ~= nil
       and said("FINDING RIVAL") == nil,
       table.concat(words(), " | "))
@@ -314,26 +311,25 @@ check("play releases the prior podium entrance", ui.podium_at == nil,
 
 frame({match = {playing = false, left = 8, artifact = 1,
                 score = {[0] = 1, [1] = 0},
-                ladder = {rung = 7, active_opponent = 6,
-                          log = {a_leg("Vantage 0001", "cleared")}}},
+                duel = {legs = 1, log = {}}},
        side_names = NAMES, side = 1, watch = {subject = 1}})
-check("a watcher sees the climber's result rather than their viewing side",
-      said("beaten") ~= nil and said("takes it") == nil,
+-- A watcher holds nobody's card, so the ending names the winning side rather
+-- than putting somebody else's verb on their screen.
+check("a watcher with no card of their own reads the sides",
+      said("beaten") == nil and said("Vantage 0001") == nil,
       table.concat(words(), " | "))
 
 frame({match = {playing = false, left = 8, artifact = 1,
                 score = {[0] = 0, [1] = 1},
-                ladder = {rung = 5, active_opponent = 7,
-                          log = {a_leg("Sable 0001", "lost")}}},
+                duel = {legs = 4, log = {a_leg("Sable 0001", "lost")}}},
        side_names = NAMES, side = 0})
-check("a Ladder loss names whoever took it",
+check("a duel loss names whoever took it",
       said("Sable 0001") ~= nil and said("takes it") ~= nil,
       table.concat(words(), " | "))
 
 frame({match = {playing = false, left = 8, artifact = 1,
                 score = {[0] = 1, [1] = 1},
-                ladder = {rung = 7, active_opponent = 7,
-                          log = {a_leg("Sable 0001", "drawn")}}},
+                duel = {legs = 4, log = {a_leg("Sable 0001", "drawn")}}},
        side_names = NAMES, side = 0})
 -- The row for that fight still names who it was against; the line over the
 -- bar does not, because a draw has nobody to put a verb on.
@@ -343,13 +339,14 @@ check("a mutual kill is a draw with nobody named over the bar",
 
 frame({match = {playing = false, left = 8, artifact = 1,
                 score = {[0] = 1, [1] = 0},
-                ladder = {rung = 0, best = 8,
-                          active_opponent = 7, desired_opponent = 0,
-                          log = {a_leg("Sable 0001", "cleared")},
-                          cleared = true}},
-       side_names = NAMES, side = 0})
-check("clearing the roster gets its own line",
-      said("every rival beaten") ~= nil, table.concat(words(), " | "))
+                duel = {streak = 0, best_streak = 1, legs = 8,
+                        log = {a_leg("Sable 0001", "lost")}}},
+       side_names = NAMES, side = 1})
+-- The loser reads the same fight from the other side: the same opponent
+-- named, and the verb that says it went against them.
+check("and the pilot on the other side of it reads their own",
+      said("Sable 0001") ~= nil and said("takes it") ~= nil
+      and said("beaten") == nil, table.concat(words(), " | "))
 
 -- A duel's ending grows two sections the roster does not have: where the run
 -- stands, and the fights that got it there. The block measures all of it
@@ -364,9 +361,8 @@ local function a_run_ending(w, h)
     frame({w = w, h = h,
            match = {playing = false, left = 6, artifact = 1,
                     score = {[0] = 1, [1] = 0},
-                    ladder = {rung = 5, streak = 3, best_streak = 4,
-                              best = 6, active_opponent = 5,
-                              legs = 11, log = A_RUN}},
+                    duel = {streak = 3, best_streak = 4,
+                            legs = 11, log = A_RUN}},
            side_names = NAMES, side = 0})
     local head
     for i = 1, state.n do
@@ -890,9 +886,9 @@ check("the arena can ask whether the ending is up",
       ui.match_ended({playing = false, left = 23, score = {}}) == true
       and ui.match_ended({playing = true, left = 96, score = {}}) == false
       and ui.match_ended(nil) == false)
-check("and a Ladder room waiting for a rival keeps the pads",
+check("and a duel room waiting for an opponent keeps the pads",
       ui.match_ended({playing = false, left = 180,
-                      ladder = {waiting = true}}) == false)
+                      duel = {waiting = true}}) == false)
 
 -- --- the whole ending, against the text budget -----------------------------
 --

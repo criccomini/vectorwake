@@ -110,7 +110,7 @@ local LAND = {
     zones = {
         {label = "Team Battle", zone = "melee", live = true,
          format = "4v4", here = true},
-        {label = "Duel", zone = "ladder", live = true, format = "1v1"},
+        {label = "Duel", zone = "duel", live = true, format = "1v1"},
     },
     ships = {
         {label = "Gunner", value = 1, here = true},
@@ -345,7 +345,7 @@ do
     frame(1440, 810, {land_open = "zone"})
     local pick
     for _, r in ipairs(ui.hits) do
-        if r.action == "land_pick_zone" and r.value == "ladder" then
+        if r.action == "land_pick_zone" and r.value == "duel" then
             pick = r
         end
     end

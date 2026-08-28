@@ -270,8 +270,8 @@ check("a list with games in it says nothing", menu.view().empty == nil,
 -- still has to be right about is the row: a zone whose one room is waiting on
 -- a rival is marked waiting, which is what the list draws a dial on.
 _G.NEXT_REPLY = {zones = {{
-    name = "ladder", players = 1, bots = 0,
-    instances = {{address = "wss://x/ladder", rooms = {
+    name = "duel", players = 1, bots = 0,
+    instances = {{address = "wss://x/duel", rooms = {
         {number = 1, players = 1, bots = 0, full = false,
          clock = 0, playing = false, waiting = true},
     }}},

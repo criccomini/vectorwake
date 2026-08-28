@@ -3460,11 +3460,11 @@ pub const PILOT_ATTESTATION_SCHEMA: u32 = 1;
 pub const PILOT_CONTROLLER_VERSION: &str = "profile-brain-v2";
 pub const PILOT_MAP: &str = "gantry";
 pub const PILOT_ECONOMY: &str = "base-entitlement-personal-builds";
-const PILOT_ZONE: &str = "ladder";
-const PILOT_ZONE_FILE: &str = "catalog/zones/ladder/zone.toml";
+const PILOT_ZONE: &str = "duel";
+const PILOT_ZONE_FILE: &str = "catalog/zones/duel/zone.toml";
 const PILOT_MAP_FILE: &str = "catalog/zones/melee/gantry.vwmap";
 const PILOT_ZONE_DECLARED_MAP: &str = "../melee/gantry.vwmap";
-const PILOT_ZONE_BYTES: &[u8] = include_bytes!("../../catalog/zones/ladder/zone.toml");
+const PILOT_ZONE_BYTES: &[u8] = include_bytes!("../../catalog/zones/duel/zone.toml");
 const PILOT_MAP_BYTES: &[u8] = include_bytes!("../../catalog/zones/melee/gantry.vwmap");
 const PILOT_WORLD_SEED_LABEL: u64 = 0x0077_6f72_6c64;
 const PILOT_BOOTSTRAP_SEED_LABEL: u64 = 0x626f_6f74_7374_7261;
@@ -3755,7 +3755,7 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
         PilotCalibrationError::InvalidFixture(format!("{PILOT_ZONE_FILE}: {error}"))
     })?;
     definition.raw = text.to_string();
-    if definition.mode != "ladder" {
+    if definition.mode != "duel" {
         return Err(PilotCalibrationError::InvalidFixture(format!(
             "{PILOT_ZONE_FILE} runs mode {:?}, not Ladder",
             definition.mode
@@ -3763,8 +3763,8 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
     }
     let first_to = definition
         .arena
-        .ladder_first_to
-        .unwrap_or(crate::modes::DEFAULT_LADDER_FIRST_TO)
+        .duel_first_to
+        .unwrap_or(crate::modes::DEFAULT_DUEL_FIRST_TO)
         .max(1);
     if first_to != 1 {
         return Err(PilotCalibrationError::InvalidFixture(format!(

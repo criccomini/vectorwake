@@ -267,22 +267,18 @@ check("the whistle carries its public match film",
       tostring(net.match and net.match.artifact))
 
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(14, 4, 180, 2, 0, 0, 0, 0, 4)
-                .. u32le(0) .. u32le(0) .. u32le(0)
-                .. u32le(0) .. u32le(0) .. u32le(0) .. string.char(1, 0)
-                .. u32le(0) .. string.char(0)})
-check("an unopened Ladder arrives as one waiting match state",
+            message = string.char(14, 4, 180, 2, 0, 0, 0, 0, 1)
+                .. u32le(0) .. u32le(0) .. u32le(0) .. string.char(0)})
+check("an unopened duel arrives as one waiting match state",
       net.match and not net.match.playing and net.match.artifact == nil
-      and net.match.ladder and net.match.ladder.waiting
-      and not net.match.ladder.opponent_ready
-      and net.match.ladder.rung == 0
-      and net.match.ladder.first_to == 1
-      and net.match.ladder.legs == 0
-      and #net.match.ladder.log == 0)
+      and net.match.duel and net.match.duel.waiting
+      and net.match.duel.streak == 0
+      and net.match.duel.legs == 0
+      and #net.match.duel.log == 0)
 
--- One rival taken and the next one lost, which is the shape of every run. A
--- leg is variable width, because it carries a call sign: result, seconds, the
--- length of the name and then the name.
+-- One opponent taken and the next one lost, which is the shape of every
+-- evening. A leg is variable width, because it carries a call sign: result,
+-- seconds, the length of the name and then the name.
 local function leg(rival, result, seconds)
     return string.char(result)
         .. string.char(seconds % 256, math.floor(seconds / 256))
@@ -291,67 +287,55 @@ end
 
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
             message = string.char(14, 6, 24, 2, 3, 0, 5, 0)
-                .. u32le(123456) .. u32le(1) .. string.char(3)
-                .. u32le(7) .. u32le(3) .. u32le(4) .. u32le(9)
-                .. u32le(7) .. u32le(8) .. string.char(1, 0)
-                .. u32le(19) .. string.char(2)
+                .. u32le(123456) .. u32le(1) .. string.char(0)
+                .. u32le(3) .. u32le(4) .. u32le(19) .. string.char(2)
                 .. leg("Vantage 0001", 1, 41) .. leg("Sable 0001", 0, 7)})
-check("a Ladder result replaces clock, film, and progress atomically",
-      net.match and net.match.ladder
-      and net.match.ladder.opponent_ready
-      and net.match.ladder.cleared
-      and not net.match.ladder.waiting
-      and net.match.ladder.rung == 7
-      and net.match.ladder.streak == 3
-      and net.match.ladder.best_streak == 4
-      and net.match.ladder.best == 9
-      and net.match.ladder.active_opponent == 7
-      and net.match.ladder.desired_opponent == 8
-      and net.match.ladder.first_to == 1
+check("a duel result replaces clock, film, and card atomically",
+      net.match and net.match.duel
+      and not net.match.duel.waiting
+      and net.match.duel.streak == 3
+      and net.match.duel.best_streak == 4
       and net.match.artifact == artifact)
--- The run rides in the same packet as the rung it produced, so no client ever
--- holds a log from one state beside progress from another.
-check("and the run rides with it, oldest fight first",
-      net.match.ladder.legs == 19
-      and #net.match.ladder.log == 2
-      and net.match.ladder.log[1].rival == "Vantage 0001"
-      and net.match.ladder.log[1].result == "cleared"
-      and net.match.ladder.log[1].seconds == 41
-      and net.match.ladder.log[2].rival == "Sable 0001"
-      and net.match.ladder.log[2].result == "lost"
-      and net.match.ladder.log[2].seconds == 7,
-      tostring(net.match.ladder.legs) .. " legs, "
-      .. tostring(#net.match.ladder.log) .. " logged")
+-- The card rides in the same packet as the result that moved it, so no client
+-- ever holds a log from one state beside a streak from another.
+check("and the card rides with it, oldest fight first",
+      net.match.duel.legs == 19
+      and #net.match.duel.log == 2
+      and net.match.duel.log[1].rival == "Vantage 0001"
+      and net.match.duel.log[1].result == "cleared"
+      and net.match.duel.log[1].seconds == 41
+      and net.match.duel.log[2].rival == "Sable 0001"
+      and net.match.duel.log[2].result == "lost"
+      and net.match.duel.log[2].seconds == 7,
+      tostring(net.match.duel.legs) .. " legs, "
+      .. tostring(#net.match.duel.log) .. " logged")
 
 -- A body promising more legs than it carries is a truncated message, not a
 -- short run. Half a log would draw an evening that stopped where the packet
 -- did, so the whole message is dropped and the last good one stands.
-local before = net.match.ladder.log[2].rival
+local before = net.match.duel.log[2].rival
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
             message = string.char(14, 4, 24, 2, 3, 0, 5, 0)
-                .. string.char(3)
-                .. u32le(7) .. u32le(3) .. u32le(4) .. u32le(5) .. u32le(9)
-                .. u32le(7) .. u32le(8) .. string.char(1, 0)
-                .. u32le(19) .. string.char(4) .. leg("Kestrel 0001", 1, 5)})
-check("a truncated run is refused rather than half read",
-      net.match.ladder.log[2] ~= nil
-      and net.match.ladder.log[2].rival == before
-      and #net.match.ladder.log == 2)
+                .. string.char(0)
+                .. u32le(3) .. u32le(4) .. u32le(19)
+                .. string.char(4) .. leg("Kestrel 0001", 1, 5)})
+check("a truncated card is refused rather than half read",
+      net.match.duel.log[2] ~= nil
+      and net.match.duel.log[2].rival == before
+      and #net.match.duel.log == 2)
 
 -- And a name that runs past the end of the body is the same fault: the length
 -- byte is a promise the packet has to keep.
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
             message = string.char(14, 4, 24, 2, 3, 0, 5, 0)
-                .. string.char(3)
-                .. u32le(7) .. u32le(3) .. u32le(4) .. u32le(5) .. u32le(9)
-                .. u32le(7) .. u32le(8) .. string.char(1, 0)
-                .. u32le(19) .. string.char(1)
+                .. string.char(0)
+                .. u32le(3) .. u32le(4) .. u32le(19) .. string.char(1)
                 .. string.char(1) .. string.char(5, 0) .. string.char(20)
                 .. "short"})
 check("a call sign cut off by the end of the body is refused too",
-      net.match.ladder.log[2] ~= nil
-      and net.match.ladder.log[2].rival == before
-      and #net.match.ladder.log == 2)
+      net.match.duel.log[2] ~= nil
+      and net.match.duel.log[2].rival == before
+      and #net.match.duel.log == 2)
 
 local reliable_before, unreliable_before = #wt.sent, #wt.unsent
 check("focus loss can release held controls", net.release_controls())
