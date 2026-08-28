@@ -550,12 +550,19 @@ def cluster_key(cx, cy, r, col, grad, mark, segs=None):
 
     On a charge key the count ring is the boundary: no inner ring at all,
     just the rim split one segment per charge, lit while it is in hand and
-    dimmed once spent, so the key keeps its edge down to the last one.
+    dimmed once spent, so the key keeps its edge down to the last one. A
+    key spent out stays where it is, every segment and its glyph dim: a
+    control that vanishes moves its neighbors' meaning, and a dim key is
+    also the honest drawing of a rack that will fill again.
 
     The gun's volley mark draws whatever the trigger will actually throw.
     There is no multifire toggle on a phone: declining the fan is a
     keyboard matter, so the key carries no state of its own."""
-    out = [disc(cx, cy, r - 1, f"url(#{grad})")]
+    spent = segs is not None and segs[0] == 0
+    ground = disc(cx, cy, r - 1, f"url(#{grad})")
+    if spent:
+        ground = f'<g opacity=".35">{ground}</g>'
+    out = [ground]
     if segs:
         n, cap = segs
         span = 360 / cap - 12
@@ -642,16 +649,17 @@ def controls_cluster(reversed_=False):
 
 def controls_cluster_states():
     """A charge key counting down, at reading size and off to the side of
-    the fight. At zero the key goes away entirely, as it does today."""
+    the fight. Spent out it stays, dimmed whole, until the rack fills."""
     out = []
-    for x, n, label in ((322, 3, "3 IN HAND"), (422, 2, "2 IN HAND"),
-                        (522, 1, "1 IN HAND")):
+    for x, n, label in ((272, 3, "3 IN HAND"), (372, 2, "2 IN HAND"),
+                        (472, 1, "1 IN HAND"), (572, 0, "SPENT")):
         cy, cr = 168, 33
-        out.append(cluster_key(x, cy, cr, CHARGE, "gg",
-                               burst_glyph(x, cy, 18), segs=(n, 3)))
+        glyph = burst_glyph(x, cy, 18, alpha=1.0 if n else .3)
+        out.append(cluster_key(x, cy, cr, CHARGE, "gg", glyph,
+                               segs=(n, 3)))
         out.append(text(x, 232, label, 9, a(DIM, .8)))
-    out.append(text(422, 262, "THE COUNT RING IS THE BOUNDARY", 8,
-                    a(DIM, .55)))
+    out.append(text(422, 262, "THE COUNT RING IS THE BOUNDARY · SPENT, "
+                    "THE KEY DIMS AND STAYS", 8, a(DIM, .55)))
     return "".join(out)
 
 
