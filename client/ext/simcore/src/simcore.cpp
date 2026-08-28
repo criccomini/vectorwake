@@ -482,6 +482,46 @@ int ShipCooldown(lua_State* L) {
     return 1;
 }
 
+// The same clock, one trigger at a time, and about your own ship rather than
+// somebody else's.
+//
+// ShipCooldown above hands back the longer of the pair because it is asked a
+// question about a stranger: did they just fire. A control drawn on the
+// trigger it belongs to is asking something narrower, how long until this one
+// answers, and the pair does come apart -- an EMP bomb leaves its own guns
+// running -- so the gun's key must read the gun's counter.
+int ShipTriggerWait(lua_State* L) {
+    int i = CheckShip(L);
+    int t = (int)luaL_checkinteger(L, 2);
+    lua_pushnumber(L, (t >= 0 && t < SIM_TRIG_COUNT)
+                          ? g_cur->ships[i].fire_cooldown[t] : 0);
+    return 1;
+}
+
+// And how long that wait is when it starts: the delay of the pattern this
+// hull's trigger fires at the rung it is on.
+//
+// Asked of the ship rather than of a class and a rung, because a control
+// showing how far a recovery has run needs both ends of the same fraction and
+// getting them from two different questions is how they come apart. Zero for a
+// trigger the hull does not carry, which is the same answer a rack-less hull
+// gives everywhere else.
+int ShipTriggerDelay(lua_State* L) {
+    int i = CheckShip(L);
+    int t = (int)luaL_checkinteger(L, 2);
+    if (t < 0 || t >= SIM_TRIG_COUNT) { lua_pushnumber(L, 0); return 1; }
+    const sim_ship* sh = &g_cur->ships[i];
+    int lvl = sh->level[t];
+    if (lvl < 0 || lvl >= SIM_MAX_RUNGS) { lua_pushnumber(L, 0); return 1; }
+    uint8_t pat = g_cfg.classes[sh->cls].trigger[t][lvl];
+    if (pat == SIM_NO_PATTERN || pat >= g_cfg.pattern_count) {
+        lua_pushnumber(L, 0);
+        return 1;
+    }
+    lua_pushnumber(L, g_cfg.patterns[pat].delay);
+    return 1;
+}
+
 // How long this room lets a ship sit in a safe zone before it takes the seat
 // back, in ticks, and zero when it never does.
 //
@@ -1225,6 +1265,8 @@ const luaL_reg kFunctions[] = {
     {"ship_mod", ShipMod},
     {"ship_multi_off", ShipMultiOff},
     {"ship_cooldown", ShipCooldown},
+    {"ship_trigger_wait", ShipTriggerWait},
+    {"ship_trigger_delay", ShipTriggerDelay},
     {"safe_limit", SafeLimit},
     {"show_spawns", ShowSpawns},
     {"spec_blast", SpecBlast},

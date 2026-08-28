@@ -5029,6 +5029,16 @@ function M.hud(o)
     -- this one is over the middle of the screen rather than in the corner the
     -- debug readout took, so the two do not argue about a strip.
     if M.touching then toast(o.feed, o.pad_top) end
+    -- What the stick's rim says. touch.lua works out the sentence and where it
+    -- goes, in its own space of drawable pixels counting up from the bottom;
+    -- this flips it into the one type is measured in and draws it. Raw,
+    -- because it is already in the case it wants, and centered on the stick's
+    -- middle so it stays put as the words change length.
+    if M.touching and o.stick_hint then
+        local hint = o.stick_hint
+        txt(hint.text, hint.x, F.h - hint.y, TYPE.LABEL * F.scale,
+            hint.col, "center", nil, true)
+    end
     -- Stacked, not overlaid: the panel that is always there sits at the
     -- bottom and the one you asked for sits on top of it. A watcher has no
     -- hull, so the hull's furniture -- the corner stack, the loadout -- is

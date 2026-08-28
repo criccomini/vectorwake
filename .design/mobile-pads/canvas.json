@@ -1,0 +1,40 @@
+{
+  "artboards": [
+    { "file": "Today.dc.html", "title": "Today", "x": 0, "y": 0, "w": 844, "h": 390 },
+    { "file": "Main.dc.html", "title": "A · Instrument", "x": 944, "y": 0, "w": 844, "h": 390 },
+    { "file": "InstrumentRev.dc.html", "title": "A · Instrument · reversed", "x": 944, "y": 520, "w": 844, "h": 390 },
+    { "file": "Cluster.dc.html", "title": "B · Cluster", "x": 1888, "y": 0, "w": 844, "h": 390 },
+    { "file": "ClusterRev.dc.html", "title": "B · Cluster · reversed", "x": 1888, "y": 520, "w": 844, "h": 390 },
+    { "file": "ClusterStates.dc.html", "title": "B · Cluster · states", "x": 1888, "y": 1040, "w": 844, "h": 390 },
+    { "file": "Glass.dc.html", "title": "C · Glass", "x": 2832, "y": 0, "w": 844, "h": 390 },
+    { "file": "GlassRev.dc.html", "title": "C · Glass · reversed", "x": 2832, "y": 520, "w": 844, "h": 390 }
+  ],
+  "annotations": [
+    {
+      "id": "note-today",
+      "x": 0, "y": -250, "w": 340,
+      "text": "Today\n\nWhat ships now, drawn to touch.lua's geometry. All five complaints on one board: the charge cells are gold squares, the gun's whole loadout is squeezed into the pad until the fan stops reading, the multifire arrow is nine pixels, the stick is a bare wireframe ring, and nothing anywhere says a double tap reverses."
+    },
+    {
+      "id": "note-instrument",
+      "x": 944, "y": -250, "w": 340,
+      "text": "A · Instrument\n\nThe pads become cockpit gauges: radial glow, a hairline ring, a bright rim arc. The volley draws at full size because the add-on ladder moved out to rung ticks on the rim. Multifire is a tab on the gun's rim wearing the fan at a size that reads; a tap toggles it and the upward pull still works. Charges are hexagonal cells counting in dashes. The stick is a rose with rim ticks, a nose chevron, and a stance tab at its foot: tap the tab or double tap the half to flip, and reversed the whole instrument turns engine orange.\n\nCost: the most ink of the three, and the rim tab wants vertical room in the corner the radar already borders."
+    },
+    {
+      "id": "note-cluster",
+      "x": 1888, "y": -250, "w": 340,
+      "text": "B · Cluster\n\nNo boxes anywhere: one big key for the gun, the trigger a thumb lives on, and one orbit of satellites at charge size for everything it visits: bomb, repel, burst, an even fifty degrees apart. The marks alone name the keys. A charge key's count ring is its whole boundary: one rim segment per charge, dimming as they spend, and a key spent out stays where it is, dimmed whole, until the rack fills again; the bomb keeps its ring whole, which is what says trigger rather than charge. There is no multifire toggle on a phone: the gun's mark simply draws the volley the trigger will throw, and declining the fan stays a keyboard matter. A trigger's ring is its recovery: the shot drops it to a dim floor and a bright arc grows from the top as the weapon's delay runs, closing the circle the tick it is ready, which is the ramp the shipped charge cells wear moved onto the rim. The stick rests as a quiet ring with the gesture etched around its foot, always naming what the next double tap does: TAP ×2 · REVERSE at rest, TAP ×2 · FORWARD while reversed. Held, it grows a course needle, and reversed the needle swings to the far side of the thumb.\n\nThe states board below shows a charge key at three, two and one in hand and spent, and a trigger fired, recovering and ready; the reversed board catches the gun mid-recovery in the fight.\n\nCost: the bomb at satellite size is a smaller target for a held trigger, and a phone pilot cannot decline the fan mid-fight."
+    },
+    {
+      "id": "note-glass",
+      "x": 2832, "y": -250, "w": 340,
+      "text": "C · Glass\n\nNo chrome at all: each control is its glowing mark over a barely-there footprint, so the fight stays the whole picture. The gun is its volley: multifire on is three rounds, declined is one lit and two dim, and the state is the drawing. Counts are bare pips. The stick is a reticle of four arcs with a ghost hint that fades once the gesture has been used.\n\nCost: the quietest resting state is also the least discoverable one, and a footprint you cannot see is an edge you find by missing."
+    },
+    {
+      "id": "note-constants",
+      "x": -430, "y": 20, "w": 380,
+      "text": "Held constant on every board: one duel, Vesper 412 against Mantis 7, the shipped chrome (MENU, score band, radar), palette.lua's hues exactly (rung 2 gun yellow, rung 3 bomb orange, charge gold, thrust orange for the reversed stance), and marks.lua's drawings of a round, a bomb, a repel and a burst.\n\nTwo proposals hold whatever the direction: multifire gets a drawn state of its own instead of a compressed loadout mark, and reverse gets a visible control a thumb can also tap, so the double tap becomes the shortcut rather than the secret.\n\nThe lower row is the reversed stance with the stick engaged: the course points away from the thumb, the nose stays on the fight, and the ship burns its retros out of the bow."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}
