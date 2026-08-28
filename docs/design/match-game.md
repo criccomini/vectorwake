@@ -9,7 +9,8 @@
 > **Built, for Melee.** Everything below through the week is running: three
 > minute matches with an intermission, the kit and the shop that sells slots
 > for it, bounty paid as rivets, six match maps, and the six tabs. Capture and
-> Holdfast are named here and not written; so are friends, parties and livery.
+> Holdfast are named here and not written; so are parties and livery. Friends
+> was built and then removed, per decision 95.
 > Alpha did not survive this document, and greens, gunners and turrets went
 > with it.
 >
@@ -114,9 +115,9 @@ stack against four bots. A party stays together, because that is what a party
 is for. The intermission is where the room rebalances and sorts whoever
 arrived late, which gives those fifteen seconds a job beyond the podium.
 
-There are three ways to end up beside a person, and a player should be able to
-name all of them: the mode list says where the humans are, the sort puts you
-where they already are, and the friends panel joins one by name.
+There are two ways to end up beside a person, and a player should be able to
+name both: the mode list says where the humans are, and the sort puts you
+where they already are.
 
 **Sitting out is a drop you chose**, and lands in the same place: a bot takes
 the seat, you land in the stands, and the seat is yours to reclaim until the
@@ -562,29 +563,17 @@ the last rung of both racks, and every other kind, are bought.
 
 ## Friends
 
-The one genuinely new system here, and the one most likely to move the number
-this document opens with. People stay for people.
+Built, and then removed at the owner's ask: see
+[decision 95](../architecture/decisions.md). The page, the wire, the tables
+and the presence column are gone, and nothing in the game asks who is on.
+Chat is still refused on its own grounds, per `decision 28`, and the talking
+happens on Discord, per `community.md`, reached from the site rather than
+from the game.
 
-Built. [friends.md](friends.md) is the design and the reasoning; the short
-version is that version one is the three things asked for here and nothing
-else: add somebody mutually, see which friends are on and what they are in,
-and join them.
-
-Two things landed differently from the sketch this section used to carry.
-Presence comes from the meta-layer rather than the directory, because the
-meta-layer already holds a row per flying pilot: an arena claims one to make a
-rated seat exclusive, so the presence table exists and is kept honest by the
-thing that most wants it right. And there is no invite, because there is
-nothing to accept: one row per direction, and the friendship is the pair.
-
-No chat, per `decision 28`. Discord carries the talking, per `community.md`,
-reached from the site rather than from the game, and with nothing to say to
-anybody there is nearly nothing to moderate: what one stranger can do to
-another is appear on a list.
-
-The part that is still real work is seating a party together on one side of a
-filling match, which is matchmaking logic that does not exist yet. Friends
-gets two people into the same room without touching it.
+The claim this section made is the part worth keeping: people stay for
+people. Nothing that shipped moved the number this document opens with, so if
+the question comes back it comes back as a design rather than as this one put
+back.
 
 ## Dropping mid-match
 
@@ -625,11 +614,12 @@ and grids, and the menu tree was deliberately one narrow column that
 [menu.md](menu.md) says "falls apart at 390 points wide". So there are two
 surfaces now rather than one:
 
-- **Five tabs** at the front end, which is where you are between matches and
-  where there is time to read: play, ship, friends, pilot, settings. Pilot is
+- **Four tabs** at the front end, which is where you are between matches and
+  where there is time to read: play, ship, pilot, settings. Pilot is
   your account, and your call sign at the far end of the row opens the same
   page. Standings was one of
-  them until the week's table came out. Upgrades was another for a while,
+  them until the week's table came out, and friends was one until decision 95.
+  Upgrades was another for a while,
   drawing the same slots in the same order for the
   other question; the ship page is the shelf now, with the price of the next
   rung on the row that spends the point and the wallet on the reading that
@@ -637,11 +627,11 @@ surfaces now rather than one:
   meaning both, is answered by shape: points are circles, prices wear the
   rivet mark, and nothing is bought except on the reading. See
   [menu.md](menu.md) and [decision 64](../architecture/decisions.md).
-- **Three tabs in a match**: play, friends and settings. Same row in the same
-  place, carrying what you can act on from a cockpit. It was two, settings and
-  leave; the games list is on it now because the way out of the game you are
-  in is a button on that game's own row, and the hangar stays off it because a
-  hull is locked for the match.
+- **Two tabs in a match**: play and settings. Same row in the same
+  place, carrying what you can act on from a cockpit. It was settings and
+  leave once; the games list is on it now because the way out of the game you
+  are in is a button on that game's own row, and the hangar stays off it
+  because a hull is locked for the match.
 
 Settings holds everything that is about the machine rather than about a
 match, in one column: audio, video, the control bindings, and about. Help
@@ -656,7 +646,7 @@ moderation argument as much as the vanity one. A call sign that cost six
 hundred rivets is a name a ban actually takes something from, and rivets are
 earned by flying rather than bought with money, so the cost is time.
 
-**It is one surface, and in a match it carries three tabs: play, friends and
+**It is one surface, and in a match it carries two tabs: play and
 settings.** Same chrome as the front end, full screen, with the tab row on top;
 what differs is which tabs are on it, not how any of it looks or works. That
 is the point. A player learns one screen and meets it in both places.
@@ -816,7 +806,8 @@ Each step leaves a running game. The first five are done, for Melee.
    between them.
 5. **Charges.** Match-scoped counts, and the shop selling the rungs of a rack
    above what an account is dealt.
-6. **Friends**, and parties into a match. Not built.
+6. **Parties** into a match. Not built. Friends was, and came out again per
+   decision 95.
 
 Turrets and gunners are gone, along with the open arena and mode rotation.
 
@@ -831,7 +822,7 @@ matches. Climbing gives a new account something to feel; starting flat is
 honest and keeps every match matched.
 
 How a party of three is seated against a fair opposing side, which is the
-matchmaking question friends brings with it.
+matchmaking question a party brings with it.
 
 Whether three modes is two too many at this population. Settled by building
 one: Melee ships alone, and Capture and Holdfast light when the crowd

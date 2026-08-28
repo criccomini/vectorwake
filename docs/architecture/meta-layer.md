@@ -448,7 +448,9 @@ whose title outlives its Nakama half. It is not the directory, holds no view
 of live arenas, and cannot make a room exist. It holds no zone configuration,
 because the catalog stays a file in git with one author. And it has no social
 surface, because there is no chat, per
-[decision 28](decisions.md#28-no-chat), and no friends yet.
+[decision 28](decisions.md#28-no-chat), and no friends: they were built and
+then removed, per
+[decision 95](decisions.md#95-friends-are-gone).
 
 ASSS's score intervals, forever, per reset, and per game, belong in this
 schema when tournament and league play arrive, as [server.md](server.md)

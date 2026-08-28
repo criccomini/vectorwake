@@ -1097,9 +1097,10 @@ Nakama for everything durable outside the arena tick. That list has been
 shrinking ever since: the directory left with
 [decision 25](#25-an-arena-server-chooses-which-zone-it-serves), chat with
 [decision 28](#28-no-chat), and friends, parties and tournaments are wanted by
-nobody yet. (Friends are wanted now and are built, on this meta-layer rather
-than on anybody's: see [design/friends.md](../design/friends.md). Parties and
-tournaments still are not.) What remains that we need now is identity, and our identity has
+nobody yet. (Friends were wanted for a while and were built, on this
+meta-layer rather than on anybody's; they came out again with
+[decision 95](#95-friends-are-gone). Parties and tournaments never were.)
+What remains that we need now is identity, and our identity has
 shapes Nakama does not: accounts minted silently on first contact, bot
 accounts with owners, a human, bot, or unknown label derived from credential
 shape, session tokens carrying rating claims that arenas verify offline, and
@@ -3418,7 +3419,8 @@ the list of answers already tried.
 
 **Cascades:** decision 39 stands, minus its sentence about the game pointing
 at the server; `community.md`, `menu.md`, `interface.md`, `friends.md` and
-`match-game.md` are updated. Decision 28 is untouched: this removes a link,
+`match-game.md` were updated (`friends.md` is gone with
+[decision 95](#95-friends-are-gone)). Decision 28 is untouched: this removes a link,
 not a reason.
 
 ---
@@ -3653,7 +3655,12 @@ starts wanting every rung settled, which would need a decider that measures
 something other than who dies first: damage dealt, or distance held.
 ## 78. The friends page is who is on, and one way to reach who is not
 
-**Status:** accepted
+**Status:** superseded
+
+The page is gone and so is the feature under it, per
+[decision 95](#95-friends-are-gone). What follows is the record of what it
+was and why it was shaped that way, which is what the next attempt at the
+question would want to read first.
 
 **Decision:** the page is four things down the screen: a field that takes a
 call sign, the adds waiting on an answer under RECEIVED, your friends, and a
@@ -4636,3 +4643,76 @@ to say for it. Or if the invite is ever worth closing the loop on, per
 [decision 78](#78-the-friends-page-is-who-is-on-and-one-way-to-reach-who-is-not),
 at which point the question is where a link that knows who sent it belongs, and
 the answer may not be the ending either.
+
+---
+
+## 95. Friends are gone
+
+**Status:** accepted
+
+**Decision:** the friends feature is removed from the game, end to end. In the
+client that is the `friends` tab and the page under it, the add field and the
+call sign completion behind it, the received-and-friends sections, the accept,
+ignore, join and unfriend acts, the green presence dot, the two-badge rail
+mark, and the band at the foot that shared a link with somebody who has never
+played. In the meta-layer it is the `friends` and `friend_ignores` tables, the
+`/v1/friends`, `/v1/friend`, `/v1/friend/find` and `/v1/friend/ignore` routes,
+and the hundred-edge bound they were written against. `active_rated_sessions`
+loses its `zone` column and the arena stops sending one: that column existed
+so a list could say which game somebody was in, and the seat lock it rides on
+never needed it. `docs/design/friends.md` and the three mock canvases under
+`.design/` go with them.
+
+The guest warning now arms on a rung bought or a rated game flown, which is
+what is left of the three things it watched. The home tab row is play, ship,
+pilot, settings; a match carries play and settings.
+
+**Why:** Chris asked for it, and that is the whole of the decision.
+
+What survives the ask is worth writing down, because
+[decision 78](#78-the-friends-page-is-who-is-on-and-one-way-to-reach-who-is-not)
+is a good record of a page that was rebuilt three times and never earned its
+tab. It reached its final shape by deleting: five sections became two, an
+ignore that was reversible became final, a count and a ledger went, and what
+was left was a page one person opens alone to find out that nobody is on. The
+claim under all of it, "people stay for people", was never tested by anything
+that shipped, because nothing in the game gave two people a reason to be on it
+at the same time. A roster is not a reason.
+
+It also takes real weight out of the tree. Friends was the only page that
+re-asked the meta-layer on a timer, the only one whose rows carried per-row
+buttons and a card built from the same list, the only one with a text field
+that sent, and the only writer of the browser's link anchor. Every one of
+those mechanisms existed for one page and most of them come out with it. The link
+bridge does not: it predates this feature, it has tests of its own, and
+[decision 73](#73-the-community-door-is-the-sites-not-the-games) already chose
+to leave it standing once when its caller went. It stands again, with none.
+
+**Cost:** the game has no way for two people who know each other to find each
+other in it, and no way at all to reach somebody who is not already here. That
+is not a small thing for a game whose whole population problem is that a new
+player arrives alone. What is left is the mode list saying where the humans
+are and the sort putting you where they already are, per
+[match-game.md](../design/match-game.md), and the site's Discord door for
+everything else.
+
+Accounts keep nothing: the tables are dropped, so every edge anybody made is
+gone and no migration puts them back. That is the same call
+[decision 92](#92-duel-is-two-pilots-and-the-door-decides-which-two) made about
+banked rungs, and it is the right one for a feature nobody is being asked to
+keep using.
+
+**Reconsider if:** the answer to "why did you stop playing" turns out to be
+"there was nobody I knew there". The thing to build then is a reason for two
+people to be in the same room at the same time, and a list is what that reason
+would need afterwards rather than what it starts as. This record's own history
+is the list of shapes already tried.
+
+**Cascades:** decision 78 is superseded whole. Decision 80's rule about what a
+menu foot pins stands, minus the invite band, which was one of its two
+examples; decision 81's line about where a page begins stands, minus the add
+box. Decision 94's ending is untouched: it had already dropped its invite.
+`menu.md`, `match-game.md`, `accounts.md`, `interface.md`, `spectating.md`,
+`meta-layer.md`, `catalog.md`, `roadmap.md` and `zones-and-arenas.md` are
+updated, and `friends.md` is deleted. Decision 28 is untouched: this removes a
+roster, not a reason.

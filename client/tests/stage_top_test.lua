@@ -93,7 +93,7 @@ local function head_rule()
 end
 
 -- The top edge of the first thing the page draws under that rule, whatever it
--- is: a row's lit field, the ship page's band, the box on the friends page.
+-- is: a row's lit field, the ship page's band, a section's own head.
 -- Specks are skipped, since a two-point tick is not the beginning of a page.
 -- Hairlines are not, because a section head opens with one.
 local function first_ink(rule)
@@ -122,7 +122,7 @@ end
 -- --- the pages, each in the shape the menu hands to `ui.menu` --------------
 
 local RAIL = {}
-for i, n in ipairs({"zones", "ship", "friends", "settings", "pilot"}) do
+for i, n in ipairs({"zones", "ship", "settings", "pilot"}) do
     RAIL[i] = {label = n, icon = n, index = i}
 end
 
@@ -166,13 +166,6 @@ local hangar = base({kit = true, kit_spent = 12, kit_total = 30, rows = {
     {label = "Energy", index = 3, rung = 1, ceiling = 3, sect = "flight"},
 }})
 
--- Friends: the add box over the sections, which is the one page that opened
--- tighter than every other and is why this file exists in the shape it does.
-local friends = base({social = true, rows = {},
-                      add = {name = "", on = false, note = "", bad = false,
-                             found = {}},
-                      invite = "https://vectorwake.net/"})
-
 -- The pilot page, which is a drawing rather than a list.
 local pilot = base({pilot_card = {name = "Drift 7", guest = false,
                                   career = {games = 3, kills = 5, deaths = 4}},
@@ -180,7 +173,7 @@ local pilot = base({pilot_card = {name = "Drift 7", guest = false,
 
 local PAGES = {
     {"play", games}, {"settings", sectioned}, {"hangar", hangar},
-    {"friends", friends}, {"pilot", pilot},
+    {"pilot", pilot},
 }
 
 -- --- one line, and every page begins on it --------------------------------
@@ -219,7 +212,6 @@ end
 -- Nothing reaches up into the head, and nothing hangs a second gap under the
 -- first. The room between them is what a page's own opening object costs: a
 -- band is forty-eight points tall with a twenty-six point key centered in it,
--- and the friends box is a section head with a field where its first row goes,
 -- which is the deepest of them.
 local ROOM = 26
 

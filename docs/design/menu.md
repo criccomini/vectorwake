@@ -1,6 +1,12 @@
 # Landing, and the menu
 
-> **Settings is the last stop on every row.** The home row is play, ship,
+> **Friends is gone.** The tab, the page, the add field and the band at its
+> foot are out of the menu, and so are the wire and the tables behind them.
+> The home row is play, ship, pilot and settings; the row a match gets is
+> play and settings. Nothing in the client asks who is on or where they are
+> flying. See [decision 95](../architecture/decisions.md).
+
+> **Settings is the last stop on every row.** The home row was play, ship,
 > friends, pilot and settings. Settings had been fourth of five, because the
 > account stop was appended to a row that already ended with it, so the tab
 > sat in one place at home and another in a match. It is the least pressed
@@ -41,7 +47,7 @@
 > "You are using a guest account. Press here to set your password." See
 > [decision 70](../architecture/decisions.md).
 
-> **The account page is a stop on the rail.** The home row is play, ship,
+> **The account page is a stop on the rail.** The home row was play, ship,
 > friends, settings and pilot: the account page as the fifth stop, wearing the
 > helmet mark the interface already uses for a person. The call sign pill at
 > the far end of the top line stays and opens the same page, because it is the
@@ -59,7 +65,7 @@
 > out of the game you are flying is a button at the right hand end of that
 > game's own row, reached by the right arrow, and it hands the seat back rather
 > than the room. The `leave` stop is off the tab row a pilot in a match gets,
-> which is play, friends and settings. See
+> which is play and settings. See
 > [decision 66](../architecture/decisions.md).
 
 > **The standings are gone.** The week's table came out of the client: the
@@ -143,15 +149,15 @@
 > **The split happened.** [match-game.md](match-game.md) moved the ship page,
 > the upgrades and the standings out of this tree and into pages of their own,
 > with settings beside them, so the front end is six tabs and help folds
-> into settings with the bindings. Friends is one of them and upgrades is
-> another. Upgrades was folded into the ship page for a while, with the price
+> into settings with the bindings. Upgrades was one of them.
+> It was folded into the ship page for a while, with the price
 > of each rung written on the row that spends it, on the argument that picking
 > a slot and paying for it are one act. What that produced was a panel doing
 > two jobs at once: a wallet and a budget on one screen, and the word "spend"
 > meaning both. They are two questions asked at different times and they are
 > two stops again. It is one full-screen surface met in
-> both places, differing only in which tabs it carries: in a match, play,
-> friends and settings, because nothing pauses and anything you cannot act on
+> both places, differing only in which tabs it carries: in a match, play and
+> settings, because nothing pauses and anything you cannot act on
 > now costs match time to read. It is still driven by the five inputs below, with left
 > and right moving along the tab row and up and down moving through the page.
 > The sections about a single column and about changing hull mid-fight are
@@ -229,10 +235,6 @@ vectorwake
 │             spend on them. A rung you do not own is dim with its price on
 │             the end of the row; pressing the row reads it and buys it.
 │             Slots, never strength: see match-game.md
-├ friends     a field you type a call sign into, the adds waiting on an
-│             answer, and your friends: a green dot and the game they are
-│             in, or a hollow one. A band at the foot invites somebody who
-│             has never played. See friends.md
 ├ pilot       who you are and the way to keep it: the name large with a NEW
 │             NAME key beside it, the career as bare totals under a ship-page
 │             section rule, and the account acts at the foot. A guest gets
@@ -256,7 +258,6 @@ vectorwake
 in a match
 ├ play        the same list, because the way out of the game you are in is a
 │             button on that game's own row
-├ friends     the same page: who is on, and who is waiting on an answer
 └ settings    the same page, because sound and fullscreen are needed there
 ```
 
@@ -278,8 +279,7 @@ there is nothing to stand on, silently, with the cursor left on the tab. The
 stage previews the page from the tab above it either way, so the same words
 are on screen; the press starts working the moment the rows arrive. A page
 whose first control is a text field counts as standable even with no rows,
-because a friends page with nobody on it is the whole reason somebody opens
-it.
+because the field is the whole of what that page is for.
 
 ### Lit and hovered are two marks
 
@@ -362,7 +362,7 @@ wash inside it. That is what MENU wears in the corner of a game and what the
 help page draws a key as, so a hand that has learned one has learned
 all of them.
 
-Three controls used to say otherwise. Add on the friends page wore the
+Three controls used to say otherwise. One page's add key wore the
 chamfered bracket that holds a cluster together, and the account and community
 buttons at the end of the top line were rounded pills, on the argument that a
 pill is the shape the web puts a link in. Each was a fair reading of its own
@@ -425,10 +425,10 @@ opens on the tab row.
 The zones, and nothing else. They were three sections at one point, zones and
 friends and community, because run together in one column they read as one list
 where a chat server is a game you could join and friends is a room with nobody
-in it. Friends is a tab of its own now, and the community section left the game
-with the rest of the Discord door, per decision 73. The heading that survived
-those two went as well: with one list left, a label reading "zones" over it was
-the interface naming what the reader could already see.
+in it. The community section left the game with the rest of the Discord door,
+per decision 73, and friends left it entirely, per decision 95. The heading
+that survived those two went as well: with one list left, a label reading
+"zones" over it was the interface naming what the reader could already see.
 
 Nothing on this page is a place outside the game any more, which is the rule
 the list wanted all along: a row is how the menu writes a place inside the

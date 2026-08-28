@@ -55,7 +55,7 @@ local layer = harness.layer()
 local ui = harness.install()
 
 local RAIL = {}
-for i, n in ipairs({"zones", "ship", "upgrades", "friends", "settings"}) do
+for i, n in ipairs({"zones", "ship", "upgrades", "settings"}) do
     RAIL[i] = {label = n, icon = n, index = i}
 end
 
@@ -69,24 +69,21 @@ local function draw(view, w, h)
     return st.n
 end
 
--- --- the friends page, which is the longest list in the menu ---------------
+-- --- the longest list the menu draws --------------------------------------
 --
--- Sixty names because a hundred edges is the cap and a tall window draws a
--- good share of them at once; the drawing only publishes the rows that land
--- inside the panel, so the number that matters is how many fit rather than
--- how many came back.
-local function friend_view(n)
+-- Sixty rows because a tall window draws a good share of them at once; the
+-- drawing only publishes the rows that land inside the panel, so the number
+-- that matters is how many fit rather than how many were handed over.
+local function long_view(n)
     local rows = {}
     for i = 1, n do
         rows[i] = {label = "Pilot " .. (100 + i), index = i, pick = true,
-                   detail = "flying halcyon", act = "unfriend",
-                   who = i, state = "friend",
+                   detail = "flying halcyon",
                    sect = (i % 10 == 1) and "a section" or nil}
     end
-    return {depth = 2, sel = 1, rail = RAIL, rail_sel = 4, focus = "stage",
-            home = true, closable = false, social = true, rows = rows,
-            pilot = {name = "Squall 586"},
-            add = {name = "", on = false, note = "", bad = false, found = {}}}
+    return {depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
+            home = true, closable = false, rows = rows,
+            pilot = {name = "Squall 586"}}
 end
 
 -- The window a laptop opens at, two desktops, and four tall narrow shapes,
@@ -96,8 +93,8 @@ local SHAPES = {{1280, 800}, {1920, 1200}, {2560, 1440}, {1100, 1600},
                 {900, 2000}, {800, 2400}, {1000, 3000}}
 for _, size in ipairs(SHAPES) do
     local w, h = size[1], size[2]
-    local n = draw(friend_view(60), w, h)
-    check(string.format("the friends page fits the pool at %dx%d", w, h),
+    local n = draw(long_view(60), w, h)
+    check(string.format("a long list fits the pool at %dx%d", w, h),
           n <= POOL, n .. " of " .. POOL)
 end
 

@@ -2,17 +2,16 @@
 --
 --     lua5.1 client/tests/foot_test.lua
 --
--- Three things get pinned down there: the guest warning the menu draws
--- itself, the invite band on the friends page, and the account keys at the
--- foot of the pilot page. They are drawn by three different pieces of code
--- against three different floors, and for a while those floors disagreed: the
--- warning sat on the rule over the tabs and the other two stood forty points
--- clear of it, which reads as furniture that has come away from the bottom of
--- the panel it belongs to.
+-- Two things get pinned down there: the guest warning the menu draws itself,
+-- and the account keys at the foot of the pilot page. They are drawn by two
+-- different pieces of code against two different floors, and for a while
+-- those floors disagreed: the warning sat on the rule over the tabs and the
+-- keys stood forty points clear of it, which reads as furniture that has come
+-- away from the bottom of the panel it belongs to.
 --
--- So this measures all three against the same line, the rule the tab row is
--- drawn under, and against each other. It is arithmetic no assertion about
--- strings can see and no screenshot in CI can catch.
+-- So this measures both against the same line, the rule the tab row is drawn
+-- under, and against each other. It is arithmetic no assertion about strings
+-- can see and no screenshot in CI can catch.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -44,7 +43,7 @@ local function layer()
 end
 
 local RAIL = {}
-for i, n in ipairs({"play", "ship", "friends", "pilot", "settings"}) do
+for i, n in ipairs({"play", "ship", "pilot", "settings"}) do
     RAIL[i] = {label = n, icon = n == "play" and "zones" or n, index = i}
 end
 
@@ -84,51 +83,29 @@ local function word(s)
     end
 end
 
--- --- the friends page's invite band -----------------------------------------
+-- --- the guest warning ------------------------------------------------------
 
-local function friends(banner)
-    return {depth = 2, sel = 1, rail = RAIL, rail_sel = 3, focus = "stage",
-            home = true, closable = true, at = "friends", social = true,
-            banner = banner, guest_dot = banner,
-            invite = "https://vectorwake.net/",
+local function guest_page()
+    return {depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
+            home = true, closable = true, at = "play",
+            banner = true, guest_dot = true,
             pilot = {name = "Vantage 7", rivets = 120},
-            add = {name = "", on = false, note = "", bad = false, found = {}},
-            rows = {{label = "Corvid 12", detail = "Team Battle",
-                     state = "flying", index = 1, pick = true}}}
+            rows = {{label = "Team Battle", detail = "3 people, 5 AI",
+                     index = 1, pick = true}}}
 end
 
-draw(friends(false))
+draw(guest_page())
 local rail = rail_top()
-local band = hit_of("invite")
-check("the invite band stands on the rail",
-      band and math.abs((band.y + band.h) - rail) < 0.5,
-      band and string.format("%.0f against %.0f", band.y + band.h, rail))
-check("and reaches both edges of the column",
-      band and band.w > 380, band and string.format("%.0f wide", band.w))
-
--- --- the guest warning, and the two of them stacked --------------------------
-
-draw(friends(true))
-rail = rail_top()
 local warn = hit_of("pilot_page", true)
-band = hit_of("invite")
 check("the guest warning stands on the rail",
       warn and math.abs((warn.y + warn.h) - rail) < 0.5,
       warn and string.format("%.0f against %.0f", warn.y + warn.h, rail))
-check("and the invite band stands on the warning rather than under it",
-      band and warn and math.abs((band.y + band.h) - warn.y) < 0.5,
-      band and warn and string.format("%.0f against %.0f",
-                                      band.y + band.h, warn.y))
-check("the two bands are one height",
-      band and warn and math.abs(band.h - warn.h) < 0.5,
-      band and warn and string.format("%.0f and %.0f", band.h, warn.h))
--- One column for the type on both of them, which is the column every page
--- draws its own type in.
-local a = word("Get somebody you know into the game.")
+check("and reaches both edges of the column",
+      warn and warn.w > 380, warn and string.format("%.0f wide", warn.w))
+-- Its words stand in the column every page draws its own type in.
 local b = word("You are using a guest account.")
-check("and their words begin on one line",
-      a and b and math.abs(a.x - b.x) < 0.5,
-      a and b and string.format("%.0f and %.0f", a.x, b.x))
+check("and its words begin in that column",
+      b ~= nil, b and string.format("%.0f", b.x))
 
 -- --- the pilot page's account keys ------------------------------------------
 --

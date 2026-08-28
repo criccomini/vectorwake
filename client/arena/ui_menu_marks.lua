@@ -59,28 +59,6 @@ function M.new(context)
         pilot_mark(cx, cy, col, r * 1.6, RAIL_PEN * F.scale)
     end
 
-    -- Two badges, pinned one over the other: people rather than a person. The
-    -- single pair of wings already stands for you, at the far end of this row
-    -- beside your name, so the stop about everybody else cannot wear the same
-    -- mark.
-    --
-    -- Stacked rather than set side by side, and that is the badge's own shape
-    -- deciding it. Two helmets stood beside each other because a helmet is
-    -- taller than it is wide and a step across separated them. This mark is
-    -- wider than it is tall, so the same step left two fans crossing through
-    -- each other and reading as one wide tangle. Clear air between them is
-    -- above and below, which is also how badges sit on a uniform.
-    --
-    -- Smaller than the single stop's, because two of these have to fit the
-    -- height one of them was sized against, and the ship in the middle of
-    -- each is taller than the fan around it.
-    local function mark_friends(cx, cy, r, col)
-        pilot_mark(cx - r * 0.12, cy - r * 0.46, pal.a(col, 0.55), r * 0.95,
-                   RAIL_PEN * F.scale)
-        pilot_mark(cx + r * 0.12, cy + r * 0.46, col, r * 1.05,
-                   RAIL_PEN * F.scale)
-    end
-
     local function mark_team(cx, cy, r, col)
         -- Two pennants, which is what a flag is drawn as in the world.
         for i, k in ipairs({{-0.5, 0.85}, {0.35, 1.0}}) do
@@ -238,7 +216,7 @@ function M.new(context)
     local MARKS = {zones = mark_zones, pilot = mark_pilot, team = mark_team,
                    settings = mark_settings, controls = mark_controls,
                    about = mark_about, leave = mark_leave,
-                   friends = mark_friends, upgrades = mark_upgrades}
+                   upgrades = mark_upgrades}
 
     local function draw_mark(kind, cx, cy, r, col, cls)
         if kind == "ship" then return mark_ship(cx, cy, r, col, cls) end

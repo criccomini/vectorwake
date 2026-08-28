@@ -108,13 +108,12 @@ run() {
     ENGINE=""
 }
 
-# The four tabs and the boards under settings.
+# The tabs and the boards under settings.
 # Two Ups out of the landing: the first can step the zone carousel (the
 # cursor may open on a later zone), the second reaches the tab row.
 run "shot menu-play;\
- key Up; key Up; key Right; key Down; shot menu-ship;\
- key Up; key Right; key Down; shot menu-friends"
-run "key Up; key Right; key Right; key Right;\
+ key Up; key Up; key Right; key Down; shot menu-ship"
+run "key Up; key Right; key Right;\
  key Down; shot menu-settings;\
  key Down; key Down; key Down; key Down; key Return; shot menu-controls;\
  key Down; key Down; key Down; key Return; shot menu-about"

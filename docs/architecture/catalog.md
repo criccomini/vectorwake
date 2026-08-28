@@ -6,8 +6,8 @@ and the public half of account identity. Directories load it and hand it to
 arena servers.
 
 The catalog is authored as files in Git. Live facts such as room occupancy,
-instance health, ratings, and friendships do not belong here. Directories and
-the meta-layer own those.
+instance health, and ratings do not belong here. Directories and the
+meta-layer own those.
 
 ## Layout
 
@@ -187,6 +187,6 @@ is an authoring error to log and fix.
 
 The artifact carries configuration, not authority over live processes. Which
 arena serves a zone, how many rooms it holds, and who is playing are observations
-kept by the directory. Accounts, ratings, friends, and match records belong to
+kept by the directory. Accounts, ratings, and match records belong to
 the meta-layer. Keeping those boundaries is what lets the catalog remain a
 reviewable file instead of becoming another database.

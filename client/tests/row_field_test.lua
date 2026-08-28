@@ -5,7 +5,7 @@
 --
 -- The menu used to answer "which row is this" eight different ways: the
 -- stage's wash at the drawer span, the kit page's at 0.2 falling to 0.1 while
--- the page was unfocused, the friends page's band inset sixteen points either
+-- the page was unfocused, one page's band inset sixteen points either
 -- side, the builds page's field hanging past the panel's right edge, and three
 -- more on their own shapes at 0.13, 0.14 and 0.16. Each was defensible where
 -- it was written and none of them agreed, which is what a player sees when
@@ -57,7 +57,7 @@ local ui = harness.install()
 local pal = require("arena.palette")
 
 local RAIL = {}
-for i, n in ipairs({"zones", "ship", "friends", "settings", "pilot"}) do
+for i, n in ipairs({"zones", "ship", "settings", "pilot"}) do
     RAIL[i] = {label = n, icon = n, index = i}
 end
 
@@ -166,16 +166,16 @@ local PAGES = {
         end,
     },
     {
-        name = "friends",
+        name = "play",
         view = function()
-            return {depth = 2, sel = 1, rail = RAIL, rail_sel = 3,
-                    focus = "stage", closable = true, social = true,
+            return {depth = 2, sel = 1, rail = RAIL, rail_sel = 1,
+                    focus = "stage", closable = true, at = "play",
                     rows = {
-                {label = "Halcyon 9", detail = "in team battle",
-                 state = "flying", index = 1, pick = true,
-                 acts = {{label = "join", go = true}}},
-                {label = "Sable", detail = "seen yesterday", index = 2,
-                 pick = true},
+                {label = "Team Battle", detail = "3 + 5 AI", index = 1,
+                 pick = true, players = 3, bots = 5, live = true,
+                 acts = {{label = "leave", go = true}}},
+                {label = "Duel", detail = "1 + 1 AI", index = 2,
+                 pick = true, players = 1, bots = 1, live = true},
             }}
         end,
     },
@@ -259,8 +259,8 @@ end
 -- --- the field is the hit box ---------------------------------------------
 
 -- A press that lands where the eye was told the row is has landed on the row.
--- The friends and kit pages both used to publish a box narrower than the
--- field they drew, so a press in the margin the field claimed hit nothing.
+-- Two pages used to publish a box narrower than the field they drew, so a
+-- press in the margin the field claimed hit nothing.
 for _, page in ipairs(PAGES) do
     draw(page.view())
     local lit = row_fields()

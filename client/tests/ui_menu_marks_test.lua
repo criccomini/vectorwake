@@ -55,15 +55,13 @@ local expected = {
     controls = "rect/5,frame/6,rect/5,frame/6,rect/5,frame/6,rect/5,frame/6",
     about = "ring/6,disc/5,seg/7",
     leave = "outline/4,seg/7,tri/7",
-    friends = "pilot/5,pilot/5",
     upgrades = "rivet/4",
     ship = "thumb/5",
 }
 
 local failures = 0
 for _, kind in ipairs({"zones", "pilot", "team", "settings", "controls",
-                        "about", "leave", "friends", "upgrades",
-                        "ship"}) do
+                        "about", "leave", "upgrades", "ship"}) do
     local got = signature(kind)
     if got == expected[kind] then
         print("ok   " .. kind .. " mark")

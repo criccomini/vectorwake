@@ -54,18 +54,6 @@ M.profiles = {}
 -- Nothing yet, which is not the same as a catalog with nothing in it: this is
 -- the meta-layer's answer and a page that has not had one has to say so.
 M.catalog = nil
--- The friends page's two lists: friends with where they are flying, and
--- whoever has added this pilot and is waiting on an answer. `have_friends`
--- separates "waiting for an answer" from "nobody yet", which are the same
--- empty table and different sentences.
-M.friends = {}
-M.asked = {}
-M.have_friends = false
--- What the last press on this page came to, for the line under the add field.
--- Held here rather than in the menu because the answer arrives with a reply
--- and the menu is not the thing waiting for it.
-M.friend_note = ""
-M.friend_bad = false
 -- Whether the meta-layer has ever answered. It separates "waiting" from
 -- "there is nothing there", which are the same empty token and very different
 -- sentences to show somebody.
@@ -459,33 +447,6 @@ function M.fetch_replay(id, cb)
     post("/v1/replay", {id = id}, cb)
 end
 
--- The friends page, whole: who you are friends with and where they are, and
--- who has added you and is waiting on an answer.
---
--- One request for both lists because they are one screen and because the
--- lists are defined against each other. Asking separately would leave a frame
--- where two replies disagree about which list somebody belongs in, and the
--- page would draw them twice.
---
--- It carried three more lists until decision 78, and one of them is why this
--- module used to be told when the room changed: `here` was the roster of the
--- arena the meta-layer saw you in, so an answer given on the front end had
--- nobody in it and had to be forgotten on arrival. Nothing here is about the
--- room any more, so an answer stays true across a join and a leave. See
--- docs/design/friends.md.
-local function take_friends(r)
-    if type(r) ~= "table" then return false end
-    M.friends = type(r.friends) == "table" and r.friends or {}
-    M.asked = type(r.asked) == "table" and r.asked or {}
-    M.have_friends = true
-    return true
-end
-
-function M.refresh_friends()
-    if M.base == "" then return end
-    post("/v1/friends", {secret = secret}, function(r) take_friends(r) end)
-end
-
 -- The caller's own record, for the pilot page and the guest banner. One
 -- request per session plus one per pilot-page visit; the reply is small and
 -- the page only moves when a match ends.
@@ -504,126 +465,11 @@ function M.refresh_career()
     end)
 end
 
--- One edge, made or dropped. The reply is the page, so a press redraws
--- without a second request and without this client guessing what the edge did
--- to lists it does not compute.
---
--- `other` is an account number off one of those lists, or a call sign
--- somebody typed. A name is the only way onto this page that does not start
--- with the two of you being in the same room, and it has to be exact: the
--- meta-layer looks it up whole and answers "no pilot called that" rather than
--- offering anybody.
-function M.friend(other, add, cb)
-    if M.base == "" then
-        if cb then cb(false, "no meta-layer") end
-        return
-    end
-    local body = {secret = secret, add = add ~= false}
-    if type(other) == "string" then
-        body.name = other
-    else
-        body.account = other
-    end
-    post("/v1/friend", body,
-         function(r, err)
-             if not r then
-                 M.friend_note = err or "cannot do that"
-                 M.friend_bad = true
-                 M.note = M.friend_note
-                 if cb then cb(false, M.friend_note) end
-                 return
-             end
-             take_friends(r)
-             M.note = ""
-             -- Which sentence the add field says back. `mutual` is the one
-             -- thing this client cannot work out for itself: once the row is
-             -- in, the press that closed the pair and the press that did not
-             -- look identical.
-             M.friend_bad = false
-             if add == false then
-                 M.friend_note = ""
-             elseif r.mutual then
-                 M.friend_note = "friends. they had already added you."
-             else
-                 M.friend_note = "added. you are friends once they add you back."
-             end
-             if cb then cb(true, nil, r.mutual == true) end
-         end)
-end
-
--- Call signs beginning with what has been typed into the add field.
---
--- The one request in this client that names a pilot you have never met, and
--- the meta-layer keeps it small: eight names back, matched from the start of
--- the call sign. `serial` throws away an answer to a prefix
--- that is no longer what is in the box, because a keystroke and a round trip
--- do not arrive in order and a list that flickers back to an older prefix is
--- worse than no list.
-M.found = {}
--- The prefix the names in hand are an answer to, which is not the same as the
--- one being asked about: a keystroke lands now and its reply lands later, and
--- in between the box says something the list does not. Set when the reply
--- arrives, so the page can tell whether what it is holding is about what is
--- on screen.
-M.found_for = ""
-local finding, asking = 0, ""
--- How little can be in the box and still be worth asking about. One
--- character: the meta-layer answers from the first letter, and a client that
--- held the first one back made a field that looks broken until the second.
-local FIND_MIN = 1
-function M.find_pilots(prefix)
-    prefix = tostring(prefix or "")
-    if M.base == "" or #prefix < FIND_MIN then
-        M.found, M.found_for, asking = {}, prefix, prefix
-        return
-    end
-    if prefix == asking then return end
-    asking = prefix
-    finding = finding + 1
-    local mine = finding
-    post("/v1/friend/find", {secret = secret, q = prefix}, function(r)
-        if mine ~= finding then return end
-        M.found = (type(r) == "table" and type(r.pilots) == "table")
-            and r.pilots or {}
-        M.found_for = prefix
-    end)
-end
-
--- An add taken off the list that asks about it. Nothing is sent to them: the
--- pilot who added you goes on seeing that they did, which is true.
---
--- Final, as of decision 78. It puts the add on a list the client no longer
--- asks for, so nothing draws it and nothing can accept it later; the row and
--- the route still take `false` for an operator putting one back.
-function M.ignore(other, on, cb)
-    if M.base == "" then
-        if cb then cb(false, "no meta-layer") end
-        return
-    end
-    post("/v1/friend/ignore",
-         {secret = secret, account = other, on = on ~= false},
-         function(r, err)
-             if not r then
-                 M.friend_note = err or "cannot do that"
-                 M.friend_bad = true
-                 if cb then cb(false, M.friend_note) end
-                 return
-             end
-             take_friends(r)
-             M.friend_note = ""
-             M.friend_bad = false
-             if cb then cb(true) end
-         end)
-end
-
 function M.logout()
     secret = ""
     M.token = ""
     M.account = 0
     M.claimed = false
-    M.friends, M.asked, M.have_friends = {}, {}, false
-    M.found, M.found_for = {}, ""
-    M.friend_note, M.friend_bad = "", false
     M.name = ""
     M.rivets = 0
     M.entitlements = {}
