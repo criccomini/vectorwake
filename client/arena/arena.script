@@ -393,11 +393,7 @@ function session.enter_deep_route(self)
     return session.enter(self, at.address, zone, at.wt, room,
                          kind == "watch", instance)
 end
--- Whether this step carries an upward gun pull. Beside `charge_tap` because it
--- is the same shape of thing: a gesture latched by the interface and spent by
--- exactly one simulation step.
-local multi_tap = false
--- The same latch for a charge key, filled where taps are read and drained
+-- A latch for a charge key, filled where taps are read and drained
 -- into `charge_tap` by the step loop.
 local key_charge = nil
 
@@ -441,9 +437,11 @@ local function my_buttons()
     -- to read back or to have forgotten to move. The control you pressed is
     -- the thing you get.
     if charge_tap then bits[sim.BTN_USE] = true end
-    -- The upward gun pull declines or restores multifire on glass. It lands in
-    -- the same bit the key holds down, so the core sees one press either way.
-    if multi_tap then bits[sim.BTN_MULTI] = true end
+    -- Multifire is the keyboard's alone. It was an upward pull off the gun pad
+    -- for a while, which is a gesture nobody finds on a control they are
+    -- holding down, and the pad's mark already draws the volley a pull throws,
+    -- so what the gesture bought was a state nobody could reach and nobody had
+    -- asked for. The key still holds sim.BTN_MULTI through `held` above.
 
     local b = 0
     for bit in pairs(bits) do b = b + bit end
@@ -494,8 +492,11 @@ end
 local function pad_reach(w, h, s)
     local L = touch.layout(w, h, s)
     local reach = L.guns.y + L.guns.r
-    for _, c in ipairs(L.charge or {}) do
-        local top = c.y + (c.w and c.w / 2 or c.r)
+    -- Every satellite, not only the charges: the bomb rides the same orbit
+    -- now, so on a hull carrying no charge at all the rack is what the hand
+    -- reaches highest with.
+    for _, c in ipairs(L.sats or {}) do
+        local top = c.y + c.r
         if top > reach then reach = top end
     end
     return reach
@@ -1460,15 +1461,8 @@ function update(self, dt)
             -- after the step that spends it.
             charge_tap = touch.fired_charge() or key_charge
             key_charge = nil
-            -- Spent over one step for the same reason, and it has to be one:
-            -- the core toggles on the rising edge, so a bit left down over
-            -- two steps is still one toggle but a bit set again on the next
-            -- is a second. Reading it here, once, is what makes a tap a
-            -- press rather than a hold.
-            multi_tap = touch.fired_multi()
             step_once()
             charge_tap = nil
-            multi_tap = false
             accum = accum - TUNE.DT
             steps = steps + 1
         end
@@ -2090,20 +2084,6 @@ function update(self, dt)
         -- Which charge slots this hull carries, and how many of each are in
         -- hand. The pads are built from this, so a hull with none draws none
         -- and a zone that fills all four gets four.
-        -- And whether either trigger is carrying a fan, which is what decides
-        -- whether the rail holds a cell for declining it. The same expression
-        -- the multifire sound reads, because it is the same question: does
-        -- this hull have barrels to turn off.
-        -- Guarded like every other read of `me` on this frame, and for a
-        -- harder reason than the pads not being drawn: watching sets `me` to
-        -- 255, the wire's "nobody", which the core refuses as a ship index.
-        -- These two were the only reads here that asked anyway, so every frame
-        -- of every watch raised before the layers flushed and the screen sat
-        -- frozen on the last frame the watcher had flown.
-        touch.has_fan = not watching
-            and (sim.ship_mod(me, sim.TRIG_GUN, sim.MOD_MULTI) > 0
-                 or sim.ship_mod(me, sim.TRIG_BOMB, sim.MOD_MULTI) > 0)
-        touch.multi_off = not watching and sim.ship_multi_off(me)
         touch.charges = my_slots()
         touch.counts = {}
         touch.maxes = {}
@@ -2115,6 +2095,25 @@ function update(self, dt)
             touch.maxes[k] = sim.ship_kit(me, sim.SLOT_CHARGE0 + k)
             touch.waits[k] = sim.ship_charge_wait(me, k)
             touch.delays[k] = sim.charge_delay(k)
+        end
+        -- And the same pair per trigger, which is what a key's rim grows back
+        -- over after a shot. Per trigger rather than the higher of the two:
+        -- the counters do come apart, an EMP bomb leaving its own guns
+        -- running, and a rim on the gun answering the bomb's clock would be
+        -- wrong in exactly the fight where it matters.
+        --
+        -- Guarded like every other read of `me` on this frame, and for a
+        -- harder reason than the keys not being drawn: watching sets `me` to
+        -- 255, the wire's "nobody", which the core refuses as a ship index, so
+        -- an unguarded read raised before the layers flushed and the screen
+        -- sat frozen on the last frame the watcher had flown.
+        touch.trig_waits = {}
+        touch.trig_delays = {}
+        if not watching then
+            for _, trig in ipairs({sim.TRIG_GUN, sim.TRIG_BOMB}) do
+                touch.trig_waits[trig] = sim.ship_trigger_wait(me, trig)
+                touch.trig_delays[trig] = sim.ship_trigger_delay(me, trig)
+            end
         end
 
         -- Doors and wormholes: world geometry that moves, so it cannot live in
@@ -2280,9 +2279,21 @@ function update(self, dt)
             safe = safe_ticks, safe_limit = sim.safe_limit(),
             -- How far up the screen the thumb's controls climb, so the one
             -- feed line a phone shows can be placed clear of them. Measured
-            -- from the same layout the taps are tested against, because a
-            -- rail is as tall as the charges a hull happens to carry.
+            -- from the same layout the taps are tested against, because the
+            -- hand is as tall as the charges a hull happens to carry.
             pad_top = touch.used and pad_reach(ww, wh, density) or nil,
+            -- What the stick's rim has to say, and where. The one control on
+            -- glass whose meaning a mark cannot carry, so it is written in
+            -- words, and words come from the gui: touch.lua works out the
+            -- sentence and the place, this hands it over, ui.lua draws it.
+            --
+            -- Under the same conditions the stick itself is drawn under, and
+            -- the list is worth keeping in step by hand rather than shortening:
+            -- a caption for a control nobody is being shown is a word sitting
+            -- on the menu, on the ending board, or over somebody else's fight.
+            stick_hint = (touch.used and live and not menu.open and not watching
+                          and not ui.match_ended(net.match))
+                and touch.hint(ww, wh, density) or nil,
             charges = charge_row(),
             cam_x = cx, cam_y = cy,
             half_w = self.hw, half_h = self.hh,

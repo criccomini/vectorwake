@@ -170,12 +170,13 @@ local function reset(w, h, s)
     touch.used = true
     touch.me = 0
     touch.has_bomb = true
-    -- Off by default, which is the ordinary hull. A kit may omit multifire.
-    -- The block at the bottom turns it on for the case that is actually tight.
-    touch.has_fan = false
     touch.charges = {0, 1}
     touch.counts = {[0] = 2, [1] = 1}
     touch.maxes = {[0] = 3, [1] = 3}
+    touch.waits, touch.delays = {}, {}
+    -- Both triggers ready, which is what a key looks like between shots. The
+    -- recovery block below fires one and watches its rim.
+    touch.trig_waits, touch.trig_delays = {}, {}
     touch.safe_l, touch.safe_r, touch.safe_b = 0, 0, 0
     -- What the dial leaves: ui.radar_span() is 140 points on a phone, being
     -- the margin it keeps from the top of the window, the cropped 112 of
@@ -192,6 +193,12 @@ end
 local LAND = {1688, 780, 2}
 local PORT = {780, 1688, 2}
 
+-- Distances rather than exact numbers, everywhere below: a control's place is
+-- a sum of a screen measurement and several multiples of the gun's radius, so
+-- two of them that moved together agree to within a pixel rather than to the
+-- last bit of a double. What is under test is where a thumb lands.
+local function same(a, b) return math.abs(a - b) < 0.5 end
+
 -- A browser toolbar covers the bottom of the extended world canvas. Every
 -- control a thumb needs moves above it by the measured amount, while their
 -- spacing stays unchanged.
@@ -201,8 +208,8 @@ do
     touch.safe_b = 156
     local covered = touch.layout(w, h, s)
     check("browser chrome lifts both touch corners clear",
-          covered.guns.y - ordinary.guns.y == 156
-          and covered.home.y - ordinary.home.y == 156)
+          same(covered.guns.y - ordinary.guns.y, 156)
+          and same(covered.home.y - ordinary.home.y, 156))
 end
 
 -- iOS standalone can report a viewport shorter than the physical screen.
@@ -215,8 +222,8 @@ do
     touch.safe_b = extension
     local extended = touch.layout(w, h + extension, s)
     check("a taller iOS world leaves both touch corners in place",
-          h - ordinary.guns.y == h + extension - extended.guns.y
-          and h - ordinary.home.y == h + extension - extended.home.y)
+          same(h - ordinary.guns.y, h + extension - extended.guns.y)
+          and same(h - ordinary.home.y, h + extension - extended.home.y))
 end
 
 -- --- every control is drawn ------------------------------------------------
@@ -407,9 +414,14 @@ end
 
 -- Energy came off the gun pad, because every hull carries a bar above it
 -- saying the same thing and that one is where a player is already looking.
--- What is left is one ring per control, the same as the bomb's. Measured as
--- "nothing round is drawn outside the rim", since the fault would be some
--- other instrument moving in rather than this one coming back.
+-- What is left is one ring per control, and what that ring says is the
+-- trigger's own recovery.
+--
+-- The gap between the gun's rim and the orbit its satellites ride is what
+-- this guards now. One instrument did move into it once, an energy arc a
+-- fifth of a radius out, and it was the piece that reached the rail above;
+-- the orbit thread itself is drawn out there deliberately and sits exactly on
+-- the orbit, so the check is that nothing else is between the two.
 do
     local w, h, s = reset(unpack(LAND))
     ENERGY = 400
@@ -421,13 +433,62 @@ do
         -- stroke widens on both sides: the rim would answer for itself.
         if sh.r and math.abs(cx - l.guns.x) < l.guns.r
             and math.abs(cy - l.guns.y) < l.guns.r
-            and sh.r > l.guns.r * 1.02 then
+            and sh.r > l.guns.r * 1.02 and sh.r < l.orbit * 0.96 then
             out = out + 1
         end
     end
-    check("the gun pad draws nothing outside its rim", out == 0,
-          out .. " rings past the edge of the control")
+    check("nothing crowds the gap between the gun and its satellites",
+          out == 0, out .. " rings in the gap")
     ENERGY = 700
+end
+
+-- --- a trigger's rim is its recovery ----------------------------------------
+--
+-- Fired, the ring drops to a floor and a bright arc grows back over it as the
+-- weapon's delay runs. Measured as how much bright ink sits on the gun's own
+-- rim: none of it at the shot, some of it part way through, all of it ready.
+-- Per trigger, because the two counters come apart -- an EMP bomb leaves its
+-- own guns running -- and a rim answering the wrong clock is wrong in exactly
+-- the fight where it matters.
+do
+    local function rim_ink(pad)
+        local lit = 0
+        for _, sh in ipairs(shapes) do
+            local cx, cy = (sh.x0 + sh.x1) / 2, (sh.y0 + sh.y1) / 2
+            if sh.r and math.abs(sh.r - pad.r) < pad.r * 0.08
+                and math.abs(cx - pad.x) < pad.r * 0.5
+                and math.abs(cy - pad.y) < pad.r * 0.5
+                and (sh.col and sh.col[4] or 1) > 0.5 then
+                lit = lit + 1
+            end
+        end
+        return lit
+    end
+
+    local w, h, s = reset(unpack(LAND))
+    local ready = draw(w, h, s)
+    local ready_ink = rim_ink(ready.guns)
+    check("a ready trigger wears a whole bright rim", ready_ink > 0,
+          "no lit ink on the rim of a trigger that can fire")
+
+    reset(w, h, s)
+    touch.trig_waits = {[0] = 30, [1] = 0}
+    touch.trig_delays = {[0] = 30, [1] = 30}
+    local shot = draw(w, h, s)
+    check("the tick it fires, the gun's rim has gone dark",
+          rim_ink(shot.guns) == 0,
+          "bright ink still on a rim whose whole delay is left")
+    check("and the bomb beside it is untouched",
+          rim_ink(shot.bombs) > 0,
+          "the bomb's rim went out on the gun's clock")
+
+    reset(w, h, s)
+    touch.trig_waits = {[0] = 9, [1] = 0}
+    touch.trig_delays = {[0] = 30, [1] = 30}
+    local back = draw(w, h, s)
+    check("and part way through the delay it has grown part of it back",
+          rim_ink(back.guns) > 0,
+          "nothing lit with two thirds of the delay run")
 end
 
 -- --- nothing overlaps anything ---------------------------------------------
@@ -436,18 +497,24 @@ end
 -- riding a fifth of a radius outside its ring instead, which was the piece
 -- that reached the rail above it; the hull's own bar says energy, so the arc
 -- went and the rim is the whole of the gun again.
+-- The margins touch.lua grows each control by. Written out rather than
+-- imported, because what is under test is that the drawn hand and the grown
+-- targets agree, and a test reading the same constant as the code cannot
+-- notice one of them moving.
+local PAD_SLACK, SAT_SLACK = 1.18, 1.3
+
 local function controls(L2)
     -- Interactive reach rather than visible ink. A layout can look separated
     -- while two enlarged thumb targets answer the same point.
     local out = {{n = "guns", x = L2.guns.x, y = L2.guns.y,
-                  r = L2.guns.r * 1.18}}
+                  r = L2.guns.r * PAD_SLACK}}
     if touch.has_bomb then
         out[#out + 1] = {n = "bombs", x = L2.bombs.x, y = L2.bombs.y,
-                         r = L2.bombs.r * 1.18}
+                         r = L2.bombs.r * SAT_SLACK}
     end
     for i, c in ipairs(L2.charge) do
         out[#out + 1] = {n = "charge" .. i, x = c.x, y = c.y,
-                         r = c.w * 0.65}
+                         r = c.r * SAT_SLACK}
     end
     return out
 end
@@ -484,65 +551,54 @@ for _, win in ipairs({LAND, PORT}) do
           tostring(off) .. " leaves the window")
 end
 
--- --- the fixed utility row keeps clear of the dial --------------------------
+-- --- the hand keeps clear of the dial --------------------------------------
 
--- The row sits below the dial in either orientation. It never wraps because a
+-- The satellites ride one arc around the gun in either orientation, and the
+-- arc has to stay under the dial. It never wraps to a second arc, because a
 -- wrap would make a slot's position depend on the available height.
 -- What ui.radar_span() leaves, either way up, at the two windows above: the
 -- dial takes the same 280 pixels off the top whichever way the phone is held,
 -- so the room under it is all the orientation changes.
 local TIGHT, ROOMY = 500, 1408
 
-local function rows(l)
-    local seen, n = {}, 0
-    for _, c in ipairs(l.charge) do
-        local k = string.format("%.0f", c.y)
-        if not seen[k] then seen[k] = true n = n + 1 end
+-- Every satellite the same distance from the gun's middle, which is what
+-- makes the hand one instrument rather than a scatter. Measured rather than
+-- assumed, since it is the invariant the whole arc is built on.
+local function one_orbit(l)
+    local lo, hi = math.huge, 0
+    for _, c in ipairs(l.sats) do
+        local d = math.sqrt((c.x - l.guns.x) ^ 2 + (c.y - l.guns.y) ^ 2)
+        lo, hi = math.min(lo, d), math.max(hi, d)
     end
-    return n
+    return hi - lo < 0.5
 end
 
 local function under_ceiling(l, ceil)
-    for _, c in ipairs(l.charge) do
+    for _, c in ipairs(l.sats) do
         if c.y + c.r > ceil then return false end
     end
     return true
 end
 
-do
-    local w, h, s = reset(unpack(PORT))
-    touch.ceiling = ROOMY
+for _, win in ipairs({{PORT, ROOMY, "upright"}, {LAND, TIGHT, "sideways"}}) do
+    local w, h, s = reset(unpack(win[1]))
+    touch.ceiling = win[2]
     touch.charges = {0, 1, 2, 3}
     touch.counts = {[0] = 3, [1] = 3, [2] = 3, [3] = 3}
     local l = touch.layout(w, h, s)
-    check("upright, a full rack is one fixed row", rows(l) == 1,
-          rows(l) .. " rows")
-    check("and all of it clears the dial", under_ceiling(l, ROOMY))
-    check("and its thumb targets do not overlap", not worst_overlap(l),
-          tostring(worst_overlap(l)))
-end
-
-do
-    local w, h, s = reset(unpack(LAND))
-    touch.ceiling = TIGHT
-    touch.charges = {0, 1, 2, 3}
-    touch.counts = {[0] = 3, [1] = 3, [2] = 3, [3] = 3}
-    local l = touch.layout(w, h, s)
-    check("sideways, a full rack stays on one row", rows(l) == 1,
-          rows(l) .. " rows")
-    check("and still clears the dial", under_ceiling(l, TIGHT),
-          "a cell drawn into the dial's corner")
-    check("with no overlapping thumb targets", not worst_overlap(l),
-          tostring(worst_overlap(l)))
+    check(win[3] .. ", a full rack rides one orbit", one_orbit(l),
+          "the satellites are not all the same distance out")
+    check(win[3] .. ", all of it clears the dial", under_ceiling(l, win[2]),
+          "a key drawn into the dial's corner")
+    check(win[3] .. ", its thumb targets do not overlap",
+          not worst_overlap(l), tostring(worst_overlap(l)))
+    -- The hand stays in the corner it owns: a thumb flying the ship on the
+    -- left half must never be under a weapon.
     local left = w
-    for _, c in ipairs(l.charge) do left = math.min(left, c.x - c.r) end
-    check("and the rack stays in the right third", left > w * 0.66,
+    for _, c in ipairs(controls(l)) do left = math.min(left, c.x - c.r) end
+    check(win[3] .. ", the hand stays out of the stick's half",
+          left > w * 0.55,
           string.format("reaches %.2f of the way across", left / w))
-    -- Above them, never beside them: a thumb going for the gun crosses no cell.
-    local low = math.huge
-    for _, c in ipairs(l.charge) do low = math.min(low, c.y - c.r) end
-    check("and sits above them", low > l.guns.y + l.guns.r,
-          "a cell level with the triggers")
 end
 
 -- --- what is drawn is what answers -----------------------------------------
@@ -597,13 +653,19 @@ do
     local w, h, s = reset(unpack(LAND))
     touch.has_bomb = false
     local l = draw(w, h, s)
-    check("a hull with no rack draws no bomb pad", marked(l.bombs) == 0,
-          "a bomb pad on a hull that cannot carry one")
+    -- The layout still answers `L.bombs`, so that everything reading one does
+    -- not have to check; it says so, and it sits off the arc rather than on
+    -- top of whichever control took the rack's place.
+    check("a hull with no rack has no bomb on the orbit",
+          l.bombs.absent and #l.sats == 2,
+          #l.sats .. " satellites for a rack-less hull carrying two charges")
+    check("and nothing is drawn where it would have been",
+          marked(l.bombs) == 0,
+          "a bomb key on a hull that cannot carry one")
     touch.release_all()
     touch.on_touch({touch = {{id = 1, pressed = true, screen_x = l.bombs.x,
                               screen_y = l.bombs.y}}}, w, h, s)
-    -- It falls through to the stick rather than being swallowed by a control
-    -- that is not there.
+    -- Nothing is held by a control nobody drew.
     check("and does not swallow the tap", #touch.bits(0) == 0,
           "a button held by a pad nobody drew")
     touch.release_all()
@@ -688,129 +750,149 @@ end
 
 -- --- and what is in hand ---------------------------------------------------
 
+-- The count is the rim: one segment per charge the rack holds, lit while it
+-- is in hand and dim once spent. Counted as bright arcs on the key's own
+-- radius, which is the whole boundary the key has -- there is no inner ring
+-- to mistake for one.
+local function segments(c)
+    local lit, dark = 0, 0
+    for _, sh in ipairs(shapes) do
+        local cx, cy = (sh.x0 + sh.x1) / 2, (sh.y0 + sh.y1) / 2
+        if sh.kind == "arc" and sh.r and math.abs(sh.r - c.r) < c.r * 0.08
+            and math.abs(cx - c.x) < c.r and math.abs(cy - c.y) < c.r then
+            if (sh.col and sh.col[4] or 1) > 0.5 then lit = lit + 1
+            else dark = dark + 1 end
+        end
+    end
+    return lit, dark
+end
+
 do
     local w, h, s = reset(unpack(LAND))
     touch.counts = {[0] = 2, [1] = 0}
     local l = draw(w, h, s)
-    -- Pips: as many marks as the hull can hold, filled as far as it is. The
-    -- count used to be a numeral floating above the pad, which is the one
-    -- piece of this interface that could not be drawn by the mesh.
-    local function pips(c)
-        local full, empty = 0, 0
-        for _, sh in ipairs(shapes) do
-            local cx, cy = (sh.x0 + sh.x1) / 2, (sh.y0 + sh.y1) / 2
-            if math.abs(cx - c.x) < c.w * 0.5
-                and math.abs(cy - (c.y - c.w * 0.33)) < c.w * 0.06 then
-                if sh.kind == "disc" then full = full + 1
-                elseif sh.kind == "ring" then empty = empty + 1 end
-            end
-        end
-        return full, empty
-    end
-    local f1, e1 = pips(l.charge[1])
-    check("a cell counts what is in hand", f1 == 2 and e1 == 1,
-          f1 .. " held, " .. e1 .. " spent")
-    -- And a slot spent out has no cell at all. A control that does nothing
-    -- when pressed is bad enough with a keyboard; on glass there is no travel
-    -- and no cursor, so the only way to learn a cell is dead is to tap it in
-    -- the middle of a fight and get nothing back.
-    check("and a spent slot draws no cell", #l.charge == 1,
-          #l.charge .. " cells for one charge in hand")
+    local held, spent = segments(l.charge[1])
+    check("a key counts what is in hand on its rim",
+          held == 2 and spent == 1, held .. " held, " .. spent .. " spent")
+
+    -- And a slot spent out keeps its key, every segment dim. It used to lose
+    -- the cell altogether, on the argument that a control which does nothing
+    -- is worse than no control. What that missed is that the rack fills
+    -- again: the cell came back, and everything beside it had moved while it
+    -- was away, so a thumb going for the same place twice in one fight
+    -- reached two different things.
+    local out_held, out_spent = segments(l.charge[2])
+    check("a spent slot keeps its key, dimmed whole",
+          out_held == 0 and out_spent == 3,
+          out_held .. " lit segments on a key with nothing in it")
+    check("and the rack is drawn whole either way", #l.charge == 2,
+          #l.charge .. " keys for a hull carrying two kinds")
+
+    -- Which is the whole point of keeping it: nothing moves as it empties.
     touch.counts = {[0] = 2, [1] = 1}
     local both = draw(w, h, s)
-    local second
-    for _, c in ipairs(both.charge) do
-        if c.slot == 1 then second = {c.x, c.y} end
-    end
+    local at = {}
+    for _, c in ipairs(both.charge) do at[c.slot] = {c.x, c.y} end
     touch.counts = {[0] = 0, [1] = 1}
     local one = draw(w, h, s)
-    check("and a surviving slot does not slide into the gap",
-          #one.charge == 1 and one.charge[1].slot == 1 and second
-          and one.charge[1].x == second[1] and one.charge[1].y == second[2],
-          #one.charge .. " cells after its neighbor emptied")
+    local held_place = #one.charge == 2
+    for _, c in ipairs(one.charge) do
+        if c.x ~= at[c.slot][1] or c.y ~= at[c.slot][2] then
+            held_place = false
+        end
+    end
+    check("and no key moves when its neighbor empties", held_place,
+          "a key slid into a spent neighbor's place")
 
-    -- A hull holding nothing draws no rail, and nothing above the triggers
-    -- answers a tap.
+    -- A hull carrying no charge kind at all still has none: an empty rack is
+    -- a rack, an absent one is nothing to draw.
     reset(unpack(LAND))
+    touch.charges = {}
     touch.counts = {}
     local none = draw(w, h, s)
-    check("a hull holding no charges draws no rail", #none.charge == 0,
-          #none.charge .. " cells with an empty hand")
+    check("a hull carrying no charge kinds draws no keys",
+          #none.charge == 0,
+          #none.charge .. " keys with nothing to spend")
 end
 
--- --- multifire stays on the gun ---------------------------------------------
+-- --- and a spent key still answers -----------------------------------------
 --
--- Equipping a fan adds an upward gesture affordance to the gun, not another
--- control. The layout and every charge target stay exactly where they were.
+-- It is drawn, so it has to swallow the tap. What the core does with a slot
+-- holding nothing is throw it away; what a visible control falling through
+-- would do is start the ship turning under a thumb that meant to spend
+-- something, which is the worse of the two by a distance.
 do
     local w, h, s = reset(unpack(LAND))
-    touch.ceiling = TIGHT
-    touch.charges = {0, 1, 2, 3}
-    -- Stock in every slot, or the rail quietly drops the empty ones and the
-    -- tight case under test is not the tight case.
-    touch.counts = {[0] = 3, [1] = 3, [2] = 3, [3] = 3}
-    touch.maxes = {[0] = 3, [1] = 3, [2] = 3, [3] = 3}
-    touch.has_fan = false
-    local bare = touch.layout(w, h, s)
-    touch.has_fan = true
+    touch.counts = {[0] = 0, [1] = 0}
     local l = touch.layout(w, h, s)
-    check("a fan adds no standalone control",
-          l.fan == nil and #l.charge == 4,
-          tostring(l.fan) .. ", " .. #l.charge .. " charges")
-    local same = #bare.charge == #l.charge
-    for i, c in ipairs(l.charge) do
-        same = same and c.x == bare.charge[i].x and c.y == bare.charge[i].y
-    end
-    check("equipping it moves no utility target", same)
-    check("the full rack still has no overlap", not worst_overlap(l),
-          worst_overlap(l))
-    check("and the row still clears the dial", under_ceiling(l, TIGHT),
-          "something is drawn into the dial's corner")
-    for _, c in ipairs(controls(l)) do
-        check(c.n .. " is on the screen",
-              c.x - c.r >= 0 and c.x + c.r <= w
-                  and c.y - c.r >= 0 and c.y + c.r <= h,
-              string.format("%s at %.0f,%.0f r%.0f", c.n, c.x, c.y, c.r))
-    end
+    touch.release_all()
+    touch.on_touch({touch = {{id = 1, pressed = true,
+                              screen_x = l.charge[1].x,
+                              screen_y = l.charge[1].y}}}, w, h, s)
+    local steered = touch.steering()
+    touch.fired_charge()
+    touch.release_all()
+    check("a tap on a spent key does not reach the stick", not steered,
+          "a spent key fell through and started steering")
+end
+
+-- --- multifire is the keyboard's alone ---------------------------------------
+--
+-- It was an upward pull off the gun pad, which is a gesture nobody finds on a
+-- control they are holding down, and the gun's mark already draws the volley
+-- a pull actually throws. So the gesture went, and the surface it hung off is
+-- gone with it: no field to set, no gesture to read, no control to place.
+do
+    check("the gun carries no fan gesture",
+          touch.fired_multi == nil and touch.has_fan == nil
+          and touch.multi_off == nil,
+          "a multifire surface survives on the touch controls")
 end
 
 -- --- four charge kinds -------------------------------------------------------
 --
--- A kit chooses two kinds, but the core can represent four. Exercising all
--- four keeps the layout safe at that storage boundary, and every cell retains
--- its fixed slot as the rack empties.
-do
-    local w, h, s = reset(unpack(PORT))
-    touch.ceiling = ROOMY
-    touch.has_fan = true
+-- A kit chooses two kinds, but the core can represent four, which with a rack
+-- is five satellites on an arc sized for three. The step closes up and the
+-- orbit grows to keep the rims apart, so what this pins is that the boundary
+-- case is still a hand a thumb can use: nothing overlapping, nothing off the
+-- screen, nothing in the dial.
+for _, win in ipairs({{PORT, ROOMY}, {LAND, TIGHT}}) do
+    local w, h, s = reset(unpack(win[1]))
+    touch.ceiling = win[2]
     touch.charges = {0, 1, 2, 3}
     touch.counts = {[0] = 3, [1] = 3, [2] = 3, [3] = 3}
     touch.maxes = {[0] = 3, [1] = 3, [2] = 3, [3] = 3}
     local l = touch.layout(w, h, s)
-    check("four charges make four cells", #l.charge == 4,
+    local at = w .. "x" .. h
+    check("four charges make four keys at " .. at, #l.charge == 4,
           tostring(#l.charge))
-    check("nothing in the utility row overlaps", worst_overlap(l) == nil,
+    check("and five satellites ride the orbit at " .. at, #l.sats == 5,
+          tostring(#l.sats))
+    check("nothing in the hand overlaps at " .. at, worst_overlap(l) == nil,
           tostring(worst_overlap(l)))
-    check("and the utility row clears the dial", under_ceiling(l, ROOMY))
+    check("and the hand clears the dial at " .. at,
+          under_ceiling(l, win[2]),
+          "a key drawn into the dial's corner")
     for _, c in ipairs(controls(l)) do
-        check(c.n .. " is on the screen with a full rail",
+        check(c.n .. " is on the screen with a full rack at " .. at,
               c.x - c.r >= 0 and c.x + c.r <= w
                   and c.y - c.r >= 0 and c.y + c.r <= h,
               string.format("%s at %.0f,%.0f r%.0f", c.n, c.x, c.y, c.r))
     end
 
-    -- Spending one must not slide a cell a thumb is already reaching for.
-    local at = {}
-    for _, c in ipairs(l.charge) do at[c.slot] = {c.x, c.y} end
+    -- Spending one must not slide a key a thumb is already reaching for.
+    local at_xy = {}
+    for _, c in ipairs(l.charge) do at_xy[c.slot] = {c.x, c.y} end
     touch.counts = {[0] = 0, [1] = 1, [2] = 2, [3] = 0}
     local fewer = touch.layout(w, h, s)
-    local held = true
+    local held = #fewer.charge == 4
     for _, c in ipairs(fewer.charge) do
-        if c.x ~= at[c.slot][1] or c.y ~= at[c.slot][2] then held = false end
+        if c.x ~= at_xy[c.slot][1] or c.y ~= at_xy[c.slot][2] then
+            held = false
+        end
     end
-    check("and every surviving cell holds its place as the rack empties", held)
-    check("while a spent slot leaves no cell behind", #fewer.charge == 2,
-          tostring(#fewer.charge))
+    check("and every key holds its place as the rack empties at " .. at, held,
+          "a key moved when a neighbor spent out")
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

@@ -142,54 +142,29 @@ check("letting the trigger go leaves the same turn",
           and not has(held, sim.BTN_FIRE))
 touch.release(8)
 
--- --- the gun's multifire gesture -------------------------------------------
+-- --- the gun holds and nothing else -----------------------------------------
 --
--- Multifire stays part of the gun. One deliberate upward pull toggles it while
--- the trigger remains held, and no standalone cell can overlap the gun.
+-- Multifire was an upward pull off this pad, and it is gone: a gesture nobody
+-- finds on a control they are holding down, buying a state the mark already
+-- drew. What has to stay true is that the pull it used to read is now just a
+-- thumb that wandered, so the gun goes on firing through it and lets go when
+-- the finger lifts and not before.
 
-local function tap(x, y)
-    touch.on_touch({touch = {{id = 3, pressed = true,
-                              screen_x = x, screen_y = y}}}, W, H, 1)
-    touch.on_touch({touch = {{id = 3, released = true,
-                              screen_x = x, screen_y = y}}}, W, H, 1)
-end
-
-check("nothing latched before a tap", touch.fired_multi() == false)
-touch.has_fan = true
 L = touch.layout(W, H, 1)
-tap(L.guns.x, L.guns.y)
-check("a gun tap is not a toggle", touch.fired_multi() == false)
-
 touch.on_touch({touch = {{id = 3, pressed = true,
                           screen_x = L.guns.x, screen_y = L.guns.y}}}, W, H, 1)
-touch.on_touch({touch = {{id = 3,
-                          screen_x = L.guns.x + 42,
-                          screen_y = L.guns.y + 8}}}, W, H, 1)
-check("a sideways gun pull is not a toggle", touch.fired_multi() == false)
 touch.on_touch({touch = {{id = 3,
                           screen_x = L.guns.x,
                           screen_y = L.guns.y + 40}}}, W, H, 1)
-check("an upward gun pull toggles once", touch.fired_multi() == true)
-check("the toggle is consumed once", touch.fired_multi() == false)
-check("the gun keeps firing through the gesture",
+check("an upward gun pull is nothing but a held trigger",
       has(touch.bits(0), sim.BTN_FIRE))
 touch.on_touch({touch = {{id = 3,
-                          screen_x = L.guns.x,
-                          screen_y = L.guns.y + 60}}}, W, H, 1)
-check("one gun hold cannot toggle twice", touch.fired_multi() == false)
+                          screen_x = L.guns.x + 42,
+                          screen_y = L.guns.y + 8}}}, W, H, 1)
+check("and so is a sideways one", has(touch.bits(0), sim.BTN_FIRE))
 touch.release(3)
-check("lifting after the gesture releases the gun",
+check("lifting after it releases the gun",
       not has(touch.bits(0), sim.BTN_FIRE))
-
--- Losing the fan disables the gesture without changing the gun.
-touch.has_fan = false
-touch.on_touch({touch = {{id = 3, pressed = true,
-                          screen_x = L.guns.x, screen_y = L.guns.y}}}, W, H, 1)
-touch.on_touch({touch = {{id = 3,
-                          screen_x = L.guns.x,
-                          screen_y = L.guns.y + 50}}}, W, H, 1)
-check("without a fan the upward pull only fires",
-      touch.fired_multi() == false and has(touch.bits(0), sim.BTN_FIRE))
 touch.release_all()
 
 -- A UI press can consume a whole multitouch batch. The arena forwards releases
@@ -391,9 +366,16 @@ do
     touch.release_all()
     touch.used = true
     local fwd = paint()
-    check("forward, the resting mark is two rings and no arrow",
-          fwd.ring == 2 and fwd.seg == 0,
-          fwd.ring .. " rings, " .. fwd.seg .. " segments")
+    -- One ring and a point at its middle, whichever way the engine faces.
+    -- What used to sit inside it was a second ring, or reversed an arrow, and
+    -- both were pictures of a stance: a thing to be learned, on the one
+    -- control whose whole problem was that nobody learned it. The stance is
+    -- the ring's own color now, and the gesture is written under it in words.
+    -- See touch.hint.
+    check("forward, the resting mark is a ring and a point",
+          fwd.ring == 1 and fwd.disc == 1 and fwd.seg == 0,
+          fwd.ring .. " rings, " .. fwd.disc .. " discs, "
+          .. fwd.seg .. " segments")
 
     -- On the resting mark itself, so the thumb and the mark share a corner
     -- and one filter answers for both.
@@ -403,9 +385,16 @@ do
     stick_tap(40.2, HX, HY)
     check("set up reversed for the drawing", touch.reversing() == true)
     local rev = paint()
-    check("reversed, it is one ring and an arrow",
-          rev.ring == 1 and rev.seg == 3,
-          rev.ring .. " rings, " .. rev.seg .. " segments")
+    check("reversed, it is the same ring and point",
+          rev.ring == 1 and rev.disc == 1 and rev.seg == 0,
+          rev.ring .. " rings, " .. rev.disc .. " discs, "
+          .. rev.seg .. " segments")
+    -- What changed instead: the sentence under the rim, which names what the
+    -- next double tap will do rather than the stance you are in. A pilot
+    -- reading it is deciding whether to do it.
+    check("and the hint under it now offers the way back",
+          touch.hint(W, H, 1).text == "TAP ×2 · FORWARD",
+          touch.hint(W, H, 1).text)
 
     -- And while a thumb is on it, the nose spur is drawn beyond the line the
     -- thumb itself makes: one segment forward, four reversed.
