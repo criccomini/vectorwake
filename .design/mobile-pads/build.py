@@ -589,37 +589,15 @@ def cluster_rail(gx, gy):
             f'stroke-dasharray="1 6" stroke-linecap="round"/>')
 
 
-_lbl_n = [0]
-
-
-def key_label(cx, cy, r, word, top=False):
-    """A key's name, etched along its rim the way the stick wears the
-    double tap hint: small mono, letterspaced, in the dim ink that never
-    fights the key's own color. Under a trigger, over a satellite."""
-    _lbl_n[0] += 1
-    lid = f"lbl{_lbl_n[0]}"
-    a0, a1 = (210, 330) if top else (150, 30)
-    x0, y0 = pt(cx, cy, r, a0)
-    x1, y1 = pt(cx, cy, r, a1)
-    sweep = 1 if a1 > a0 else 0
-    return (
-        f'<defs><path id="{lid}" d="M{x0:.1f} {y0:.1f} A{r} {r} 0 0 '
-        f'{sweep} {x1:.1f} {y1:.1f}"/></defs>'
-        f'<text font-family="DejaVu Sans Mono,Noto Sans Mono,monospace" '
-        f'font-size="7.5" letter-spacing=".14em" fill="{a(DIM, .55)}">'
-        f'<textPath href="#{lid}" startOffset="50%" text-anchor="middle">'
-        f'{word}</textPath></text>')
-
-
 def cluster_stick(cx, cy, R, engaged=None, reversed_=False):
-    """A ring with a course needle, and the gesture etched round the foot
-    of the rim where a resting thumb reads it."""
+    """A ring, quiet at rest, with the gesture etched round the foot of
+    the rim where a resting thumb reads it. The course needle exists only
+    while a thumb is down: reversed it swings to the far side of the
+    press, nose held on the fight."""
     col = THRUST if reversed_ else DIM
     live = THRUST if reversed_ else FRIEND
     out = [ring(cx, cy, R, 2, a(col, .55)),
            disc(cx, cy, 2.6, a(col, .6))]
-    # the needle names the course; reversed it swings to the far side of
-    # the thumb, nose held on the fight
     if engaged:
         ex, ey = engaged
         out.append(ring(ex, ey, 16, 1.8, a(live, .9)))
@@ -629,10 +607,6 @@ def cluster_stick(cx, cy, R, engaged=None, reversed_=False):
         nx, ny = cx + dx / m * (R - 8), cy + dy / m * (R - 8)
         out.append(seg(cx, cy, nx, ny, 2.4, a(live, .5), glow=True))
         out.append(disc(nx, ny, 3, a(live, .8)))
-    else:
-        nx, ny = pt(cx, cy, R - 8, 270)
-        out.append(seg(cx, cy, nx, ny, 2.6, a(FRIEND, .8), glow=True))
-        out.append(disc(nx, ny, 3.2, a(FRIEND, .9)))
     # the hint, etched along the outside of the foot arc
     x0, y0 = pt(cx, cy, R + 12, 152)
     x1, y1 = pt(cx, cy, R + 12, 28)
@@ -654,23 +628,19 @@ def controls_cluster(reversed_=False):
     out.append(cluster_key(gx, gy, gr, GUN, "gy",
                            volley(gx, gy + 4, 21, 13, GUN, HOT[GUN]),
                            fan=True))
-    out.append(key_label(gx, gy, gr + 11, "GUNS"))
     # The bomb rides the same orbit as the charges, at their size: one big
     # key for the trigger a thumb lives on, satellites for everything it
     # visits, an even fifty degrees apart. The bomb keeps its ring whole;
-    # only the charges count in segments.
+    # only the charges count in segments. The marks alone name the keys.
     bx, by = pt(gx, gy, 83, 165)
     out.append(cluster_key(bx, by, 22, BOMB, "go",
                            bomb_mark(bx, by, 15, BOMB, HOT[BOMB])))
-    out.append(key_label(bx, by, 33, "BOMB"))
     rx, ry = pt(gx, gy, 83, 215)
     out.append(cluster_key(rx, ry, 22, CHARGE, "gg",
                            repel_glyph(rx, ry, 12), segs=(2, 3)))
-    out.append(key_label(rx, ry, 33, "REPEL"))
     ux, uy = pt(gx, gy, 83, 265)
     out.append(cluster_key(ux, uy, 22, CHARGE, "gg",
                            burst_glyph(ux, uy, 12), segs=(3, 3)))
-    out.append(key_label(ux, uy, 33, "BURST"))
     if reversed_:
         out.append(cluster_stick(96, 300, 54, engaged=(130, 276),
                                  reversed_=True))
