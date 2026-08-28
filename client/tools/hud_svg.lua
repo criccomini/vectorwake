@@ -371,7 +371,6 @@ ui.hud({
     half_w = W / 2, half_h = H / 2,
     banner = banner,
     lag_notice = "",
-    match_url = ending and "https://vectorwake.net/m/42" or nil,
     rtt = 22,
     zone = (landing or scenario == "ending") and "melee" or "duel",
     room = 1,

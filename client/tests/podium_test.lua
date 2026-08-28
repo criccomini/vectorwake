@@ -149,8 +149,6 @@ local function frame(o)
         watchers = o.watchers,
         teams = o.teams or {},
         match = o.match,
-        match_url = o.match_url,
-        keep_pilot = o.keep_pilot,
         side_names = o.side_names,
         sayings = o.sayings, said = o.said,
         feed = o.feed or {},
@@ -442,10 +440,11 @@ if who_t and verb_t then
           string.format("%.1f", verb_t.x - (who_t.x + nw)))
 end
 check("and the room says when the next one starts",
-      said("next match") ~= nil and said("0:23") ~= nil)
--- Once, at the ending's foot. The topbar's own caption stands down for it.
-check("and says it once", counted("next match") == 1,
-      tostring(counted("next match")))
+      said("next match in") ~= nil and said("0:23") ~= nil)
+-- Once, in the band. The ending has no foot of its own to say it a second
+-- time: the clock is one instrument in one place all match and after it.
+check("and says it once", counted("next match in") == 1,
+      tostring(counted("next match in")))
 
 -- Everybody who flew it is on it, whichever side they were on.
 for _, who in ipairs({"you", "Kestrel", "Plinth", "Vesper"}) do
@@ -589,8 +588,7 @@ check("which is the side the line names", said("caisson") ~= nil
 local function block_geometry(width, height)
     frame({match = {playing = false, left = 23,
                     score = {[0] = 11, [1] = 14}},
-           side_names = NAMES, side = 0, w = width, h = height,
-           match_url = "https://vectorwake.net/matches/42"})
+           side_names = NAMES, side = 0, w = width, h = height})
 
     local full = 0
     local covers = false
@@ -648,34 +646,29 @@ end
 block_geometry(710, 378)
 block_geometry(1280, 720)
 
--- A phone held upright hugs the foot of the window with the whole block, so
--- the one key on it lands under a thumb rather than in the middle of a tall
--- screen.
+-- A phone held upright hugs the foot of the window with the whole block: the
+-- roster is dragged with a thumb, and a thumb reaches the bottom of a tall
+-- screen rather than the middle. Measured off the roster's own panel, which
+-- is the last thing in the block with a hit box on it.
 do
-    frame({match = {playing = false, left = 23, artifact = 1,
-                    score = {[0] = 11, [1] = 14}},
-           side_names = NAMES, side = 0, w = 390, h = 844,
-           match_url = "https://vectorwake.net/matches/42"})
-    local key = nil
-    for _, r in ipairs(ui.hits) do
-        if r.action == "share" then key = r end
+    local function panel_bottom(width, height)
+        frame({match = {playing = false, left = 23, artifact = 1,
+                        score = {[0] = 11, [1] = 14}},
+               side_names = NAMES, side = 0, w = width, h = height})
+        for _, r in ipairs(ui.hits) do
+            if r.action == "scores" then return r.y + r.h end
+        end
     end
-    check("an upright phone puts the key near the foot",
-          key ~= nil and key.y + key.h > 844 * 0.8,
-          key and string.format("%.0f of 844", key.y + key.h) or "no key")
 
-    frame({match = {playing = false, left = 23, artifact = 1,
-                    score = {[0] = 11, [1] = 14}},
-           side_names = NAMES, side = 0, w = 1280, h = 720,
-           match_url = "https://vectorwake.net/matches/42"})
-    local wide_key = nil
-    for _, r in ipairs(ui.hits) do
-        if r.action == "share" then wide_key = r end
-    end
+    local tall = panel_bottom(390, 844)
+    check("an upright phone puts the block near the foot",
+          tall ~= nil and tall > 844 * 0.8,
+          tall and string.format("%.0f of 844", tall) or "no panel")
+
+    local wide = panel_bottom(1280, 720)
     check("and a window with room centers the block instead",
-          wide_key ~= nil and wide_key.y + wide_key.h < 720 * 0.8,
-          wide_key and string.format("%.0f of 720", wide_key.y + wide_key.h)
-              or "no key")
+          wide ~= nil and wide < 720 * 0.8,
+          wide and string.format("%.0f of 720", wide) or "no panel")
 end
 
 -- --- drawn zoomed ----------------------------------------------------------
@@ -699,15 +692,18 @@ end
 check("and the score figures wear the zoom", zoomed ~= nil)
 check("as does the pitch a dragging finger is measured by",
       ui.row_pitch() > 18 * 1.4, tostring(ui.row_pitch()))
--- Two things stand outside the zoom at Chris's request: the countdown at the
--- foot and the bar between the score figures both keep the interface's own
--- size, so the readings stay readings while the block around them grows.
+-- The countdown does not, because it is not part of the block: it is the
+-- band's, drawn at the band's own height at the top of the window, and the
+-- zoom belongs to the drawing under it. The bar between the score figures is
+-- inside the block and stands outside the zoom at Chris's request, so the
+-- reading stays a reading while the block around it grows.
 local clock = nil
 for i = 1, state.n do
     local t = state.text[i]
-    if t.s == "0:23" and math.abs(t.px - 21) < 0.01 then clock = t end
+    if t.s == "0:23" and math.abs(t.px - 26) < 0.01 then clock = t end
 end
-check("while the countdown keeps its size", clock ~= nil)
+check("while the countdown keeps the band's size", clock ~= nil,
+      table.concat(words(), " | "))
 local bar = nil
 for _, r in ipairs(rects) do
     if math.abs(r.h - 26) < 0.01 then bar = r end
@@ -726,61 +722,101 @@ frame({match = {playing = true, left = 96, score = {[0] = 4, [1] = 7}},
 check("and play puts the pitch back", ui.row_pitch() == 18,
       tostring(ui.row_pitch()))
 
--- --- the foot --------------------------------------------------------------
+-- --- the clock is the band's, and the ending has no foot ------------------
 --
--- The countdown as a reading rather than a draining bar, and one key beside
--- it: the bar was a second clock next to the first, and a key the width of
--- the measure was a banner. A guest keeps the key that claims their pilot,
--- which is the moment they are most likely to want it.
+-- The block had a foot: a countdown at the bottom of it with two keys beside
+-- it, INVITE FRIEND and the one that claimed a guest's call sign. The keys
+-- were asks made of somebody reading how they did, and the menu and the
+-- friends page are where both of those live now. The countdown went up into
+-- the band, which is where a player has been reading the clock for the whole
+-- three minutes before the whistle.
+--
+-- So this measures the clock against the band's own line rather than against
+-- the block, and pins that the block starts under it rather than through it.
 
 ui.hits = {}
 frame({match = {playing = false, left = 23, artifact = 1,
                 score = {[0] = 11, [1] = 14}},
-       side_names = NAMES, side = 0,
-       match_url = "https://vectorwake.net/matches/42", keep_pilot = true})
-check("a filed match offers the invite", said("invite friend") ~= nil
-      and ui.link_dom ~= nil
-      and string.find(ui.link_dom, "vwshare:https://vectorwake.net/matches/42",
-                      1, true))
-local actions = {}
-for _, hit in ipairs(ui.hits) do actions[hit.action] = true end
--- And offers nothing beside it. Watching the film was a second key of equal
--- weight on the one screen with a countdown running, which made the ending a
--- choice between leaving and staying rather than a result.
-check("and no film beside it", said("watch replay") == nil
-      and actions.open_replay == nil)
-check("an unclaimed winner can keep their pilot", said("keep you") ~= nil
-      and actions.keep_pilot == true)
+       side_names = NAMES, side = 0, w = 1280, h = 800})
 
-do
-    local keys = {}
-    for _, r in ipairs(ui.hits) do
-        if r.action == "share" or r.action == "keep_pilot" then
-            keys[#keys + 1] = r
-        end
-    end
-    table.sort(keys, function(a, b) return a.x < b.x end)
-    check("the keys share one row at the foot", #keys == 2
-          and math.abs(keys[1].y - keys[2].y) < 0.01,
-          tostring(#keys))
-    -- Sized to their own words rather than to the measure. The old key ran
-    -- the width of the page, which is a banner rather than a control.
+-- Where the band draws: a key tall, PAD down from the top of the window, and
+-- the numerals centered in that box. Written out rather than read off ui, so
+-- a band that quietly moved fails here instead of agreeing with itself.
+local BAND_TOP, BAND_H = 14, 26
+local clock_t, cap_t = nil, nil
+for i = 1, state.n do
+    local t = state.text[i]
+    if t.s == "0:23" then clock_t = t end
+    if string.lower(t.s) == "next match in" then cap_t = t end
+end
+check("the band carries the countdown", clock_t ~= nil and cap_t ~= nil,
+      table.concat(words(), " | "))
+if clock_t and cap_t then
+    -- `state` holds y up from the bottom, which is what the gui draws in.
+    local clock_y = 800 - clock_t.y
+    local cap_y = 800 - cap_t.y
+    check("in the middle of the band's own line",
+          math.abs(clock_y - (BAND_TOP + BAND_H / 2)) < 0.01,
+          string.format("%.1f", clock_y))
+    check("centered on the window like the match clock before it",
+          math.abs(clock_t.x - 1280 / 2) < 0.01 and clock_t.pivot == "center",
+          string.format("%.1f %s", clock_t.x, tostring(clock_t.pivot)))
+    check("with the word it is counting to under it",
+          cap_y > BAND_TOP + BAND_H, string.format("%.1f", cap_y))
+    -- At full strength, not at the wash the ending lays over everything
+    -- behind its block. The countdown is part of what the ending is saying,
+    -- and drawn through that wash it was the faintest thing on a screen where
+    -- it is the only number still moving. `dim` is set on a run only when the
+    -- frame was drawing at less than full.
+    check("and read rather than washed",
+          clock_t.dim == nil and cap_t.dim == nil,
+          string.format("%s %s", tostring(clock_t.dim), tostring(cap_t.dim)))
+
+    -- And the block clears both. It is centered in what the band leaves
+    -- rather than in the window, so the two never share a line.
     local panel = nil
     for _, r in ipairs(ui.hits) do
         if r.action == "scores" then panel = r end
     end
-    check("and each is a key rather than a banner",
-          #keys == 2 and panel ~= nil and keys[1].w < panel.w / 2
-          and keys[2].w < panel.w / 2,
-          #keys == 2 and panel
-              and string.format("%.0f and %.0f of %.0f", keys[1].w, keys[2].w,
-                                panel.w) or "missing")
+    check("and the block starts under the band, not through it",
+          panel ~= nil and panel.y > cap_y, panel
+              and string.format("%.1f under %.1f", panel.y, cap_y) or "none")
 end
+
+-- One clock. The foot's was a second copy at a size of its own, and two
+-- readings of the same number is what this arrangement exists to be rid of.
+local clocks = 0
+for i = 1, state.n do
+    if state.text[i].s == "0:23" then clocks = clocks + 1 end
+end
+check("and draws it once", clocks == 1, tostring(clocks))
+
+local actions = {}
+for _, hit in ipairs(ui.hits) do actions[hit.action] = true end
+check("the ending offers no invite", said("invite friend") == nil
+      and said("link copied") == nil and actions.share == nil)
+check("nor a key that claims a pilot", said("keep you") == nil
+      and actions.keep_pilot == nil)
+-- Watching the film was a second key of equal weight on the one screen with a
+-- countdown running, which made the ending a choice between leaving and
+-- staying rather than a result.
+check("nor the film", said("watch replay") == nil
+      and actions.open_replay == nil)
+-- No anchor either. The browser lays a real one over anything that shares,
+-- and a rectangle left published where a foot used to be is a link somewhere
+-- on the ending that answers a press.
+check("and lays down no share anchor", ui.link_dom == nil,
+      tostring(ui.link_dom))
+-- Nor is the band itself a control while the ending is up. It opens the board
+-- mid-match, and the board is already up and covering the window here, so the
+-- box would be a strip across the top that toggles a panel nobody sees change.
+check("and the band takes no press behind the board",
+      actions.details == nil)
 
 -- Nothing on the ending sends a phrase. Six chips at the foot of the card
 -- were the widest thing on it, and they are going to be a key: this pins that
--- the ending stopped drawing them, and there is nothing else on it to press
--- but the two keys above.
+-- the ending stopped drawing them. What the block itself takes a press for is
+-- the board's own rows and the heads over its columns, and nothing else.
 ui.hits = {}
 frame({match = {playing = false, left = 23, artifact = 1,
                 score = {[0] = 11, [1] = 14}},
@@ -865,9 +901,8 @@ frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1]
 check("the menu covers it", said("takes it") == nil,
       tostring(said("takes it")))
 -- The clock survives, because it is the topbar's and a player reading a menu
--- still wants to know how long they have. And it takes back the caption the
--- card was carrying, since with the card gone nothing else says what the
--- number is counting down to.
+-- still wants to know how long they have. It is the same clock in the same
+-- place with the card up or down, which is the whole reason it lives there.
 check("but the clock does not", said("0:23") ~= nil)
 check("and the topbar says what it is counting to",
       said("next match in") ~= nil)

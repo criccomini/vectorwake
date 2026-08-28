@@ -3097,11 +3097,16 @@ One layout at every window size. The measure and the type change, and an
 upright phone hugs the foot of the window with the whole block so the key
 lands under a thumb; nothing else about the arrangement moves. INVITE FRIEND
 is the act the share key performed, named for what a player wants out of it
-and sized like a key rather than a banner.
+and sized like a key rather than a banner
+([decision 94](#94-the-ending-has-no-foot-and-the-clock-never-moves) takes
+that key off the foot, along with the one a guest was offered beside it, and
+then takes the foot itself).
 
 Gone with the page: the six phrase chips, the countdown's drain bar, and the
 two-column roster. The band stands down while the ending is up, because the
-head carries the score and the foot carries the clock.
+head carries the score and the foot carries the clock
+([decision 94](#94-the-ending-has-no-foot-and-the-clock-never-moves) puts the
+band back and gives it the countdown, the foot having gone).
 
 **Why:** the page had grown into a second scoreboard. It carried a title, a
 score bar, both rosters, six chips, a countdown with a bar beside it and a key
@@ -4538,3 +4543,96 @@ cells behind them are.
 
 **Reconsider if:** a mode arrives that wants a fixed point to call, and the
 thing to call turns out to belong in the sky rather than on the map.
+
+## 94. The ending has no foot, and the clock never moves
+
+**Status:** accepted, amending
+[decision 67](#67-the-scoreboard-is-a-band-you-press) and
+[decision 68](#68-the-match-ending-is-the-board)
+
+**Decision:** what the whistle puts up is a line naming the side that took the
+match, the bar under it, the roster, and the zone's own sections where it has
+them. Nothing below that. The foot decision 68 gave the block is gone, and so
+is everything that used to stand in it.
+
+The countdown moved into the band, which is where the clock has been for the
+three minutes before the whistle. Between matches the band gives up its two
+sides, because the block a few lines under it names both of them inside a bar
+with their points on the ends, and keeps the numerals with NEXT MATCH IN under
+them. It stops taking a press there too: the box opens the board, and the board
+is already on screen covering the window. So the band is back through the
+ending, against decision 68, and what it carries is the one reading the ending
+does not already make.
+
+It reads at full strength while it does. The ending washes the whole window
+and draws its block over the top, and the countdown belongs to what is being
+said rather than to what is behind it: at a third of an alpha the one number on
+screen that was still moving was the faintest thing on it.
+
+The two keys that shared the foot with the countdown are gone rather than
+moved. INVITE FRIEND handed the match's own page on the site to whatever the
+device shares with; the key beside it offered a guest their call sign to keep.
+With them go the address the arena built for the filed match, the question of
+whether this pilot is a guest with something to lose, the tray-and-arrow share
+mark, the breath the invite key drew on the clock, and the press that opened
+the password ask. What the block takes a press for now is the board's own rows
+and the heads over its columns.
+
+The block is centered in what the band leaves rather than in the window, and
+never starts above it. An upright phone still hugs the foot of the screen with
+the whole block, for the roster rather than for a key: a list is dragged with a
+thumb and a thumb reaches the bottom of a tall screen.
+
+**Why:** asked for, in two goes, and both asks are a line long, so what follows
+is the file's reading rather than the request's.
+
+The keys first. Somebody reading the ending is answering one question, which is
+how they did, and each key put a different question in front of it. The invite
+wanted them to go and fetch a person. The claim key wanted a password. Both
+were asked at the one moment in a room when nobody is flying and everybody is
+reading the same panel, which is what made that moment look like the place to
+ask, and it is also why they were the loudest thing on a screen whose job is to
+report a result. The invite had already been quieted once for exactly that,
+dropped from PLAY NOW's full wash to a breath under it, which is the shape of a
+control in the wrong place rather than at the wrong volume.
+
+Neither ask goes away with the keys. The menu draws the guest band, which is
+where an account is claimed, and the friends page pins the invite at the foot
+of a page somebody opened on purpose. What both have that the ending does not
+is a reader who is not being counted down.
+
+Then the clock, which is the part that decided the shape. A foot holding one
+reading is a row of chrome under a list, and the reading it held was already
+drawn somewhere else half a second earlier: the band counts the match down in
+the top row and the whistle moved that same number sixty points down the
+screen into different type. Reading the ending meant finding the clock again.
+Putting it back in the band costs the ending its foot and buys an instrument
+that does not move: three minutes of match clock and then the wait for the next
+one, same pixels, same size, whether the board is up, a menu is over it, or a
+fight is on.
+
+Decision 68 stood the band down for the ending on the grounds that the head
+carried the score and the foot carried the clock. Half of that still holds and
+is why the band drops its sides here. The other half was the foot, and once the
+foot has nothing but the clock in it, the argument runs the other way.
+
+**Cost:** the invite loses its audience. Eight people looking at one panel with
+fifteen seconds on the clock is as close as this client gets to a room paying
+attention at once, and the friends page is opened by one person who was already
+thinking about it. If the game turns out to need word of mouth from inside
+itself more than the ending needs to be quiet, this is what it cost.
+
+The clock also leaves the block it belongs to. On a 1280 by 800 window the
+countdown sits at 27 points down and the line naming the winner at 260, so
+there are two hundred points of nothing between the number and the result it
+is counting away from, and they can read as two panels rather than one. That
+is the price of an instrument that does not move, and what it buys back is
+that a player never has to look for the clock: the alternative is a number in
+the top row for three minutes and somewhere else for fifteen seconds.
+
+**Reconsider if:** guests are found to be losing pilots they would have kept,
+which is the menu's band failing to say so rather than something the ending has
+to say for it. Or if the invite is ever worth closing the loop on, per
+[decision 78](#78-the-friends-page-is-who-is-on-and-one-way-to-reach-who-is-not),
+at which point the question is where a link that knows who sent it belongs, and
+the answer may not be the ending either.
