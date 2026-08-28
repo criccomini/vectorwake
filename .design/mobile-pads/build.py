@@ -579,13 +579,36 @@ def cluster_key(cx, cy, r, col, grad, mark, segs=None, fan=None):
     return "".join(out)
 
 
-def cluster_rail():
-    """The faint thread the hand hangs on, so five round things read as one
-    instrument rather than a scatter."""
-    p = ("M676,392 C660,330 682,282 720,256 C752,234 800,228 836,244")
-    return (f'<path d="{p}" fill="none" stroke="{a(DIM, .3)}" '
-            f'stroke-width="1.2" stroke-dasharray="1 6" '
-            f'stroke-linecap="round"/>')
+def cluster_rail(gx, gy):
+    """The faint thread the hand hangs on: the satellites all sit one
+    orbit out from the gun, so the thread is that orbit drawn dashed."""
+    x0, y0 = pt(gx, gy, 83, 152)
+    x1, y1 = pt(gx, gy, 83, 274)
+    return (f'<path d="M{x0:.1f} {y0:.1f} A83 83 0 0 1 {x1:.1f} {y1:.1f}" '
+            f'fill="none" stroke="{a(DIM, .3)}" stroke-width="1.2" '
+            f'stroke-dasharray="1 6" stroke-linecap="round"/>')
+
+
+_lbl_n = [0]
+
+
+def key_label(cx, cy, r, word, top=False):
+    """A key's name, etched along its rim the way the stick wears the
+    double tap hint: small mono, letterspaced, in the dim ink that never
+    fights the key's own color. Under a trigger, over a satellite."""
+    _lbl_n[0] += 1
+    lid = f"lbl{_lbl_n[0]}"
+    a0, a1 = (210, 330) if top else (150, 30)
+    x0, y0 = pt(cx, cy, r, a0)
+    x1, y1 = pt(cx, cy, r, a1)
+    sweep = 1 if a1 > a0 else 0
+    return (
+        f'<defs><path id="{lid}" d="M{x0:.1f} {y0:.1f} A{r} {r} 0 0 '
+        f'{sweep} {x1:.1f} {y1:.1f}"/></defs>'
+        f'<text font-family="DejaVu Sans Mono,Noto Sans Mono,monospace" '
+        f'font-size="7.5" letter-spacing=".14em" fill="{a(DIM, .55)}">'
+        f'<textPath href="#{lid}" startOffset="50%" text-anchor="middle">'
+        f'{word}</textPath></text>')
 
 
 def cluster_stick(cx, cy, R, engaged=None, reversed_=False):
@@ -626,18 +649,25 @@ def cluster_stick(cx, cy, R, engaged=None, reversed_=False):
 
 
 def controls_cluster(reversed_=False):
-    out = [cluster_rail()]
     gx, gy, gr = 772, 314, 42
+    out = [cluster_rail(gx, gy)]
     out.append(cluster_key(gx, gy, gr, GUN, "gy",
                            volley(gx, gy + 4, 21, 13, GUN, HOT[GUN]),
                            fan=True))
-    bx, by, br = 674, 338, 42
+    out.append(key_label(gx, gy, gr + 11, "GUNS"))
+    # The bomb rides the same orbit as the charges, at their size: one big
+    # key for the trigger a thumb lives on, satellites for everything it
+    # visits. It keeps its ring whole; only the charges count in segments.
+    bx, by, br = 692, 336, 22
     out.append(cluster_key(bx, by, br, BOMB, "go",
-                           bomb_mark(bx, by, 26, BOMB, HOT[BOMB])))
-    out.append(cluster_key(700, 256, 22, CHARGE, "gg",
-                           repel_glyph(700, 256, 12), segs=(2, 3)))
-    out.append(cluster_key(756, 230, 22, CHARGE, "gg",
-                           burst_glyph(756, 230, 12), segs=(3, 3)))
+                           bomb_mark(bx, by, 15, BOMB, HOT[BOMB])))
+    out.append(key_label(bx, by, br + 8, "BOMB", top=True))
+    out.append(cluster_key(706, 262, 22, CHARGE, "gg",
+                           repel_glyph(706, 262, 12), segs=(2, 3)))
+    out.append(key_label(706, 262, 30, "REPEL", top=True))
+    out.append(cluster_key(760, 232, 22, CHARGE, "gg",
+                           burst_glyph(760, 232, 12), segs=(3, 3)))
+    out.append(key_label(760, 232, 30, "BURST", top=True))
     if reversed_:
         out.append(cluster_stick(96, 300, 54, engaged=(130, 276),
                                  reversed_=True))

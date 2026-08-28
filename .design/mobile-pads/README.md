@@ -13,12 +13,13 @@ reversed stance:
 - **A · Instrument** the pads become cockpit gauges: arc rims, radial
   glow, the volley at full size, a rim tab for the fan, hexagonal charge
   cells, and a rose for the stick with a tappable stance tab at its foot
-- **B · Cluster** the corner becomes one hand of round keys on a thumb
-  arc, the two triggers the same size, a charge key bounded by nothing
-  but its own count ring, multifire as a separated segment in the gun's
-  rim with the volley drawing the same state, the reverse gesture etched
-  around the stick; a states board spells out multifire on beside
-  declined and a charge key at three, two and one in hand
+- **B · Cluster** one big key for the gun and an orbit of satellites at
+  charge size for bomb, repel and burst, each wearing its name etched
+  along its rim; a charge key bounded by nothing but its own count ring,
+  multifire as a separated segment in the gun's rim with the volley
+  drawing the same state, the reverse gesture etched around the stick; a
+  states board spells out multifire on beside declined and a charge key
+  at three, two and one in hand
 - **C · Glass** no chrome at all: the controls are the glowing marks
   themselves, the volley is the multifire state, the stick a faint
   reticle with a ghost hint that fades once learned
