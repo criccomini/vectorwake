@@ -147,6 +147,13 @@ M.room_ask = nil
 -- lands here. Owned by this module the way `rooms_open` is: the arena flips
 -- it on a press and everything that leaves the landing clears it.
 M.land_open = nil
+-- Which of the landing's controls the pointer is resting on: the action its
+-- box publishes, and the value that box carries so one row of an open list is
+-- told from the next. Set by the arena through the same `M.pick` a press goes
+-- through, so a row lights instead of the stop behind it and a pointer over
+-- an open list's ground lights nothing at all. Nil while the drawer is up or
+-- a thumb is driving, since neither has a pointer to rest.
+M.land_hot, M.land_hot_value = nil, nil
 
 -- --- primitives ------------------------------------------------------------
 
@@ -4570,9 +4577,21 @@ end
 -- an answer with no room left is cut at the cell's edge: a long call sign
 -- walking into the next cell is worse than a call sign that says it is longer
 -- than the cell.
-local function land_stop(x, y, w, h, label, value, action, lit, stacked)
-    key_box(x, y, w, h, pal.a(pal.BTN_BG, 0.6),
-            lit and pal.a(pal.FRIEND, 0.8) or pal.a(pal.RADAR_TILE, 0.75))
+--
+-- `raw` says the answer is quoted rather than said: a call sign, a game's
+-- name and a build's name all stand in the case they were given, where the
+-- HUD would otherwise shout them. Sitting out is the one answer that is the
+-- interface's own word and takes the interface's own case. See `txt`.
+local function land_stop(x, y, w, h, label, value, action, lit, stacked, raw)
+    -- Where a press would land, at the weight every row of the menu is lit
+    -- at. Under the outline rather than over it: the edge is the brighter
+    -- half of the same signal, and a wash laid over it would mute it.
+    local hot = M.land_hot == action
+    rect(x, y, w, h, pal.a(pal.BTN_BG, 0.6))
+    if hot then rect(x, y, w, h, pal.a(pal.FRIEND, LIT.CURSOR)) end
+    key_box(x, y, w, h, nil,
+            (lit or hot) and pal.a(pal.FRIEND, 0.8)
+                or pal.a(pal.RADAR_TILE, 0.75))
     local pad = 12 * F.scale
     local cx = x + w - pad - 3 * F.scale
     local px = (M.compact and 11 or 12) * F.scale
@@ -4586,13 +4605,14 @@ local function land_stop(x, y, w, h, label, value, action, lit, stacked)
         land_caret(cx, y + h * 0.33, pal.a(pal.INK, 0.75))
         local kept = F.clip_r
         F.clip_r = x + w - pad
-        txt(value or "", x + pad, y + h * 0.68, px, pal.a(pal.INK, 0.95))
+        txt(value or "", x + pad, y + h * 0.68, px, pal.a(pal.INK, 0.95),
+            nil, nil, raw)
         F.clip_r = kept
     else
         lbl(label, x + pad, y + h / 2)
         land_caret(cx, y + h / 2, pal.a(pal.INK, 0.75))
         txt(value or "", cx - 11 * F.scale, y + h / 2, px,
-            pal.a(pal.INK, 0.95), "right")
+            pal.a(pal.INK, 0.95), "right", nil, raw)
     end
     hit(x, y, w, h, action)
 end
@@ -4620,9 +4640,8 @@ local function land_list(kx, kw, bottom, list, drh)
             hrule(kx + pad, y + 4.5 * F.scale, kw - 2 * pad, 0.6)
             y = y + 9 * F.scale
         else
-            local hov = not r.dim and M.hover_x and M.hover_y
-                and M.hover_x >= kx and M.hover_x <= kx + kw
-                and M.hover_y >= y and M.hover_y <= y + drh
+            local hov = not r.dim and M.land_hot == r.action
+                and M.land_hot_value == r.value
             if hov then
                 rect(kx, y, kw, drh, pal.a(pal.FRIEND, 0.18))
             elseif r.here then
@@ -4631,7 +4650,7 @@ local function land_list(kx, kw, bottom, list, drh)
             local col = r.dim and pal.a(pal.DIM, 0.8)
                 or (r.here and pal.a(pal.FRIEND, 0.95))
                 or pal.a(pal.INK, hov and 1 or 0.8)
-            txt(r.label, kx + pad, y + drh / 2, dpx, col)
+            txt(r.label, kx + pad, y + drh / 2, dpx, col, nil, nil, r.raw)
             if r.note then
                 txt(r.note, kx + kw - pad, y + drh / 2,
                     dpx - 2 * F.scale, pal.a(pal.DIM, 0.9), "right")
@@ -4672,8 +4691,19 @@ local function landing(land)
     -- has stopped working. `F.now` is zero under the test harness, which is
     -- what keeps the layout tests still.
     local breath = 0.5 + 0.5 * math.sin(F.now * 2.6)
-    key_box(g.kx, g.ky, g.kw, g.kh, pal.a(pal.FRIEND, 0.06 + 0.12 * breath),
-            pal.a(pal.FRIEND, 0.62 + 0.38 * breath))
+    -- Under a pointer the breath stops at the top of its own swell, which is
+    -- the rule the menu's rows follow: the one thing moving on the screen
+    -- should never be the thing you are already on. Standing still says
+    -- little by itself, this being the one control out here that is lit to
+    -- begin with, so the cursor's own field goes over that ground as well.
+    local key_hot = M.land_hot == "play_now"
+    local swell = key_hot and 1 or breath
+    rect(g.kx, g.ky, g.kw, g.kh, pal.a(pal.FRIEND, 0.06 + 0.12 * swell))
+    if key_hot then
+        rect(g.kx, g.ky, g.kw, g.kh, pal.a(pal.FRIEND, LIT.CURSOR))
+    end
+    key_box(g.kx, g.ky, g.kw, g.kh, nil,
+            pal.a(pal.FRIEND, 0.62 + 0.38 * swell))
     txt("PLAY NOW", g.kx + g.kw / 2, g.ky + g.kh / 2, g.kpx,
         pal.a(pal.INK, 1), "center")
     hit(g.kx, g.ky, g.kw, g.kh, "play_now")
@@ -4690,9 +4720,12 @@ local function landing(land)
         if open == "zone" and land.zones then
             list, from = {}, zone_box
             for _, z in ipairs(land.zones) do
+                -- Every game is named rather than described, so every row
+                -- here is quoted.
                 list[#list + 1] = {label = z.label, value = z.zone,
                                    action = "land_pick_zone", here = z.here,
-                                   dim = not z.live, note = z.format}
+                                   dim = not z.live, note = z.format,
+                                   raw = true}
             end
         elseif open == "ship" and land.ships then
             list, from = {}, ship_box
@@ -4701,7 +4734,8 @@ local function landing(land)
                 -- builds by a rule: it is a different kind of thing to be.
                 if s.value == "spectate" then list[#list + 1] = {rule = true} end
                 list[#list + 1] = {label = s.label, value = s.value,
-                                   action = "land_pick_ship", here = s.here}
+                                   action = "land_pick_ship", here = s.here,
+                                   raw = s.value ~= "spectate"}
             end
         else
             open = nil
@@ -4731,14 +4765,17 @@ local function landing(land)
         -- stop at all, the three of them standing side by side.
         if g.rail or (open ~= "zone" and open ~= "ship") then
             land_stop(acct_box.x, acct_box.y, acct_box.w, acct_box.h,
-                      "account", land.name, "land_account", false, g.rail)
+                      "account", land.name, "land_account", false, g.rail,
+                      true)
         end
         if g.rail or open ~= "ship" then
             land_stop(zone_box.x, zone_box.y, zone_box.w, zone_box.h,
-                      "zone", land.zone, "land_zone", open == "zone", g.rail)
+                      "zone", land.zone, "land_zone", open == "zone", g.rail,
+                      true)
         end
         land_stop(ship_box.x, ship_box.y, ship_box.w, ship_box.h,
-                  "ship", land.ship, "land_ship", open == "ship", g.rail)
+                  "ship", land.ship, "land_ship", open == "ship", g.rail,
+                  not land.watching)
         -- The list itself, its rows published above the stops (`pri` 1) and
         -- a screen-wide backdrop behind everything (`pri` -1), so a press
         -- outside it puts it away instead of pulling a trigger.

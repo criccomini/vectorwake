@@ -700,6 +700,31 @@ local function hover_menu(x, y, vh)
     return hovering(nil, nil)
 end
 
+-- The same pass again, for the landing. Out there the stops, the key and an
+-- open list are the menu: they are everything a first visit presses, and they
+-- were the only controls on the client that a pointer could not light.
+--
+-- Everything `hover_menu` above says holds here: `ui.pick` for the one copy of
+-- the rule, so a row of an open list beats the stop behind it and the backdrop
+-- that swallows a press outside the list lights nothing; every frame rather
+-- than on the mouse event, since the zone list is refilled off the directory
+-- for as long as it is open; and the answer is whether the pointer arrived
+-- somewhere, so the caller can make the noise a key makes.
+local LAND_HOT = {
+    play_now = true, land_account = true, land_zone = true, land_ship = true,
+    land_pick_zone = true, land_pick_ship = true,
+}
+local function land_hover(x, y, vh)
+    local act, val = nil, nil
+    if x and not menu.open and not touch.used then
+        local r = ui.pick(x, vh - y, false)
+        if r and LAND_HOT[r.action] then act, val = r.action, r.value end
+    end
+    if act == ui.land_hot and val == ui.land_hot_value then return false end
+    ui.land_hot, ui.land_hot_value = act, val
+    return act ~= nil
+end
+
 -- The terrain and the starfield never move, so they are built once per map
 -- rather than per frame. Rebuilding them was the single most expensive thing
 -- the old renderer did, and it did it sixty times a second.
@@ -1596,6 +1621,12 @@ function update(self, dt)
         ui.hover_x = self.cursor_x
         ui.hover_y = (self.vh or 0) - self.cursor_y
     end
+    -- And the same question of the front end's own boxes, which are not the
+    -- corner's and not the menu's: the landing is the one screen with things
+    -- to press on it while the drawer is shut.
+    if land_hover(self.cursor_x, self.cursor_y, self.vh or 0) then
+        sfx.ui("ui_move")
+    end
 
     tapped = {}
     lifted = {}
@@ -2126,8 +2157,12 @@ function update(self, dt)
                                      here = zr.zone == at}
             end
             land = {name = menu.name, zone = directory.label_of(at),
-                    ship = menu.landing_ship(), zones = zones,
-                    ships = menu.landing_ships()}
+                    ship = menu.landing_ship(),
+                    -- Sitting out is the only answer the ship stop holds
+                    -- that is the interface's own word rather than a name,
+                    -- and a name is quoted rather than set. See `land_stop`.
+                    watching = menu.spectating(),
+                    zones = zones, ships = menu.landing_ships()}
         end
         ui.hud({
             me = hud_me,

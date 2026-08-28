@@ -45,9 +45,9 @@ layer.frame = function(self, x, y, w, h)
     self.n = self.n + 1
     boxes[#boxes + 1] = {x = x, y = y, w = w, h = h}
 end
-layer.rect = function(self, x, y, w, h)
+layer.rect = function(self, x, y, w, h, col)
     self.n = self.n + 1
-    rects[#rects + 1] = {x = x, y = y, w = w, h = h}
+    rects[#rects + 1] = {x = x, y = y, w = w, h = h, col = col}
 end
 
 -- Eight seats, four a side, which is what a melee room holds. Seat 0 is the
@@ -93,6 +93,7 @@ package.loaded["arena.world"] = {
 }
 
 local ui = require("arena.ui")
+local pal = require("arena.palette")
 local state = package.loaded["arena.state"]
 
 -- --- the harness -----------------------------------------------------------
@@ -104,7 +105,7 @@ local H
 -- What the arena hands the landing's stops: the pilot, the games with their
 -- one-line formats, and the builds with sitting out as the last row.
 local LAND = {
-    name = "Vesper 412",
+    name = "deSoto 412",
     zone = "Team Battle",
     ship = "Gunner",
     zones = {
@@ -131,6 +132,9 @@ local function frame(w, h, o)
     ui.details = o.details or false
     -- Which stop's list is down, the way the arena leaves it between frames.
     ui.land_open = o.land_open or nil
+    -- And what the pointer is resting on, which the arena publishes from the
+    -- same pick a press goes through. See `land_hover` in arena.script.
+    ui.land_hot, ui.land_hot_value = o.hot, o.hot_value
     ui.begin(layer, w, h, o.density or 1, false, 0)
     ui.hud({
         me = 0,
@@ -322,11 +326,21 @@ for _, s in ipairs(SHAPES) do
                                 name.y - name.px / 2, h))
         end
     end
-    -- The stops say their answers, in the case the HUD sets everything.
-    check(shape .. " says who you are", word("VESPER 412") ~= nil)
-    check(shape .. " says where you are going",
-          word("TEAM BATTLE") ~= nil)
-    check(shape .. " says what you arrive as", word("GUNNER") ~= nil)
+    -- The stops say their answers, and every one of them is a name: a call
+    -- sign, a game's, a build's. The HUD shouts, because an instrument read
+    -- out of the corner of an eye is labeled in capitals, and a name is not a
+    -- label. DRiFT is not DRIFT and deSoto is neither DESOTO nor DeSoto, so
+    -- these three are quoted rather than set. See `txt`.
+    check(shape .. " says who you are", word("deSoto 412") ~= nil,
+          "no call sign as written")
+    check(shape .. " does not shout a call sign", word("DESOTO 412") == nil)
+    check(shape .. " says where you are going", word("Team Battle") ~= nil,
+          "no game name as written")
+    check(shape .. " does not shout a game's name",
+          word("TEAM BATTLE") == nil)
+    check(shape .. " says what you arrive as", word("Gunner") ~= nil,
+          "no build name as written")
+    check(shape .. " does not shout a build's name", word("GUNNER") == nil)
 end
 
 -- --- the rest of the HUD is the rest of the screen --------------------------
@@ -406,7 +420,9 @@ do
     end
     check("the zone list offers the other game", pick ~= nil,
           "no row for the second zone")
-    check("and says its name", word("DUEL") ~= nil)
+    check("and says its name", word("Duel") ~= nil)
+    -- The format is the interface describing the game rather than naming it,
+    -- so it is set the way the rest of the HUD is set.
     check("and its format beside it", word("1V1") ~= nil)
     if pick then
         check("a press on the row is the pick",
@@ -424,7 +440,9 @@ do
     end
 
     frame(1440, 810, {land_open = "ship"})
-    check("the ship list is the builds by name", word("BOMBER") ~= nil)
+    check("the ship list is the builds by name", word("Bomber") ~= nil)
+    -- Sitting out is the one row that is not a name: it is a thing to be,
+    -- said in the interface's own voice, so it wears the interface's case.
     check("with sitting out as an answer", word("SPECTATE") ~= nil)
     local spec
     for _, r in ipairs(ui.hits) do
@@ -437,6 +455,79 @@ do
     -- hangar's business.
     check("and no hull is named in it",
           word("APEX") == nil and word("WEDGE") == nil)
+
+    -- The stop follows its list: a pilot who is sitting out reads SPECTATE
+    -- rather than a lowercase word left over from the row it came off.
+    frame(1440, 810, {land = {name = LAND.name, zone = LAND.zone,
+                              ship = "spectate", watching = true,
+                              zones = LAND.zones, ships = LAND.ships}})
+    check("the ship stop says sitting out in the interface's own case",
+          word("SPECTATE") ~= nil and word("spectate") == nil)
+end
+
+-- --- the pointer lights what it is resting on -------------------------------
+--
+-- Out here the stops and the key are the menu: they are everything a first
+-- visit presses, and they sat dark under a pointer while every row behind the
+-- drawer lit up. What lights is the same field at the same weight, from the
+-- action the arena publishes off `ui.pick`.
+do
+    -- Every rect of this color laid over the box, which is what a lit field
+    -- is: the ground goes down first and the wash over it.
+    local function lit(b, col)
+        if not b then return false end
+        for _, r in ipairs(rects) do
+            -- Alpha included: the cursor and the row you are already in are
+            -- the same cyan at two weights, and telling them apart is half of
+            -- what these checks are for.
+            local same = r.col and math.abs(r.col[1] - col[1]) < 0.01
+                and math.abs(r.col[2] - col[2]) < 0.01
+                and math.abs(r.col[3] - col[3]) < 0.01
+                and math.abs(r.col[4] - col[4]) < 0.005
+            -- Rects are filed in the layer's space, which counts up from the
+            -- bottom; hit boxes count down from the top.
+            if same and math.abs(r.x - b.x) < 1
+               and math.abs((H - r.y - r.h) - b.y) < 1
+               and math.abs(r.w - b.w) < 1 and math.abs(r.h - b.h) < 1 then
+                return true
+            end
+        end
+        return false
+    end
+    local CURSOR = pal.a(pal.FRIEND, ui.LIT.CURSOR)
+
+    frame(1440, 810)
+    check("nothing is lit with the pointer off the stops",
+          not lit(box("land_zone"), CURSOR)
+          and not lit(box("land_account"), CURSOR))
+
+    frame(1440, 810, {hot = "land_zone"})
+    check("the stop under the pointer wears the menu's own field",
+          lit(box("land_zone"), CURSOR))
+    check("and its neighbors do not",
+          not lit(box("land_account"), CURSOR)
+          and not lit(box("land_ship"), CURSOR))
+
+    -- The key is lit already and breathing on its own clock, so holding it
+    -- still says nothing on its own: it wears the cursor's field over that
+    -- ground, which is what says "a press lands here" everywhere else.
+    frame(1440, 810, {hot = "play_now"})
+    check("the key stands still and lit under the pointer",
+          lit(box("play_now"), CURSOR))
+
+    -- A row of an open list, told from its neighbors by the value its box
+    -- carries: two rows publish the same action and only one of them is under
+    -- the pointer.
+    frame(1440, 810, {land_open = "zone", hot = "land_pick_zone",
+                      hot_value = "duel"})
+    local rows = {}
+    for _, r in ipairs(ui.hits) do
+        if r.action == "land_pick_zone" then rows[r.value] = r end
+    end
+    check("a row of an open list lights under the pointer",
+          lit(rows.duel, CURSOR), "the second game did not light")
+    check("and the row above it does not",
+          not lit(rows.melee, CURSOR))
 end
 
 -- --- and a rail's list opens from its own cell ------------------------------
