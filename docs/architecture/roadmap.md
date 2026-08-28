@@ -152,8 +152,9 @@ Steam release through `extension-steam`, with Steam identity feeding the account
 system. A touch control prototype that decides whether mobile is a playing
 client or a spectating one. The meta-layer built for accounts and ratings, per
 [decision 30](decisions.md#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list)
-and [design/accounts.md](../design/accounts.md), with friends and parties
-deferred until somebody wants them.
+and [design/accounts.md](../design/accounts.md), with parties deferred until
+somebody wants them. Friends was built here and then removed, per
+[decision 95](decisions.md#95-friends-are-gone).
 
 Ratings become visible here, computed from the event log M4 has been filling and
 anchored by bot personalities calibrated in offline tournaments, per

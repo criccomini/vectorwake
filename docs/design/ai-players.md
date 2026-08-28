@@ -459,8 +459,8 @@ parameters is cheap, debuggable, tunable by a designer, and good enough to be
 fun. Imitation learning from recorded human play is an interesting later
 experiment and a bad way to start.
 
-No bots that pretend to be human. No chat, social messages, fake typing, friend
-requests, or unlabeled entries in the player list.
+No bots that pretend to be human. No chat, social messages, fake typing,
+social requests, or unlabeled entries in the player list.
 
 ## Open questions
 

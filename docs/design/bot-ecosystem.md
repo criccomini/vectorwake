@@ -100,8 +100,8 @@ quietly become stronger because its replicas earned more purchases.
 
 ## Social boundary
 
-House bots do not chat, send social messages, make or accept friend requests,
-or imitate typing. They never claim a human history or excuse. Their bot label
+House bots do not chat, send social messages, answer a social request, or
+imitate typing. They never claim a human history or excuse. Their bot label
 is visible anywhere their name appears.
 
 The boundary is deliberate. Personality is expressed by decisions on the

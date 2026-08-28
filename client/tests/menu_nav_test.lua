@@ -32,39 +32,9 @@ local account = {
     claimed = true, base = "https://meta",
     refuse = nil, password = nil, logged = nil, renamed = 0,
     profiles = {},
-    -- The friends page's lists and the one call the menu makes to fill them.
-    -- Empty is a pilot with nobody yet, which is what most of this file is
-    -- testing around.
-    friends = {}, asked = {},
-    have_friends = true,
-    asked_friends = 0,
-    friended = nil, ignored = nil,
-    friend_note = "", friend_bad = false,
-    found = {}, found_for = "", asked_for = nil,
 }
-function account.refresh_friends()
-    account.asked_friends = account.asked_friends + 1
-end
 function account.refresh_career()
     account.asked_career = (account.asked_career or 0) + 1
-end
-function account.friend(who, add)
-    account.friended = {who = who, add = add}
-end
-function account.ignore(who, on)
-    account.ignored = {who = who, on = on}
-end
-function account.find_pilots(prefix)
-    -- What the real one does with anything under two characters: nothing, and
-    -- it forgets whatever was there. Above that it asks and leaves the names
-    -- in hand alone until a reply lands, which is the state this page has to
-    -- draw correctly.
-    if #prefix < 2 then
-        account.asked_for = ""
-        account.found, account.found_for = {}, prefix
-        return
-    end
-    account.asked_for = prefix
 end
 function account.online()
     return account.base ~= ""
@@ -112,9 +82,6 @@ package.loaded["arena.directory"] = {
              count = "0 playing", players = 0, bots = 51, live = true}},
     note = "", tick = function() end, aim = function() end,
     pilot_name = "",
-    -- Where an instance answers, by its id. The friends page turns a friend's
-    -- whereabouts into a press with it.
-    instances = {},
     -- What a game is called, by its key, looked up in the games list the way
     -- the real one does: the label is the catalog's and the key is the wire's,
     -- and a stub that handed the key back would let a page ship the word
@@ -126,10 +93,6 @@ package.loaded["arena.directory"] = {
         return zone
     end,
 }
-do
-    local dir = package.loaded["arena.directory"]
-    dir.at_instance = function(id) return dir.instances[id] end
-end
 package.loaded["arena.sfx"] = {ui = function() end, master_gain = function() end,
                                music_gain = function() end}
 _G.sys = {get_config_string = function(_, d) return d end,
@@ -170,8 +133,8 @@ local settings_at = top_index("settings")
 local pilot_at = top_index("pilot")
 local tabs = {}
 for _, r in ipairs(menu.view().rail) do tabs[#tabs + 1] = r.label end
-check("the tab row is play, ship, friends, pilot, settings",
-      table.concat(tabs, "/") == "play/ship/friends/pilot/settings",
+check("the tab row is play, ship, pilot, settings",
+      table.concat(tabs, "/") == "play/ship/pilot/settings",
       table.concat(tabs, "/"))
 check("the rail carries the destinations", ship_at and settings_at and pilot_at,
       "ship " .. tostring(ship_at) .. ", settings " .. tostring(settings_at)
@@ -443,8 +406,8 @@ menu.click_rail(ship_at)
 check("the lit stop shuts the menu",
       not menu.open, table.concat(menu.stack, "/"))
 
--- In a match the tab row is a shorter row: play, friends and settings, which
--- is everything a pilot can act on from a cockpit. The hangar is not on it,
+-- In a match the tab row is a shorter row: play and settings, which is
+-- everything a pilot can act on from a cockpit. The hangar is not on it,
 -- because a hull is locked for the match and a three minute match is short
 -- enough that browsing one costs a real fraction of it.
 --
@@ -458,9 +421,9 @@ menu.stack = {"root"}
 menu.sel = {}
 local in_match = {}
 for _, r in ipairs(menu.view().rail) do in_match[#in_match + 1] = r.label end
-check("a match carries three tabs",
-      #in_match == 3 and in_match[1] == "play"
-      and in_match[2] == "friends" and in_match[3] == "settings",
+check("a match carries two tabs",
+      #in_match == 2 and in_match[1] == "play"
+      and in_match[2] == "settings",
       table.concat(in_match, "/"))
 
 local match_leave = top_index("leave")
@@ -495,7 +458,7 @@ menu.sel = {}
 local between = {}
 for _, r in ipairs(menu.view().rail) do between[#between + 1] = r.label end
 check("the intermission opens the hangar",
-      #between == 4 and between[2] == "ship", table.concat(between, "/"))
+      #between == 3 and between[2] == "ship", table.concat(between, "/"))
 
 menu.click_rail(top_index("ship"))
 check("and it can be walked into", menu.stack[2] == "hangar",
@@ -506,7 +469,7 @@ check("the whistle puts a pilot back on the row",
       #menu.stack == 1, table.concat(menu.stack, "/"))
 local playing = {}
 for _, r in ipairs(menu.view().rail) do playing[#playing + 1] = r.label end
-check("and takes the hangar off it", #playing == 3,
+check("and takes the hangar off it", #playing == 2,
       table.concat(playing, "/"))
 net.match = nil
 
@@ -857,11 +820,8 @@ menu.zone = "chaos"
 menu.ask = nil
 menu.show("play")
 local zones = menu.view()
--- The games and nothing else. This page carried a community section and a
--- friends section beside them once; friends is a tab of its own now, because
--- who is on is a question asked from wherever you are standing rather than
--- one you go to the games page to ask, and the community section left the
--- game with the rest of it. See docs/design/friends.md.
+-- The games and nothing else. This page carried a community section beside
+-- them once, and it left the game with the rest of it.
 local heads = {}
 for _, r in ipairs(zones.rows) do
     if r.sect then heads[#heads + 1] = r.sect end
@@ -1630,8 +1590,7 @@ do
     menu.open = true
     menu.home = true
     local strays = {}
-    for _, page in ipairs({"play", "hangar", "friends", "settings",
-                           "pilot"}) do
+    for _, page in ipairs({"play", "hangar", "settings", "pilot"}) do
         menu.stack = {"root", page}
         local view = menu.view()
         for _, r in ipairs(view.rows or {}) do
@@ -1671,423 +1630,6 @@ do
               tostring(js))
     end
     _G.html5 = nil
-end
-
--- --- friends -----------------------------------------------------------------
---
--- Two sections from one reply, a field to type a call sign into, and the four
--- things a row can carry: accept, ignore, join, unfriend. Accept and ignore
--- are keys on the row that is asking; a friend's row carries none, and the
--- card a press of it raises is built from the same `acts` list, so a d-pad
--- and a pointer are offered the same answers. See decision 78.
-
-do
-    -- Saved and put back, so this block leaves the menu where it found
-    -- it. Named apart from the three at the top of the file, which do the
-    -- same job for a different block.
-    local kept_home, kept_stack, kept_sel = menu.home, menu.stack, menu.sel
-    local dir = package.loaded["arena.directory"]
-    account.friends = {
-        {account = 11, name = "Rill 121", zone = "melee", instance = "abc"},
-        {account = 12, name = "Sable 4", zone = "", instance = ""},
-    }
-    account.asked = {{account = 13, name = "Kestrel 9", ago = 7200}}
-    account.have_friends = true
-    dir.instances = {abc = {zone = "melee", address = "ws://a", wt = ""}}
-    -- The games list, since a friend's row and the card it raises both name
-    -- their game the way this list names it. Put back at the end of the block.
-    local kept_rows = dir.rows
-    dir.rows = {{zone = "melee", name = "Team Battle", detail = "four a side",
-                 count = "0 playing", players = 0, bots = 8, live = true}}
-
-    menu.home = true
-    menu.stack = {"root", "friends"}
-    menu.sel = {}
-    local v = menu.view()
-    local said = {}
-    for _, r in ipairs(v.rows) do
-        said[#said + 1] = r.label .. "/" .. tostring(r.detail)
-            .. "/" .. tostring(r.sect)
-    end
-    -- Two sections and nothing else. The room roster, the adds nobody had
-    -- answered and the ledger of everybody who ever added you were three
-    -- more, and the page they made was five headings deep before it said
-    -- who was on. See decision 78.
-    check("the page is the inbox and the friends", #v.rows == 3,
-          table.concat(said, " "))
-    -- The page it draws is its own, not the list renderer's: an add field
-    -- over sections whose rows carry their own grammar.
-    check("and it is drawn as a page rather than a list", v.social == true,
-          tostring(v.social))
-    for _, gone in ipairs({"sent", "in this game",
-                           "everybody who added you"}) do
-        local found = false
-        for _, r in ipairs(v.rows) do
-            if r.sect == gone then found = true end
-        end
-        check("no section headed " .. gone, not found,
-              table.concat(said, " "))
-    end
-
-    -- Whoever is waiting on an answer is first, because it is the only
-    -- section asking anything of you. It is headed for what arrived rather
-    -- than for what it wants from you.
-    check("the inbox opens the page",
-          v.rows[1].sect == "received"
-          and v.rows[1].label == "Kestrel 9"
-          and v.rows[1].detail == "added you 2h ago",
-          said[1])
-    check("and it says how many, without a sentence explaining itself",
-          v.rows[1].sect_note == "1" and v.rows[1].sect_line == nil,
-          tostring(v.rows[1].sect_note) .. "/"
-          .. tostring(v.rows[1].sect_line))
-    check("with accept and ignore on it",
-          v.rows[1].acts[1].act == "do_befriend"
-          and v.rows[1].acts[2].act == "do_ignore",
-          tostring(v.rows[1].acts[1].label))
-
-    -- A friend in a game carries the game's name as the games list spells
-    -- it, rather than the key the wire carries it under: a pilot chose Team
-    -- Battle off a list and never saw the word melee.
-    check("a friend in a game says which one, as the list names it",
-          v.rows[2].label == "Rill 121"
-          and v.rows[2].detail == "Team Battle"
-          and v.rows[2].sect == "friends", said[2])
-    check("and the head carries no count", v.rows[2].sect_note == nil,
-          tostring(v.rows[2].sect_note))
-    -- One head per run. The list renderer draws a head wherever it finds a
-    -- `sect` and dedupes nothing, so a section label on every row is that
-    -- label over every row.
-    check("and the head belongs to the row that opens the run",
-          v.rows[3].sect == nil, said[3])
-    -- Nothing beside a friend who is off. The hollow dot says it, and a word
-    -- saying it again is the page repeating itself.
-    check("and one who is not on says nothing", v.rows[3].detail == "",
-          said[3])
-    -- The acts are what the card offers. No key is drawn on these rows.
-    check("a friend can be joined and unfriended, in that order",
-          v.rows[2].acts[1].act == "do_join_friend"
-          and v.rows[2].acts[2].label == "unfriend",
-          tostring(v.rows[2].acts[2] and v.rows[2].acts[2].label))
-    check("and one who is not on has only the one answer",
-          #v.rows[3].acts == 1 and v.rows[3].acts[1].label == "unfriend",
-          tostring(#v.rows[3].acts))
-
-    -- And the card that says there is nobody stays down while there is
-    -- somebody: a page saying two things at once has one of them wrong.
-    check("with no card saying the page is empty", v.empty == nil,
-          tostring(v.empty and v.empty.head))
-
-    -- --- the buttons
-    --
-    -- A pointer presses one directly. `which` is its place in that row's own
-    -- list, so the drawing and the press agree by construction.
-    account.friended, account.ignored = nil, nil
-    menu.click_friend(1, 1)
-    check("accepting is an add", account.friended ~= nil
-          and account.friended.who == 13 and account.friended.add == true,
-          tostring(account.friended and account.friended.who))
-    menu.click_friend(1, 2)
-    check("and ignoring is its own call", account.ignored ~= nil
-          and account.ignored.who == 13 and account.ignored.on == true,
-          tostring(account.ignored and account.ignored.who))
-    account.friended = nil
-    menu.click_friend(3, 1)
-    check("unfriending takes both directions", account.friended ~= nil
-          and account.friended.who == 12 and account.friended.add == false,
-          tostring(account.friended and account.friended.who))
-    check("and a row that is not there answers nothing",
-          select(2, menu.click_friend(9, 1)) == false,
-          tostring(select(2, menu.click_friend(9, 1))))
-
-    -- --- five inputs get the same list as a card
-    menu.sel.friends = 2
-    menu.ask = nil
-    menu.step({go = true})
-    check("a friend asks rather than acting", menu.ask ~= nil,
-          tostring(menu.ask))
-    check("and offers the game they are in first, by its name",
-          menu.ask.keys[1].label == "join Team Battle"
-          and menu.ask.keys[1].act == "do_join_friend",
-          menu.ask.keys[1] and menu.ask.keys[1].label or "no key")
-    check("with the answer that changes nothing under the cursor",
-          menu.ask.sel == #menu.ask.keys
-          and menu.ask.keys[menu.ask.sel].act == nil,
-          "on " .. tostring(menu.ask.sel))
-    -- Joining is the arena's half: this file names the pilot and stops.
-    local joined = menu.click_answer(1)
-    check("joining names the pilot and leaves the socket to the arena",
-          joined == "join_friend" and menu.pending == 11,
-          tostring(joined) .. "/" .. tostring(menu.pending))
-
-    -- The inbox card carries both answers, in the order the buttons are in.
-    menu.sel.friends = 1
-    menu.step({go = true})
-    check("the inbox card offers accept then ignore",
-          menu.ask.keys[1].act == "do_befriend"
-          and menu.ask.keys[2].act == "do_ignore",
-          tostring(menu.ask.keys[1].label))
-
-    -- A friend the directory is no longer listing reads as on and is not
-    -- joinable, which is the honest answer for an arena that has just gone.
-    dir.instances = {}
-    menu.ask = nil
-    menu.sel.friends = 2
-    menu.step({go = true})
-    check("an unlisted instance is on but not joinable",
-          menu.ask ~= nil and menu.ask.keys[1].act == "do_unfriend",
-          menu.ask and menu.ask.keys[1].label or "no card")
-    menu.ask = nil
-
-    -- --- the add field
-    --
-    -- The one way onto this page that does not start with the two of you
-    -- being in the same room. It needs the call sign whole: nothing is
-    -- offered and nothing is searched.
-    menu.add_name, menu.add_on = "", false
-    check("typing lights the field",
-          menu.type_add("H") and menu.add_name == "H" and menu.add_on == true,
-          menu.add_name)
-    menu.type_add("a")
-    check("and backspace takes it back",
-          menu.rub_add() and menu.add_name == "H", menu.add_name)
-    check("and the mark on its end empties it",
-          select(2, menu.wipe_add()) == true and menu.add_name == "",
-          menu.add_name)
-
-    account.friended = nil
-    menu.add_name, menu.add_on = "Halcyon 1", true
-    menu.send_add()
-    check("sending it names the pilot rather than numbering them",
-          account.friended ~= nil and account.friended.who == "Halcyon 1"
-          and account.friended.add == true,
-          tostring(account.friended and account.friended.who))
-    check("and the field empties on the way out", menu.add_name == ""
-          and menu.add_on == false, menu.add_name)
-
-    -- Answered here, because the meta-layer would have to be told the call
-    -- sign to say it back and nothing needs to go out to know this.
-    -- --- and what the box turns up as you type
-    --
-    -- A call sign is a word and three digits and it has to be exact, which is
-    -- a small task nobody should have to be careful about. So the meta-layer
-    -- answers a prefix and the names land under the box.
-    account.found, account.found_for = {}, ""
-    menu.add_name, menu.add_on = "", false
-    menu.type_add("H")
-    check("one letter asks for nothing",
-          account.asked_for == nil or account.asked_for == "",
-          tostring(account.asked_for))
-    menu.type_add("a")
-    check("and two asks", account.asked_for == "Ha", tostring(account.asked_for))
-    account.found_for = "Ha"
-    account.found = {{account = 31, name = "Halcyon 1"},
-                     {account = 32, name = "Halcyon 12"}}
-    check("the page draws what came back",
-          #menu.view().add.found == 2, tostring(#menu.view().add.found))
-    -- Only while the answer is about what is in the box. A reply to an older
-    -- prefix is a list of the wrong names sitting under the right ones.
-    menu.type_add("l")
-    check("and drops it the moment the box says something else",
-          #menu.view().add.found == 0, tostring(#menu.view().add.found))
-
-    -- Pressed, it adds that pilot by number rather than by the letters in the
-    -- box: two call signs can open the same way and only one was pressed.
-    account.found_for = menu.add_name
-    account.found = {{account = 31, name = "Halcyon 1"},
-                     {account = 32, name = "Halcyon 12"}}
-    account.friended = nil
-    menu.click_found(2)
-    check("pressing a name adds that pilot by number",
-          account.friended ~= nil and account.friended.who == 32
-          and account.friended.add == true,
-          tostring(account.friended and account.friended.who))
-    check("and the box empties behind it",
-          menu.add_name == "" and #account.found == 0,
-          menu.add_name .. "/" .. tostring(#account.found))
-
-    account.friended = nil
-    menu.name = "Quarrel 214"
-    menu.add_name, menu.add_on = "quarrel 214", true
-    menu.send_add()
-    check("your own call sign is answered without asking anybody",
-          account.friended == nil and account.friend_note == "that is you."
-          and account.friend_bad == true,
-          tostring(account.friend_note))
-    account.friend_note, account.friend_bad = "", false
-
-    -- Enter sends the field rather than pressing the row the cursor is on,
-    -- while the field is the thing taking type.
-    account.friended = nil
-    menu.add_name, menu.add_on = "Ozone 42", true
-    menu.step({go = true})
-    check("enter sends what is in the field",
-          account.friended ~= nil and account.friended.who == "Ozone 42",
-          tostring(account.friended and account.friended.who))
-
-    -- --- and the arrows reach it
-    --
-    -- The field is a stop above the first row. Before this the only way into
-    -- it was to start typing, which is a control you have to already know is
-    -- there: nothing on the page said so and no arrow went anywhere near it.
-    account.found, account.found_for = {}, ""
-    menu.add_name, menu.add_on, menu.found_sel = "", false, nil
-    menu.head_sel = nil
-    menu.stack = {"root"}
-    menu.sel = {root = top_index("friends")}
-    -- An arrow off the rail is a step in a direction, so it lands at the end
-    -- of the list it came in at rather than in the box over it. Down opened
-    -- the box, which meant pressing up on `friends` -- reaching for the last
-    -- name on the page -- landed in the add field at the top of it instead.
-    menu.step({down = true})
-    check("down off the tabs opens friends at the top of the list",
-          menu.at() == "friends" and menu.add_on == false
-          and menu.sel.friends == 1,
-          menu.at() .. "/" .. tostring(menu.add_on) .. "/"
-          .. tostring(menu.sel.friends))
-    menu.stack = {"root"}
-    menu.sel = {root = top_index("friends")}
-    menu.add_on = false
-    -- The last row a cursor may stand on, which is the last one carrying an
-    -- act: the readouts under it are not stops anywhere in this menu.
-    local last_name = nil
-    for i, r in ipairs(menu.view().rows) do
-        if r.pick then last_name = i end
-    end
-    menu.step({up = true})
-    check("and up off them opens it on the last name instead",
-          menu.at() == "friends" and menu.add_on == false
-          and last_name ~= nil and last_name > 1
-          and menu.sel.friends == last_name,
-          tostring(menu.sel.friends) .. " of " .. tostring(last_name)
-          .. "/" .. tostring(menu.add_on))
-    menu.sel.friends = 1
-    menu.step({up = true})
-    check("up off the first row comes to the field", menu.add_on == true,
-          tostring(menu.add_on))
-    menu.step({down = true})
-    check("and down again goes back to the list",
-          menu.at() == "friends" and menu.add_on == false,
-          tostring(menu.add_on))
-    menu.sel.friends = 1
-    menu.step({up = true})
-    menu.step({up = true})
-    check("and up out of the field goes onto the head",
-          menu.at() == "friends" and menu.add_on == false
-          and menu.view().head_sel == "pilot",
-          menu.at() .. "/" .. tostring(menu.view().head_sel))
-    -- And back down into it, because the box is what is drawn under that
-    -- line on this page.
-    menu.step({down = true})
-    check("down off the head lands in the field again",
-          menu.head_sel == nil and menu.add_on == true,
-          tostring(menu.head_sel) .. "/" .. tostring(menu.add_on))
-    menu.add_on = false
-    menu.head_sel = nil
-
-    -- With names under the box the arrows walk those first. The list is drawn
-    -- over the sections, so a cursor stepping straight past it into the rows
-    -- underneath would be a cursor nobody can see.
-    menu.stack = {"root", "friends"}
-    menu.sel = {friends = 1}
-    menu.add_name, menu.add_on, menu.found_sel = "Ha", true, nil
-    account.found_for = "Ha"
-    account.found = {{account = 31, name = "Halcyon 1"},
-                     {account = 32, name = "Halcyon 12"}}
-    menu.step({down = true})
-    check("down out of the field walks what it turned up",
-          menu.found_sel == 1 and menu.add_on == true,
-          tostring(menu.found_sel))
-    menu.step({down = true})
-    check("and the next name after that", menu.found_sel == 2,
-          tostring(menu.found_sel))
-    check("and the page says which one is lit",
-          menu.view().add.sel == 2, tostring(menu.view().add.sel))
-    -- Enter on a name is a press on that name, not on the letters that found
-    -- it: two call signs can open the same way.
-    account.friended = nil
-    menu.step({go = true})
-    check("enter on one adds that pilot by number",
-          account.friended ~= nil and account.friended.who == 32
-          and menu.found_sel == nil,
-          tostring(account.friended and account.friended.who))
-
-    menu.add_name, menu.add_on, menu.found_sel = "Ha", true, 1
-    account.found_for = "Ha"
-    account.found = {{account = 31, name = "Halcyon 1"}}
-    menu.step({down = true})
-    check("and down off the last name goes on to the page",
-          menu.add_on == false and menu.found_sel == nil,
-          tostring(menu.add_on) .. "/" .. tostring(menu.found_sel))
-    account.found, account.found_for = {}, ""
-    menu.add_name, menu.add_on = "", false
-
-    -- The page a new player sees is the one that most needs this: nobody on
-    -- it, nothing to walk, and a field that is the only thing there. The page
-    -- gives up on the arrows when it has no rows, and under that the box was
-    -- reachable on every friends page except that one.
-    do
-        local kept = {account.friends, account.asked}
-        account.friends, account.asked = {}, {}
-        menu.stack = {"root", "friends"}
-        menu.sel = {}
-        menu.add_name, menu.add_on, menu.found_sel = "", false, nil
-        check("an empty friends page lists nobody", #menu.view().rows == 0,
-              tostring(#menu.view().rows))
-        menu.step({up = true})
-        check("and the arrows still reach its field",
-              menu.at() == "friends" and menu.add_on == true,
-              menu.at() .. "/" .. tostring(menu.add_on))
-        menu.step({down = true})
-        check("and stay in it, since there is nothing below to go to",
-              menu.add_on == true, tostring(menu.add_on))
-        menu.step({up = true})
-        check("and up out of it still goes onto the head",
-              menu.at() == "friends" and menu.add_on == false
-              and menu.view().head_sel == "pilot",
-              menu.at() .. "/" .. tostring(menu.view().head_sel))
-        menu.head_sel = nil
-        account.friends, account.asked = kept[1], kept[2]
-    end
-
-    -- And the field is the page's, not the rail's preview of it. A letter
-    -- typed at the top of the menu would land in a box nobody can see.
-    menu.stack = {"root"}
-    menu.sel = {root = top_index("play")}
-    check("nothing types into a page you are only looking at",
-          menu.type_add("x") == false, menu.add_name)
-
-    -- Nor into a shut menu. The model keeps its stack when the panel comes
-    -- down, and in a match the shut menu parks where friends is the first
-    -- tab, so the letters a pilot's hands make in a fight, P and M and H
-    -- driving the HUD among them, were landing in the invisible box and
-    -- surfacing as a garbage call sign the next time the menu opened.
-    menu.stack = {"root", "friends"}
-    menu.open = false
-    menu.add_name = ""
-    check("nothing types into a shut menu",
-          menu.type_add("p") == false and menu.add_name == "",
-          menu.add_name)
-    check("and nothing rubs one",
-          menu.rub_add() == false)
-    menu.open = true
-
-    -- The games page asks for this too, because the row on it counts friends
-    -- in a game and a count that only arrives once you have opened the page it
-    -- is advertising cannot be the reason you open it.
-    account.asked_friends = 0
-    menu.stack = {"root"}
-    menu.sel = {root = 1}
-    menu.show("play")
-    menu.tick(0.1)
-    check("the games page asks who is on", account.asked_friends > 0,
-          tostring(account.asked_friends))
-
-    account.friends, account.asked, account.here = {}, {}, {}
-    account.waiting, account.everybody = {}, {}
-    menu.add_name, menu.add_on = "", false
-    dir.rows = kept_rows
-    menu.home, menu.stack, menu.sel = kept_home, kept_stack, kept_sel
 end
 
 -- --- the hangar: thirty points, spent -----------------------------------------
@@ -2849,20 +2391,14 @@ end
 -- arrows, and the way back was a key nobody had a reason to press. The stage
 -- previews the page from the tab above it either way, so the same words are
 -- on screen; what changes is whether the press moves anything.
---
--- The friends page is the exception the rule has to carry: with nobody on it
--- the whole page is the box you type a call sign into, which is exactly the
--- page a new player opens.
 
 do
     menu.home = true
     menu.stack = {"root"}
     menu.sel = {}
     menu.corner_sel = nil
-    menu.add_on = false
 
     local kept_rows = account.rows
-    local kept_here, kept_friends = account.here, account.friends
 
     -- The games, with the directory still on its way. It used to be the
     -- upgrades tab that could stand empty; the shelf is the ship page now and
@@ -2899,21 +2435,7 @@ do
     check("once the list is there the same press goes in",
           menu.at() == "play", table.concat(menu.stack, "/"))
 
-    -- Friends with nobody on it is still somewhere to be.
-    menu.stack = {"root"}
-    menu.sel = {}
-    account.here, account.friends = {}, {}
-    local fr_at = top_index("friends")
-    menu.sel.root = fr_at
-    menu.step({down = true})
-    check("an empty friends page opens, because the field is the page",
-          menu.at() == "friends", table.concat(menu.stack, "/"))
-    check("with the cursor in the box", menu.add_on == true,
-          tostring(menu.add_on))
-
-    menu.add_on = false
     account.rows = kept_rows
-    account.here, account.friends = kept_here, kept_friends
     menu.stack = {"root"}
     menu.sel = {}
 end
@@ -2949,7 +2471,7 @@ do
         return menu.view().closable == true
     end)())
 
-    -- The tab set follows the cockpit, not the zone. Five stops with no hull
+    -- The tab set follows the cockpit, not the zone. Four stops with no hull
     -- at home; the short row only once you are flying one.
     local function labels()
         local out = {}
@@ -2960,7 +2482,7 @@ do
     menu.home, menu.scenery, menu.watching = true, true, false
     menu.open, menu.stack, menu.sel = true, {"root"}, {}
     check("the stands carry the whole row",
-          labels() == "play ship friends pilot settings",
+          labels() == "play ship pilot settings",
           labels())
 
     -- The short row keeps the games, because that is where the way out of the
@@ -2968,7 +2490,7 @@ do
     -- locked for the match.
     menu.home, menu.watching = false, false
     check("a pilot in a hull gets the short one",
-          labels() == "play friends settings", labels())
+          labels() == "play settings", labels())
 
     -- A pilot the room benched is in the stands too: same empty cockpit, same
     -- time to read, so the same stops. What they keep that the landing does
@@ -2978,7 +2500,7 @@ do
     -- The two share the fourth slot, so `leave` arrives where `pilot` went.
     menu.home, menu.watching = false, true
     check("a benched pilot gets the whole row back",
-          labels() == "play ship friends leave settings",
+          labels() == "play ship leave settings",
           labels())
 
     -- And the thing all three rows agree on: settings closes every one of
@@ -3005,17 +2527,16 @@ end
 
 -- --- the guest banner arms only when there is something to lose ----------
 do
-    local kept = {claimed = account.claimed, friends = account.friends,
+    local kept = {claimed = account.claimed, career = account.career,
                   home = menu.home, stack = menu.stack, sel = menu.sel}
     menu.open, menu.home = true, true
     menu.stack, menu.sel = {"root"}, {}
     account.claimed = false
-    account.friends = {}
     account.career = nil
     check("a fresh guest gets no banner and no dot",
           menu.view().banner ~= true and menu.view().guest_dot ~= true)
-    account.friends = {{name = "Sable"}}
-    check("a friend made arms the banner",
+    account.career = {games = 1, kills = 0, deaths = 1}
+    check("a rated game flown arms the banner",
           menu.view().banner == true and menu.view().guest_dot == true)
     menu.stack = {"root", "pilot"}
     check("but not over the page it points at",
@@ -3029,7 +2550,7 @@ do
     account.claimed = true
     check("signing up takes it down",
           menu.view().banner ~= true and menu.view().guest_dot ~= true)
-    account.claimed, account.friends = kept.claimed, kept.friends
+    account.claimed, account.career = kept.claimed, kept.career
     menu.home, menu.stack, menu.sel = kept.home, kept.stack, kept.sel
 end
 
@@ -3040,11 +2561,11 @@ end
 -- none for the whole of the session the game was flown in. So the panel asks
 -- again while the answer is still nothing, and stops the moment it is not.
 do
-    local kept = {claimed = account.claimed, friends = account.friends,
+    local kept = {claimed = account.claimed,
                   career = account.career, asked = account.asked_career,
                   stack = menu.stack, sel = menu.sel}
     menu.open, menu.stack, menu.sel = true, {"root"}, {}
-    account.claimed, account.friends, account.career = false, {}, nil
+    account.claimed, account.career = false, nil
     account.asked_career = 0
     menu.tick(20)
     check("a guest with nothing recorded re-asks for their career",
@@ -3059,7 +2580,7 @@ do
     menu.tick(20)
     check("a signed-in pilot is never asked on this timer",
           account.asked_career == 0, tostring(account.asked_career))
-    account.claimed, account.friends = kept.claimed, kept.friends
+    account.claimed = kept.claimed
     account.career, account.asked_career = kept.career, kept.asked
     menu.stack, menu.sel = kept.stack, kept.sel
 end

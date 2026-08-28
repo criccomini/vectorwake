@@ -122,14 +122,14 @@ end
 
 -- Where an instance answers, by its id.
 --
--- The meta-layer knows a friend is in instance `abc`; this list is the only
--- thing that knows where `abc` is. Rebuilt with the rows rather than searched
--- on demand, because the friends page asks once a frame while it is open and
--- the games list changes every few seconds at most.
+-- A deep link names a room by zone, instance and number, and this list is the
+-- only thing that knows where that instance is. Rebuilt with the rows rather
+-- than searched on demand, because the games list changes every few seconds
+-- at most and a link is followed once.
 --
--- An instance the directory is no longer listing is simply absent, and a
--- friend in one reads as on but not joinable, which is the honest answer for
--- an arena that has just gone. See docs/design/friends.md.
+-- An instance the directory is no longer listing is simply absent, and the
+-- route stays pending: the frame loop tries it again on every list, so a link
+-- followed while an arena is registering lands as soon as it appears.
 M.instances = {}
 
 local function index_instances(zones)
@@ -146,8 +146,6 @@ local function index_instances(zones)
     return out
 end
 
--- The row a press on a friend would join: their instance, resolved. Nil when
--- the directory is not listing it.
 function M.at_instance(id)
     return type(id) == "string" and M.instances[id] or nil
 end

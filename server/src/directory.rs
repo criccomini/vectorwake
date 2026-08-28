@@ -136,10 +136,9 @@ pub struct BrowseZone {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct BrowseInstance {
-    /// Which instance this is. Published so a client holding a friend's
-    /// whereabouts can turn it into an address: the meta-layer knows an
-    /// account is in instance `abc`, and this list is the only thing that
-    /// knows where `abc` answers. See docs/design/friends.md.
+    /// Which instance this is, so a client can name the process a join should
+    /// land on rather than taking whichever one the zone's row happens to
+    /// resolve to next.
     ///
     /// Not a secret and not the address: an id names a process, and knowing
     /// one buys nothing the games list does not already hand out.

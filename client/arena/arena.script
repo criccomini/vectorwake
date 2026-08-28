@@ -672,11 +672,6 @@ end
 local function hover_menu(x, y, vh)
     menu.pilot_hot = false
     menu.carousel_hot = nil
-    menu.add_hot = false
-    menu.found_hot = nil
-    menu.friend_hot = nil
-    menu.friend_hot_act = nil
-    menu.invite_hot = false
     menu.row_hot = nil
     menu.row_hot_act = nil
     -- Nothing outside the menu lights under a pointer any more. The phrase
@@ -694,16 +689,7 @@ local function hover_menu(x, y, vh)
         local r = ui.pick(x, vh - y, false)
         if r then
             menu.pilot_hot = r.action == "pilot_page"
-            menu.add_hot = r.action == "add_go"
-            -- The invite key lights like any other, and does its work
-            -- through the anchor the browser lays over it rather than
-            -- through a press this file would hear.
-            menu.invite_hot = r.action == "invite"
-            if r.action == "found" then menu.found_hot = r.value end
             if r.action == "carousel" then menu.carousel_hot = r.value end
-            if r.action == "friend_act" then
-                menu.friend_hot, menu.friend_hot_act = r.value, r.level
-            end
             if r.action == "row_act" then
                 menu.row_hot, menu.row_hot_act = r.value, r.level
             end
@@ -713,8 +699,7 @@ local function hover_menu(x, y, vh)
             -- name and everything past the circles.
             return hovering(
                 ((r.action == "stage" or r.action == "kit_at"
-                  or r.action == "read_row" or r.action == "friend_act"
-                  or r.action == "row_act")
+                  or r.action == "read_row" or r.action == "row_act")
                  and r.value)
                     or nil,
                 r.action == "rail" and r.value or nil)
@@ -1340,10 +1325,8 @@ local function typed(text)
     local moved = false
     for ch in string.gmatch(text, ".") do
         if menu.type_field(ch) then moved = true
-        -- Nothing is asking, so a letter is for whatever page is up: the
-        -- friends page collects a call sign to send, and the naming page
-        -- collects a name for a build.
-        elseif menu.type_add(ch) then moved = true
+        -- Nothing is asking, so a letter is for whatever page is up, which
+        -- is the naming page collecting a name for a build.
         elseif menu.type_new(ch) then moved = true end
     end
     return moved
@@ -1615,17 +1598,14 @@ function update(self, dt)
         -- column to fill in, so the same list comes out as gestures.
         menu.touching = touch.used
         -- Something is being typed into, and the trigger is the space bar.
-        -- Every call sign has a space in it, so a line that still read the
+        -- A call sign has a space in it, so a line that still read the
         -- trigger as "send" answered itself partway through: "Vesper 412"
         -- sent "Vesper". Enter alone sends while anything is taking type, and
         -- the space goes where it was aimed.
         --
-        -- Three of them now. It was cards with fields; the friends page's add
-        -- field and the naming page's are the same line without a card around
-        -- it, and the add field sends, so it hit the same bug the same way the
-        -- first time somebody typed a call sign into it.
-        local asking = (menu.ask and menu.ask.fields) or menu.add_on
-                       or menu.new_on
+        -- Two of them. It was cards with fields; the naming page's is the
+        -- same line without a card around it.
+        local asking = (menu.ask and menu.ask.fields) or menu.new_on
         -- The arrows themselves, not whatever is flying the ship. They were
         -- the same thing while the keys were fixed, and the moment a pilot
         -- moves thrust to W the menu would have followed it there: a page
@@ -2850,35 +2830,6 @@ function apply_menu(self, act)
         return
     end
 
-    -- Somebody's friend, in a game, pressed. The menu holds the account
-    -- number; the whereabouts are the meta-layer's and the address is the
-    -- directory's, so this is where the two meet.
-    --
-    -- Nothing is remembered about it afterwards. A friend's room is a place
-    -- you were sent once, and a reconnect this client makes on its own belongs
-    -- wherever the ladder puts it. See docs/design/friends.md.
-    if act == "join_friend" then
-        local who = menu.pending
-        local at = nil
-        for _, f in ipairs(account.friends or {}) do
-            if f.account == who then at = directory.at_instance(f.instance) end
-        end
-        if not at then
-            -- Between the page being drawn and the press landing they left,
-            -- or the arena did. Saying so beats a press that does nothing.
-            menu.note = "they are not there any more"
-            return
-        end
-        if html5 and touch.used then
-            pcall(html5.run, "window.vwFullOnPlay && window.vwFullOnPlay()")
-        end
-        menu.zone = at.zone
-        menu.save_identity()
-        session.enter(self, at.address, at.zone, at.wt, nil, menu.spectate,
-                      at.instance)
-        return
-    end
-
     -- The leave button on the row of the game you are flying in. The hull
     -- despawns and the same socket watches, landing on the room channel: you
     -- are a watcher in the same arena, so the panel is left standing, because
@@ -3335,19 +3286,6 @@ function on_input(self, action_id, action)
             -- fire into a wall.
             if r.action == "scores" or r.action == "run_log" then return true end
             if not menu.open then return false end
-            -- A press anywhere but the friends page's add field lets go of
-            -- it, which is what a caret does everywhere else. Before the
-            -- branches below, so a press that also does something loses the
-            -- caret as well as doing it. The button beside the field is an
-            -- exception as well as the box: a press on "add" that dropped the
-            -- caret first would send and then look like nothing had focus.
-            if r.action ~= "add_box" and r.action ~= "add_go"
-               and r.action ~= "found" then
-                menu.blur_add()
-            end
-            -- A press on one of the names under the box is a press on the
-            -- box as far as the caret goes, so the list does not vanish
-            -- under the finger reaching for it.
             -- Written out rather than as an and/or chain: that form
             -- keeps only the first return, so `moved` came back nil and
             -- every click was silent. The sounds are half of what makes
@@ -3382,27 +3320,10 @@ function on_input(self, action_id, action)
                 -- The box beside a charge's pips. The two charges trade
                 -- keys; nothing about the ship changes.
                 act, moved = menu.swap_charges()
-            elseif r.action == "add_box" then
-                -- The box on the friends page. A caret where there is a
-                -- keyboard, a card where there is not.
-                act, moved = menu.click_add()
-            elseif r.action == "add_wipe" then
-                act, moved = menu.wipe_add()
-            elseif r.action == "add_go" then
-                act, moved = menu.send_add()
-            elseif r.action == "found" then
-                -- One of the call signs the box turned up. Added by
-                -- number, so two names sharing a prefix cannot be
-                -- confused for each other.
-                act, moved = menu.click_found(r.value)
-            elseif r.action == "friend_act" then
-                -- One button on one friends row: accept, ignore, join,
-                -- unfriend. `level` is which of that row's own buttons.
-                act, moved = menu.click_friend(r.value, r.level)
             elseif r.action == "row_act" then
-                -- One button hung off a row of any other page. The games
-                -- list has the one there is: leave the seat you are flying,
-                -- on the row of the room it is in.
+                -- One button hung off a row. The games list has the one
+                -- there is: leave the seat you are flying, on the row of the
+                -- room it is in.
                 act, moved = menu.click_row_act(r.value, r.level)
             elseif r.action == "buy_go" then
                 -- The BUY beside the reading pane, or the one under the

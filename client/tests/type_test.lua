@@ -8,7 +8,7 @@
 -- it again and worked through the arithmetic. Then thirty-three call sites
 -- passed an explicit alpha, and a third of the type in the menu went under the
 -- 4.5:1 small type wants: a tab row at 3.33, a games row's own figures at
--- 1.97, the add-a-friend placeholder at 1.94, which is the field telling you
+-- 1.97, and a field's own placeholder at 1.94, which is the box telling you
 -- what to type.
 --
 -- Nothing caught it because nothing was looking. Every one of those sites is
@@ -102,14 +102,13 @@ end
 
 local RAIL = {}
 for i, e in ipairs({{"play", "zones"}, {"ship", "ship"},
-                    {"friends", "friends"}, {"pilot", "pilot"},
-                    {"settings", "settings"}}) do
+                    {"pilot", "pilot"}, {"settings", "settings"}}) do
     RAIL[i] = {label = e[1], icon = e[2], index = i}
 end
 
 -- Rows chosen for the states that used to fail rather than for the states that
--- are easy to draw: a room nobody is serving, a room with no seat left, a
--- friend who is not flying, an empty field wearing its placeholder.
+-- are easy to draw: a room nobody is serving, a room with no seat left, an
+-- empty field wearing its placeholder.
 --
 -- A games row carries a strip and a shelf row carries a sentence, never both,
 -- which is what the catalog builds and what `stage_row` draws. Handed both, it
@@ -136,26 +135,16 @@ local PAGES = {
         {label = "Bomb prox", index = 2, detail = "300"},
         {label = "Bomb freeze", index = 3, detail = "900", mark = true},
     }}},
-    {"friends", {at = "friends", rail_sel = 3, depth = 2, social = true,
-     home = true, add = {name = "", on = false, note = "", bad = false,
-                         found = {}},
-     invite = "https://vectorwake.net/", rows = {
-        {label = "Gantry 4", detail = "added you 2h ago", state = "asked",
-         index = 1, pick = true, sect = "received", sect_note = "1",
-         acts = {{label = "accept", go = true}, {label = "ignore"}}},
-        {label = "Halcyon 2", detail = "Team Battle", state = "flying",
-         index = 2, pick = true, sect = "friends",
-         acts = {{label = "join", go = true}}},
-        {label = "Vireo 9", detail = "", state = "friend", index = 3,
-         pick = true},
-    }}},
-    {"pilot", {at = "pilot", rail_sel = 4, depth = 2,
+    {"newbuild", {at = "newbuild", rail_sel = 2, depth = 3, newbuild = true,
+     home = true, new = {name = "", on = false, suggest = "Gunner"},
+     rows = {{label = "create", group = "keys", index = 1, pick = true}}}},
+    {"pilot", {at = "pilot", rail_sel = 3, depth = 2,
      pilot_card = {name = "Krait 4", claimed = true, online = true,
                    rivets = 310,
                    career = {kills = 3, deaths = 4, games = 7}},
      rows = {{label = "new name", index = 1, pick = true},
              {label = "log out", index = 2, pick = true}}}},
-    {"settings", {at = "settings", rail_sel = 5, rows = {
+    {"settings", {at = "settings", rail_sel = 4, rows = {
         {sect = "flight", label = "Invert thrust", index = 1, choice = 1,
          choices = 2, note = "which way the stick points"},
         {label = "Deadzone", index = 2, choice = 3, choices = 5},

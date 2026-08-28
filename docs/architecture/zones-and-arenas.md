@@ -300,7 +300,7 @@ them.
 
 A room carries a number, and a player is shown it: the corner of the screen says
 which room you are in, and the panel behind it lists every room of the zone so
-you can join a friend in another. That makes the number a name, and a name has
+you can cross to another. That makes the number a name, and a name has
 to survive being said out loud.
 
 It is chosen by the process that opens the room, from the numbers no live room

@@ -50,7 +50,6 @@ pub(super) async fn route(
                 ));
             }
             let instance = s("instance");
-            let zone = s("zone");
             let standing = db
                 .query_opt("select banned from accounts where id = $1", &[&account])
                 .await;
@@ -74,17 +73,16 @@ pub(super) async fn route(
             let row = db
                 .query_opt(
                     "insert into active_rated_sessions
-                         (account, session, instance, zone, touched)
-                     values ($1, $2, $3, $4, now())
+                         (account, session, instance, touched)
+                     values ($1, $2, $3, now())
                      on conflict (account) do update
                      set session = excluded.session,
                          instance = excluded.instance,
-                         zone = excluded.zone,
                          touched = now()
                      where active_rated_sessions.session = excluded.session
                         or active_rated_sessions.touched < now() - interval '180 seconds'
                      returning session",
-                    &[&account, &session, &instance, &zone],
+                    &[&account, &session, &instance],
                 )
                 .await;
             match row {

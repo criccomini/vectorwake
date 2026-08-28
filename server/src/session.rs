@@ -294,7 +294,7 @@ pub(crate) async fn serve_client(
                 };
                 let presented_expires = seat_of.expires;
                 if let Some(account) = seat_of.account {
-                    if let Ok((base, pool_token, _, _)) = z.rated_lease_args() {
+                    if let Ok((base, pool_token, _)) = z.rated_lease_args() {
                         standing_check = Some(StandingCheck {
                             base,
                             pool_token,
@@ -338,8 +338,7 @@ pub(crate) async fn serve_client(
                 }
                 if flags & JOIN_WATCH == 0 {
                     if let Some(account) = seat_of.account {
-                        let (base, pool_token, instance, zone_serving) = match z.rated_lease_args()
-                        {
+                        let (base, pool_token, instance) = match z.rated_lease_args() {
                             Ok(v) => v,
                             Err(e) => {
                                 let _ = tx.try_send(Message::Binary(deny(
@@ -356,7 +355,6 @@ pub(crate) async fn serve_client(
                             base,
                             pool_token,
                             instance,
-                            zone_serving,
                             account,
                             session.id.clone(),
                             rated_spool,
@@ -634,17 +632,9 @@ pub(crate) async fn serve_client(
                                     .as_ref()
                                     .filter(|s| s.account.is_some())
                                     .map(|_| {
-                                        z.rated_lease_args().map(
-                                            |(base, token, instance, serving)| {
-                                                (
-                                                    base,
-                                                    token,
-                                                    instance,
-                                                    serving,
-                                                    z.spools.rated.clone(),
-                                                )
-                                            },
-                                        )
+                                        z.rated_lease_args().map(|(base, token, instance)| {
+                                            (base, token, instance, z.spools.rated.clone())
+                                        })
                                     })
                                     .transpose()
                             } else {
@@ -654,25 +644,22 @@ pub(crate) async fn serve_client(
                         };
                         let mut candidate = None;
                         let mut standing = None;
-                        if let Some((base, pool_token, instance, serving, rated_spool)) =
-                            match lease_args {
-                                Ok(v) => v,
-                                Err(e) => {
-                                    let mut m = vec![S2C_DENIED, DENY_RATED_SESSION];
-                                    m.extend_from_slice(
-                                        format!("cannot open a rated session: {e}").as_bytes(),
-                                    );
-                                    let _ = tx.try_send(Message::Binary(m));
-                                    continue;
-                                }
+                        if let Some((base, pool_token, instance, rated_spool)) = match lease_args {
+                            Ok(v) => v,
+                            Err(e) => {
+                                let mut m = vec![S2C_DENIED, DENY_RATED_SESSION];
+                                m.extend_from_slice(
+                                    format!("cannot open a rated session: {e}").as_bytes(),
+                                );
+                                let _ = tx.try_send(Message::Binary(m));
+                                continue;
                             }
-                        {
+                        } {
                             let account = carried.as_ref().and_then(|s| s.account).unwrap();
                             match RatedLease::claim(
                                 base,
                                 pool_token,
                                 instance,
-                                serving,
                                 account,
                                 session.id.clone(),
                                 rated_spool,

@@ -196,7 +196,7 @@ worth 4.68:1 on the column at full alpha, so it clears the 4.5 small type wants
 with nothing left over and cannot survive being drawn on a lit row at all.
 Thirty-three call sites passed it a fraction anyway, and a third of the type in
 the menu went under the line: a tab row at 3.33, a games row's own figures at
-1.97, the add-a-friend placeholder at 1.94, which is the field telling you what
+1.97, a field's own placeholder at 1.94, which is the box telling you what
 to type. Each of those was defensible on its own line. The number that condemned
 them is a function of the color, the alpha and the ground three files apart,
 which is why `client/tests/type_test.lua` exists and this paragraph is not
@@ -279,7 +279,7 @@ The rail's play stop is a world with a ring around it; settings is a gauge off
 the panel in front of you, dark in the body and lit at the rim with a needle up
 among its graduations, because that stop is the one thing on the row about the
 machine rather than the match; leave is a doorway with the arrow going out the
-open side; friends is two badges, one behind the other. The ship stop
+open side. The ship stop
 is the hull you are flying, drawn as itself. When a mark cannot be a picture of
 its object it is
 the object's own instrument: upgrades is the rivet, the mark that stands in
@@ -410,7 +410,7 @@ Pages scroll in pixels, whole rows only. Type comes from the gui, which
 draws over every mesh, so nothing behind a heading can cover a row that has
 slid under it; what a row does at the edge is appear whole or not at all.
 The thing a page is spent against stays pinned: the ship page's band with
-its budget, the week's heading, the friends page's add field.
+its budget, and the week's heading.
 
 ## Motion
 
@@ -561,7 +561,7 @@ after next is news every pilot steers by.
 | `client/arena/menu.lua` | the pages' contents and words |
 | `client/arena/menu_face.lua` | the menu face's measured advances (generated) |
 | `client/arena/touch.lua` | the thumb controls, drawing the shared marks |
-| `.design/rethink/`, `.design/friends/` | the mocks several of these pages were redrawn to |
+| `.design/rethink/` | the mocks several of these pages were redrawn to |
 
 The mocks are where the language was last argued about in pictures; when a
 page and its mock disagree, one of them is wrong on purpose and the reason

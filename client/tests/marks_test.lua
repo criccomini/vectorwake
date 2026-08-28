@@ -312,10 +312,8 @@ local function near(list, cx, cy, r)
     return out
 end
 
--- The shipped row, less friends. Every stop draws its mark at the foot of the
--- column, and the friends mark is two badges pinned one over the other: this
--- file counts badges, so the one stop that brings its own pair stays off the
--- row. Nothing else on it wears one.
+-- The shipped row. Every stop draws its mark at the foot of the column, and
+-- exactly one of them wears a badge, which is what this file counts.
 local RAIL = {}
 for i, n in ipairs({"zones", "ship", "upgrades", "settings"}) do
     RAIL[i] = {label = n, icon = n, index = i}
@@ -371,7 +369,7 @@ if rail_only[1] then
 
     -- Wider than it is tall, and by a long way. This is the fact every
     -- caller lays out against: it is why the mark sits where it does beside a
-    -- count, and why the friends stop stacks its pair instead of setting them
+    -- count, and why a pair of them would have to be stacked rather than set
     -- side by side.
     check("it lies wider than it stands", wing.w > wing.h * 1.6,
           string.format("%.2f wide by %.2f high", wing.w, wing.h))

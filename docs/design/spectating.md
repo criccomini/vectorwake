@@ -295,12 +295,11 @@ separate, since a voluntary sit-out, a dropped socket, and the lag ladder
 benching a bad connection all now produce one state. The lag response keeps
 the gentlest step it has, which is the reason it was built.
 
-**Watching a friend whose room is full**, which will rarely fire and matters
-when it does. A bot stands down for every arrival, so a room is only truly
-full at eight humans; below that a would-be watcher can simply take a seat.
-When it is full, though, opening a fresh bot-filled room is the exact wrong
-answer, and the gallery is what stops the friends list breaking at the one
-moment it is useful.
+**Watching a room that is full**, which will rarely fire and matters when it
+does. A bot stands down for every arrival, so a room is only truly full at
+eight humans; below that a would-be watcher can simply take a seat. When it
+is full, though, opening a fresh bot-filled room is the exact wrong answer,
+and the gallery is what a watcher gets instead.
 
 **Operators**, who watch what everybody else in the stands watches.
 

@@ -185,7 +185,7 @@ check("the stage shows what the rail points at", has(st, "zone1"))
 do
     local all = {}
     local names = {"zones", "ship", "pilot", "team", "settings", "controls",
-                   "about", "friends", "upgrades", "leave"}
+                   "about", "upgrades", "leave"}
     for i, name in ipairs(names) do
         all[i] = {label = name, icon = name, index = i}
     end
@@ -1015,50 +1015,48 @@ end
 -- Measured rather than looked at, because the difference is a heading's worth
 -- of pixels and it looks like the page simply ending.
 do
-    local function friend_rows(n)
+    local function long_rows(n)
         local out = {}
         for i = 1, n do
             out[i] = {label = "Pilot " .. i, index = i, pick = true,
-                      detail = "in a game", act = "unfriend",
-                      who = i, state = "friend"}
+                      detail = "in a game"}
         end
         return out
     end
-    local function friend_view(n)
+    local function long_view(n)
+        -- The cursor on the rail rather than in the list, so what moves the
+        -- page is the finger this is about. A cursor standing on the first
+        -- row drags the page back to the top every frame, which is right and
+        -- is not the thing being measured.
         return {depth = 2, sel = 1, rail = RAIL, rail_sel = 1,
-                focus = "stage", home = true, closable = false,
-                at = "friends", social = true,
+                focus = "rail", home = true, closable = false,
+                at = "play", banner = true, guest_dot = true,
                 pilot = {name = "Vantage 7", rivets = 0},
-                add = {name = "", on = false, note = "", bad = false,
-                       found = {}},
-                -- The key at the foot, which the page always has and which
-                -- takes its room out of the list's: a fixture without one
-                -- measures a page this client never draws.
-                invite = "https://vectorwake.net/",
-                rows = friend_rows(n)}
+                -- The band at the foot, which takes its room out of the
+                -- list's: a fixture without one measures a page shorter than
+                -- the one a guest is actually handed.
+                rows = long_rows(n)}
     end
 
     -- The window a page publishes is its own, and it is shorter than the
     -- stage. Clamping against the stage is what lost the difference.
     ui.page_scroll = 0
-    draw(friend_view(20), 390, 844, true)
+    draw(long_view(20), 390, 844, true)
     check("a page publishes the box it drew into",
           ui.page_room > 0 and ui.page_room < 844,
           tostring(ui.page_room))
 
-    -- A phone-sized page thirteen names long overflows by less than one row,
-    -- which is exactly the case that would not move at all. It was eleven
-    -- when a friend's row was two lines tall and the page had no band at the
-    -- foot, and twelve until the page's floor moved down onto the rail; the
-    -- number is whatever the first count past the bottom is, and the case it
-    -- is here for is that the overflow is small.
+    -- A phone-sized page fifteen names long overflows by less than one row,
+    -- which is exactly the case that would not move at all. The number is
+    -- whatever the first count past the bottom is, and the case it is here
+    -- for is that the overflow is small.
     ui.page_scroll = 0
-    draw(friend_view(13), 390, 844, true)
+    draw(long_view(15), 390, 844, true)
     local over = ui.page_extent - ui.page_room
     check("a page that overflows by a little still has somewhere to go",
           over > 0, "overflow " .. string.format("%.0f", over))
     ui.page_scroll = 9999
-    draw(friend_view(13), 390, 844, true)
+    draw(long_view(15), 390, 844, true)
     check("and a finger can reach all of it",
           math.abs(ui.page_scroll - over) < 1,
           string.format("%.0f of %.0f", ui.page_scroll, over))
@@ -1068,9 +1066,9 @@ do
     -- the right place and a row that is drawn are two different claims.
     for _, size in ipairs({{390, 844, 20}, {844, 390, 20}}) do
         ui.page_scroll = 0
-        draw(friend_view(size[3]), size[1], size[2], true)
+        draw(long_view(size[3]), size[1], size[2], true)
         ui.page_scroll = 9999
-        local drawn = draw(friend_view(size[3]), size[1], size[2], true)
+        local drawn = draw(long_view(size[3]), size[1], size[2], true)
         check("the last name on a page is reachable at "
               .. size[1] .. "x" .. size[2],
               has(drawn, "Pilot " .. size[3]),

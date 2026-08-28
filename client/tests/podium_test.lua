@@ -581,11 +581,11 @@ check("and play puts the pitch back", ui.row_pitch() == 18,
 -- --- the clock is the band's, and the ending has no foot ------------------
 --
 -- The block had a foot: a countdown at the bottom of it with two keys beside
--- it, INVITE FRIEND and the one that claimed a guest's call sign. The keys
--- were asks made of somebody reading how they did, and the menu and the
--- friends page are where both of those live now. The countdown went up into
--- the band, which is where a player has been reading the clock for the whole
--- three minutes before the whistle.
+-- it, an invitation and the one that claimed a guest's call sign. The keys
+-- were asks made of somebody reading how they did, and the menu is where the
+-- one that is left lives now. The countdown went up into the band, which is
+-- where a player has been reading the clock for the whole three minutes
+-- before the whistle.
 --
 -- So this measures the clock against the band's own line rather than against
 -- the block, and pins that the block starts under it rather than through it.

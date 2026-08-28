@@ -40,7 +40,6 @@ client/dist/
 # with the boards baked into it, two and a half megabytes for boards that come
 # to a hundred kilobytes of source beside it, and `build.py` plus the design
 # skill's seeder rebuild one whenever it is wanted. Same argument as
-# client/dist above. The hand-written mocks that are a page rather than a
-# canvas, .design/friends/friends-v2.html and its like, are small and stay.
+# client/dist above. A hand-written mock that is a page rather than a canvas
+# is small and stays, so the pattern only catches the seeded ones.
 .design/*/[a-z]*-*.html
-!.design/friends/friends-v2.html
