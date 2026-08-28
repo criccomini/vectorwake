@@ -4627,8 +4627,11 @@ local function land_stop(x, y, w, h, label, value, action, lit, stacked, raw)
     -- Where a press would land, at the weight every row of the menu is lit
     -- at. Under the outline rather than over it: the edge is the brighter
     -- half of the same signal, and a wash laid over it would mute it.
+    -- Nearly opaque ground, like the list panel and the help prompt: these
+    -- stand over a live fight, and a control read through is a control that
+    -- looks broken.
     local hot = M.land_sel == action
-    rect(x, y, w, h, pal.a(pal.BTN_BG, 0.6))
+    rect(x, y, w, h, pal.a(pal.BTN_BG, 0.88))
     if hot then rect(x, y, w, h, pal.a(pal.FRIEND, LIT.CURSOR)) end
     key_box(x, y, w, h, nil,
             (lit or hot) and pal.a(pal.FRIEND, 0.8)
@@ -4739,6 +4742,9 @@ local function landing(land)
     -- begin with, so the cursor's own field goes over that ground as well.
     local key_hot = M.land_sel == "play_now"
     local swell = key_hot and 1 or breath
+    -- A dark ground first, the same one the stops stand on, so the fight does
+    -- not show through the key; the breathing tint goes over it.
+    rect(g.kx, g.ky, g.kw, g.kh, pal.a(pal.BTN_BG, 0.88))
     rect(g.kx, g.ky, g.kw, g.kh, pal.a(pal.FRIEND, 0.06 + 0.12 * swell))
     if key_hot then
         rect(g.kx, g.ky, g.kw, g.kh, pal.a(pal.FRIEND, LIT.CURSOR))
