@@ -2180,7 +2180,6 @@ function update(self, dt)
         local hud_me = me
         if watching then hud_me = e end
         if hud_me and sim.ship_private and not sim.ship_private(hud_me) then hud_me = nil end
-        local artifact = net.match and net.match.artifact or nil
         -- The landing's three stops: who you are, where you are going, what
         -- you arrive as. Built only while the stands are up, from the same
         -- places the drawer reads: the games off the directory with their
@@ -2258,9 +2257,6 @@ function update(self, dt)
             -- runs forever, which is how the HUD decides whether to draw a
             -- clock at all.
             match = net.match,
-            match_url = artifact and
-                ("https://vectorwake.net/matches/" .. artifact) or nil,
-            keep_pilot = not account.claimed and account.base ~= "",
             side_names = side_names(),
             -- The closed list of phrases and who has just used one. Both come
             -- from the connection: the list is the wire's own, since a number
@@ -3158,12 +3154,6 @@ function on_input(self, action_id, action)
             -- The landing's own controls, which the keyboard reaches
             -- through the same function. See `land_act`.
             if land_act(self, r.action, r.value) then return true end
-            if r.action == "keep_pilot" then
-                menu.ask_password()
-                menu.open = true
-                sfx.ui("ui_go")
-                return true
-            end
             if r.action == "details" then
                 toggle_details()
                 sfx.ui("ui_move")

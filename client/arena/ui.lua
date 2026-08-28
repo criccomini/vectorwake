@@ -4162,29 +4162,6 @@ local END = {W = 720, CHROME = 38, ZOOM = 1.45}
 -- Reset every frame by `M.begin` so it never outlives the board it measures.
 M.podium_zoom = 1
 
--- The mark on the key that hands this match to somebody else: a tray with an
--- arrow leaving it. Every phone puts this glyph on that control, and a mark
--- somebody already knows is worth more here than one of our own: the key says
--- what it does in words, and the mark is what finds it at a glance.
-function END.share_mark(cx, cy, r, col)
-    local line = pen(r * 1.5, 0.15)
-    -- The arrow, from inside the tray and out over its rim.
-    F.layer:seg(cx, ry(cy - r * 0.75), cx, ry(cy + r * 0.28), line, col)
-    F.layer:seg(cx - r * 0.39, ry(cy - r * 0.36), cx, ry(cy - r * 0.75),
-                line, col)
-    F.layer:seg(cx + r * 0.39, ry(cy - r * 0.36), cx, ry(cy - r * 0.75),
-                line, col)
-    -- The tray, open where the arrow passes through it.
-    local ty, by = cy - r * 0.08, cy + r * 0.75
-    for _, side in ipairs({-1, 1}) do
-        F.layer:seg(cx + side * r * 0.43, ry(ty), cx + side * r * 0.68, ry(ty),
-                    line, col)
-        F.layer:seg(cx + side * r * 0.68, ry(ty), cx + side * r * 0.68, ry(by),
-                    line, col)
-    end
-    F.layer:seg(cx - r * 0.68, ry(by), cx + r * 0.68, ry(by), line, col)
-end
-
 -- Which side took it, what the ending calls that, and in what color. A draw is
 -- a real result at three minutes and says so, rather than a winner being named
 -- by tie-break.
@@ -4269,22 +4246,28 @@ function END.band(m, names, x, y, w, sides, grow)
     end
 end
 
--- What the room is counting down to, and the one thing to do while it does.
+-- What the room is counting down to, and nothing else.
 --
 -- The countdown is a reading rather than a draining bar: the bar was a second
--- clock beside the first, and the figure is the clock. INVITE FRIEND is the
--- act the share key performed, named for what a player wants out of it and
--- sized like a key rather than a banner. A guest keeps the key that claims
--- their pilot beside it, since the end of a match is when they are most
--- likely to want it.
-function END.foot(o, m, x, y, w)
+-- clock beside the first, and the figure is the clock.
+--
+-- Two keys stood at the right of this line and both are gone. One shared the
+-- match; the other claimed a guest's call sign. They were asks made of
+-- somebody who had just finished a fight and was reading how they did, and a
+-- screen that answers that question should not also want something. An
+-- account is claimed in the menu, where the guest band says so, and an invite
+-- is sent from the friends page, which is a page somebody opens because they
+-- meant to.
+function END.foot(m, x, y)
     local px = (M.compact and 10 or 12) * F.scale
     -- The countdown and its caption keep the interface's own size while the
-    -- keys wear the zoom: the keys are the things to press, and the clock
-    -- grown with them read as a headline about waiting.
+    -- block around them wears the zoom: a clock grown with the roster reads as
+    -- a headline about waiting.
     local unz = M.podium_zoom or 1
     local cap_px = px / unz
     local clock_px = (M.compact and 17 or 21) * F.scale / unz
+    -- Still a key's height, which is what the block was measured against and
+    -- what a line of reading wants under a list either way.
     local key_h = KEY_H * F.scale
     local mid = y + key_h / 2
     lbl("next match", x, mid, pal.a(pal.DIM, 0.9), nil, cap_px)
@@ -4292,66 +4275,6 @@ function END.foot(o, m, x, y, w)
     local left = m.left or 0
     txt(string.format("%d:%02d", math.floor(left / 60), left % 60),
         at, mid, clock_px, pal.a(pal.INK, 0.92))
-
-    -- Laid down from the right edge, so the countdown keeps the left however
-    -- many keys this viewer has earned.
-    local keys = {}
-    if o.match_url then
-        keys[#keys + 1] = {M.share_result == "copied" and "link copied"
-                           or "invite friend", "share",
-                           "vwshare:" .. o.match_url, END.share_mark}
-    end
-    if o.keep_pilot then
-        keys[#keys + 1] = {"keep " .. (o.viewer_name or "pilot"), "keep_pilot"}
-    end
-    local right = x + w
-    for i = #keys, 1, -1 do
-        local a = keys[i]
-        local mark = a[4]
-        local mr = px * 0.72
-        local lead = mark and (2 * mr + px * 0.7) or 0
-        local kw = text_w(string.upper(a[1]), px) + lead + 26 * F.scale
-        local kx = right - kw
-        local col = i == 1 and pal.FRIEND or pal.RADAR_TILE
-        local fill = i == 1 and 0.10 or 0.06
-        local edge = i == 1 and 0.76 or 0.6
-        if a[2] == "share" then
-            -- The one act on the ending, so it breathes on the clock the
-            -- PLAY NOW key breathes on, but under it: the ending's zoom
-            -- already grows these keys, and PLAY NOW's full wash on top of
-            -- that made the invite the loudest thing on the board. The
-            -- floor still keeps the trough from reading as a key that
-            -- stopped working. `F.now` is 0 under the test harness, which
-            -- keeps the layout tests still.
-            local breath = 0.5 + 0.5 * math.sin(F.now * 2.6)
-            fill = 0.04 + 0.06 * breath
-            edge = 0.50 + 0.26 * breath
-        end
-        key_box(kx, y, kw, key_h, pal.a(col, fill), pal.a(col, edge))
-        local ink = pal.a(i == 1 and pal.FRIEND or pal.INK, 0.95)
-        if mark then
-            -- The mark and the words are centered together, so the key reads
-            -- as one thing rather than as a label with something parked
-            -- beside it.
-            local lw = text_w(string.upper(a[1]), px)
-            local lx = kx + kw / 2 - (lw + lead) / 2
-            mark(lx + mr, mid, mr, ink)
-            lbl(a[1], lx + lead, mid, ink, nil, px)
-        else
-            lbl(a[1], kx + kw / 2, mid, ink, "center", px)
-        end
-        hit(kx, y, kw, key_h, a[2])
-        -- The browser lays a real anchor over this key: a copy to the
-        -- clipboard has to happen inside a gesture the page itself saw, and a
-        -- press routed through the engine is not one. The rectangle travels
-        -- in page points, which is what the shell lays out in.
-        if a[3] then
-            M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
-                kx / F.density, y / F.density, kw / F.density,
-                key_h / F.density, a[3])
-        end
-        right = kx - KEY_GAP * F.scale
-    end
     return key_h
 end
 
@@ -4424,8 +4347,8 @@ local function podium(o, m, names)
     end
 
     -- Centered where there is room, and hugging the foot of an upright phone:
-    -- the key at the bottom of this block is the only thing on it to press,
-    -- and a thumb reaches the bottom of a tall screen rather than the middle.
+    -- the roster is dragged with a thumb, and a thumb reaches the bottom of a
+    -- tall screen rather than the middle.
     local y
     if M.compact and F.h > F.w then
         y = F.h - F.safe_b - 26 * F.scale - h
@@ -4484,7 +4407,7 @@ local function podium(o, m, names)
     -- Both sections, or the readings alone where the window had no room for
     -- a fight under them. `legs` is what the measure above found space for.
     if m.duel then bottom = run_log(o, bottom, true, legs) end
-    END.foot(o, m, x, bottom + gap, w)
+    END.foot(m, x, bottom + gap)
     F.scale = was_scale
 end
 

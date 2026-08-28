@@ -149,8 +149,6 @@ local function frame(o)
         watchers = o.watchers,
         teams = o.teams or {},
         match = o.match,
-        match_url = o.match_url,
-        keep_pilot = o.keep_pilot,
         side_names = o.side_names,
         sayings = o.sayings, said = o.said,
         feed = o.feed or {},
@@ -589,8 +587,7 @@ check("which is the side the line names", said("caisson") ~= nil
 local function block_geometry(width, height)
     frame({match = {playing = false, left = 23,
                     score = {[0] = 11, [1] = 14}},
-           side_names = NAMES, side = 0, w = width, h = height,
-           match_url = "https://vectorwake.net/matches/42"})
+           side_names = NAMES, side = 0, w = width, h = height})
 
     local full = 0
     local covers = false
@@ -648,34 +645,29 @@ end
 block_geometry(710, 378)
 block_geometry(1280, 720)
 
--- A phone held upright hugs the foot of the window with the whole block, so
--- the one key on it lands under a thumb rather than in the middle of a tall
--- screen.
+-- A phone held upright hugs the foot of the window with the whole block: the
+-- roster is dragged with a thumb, and a thumb reaches the bottom of a tall
+-- screen rather than the middle. Measured off the roster's own panel, which
+-- is the last thing in the block with a hit box on it.
 do
-    frame({match = {playing = false, left = 23, artifact = 1,
-                    score = {[0] = 11, [1] = 14}},
-           side_names = NAMES, side = 0, w = 390, h = 844,
-           match_url = "https://vectorwake.net/matches/42"})
-    local key = nil
-    for _, r in ipairs(ui.hits) do
-        if r.action == "share" then key = r end
+    local function panel_bottom(width, height)
+        frame({match = {playing = false, left = 23, artifact = 1,
+                        score = {[0] = 11, [1] = 14}},
+               side_names = NAMES, side = 0, w = width, h = height})
+        for _, r in ipairs(ui.hits) do
+            if r.action == "scores" then return r.y + r.h end
+        end
     end
-    check("an upright phone puts the key near the foot",
-          key ~= nil and key.y + key.h > 844 * 0.8,
-          key and string.format("%.0f of 844", key.y + key.h) or "no key")
 
-    frame({match = {playing = false, left = 23, artifact = 1,
-                    score = {[0] = 11, [1] = 14}},
-           side_names = NAMES, side = 0, w = 1280, h = 720,
-           match_url = "https://vectorwake.net/matches/42"})
-    local wide_key = nil
-    for _, r in ipairs(ui.hits) do
-        if r.action == "share" then wide_key = r end
-    end
+    local tall = panel_bottom(390, 844)
+    check("an upright phone puts the block near the foot",
+          tall ~= nil and tall > 844 * 0.8,
+          tall and string.format("%.0f of 844", tall) or "no panel")
+
+    local wide = panel_bottom(1280, 720)
     check("and a window with room centers the block instead",
-          wide_key ~= nil and wide_key.y + wide_key.h < 720 * 0.8,
-          wide_key and string.format("%.0f of 720", wide_key.y + wide_key.h)
-              or "no key")
+          wide ~= nil and wide < 720 * 0.8,
+          wide and string.format("%.0f of 720", wide) or "no panel")
 end
 
 -- --- drawn zoomed ----------------------------------------------------------
@@ -728,59 +720,39 @@ check("and play puts the pitch back", ui.row_pitch() == 18,
 
 -- --- the foot --------------------------------------------------------------
 --
--- The countdown as a reading rather than a draining bar, and one key beside
--- it: the bar was a second clock next to the first, and a key the width of
--- the measure was a banner. A guest keeps the key that claims their pilot,
--- which is the moment they are most likely to want it.
+-- The countdown as a reading rather than a draining bar, and nothing beside
+-- it: the bar was a second clock next to the first, and the keys that used to
+-- stand at the right of this line were asks made of somebody reading how they
+-- did. INVITE FRIEND shared the match and the one after it claimed a guest's
+-- call sign; the menu and the friends page are where both of those live now.
 
 ui.hits = {}
 frame({match = {playing = false, left = 23, artifact = 1,
                 score = {[0] = 11, [1] = 14}},
-       side_names = NAMES, side = 0,
-       match_url = "https://vectorwake.net/matches/42", keep_pilot = true})
-check("a filed match offers the invite", said("invite friend") ~= nil
-      and ui.link_dom ~= nil
-      and string.find(ui.link_dom, "vwshare:https://vectorwake.net/matches/42",
-                      1, true))
+       side_names = NAMES, side = 0})
+check("the foot counts the next match down", said("next match") ~= nil
+      and said("0:23") ~= nil, table.concat(words(), " | "))
 local actions = {}
 for _, hit in ipairs(ui.hits) do actions[hit.action] = true end
--- And offers nothing beside it. Watching the film was a second key of equal
--- weight on the one screen with a countdown running, which made the ending a
--- choice between leaving and staying rather than a result.
-check("and no film beside it", said("watch replay") == nil
+check("and offers no invite", said("invite friend") == nil
+      and said("link copied") == nil and actions.share == nil)
+check("nor a key that claims a pilot", said("keep you") == nil
+      and actions.keep_pilot == nil)
+-- Watching the film was a second key of equal weight on the one screen with a
+-- countdown running, which made the ending a choice between leaving and
+-- staying rather than a result.
+check("nor the film", said("watch replay") == nil
       and actions.open_replay == nil)
-check("an unclaimed winner can keep their pilot", said("keep you") ~= nil
-      and actions.keep_pilot == true)
-
-do
-    local keys = {}
-    for _, r in ipairs(ui.hits) do
-        if r.action == "share" or r.action == "keep_pilot" then
-            keys[#keys + 1] = r
-        end
-    end
-    table.sort(keys, function(a, b) return a.x < b.x end)
-    check("the keys share one row at the foot", #keys == 2
-          and math.abs(keys[1].y - keys[2].y) < 0.01,
-          tostring(#keys))
-    -- Sized to their own words rather than to the measure. The old key ran
-    -- the width of the page, which is a banner rather than a control.
-    local panel = nil
-    for _, r in ipairs(ui.hits) do
-        if r.action == "scores" then panel = r end
-    end
-    check("and each is a key rather than a banner",
-          #keys == 2 and panel ~= nil and keys[1].w < panel.w / 2
-          and keys[2].w < panel.w / 2,
-          #keys == 2 and panel
-              and string.format("%.0f and %.0f of %.0f", keys[1].w, keys[2].w,
-                                panel.w) or "missing")
-end
+-- No anchor either. The browser lays a real one over anything that shares,
+-- and a rectangle left published over a foot with nothing in it is a link
+-- somewhere on the ending that answers a press.
+check("and lays down no share anchor", ui.link_dom == nil,
+      tostring(ui.link_dom))
 
 -- Nothing on the ending sends a phrase. Six chips at the foot of the card
 -- were the widest thing on it, and they are going to be a key: this pins that
--- the ending stopped drawing them, and there is nothing else on it to press
--- but the two keys above.
+-- the ending stopped drawing them. What the block itself takes a press for is
+-- the board's own rows and the heads over its columns, and nothing else.
 ui.hits = {}
 frame({match = {playing = false, left = 23, artifact = 1,
                 score = {[0] = 11, [1] = 14}},

@@ -3097,7 +3097,10 @@ One layout at every window size. The measure and the type change, and an
 upright phone hugs the foot of the window with the whole block so the key
 lands under a thumb; nothing else about the arrangement moves. INVITE FRIEND
 is the act the share key performed, named for what a player wants out of it
-and sized like a key rather than a banner.
+and sized like a key rather than a banner
+([decision 94](#94-the-ending-asks-for-nothing) takes that key off the foot,
+along with the one a guest was offered beside it, and leaves the countdown
+alone down there).
 
 Gone with the page: the six phrase chips, the countdown's drain bar, and the
 two-column roster. The band stands down while the ending is up, because the
@@ -4538,3 +4541,51 @@ cells behind them are.
 
 **Reconsider if:** a mode arrives that wants a fixed point to call, and the
 thing to call turns out to belong in the sky rather than on the map.
+
+## 94. The ending asks for nothing
+
+**Status:** accepted, amending
+[decision 68](#68-the-match-ending-is-the-board)
+
+**Decision:** the foot of the match ending is the countdown, and nothing stands
+beside it. Both keys that used to hold the right of that line are gone: INVITE
+FRIEND, which handed the match's own page on the site to whatever the device
+shares with, and the key that offered a guest their call sign to keep.
+
+Everything the two needed goes with them. The arena no longer builds an address
+for the filed match or works out whether this pilot is a guest with something
+to lose, the tray-and-arrow share mark is deleted, so is the breath the invite
+key drew on the clock, and the ending cannot open the password ask any more.
+What the block takes a press for now is the board's own rows and the heads over
+its columns.
+
+**Why:** asked for, and the ask is the whole of what was said, so what follows
+is the file's reading rather than the request's.
+
+Somebody reading the ending is answering one question, which is how they did,
+and each key put a different question in front of it. The invite wanted them to
+go and fetch a person. The claim key wanted a password. Both are asks made at
+the one moment in a room when nobody is flying and everybody is reading the
+same panel, which is what made that moment look like the place to make them,
+and it is also why they were the loudest thing on a screen whose job is to
+report a result. The invite had already been quieted once for exactly that,
+dropped from PLAY NOW's full wash to a breath under it, which is the shape of a
+control that is in the wrong place rather than at the wrong volume.
+
+Neither ask goes away with the keys. The menu draws the guest band, which is
+where an account is claimed, and the friends page pins the invite at the foot
+of a page somebody opened on purpose. What both of those have that the ending
+does not is a reader who is not being counted down.
+
+**Cost:** the invite loses its audience. Eight people looking at one panel with
+fifteen seconds on the clock is as close as this client gets to a room paying
+attention at the same time, and the friends page is opened by one person who
+was already thinking about it. If the game turns out to need word of mouth from
+inside itself more than the ending needs to be quiet, this is what it cost.
+
+**Reconsider if:** guests are found to be losing pilots they would have kept,
+which is the menu's band failing to say so rather than something the ending has
+to say for it. Or if the invite is ever worth closing the loop on, per
+[decision 78](#78-the-friends-page-is-who-is-on-and-one-way-to-reach-who-is-not),
+at which point the question is where a link that knows who sent it belongs, and
+the answer may not be the ending either.
