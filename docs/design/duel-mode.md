@@ -50,11 +50,18 @@ player watched their rival break off in the middle of a fight and leave. One
 person in a duel room wants one bot for as long as they are the only person in
 it.
 
-**The wait says what it is.** The clock reads dashes, and the middle of the
-screen says the room is looking for a rival and that a house pilot takes the
-seat if nobody comes. Both seats are benched until the fight opens, which the
-core reports as a hull that is not alive, so what that screen said before was
-DESTROYED, to somebody who had not flown anywhere yet.
+**The wait says what it is, and how long it has to run.** The clock reads
+dashes, and the middle of the screen says the room is looking for a rival and
+that a house pilot takes the seat in so many seconds. Both seats are benched
+until the fight opens, which the core reports as a hull that is not alive, so
+what that screen said before was DESTROYED, to somebody who had not flown
+anywhere yet.
+
+The seconds come off the wire rather than being timed by the client, which
+knows when it noticed a wait and not when the room began one. At zero the
+sentence changes to say a house pilot is on the way: the room has asked for one
+by then, and how long it takes to arrive is not a number anybody has, so
+counting down to it would be a second thing the screen was wrong about.
 
 **A person arriving later takes the seat from the bot.** That is the eviction
 path a room full of AI already had, so the upgrade needs no new machinery. The

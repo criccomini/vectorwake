@@ -267,7 +267,7 @@ check("the whistle carries its public match film",
       tostring(net.match and net.match.artifact))
 
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(14, 4, 180, 2, 0, 0, 0, 0, 1)
+            message = string.char(14, 4, 180, 2, 0, 0, 0, 0, 1, 6)
                 .. u32le(0) .. u32le(0) .. u32le(0) .. string.char(0)})
 check("an unopened duel arrives as one waiting match state",
       net.match and not net.match.playing and net.match.artifact == nil
@@ -275,6 +275,11 @@ check("an unopened duel arrives as one waiting match state",
       and net.match.duel.streak == 0
       and net.match.duel.legs == 0
       and #net.match.duel.log == 0)
+-- The byte after the status: how long the room will go on keeping the second
+-- seat open for a person. Timed by the room, because the room is what started
+-- the wait, and drawn in the middle of the screen while it runs.
+check("and carries how long the second seat is still held for",
+      net.match.duel.hold == 6, tostring(net.match.duel.hold))
 
 -- One opponent taken and the next one lost, which is the shape of every
 -- evening. A leg is variable width, because it carries a call sign: result,
@@ -287,12 +292,13 @@ end
 
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
             message = string.char(14, 6, 24, 2, 3, 0, 5, 0)
-                .. u32le(123456) .. u32le(1) .. string.char(0)
+                .. u32le(123456) .. u32le(1) .. string.char(0, 0)
                 .. u32le(3) .. u32le(4) .. u32le(19) .. string.char(2)
                 .. leg("Vantage 0001", 1, 41) .. leg("Sable 0001", 0, 7)})
 check("a duel result replaces clock, film, and card atomically",
       net.match and net.match.duel
       and not net.match.duel.waiting
+      and net.match.duel.hold == 0
       and net.match.duel.streak == 3
       and net.match.duel.best_streak == 4
       and net.match.artifact == artifact)

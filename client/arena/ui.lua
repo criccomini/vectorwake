@@ -3512,21 +3512,33 @@ end
 -- they had been shot before they had flown anywhere. The clock reads dashes
 -- above, which says something is not running but not what.
 --
--- The second line is why nothing is happening. The seat across the arena is
--- held open for a person for ten seconds before a house pilot is sent to it,
--- so a player who arrives to an empty room is looking at a wait with an end
--- on it rather than at a zone that is broken. See `DUEL_HOLD_TICKS` in
--- server/src/arena.rs.
+-- The second line is why nothing is happening, and how much longer it will
+-- go on. The seat across the arena is held open for a person for ten seconds
+-- before a house pilot is sent to it, so a player who arrives to an empty room
+-- is looking at a wait with an end on it rather than at a zone that is broken.
+--
+-- The number comes off the wire rather than being timed here. The room began
+-- the wait; this client knows when it noticed one, which is the same thing
+-- only for the pilot whose own arrival started it. A rejoin, a rival leaving
+-- while the tab was in the background, or a socket that dropped a second of
+-- clock would each count from the wrong moment.
+--
+-- Zero is a different sentence rather than a countdown at rest. The room has
+-- asked for a house pilot by then and what is left is the dial, which nothing
+-- has a number for: counting down to a moment a rival does not arrive at
+-- would be the screen lying again, in a smaller way than DESTROYED did.
 --
 -- Not spaced out the way DESTROYED is: that is one word standing on its own,
 -- and a whole sentence set letter by letter is a thing to decode. The same
 -- treatment SAFE ZONE gets, in the same place, for the same reason.
-local function rival_note()
+local function rival_note(hold)
     local y = F.h * 0.46
     txt("WAITING FOR A RIVAL", F.w / 2, y, (M.compact and 12 or 16) * F.scale,
         pal.a(pal.INK, 0.9), "center")
-    txt("a house pilot takes the seat if nobody does", F.w / 2,
-        y + (M.compact and 15 or 20) * F.scale,
+    local under = (hold or 0) > 0
+        and ("a house pilot takes the seat in " .. hold)
+        or "a house pilot is on the way"
+    txt(under, F.w / 2, y + (M.compact and 15 or 20) * F.scale,
         (M.compact and 10 or 12) * F.scale, pal.a(pal.DIM, 0.9), "center")
 end
 
@@ -5174,7 +5186,7 @@ function M.hud(o)
         -- The room is the only thing that can tell them apart, and it does:
         -- see `duel_waiting`.
         if duel_waiting(o.match) then
-            rival_note()
+            rival_note(o.match.duel.hold)
         else
             txt("D E S T R O Y E D", F.w / 2, F.h * 0.46,
                 (M.compact and 15 or 22) * F.scale, pal.ENEMY, "center")

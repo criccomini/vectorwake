@@ -437,26 +437,15 @@ impl ArenaServer {
                 .is_some_and(|room| room.is_duel() && room.humans() == 0)
     }
 
-    /// How long a lone pilot holds the other seat open for a person before the
-    /// arena sends a bot to it.
-    ///
-    /// Ten seconds. Long enough that two people pressing play within a breath
-    /// of each other meet, short enough that somebody alone on the zone is not
-    /// left looking at an empty room wondering whether it is broken. The wait
-    /// is visible: the clock reads dashes and the mode says it is waiting.
-    ///
-    /// It is not the only chance at a person. A human arriving later takes the
-    /// seat from the bot, which is what `Room::join` already does when a room
-    /// is full of AI and somebody is at the door.
-    pub(crate) const DUEL_HOLD_TICKS: u32 = 10 * modes::TICKS_PER_SECOND;
-
-    /// Whether this duel room has waited out its hold and should be given a
-    /// bot. A room whose seat has only just emptied keeps holding.
+    /// Whether this duel room has waited out the hold it keeps the second seat
+    /// under and should be given a bot. A room whose seat has only just
+    /// emptied keeps holding. See `modes::DUEL_HOLD_TICKS`, which the room
+    /// reads too: the wait is drawn while it runs.
     fn duel_hold_elapsed(&self, index: usize) -> bool {
         let Some(room) = self.rooms.get(index) else {
             return false;
         };
-        room.duel_alone_ticks() >= Self::DUEL_HOLD_TICKS
+        room.duel_alone_ticks() >= modes::DUEL_HOLD_TICKS
     }
 
     fn bots_requested_by(&self, index: usize) -> usize {

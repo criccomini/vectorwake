@@ -80,6 +80,23 @@ pub const DEFAULT_DUEL_FIRST_TO: u16 = 1;
 /// went down is still down when the fight is filed.
 pub const DUEL_DEATH_PAUSE_TICKS: u32 = 2 * TICKS_PER_SECOND;
 
+/// How long a duel room holds its second seat open for a person before the
+/// arena settles for a house pilot.
+///
+/// Ten seconds. Long enough that two people pressing play within a breath of
+/// each other meet, short enough that somebody alone on the zone is not left
+/// looking at an empty room wondering whether it is broken.
+///
+/// It lives here rather than beside the door that acts on it because two
+/// things read it. The arena decides when to ask for a bot, and the room says
+/// how much of the wait is left, which is the number a pilot watching an empty
+/// arena is owed.
+///
+/// It is not the only chance at a person. A human arriving later takes the
+/// seat from the bot, which is what `Room::join` already does when a room is
+/// full of AI and somebody is at the door.
+pub const DUEL_HOLD_TICKS: u32 = 10 * TICKS_PER_SECOND;
+
 /// The rules one completed duel is settled under.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DuelRules {

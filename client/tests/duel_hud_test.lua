@@ -406,17 +406,47 @@ check("and keeps the readings whatever it drops",
 -- said it was: DESTROYED, in the largest type there is, for the ten seconds
 -- the door holds the seat open for a person. It is the first thing a new
 -- player sees of this game.
+local function a_wait(hold)
+    return {playing = false, left = 180, score = {[0] = 0, [1] = 0},
+            duel = {streak = 0, best_streak = 0, waiting = true,
+                    hold = hold, legs = 0, log = {}}}
+end
+
 ui.details = false
 room.alive[0] = false
-frame({match = {playing = false, left = 180, score = {[0] = 0, [1] = 0},
-                duel = {streak = 0, best_streak = 0, waiting = true,
-                        legs = 0, log = {}}}})
+frame({match = a_wait(7)})
 check("a pilot waiting for an opponent is not told they were destroyed",
       exactly("D E S T R O Y E D") == nil, table.concat(words(), " | "))
 check("the middle of the screen says what the room is doing",
       said("WAITING FOR A RIVAL") ~= nil, table.concat(words(), " | "))
 check("and that the wait ends whether or not a person turns up",
       said("house pilot") ~= nil, table.concat(words(), " | "))
+
+-- How much longer, on the room's own count. A wait a player can read is a
+-- wait; a wait with nothing moving in it is a screen that might be broken.
+check("with how many seconds of it are left",
+      said("takes the seat in 7") ~= nil, table.concat(words(), " | "))
+frame({match = a_wait(1)})
+check("the last second reads one rather than sitting on zero",
+      said("takes the seat in 1") ~= nil, table.concat(words(), " | "))
+
+-- And at the end of it the sentence changes rather than the number resting on
+-- zero: the room has asked for a house pilot, and how long that one takes to
+-- arrive is not a number anybody here has.
+frame({match = a_wait(0)})
+check("a hold that has run out says a pilot is coming, not zero",
+      said("on the way") ~= nil and said("takes the seat in") == nil,
+      table.concat(words(), " | "))
+check("and the big line is the same line it was",
+      said("WAITING FOR A RIVAL") ~= nil, table.concat(words(), " | "))
+
+-- A room that says nothing about a hold is one that is not holding, which is
+-- what an older zone's body decodes to as well.
+frame({match = {playing = false, left = 180, score = {[0] = 0, [1] = 0},
+                duel = {streak = 0, best_streak = 0, waiting = true,
+                        legs = 0, log = {}}}})
+check("a body with no hold in it draws the sentence rather than a nil",
+      said("on the way") ~= nil, table.concat(words(), " | "))
 
 -- The word itself is not going anywhere: dying is what a fight is for, and
 -- the room says it is playing while the loser watches their own wreck.

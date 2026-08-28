@@ -220,7 +220,11 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// whoever is reading it, which now differs per pilot because both seats hold
 /// one. An older tab would read a shorter body from the wrong offset and draw
 /// somebody else's evening.
-pub(crate) const CLIENT_PROTOCOL: u8 = 28;
+///
+/// 29 puts the hold on the wire: one byte after the duel's status saying how
+/// many seconds the room will go on keeping the second seat open for a person.
+/// A client built for 28 reads it as the low byte of the streak.
+pub(crate) const CLIENT_PROTOCOL: u8 = 29;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
@@ -300,15 +304,20 @@ pub(crate) const S2C_ONAIR: u8 = 13;
 ///
 /// Flag bit 0 says the match is playing, bit 1 says an artifact follows the
 /// scores, and bit 2 says the duel body follows that. The duel body is
-/// `[status, streak, best streak, legs, logged, log[logged]]`, where status
-/// bit 0 says the room is waiting for a second pilot rather than counting
-/// down, and the three readings are u32.
+/// `[status, hold, streak, best streak, legs, logged, log[logged]]`, where
+/// status bit 0 says the room is waiting for a second pilot rather than
+/// counting down, and the three readings are u32.
+///
+/// `hold` is how many seconds that room will go on keeping the second seat
+/// open for a person before it settles for a house pilot, and zero once it is
+/// holding nothing. It rides here rather than being timed by the client,
+/// which knows when it noticed the wait and not when the room began it.
 ///
 /// `legs` is a u32 count of every fight this pilot has finished here and
 /// `logged` is a byte saying how many of them the window still holds, oldest
 /// first. A leg is `[result, seconds as u16, call sign length, call sign]`,
 /// where result is 0 lost, 1 won, 2 drawn, so it is four bytes plus a name as
-/// long as its owner made it. The body is 14 bytes before the first of them.
+/// long as its owner made it. The body is 15 bytes before the first of them.
 ///
 /// The duel body is the one part of any message that differs per recipient: a
 /// duel has two pilots in it and the card belongs to whoever is reading it.

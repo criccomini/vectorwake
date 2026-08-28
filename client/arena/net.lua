@@ -75,7 +75,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 28
+local CLIENT_PROTOCOL = 29
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -811,28 +811,34 @@ local function on_match(s)
     end
     local duel = nil
     if math.floor(flags / 4) % 2 == 1 then
-        if #s < at + 13 then return end
+        if #s < at + 14 then return end
         local status = string.byte(s, at)
         duel = {
             -- The room is looking for a second pilot rather than counting
             -- down, so there is no fight for the clock to be about.
             waiting = status % 2 == 1,
-            streak = u32(string.byte(s, at + 1, at + 4)),
+            -- Seconds the seat across the arena is still being kept open for
+            -- a person. Zero once the room is holding nothing, which is a
+            -- different sentence rather than a countdown at its end: what is
+            -- left to wait for then is a house pilot dialing in, and the room
+            -- has no number for that.
+            hold = string.byte(s, at + 1),
+            streak = u32(string.byte(s, at + 2, at + 5)),
             -- The longest this pilot has managed here, which is the reading a
             -- broken streak does not take away.
-            best_streak = u32(string.byte(s, at + 5, at + 8)),
+            best_streak = u32(string.byte(s, at + 6, at + 9)),
             -- Every fight finished here, which is larger than the log once a
             -- long evening outruns the window the room carries.
-            legs = u32(string.byte(s, at + 9, at + 12)),
+            legs = u32(string.byte(s, at + 10, at + 13)),
             log = {},
         }
-        local logged = string.byte(s, at + 13)
+        local logged = string.byte(s, at + 14)
         -- Walked rather than indexed, because a leg carries a call sign and a
         -- call sign is as long as its owner made it. A body that promises more
         -- legs than it carries is a truncated message rather than a short run,
         -- and half a log is worse than none: the panel would draw an evening
         -- that stopped where the packet did.
-        local o = at + 14
+        local o = at + 15
         for k = 1, logged do
             if #s < o + 3 then return end
             local n = string.byte(s, o + 3)

@@ -3,7 +3,8 @@
 --     lua5.1 client/tools/hud_svg.lua <out.svg> [scenario] [root] [w] [h]
 --
 -- Scenarios: after (an evening with fights behind it), fresh (its first), deep
--- (far enough to have a floor), rival (a duel holding the second seat open),
+-- (far enough to have a floor), rival (a duel counting down the hold on its
+-- second seat),
 -- before (with the banner the server used to
 -- send), ending and duel-ending (a room at the whistle), landing (the front end,
 -- watched from the stands; landing-zones and landing-ships open a stop's
@@ -244,7 +245,7 @@ if scenario == "rival" then
     room.count, room.alive[0] = 1, false
     match = {playing = false, left = 180, score = {[0] = 0, [1] = 0},
              duel = {streak = 0, best_streak = 0, waiting = true,
-                     legs = 0, log = {}}}
+                     hold = 7, legs = 0, log = {}}}
 end
 
 -- What the old build put across the middle of the screen every second of

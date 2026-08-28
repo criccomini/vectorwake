@@ -644,6 +644,7 @@ fn match_message(
     state: modes::MatchState,
     artifact: Option<u64>,
     duel: Option<modes::DuelState>,
+    hold: u8,
 ) -> Vec<u8> {
     let mut flags = u8::from(state.playing) * MATCH_PLAYING;
     if artifact.is_some() {
@@ -667,6 +668,12 @@ fn match_message(
     let Some(duel) = duel else { return out };
     debug_assert_eq!(state.playing, duel.playing);
     out.push(u8::from(duel.waiting));
+    // How much of the hold on the second seat is left, which is the room's
+    // half of the body rather than the mode's: the mode knows the seat is
+    // empty and nothing about who is being waited for. Zero once the arena
+    // has asked for a house pilot, and the client says so rather than
+    // counting a wait it has no number for. See `Room::duel_hold_left`.
+    out.push(hold);
     for value in [duel.run.streak, duel.run.best_streak, duel.run.legs] {
         out.extend_from_slice(&value.to_le_bytes());
     }
@@ -1144,6 +1151,27 @@ impl Room {
     /// and send a bot instead. Counted here because the room is what ticks.
     pub(crate) fn duel_alone_ticks(&self) -> u32 {
         self.duel_alone
+    }
+
+    /// Seconds this room will go on holding the second seat open for a person,
+    /// for the pilot sitting in the first one to read.
+    ///
+    /// Zero when it is holding nothing: the seat across the arena is filled,
+    /// or the hold has run out and the arena has asked for a house pilot. What
+    /// is left to wait for then is one bot dialing in, which nothing here has
+    /// a number for, so the client stops counting rather than counting to a
+    /// moment that is not the one a rival arrives at.
+    ///
+    /// Rounded up, so the last second reads 1 rather than sitting on 0 with a
+    /// second still to wait. The same rule the match clock follows.
+    pub(crate) fn duel_hold_left(&self) -> u8 {
+        if self.duel_alone == 0 {
+            return 0;
+        }
+        modes::DUEL_HOLD_TICKS
+            .saturating_sub(self.duel_alone)
+            .div_ceil(modes::TICKS_PER_SECOND)
+            .min(255) as u8
     }
 
     /// What the one person in this room is rated, when there is exactly one.
@@ -3792,6 +3820,7 @@ impl Room {
             m,
             self.artifact_id.map(|id| id as u64),
             self.mode.duel_state(viewer),
+            self.duel_hold_left(),
         ))
     }
 
@@ -4728,11 +4757,12 @@ mod duel_wire_tests {
                     logged: 2,
                 },
             }),
+            7,
         );
 
-        // Header, scores, artifact, status byte, three readings, the window
-        // size, then a leg for each call sign in the window.
-        assert_eq!(message.len(), 16 + 1 + 3 * 4 + 1 + (4 + 12) + (4 + 10));
+        // Header, scores, artifact, status byte, the hold, three readings, the
+        // window size, then a leg for each call sign in the window.
+        assert_eq!(message.len(), 16 + 2 + 3 * 4 + 1 + (4 + 12) + (4 + 10));
         assert_eq!(message[0], S2C_MATCH);
         assert_eq!(message[1], 6, "artifact and duel are present");
         assert_eq!(message[2], 0x50);
@@ -4744,20 +4774,21 @@ mod duel_wire_tests {
             0x7172_7374_7576_7778
         );
         assert_eq!(message[16], 1, "waiting is the only status bit left");
-        assert_eq!(u32_at(&message, 17), 0x1112_1314, "the streak");
-        assert_eq!(u32_at(&message, 21), 0x2223_2425, "the best of it");
-        assert_eq!(u32_at(&message, 25), 0x7182_7384, "fights finished here");
-        assert_eq!(message[29], 2, "fights the window still holds");
+        assert_eq!(message[17], 7, "seconds the second seat is still held for");
+        assert_eq!(u32_at(&message, 18), 0x1112_1314, "the streak");
+        assert_eq!(u32_at(&message, 22), 0x2223_2425, "the best of it");
+        assert_eq!(u32_at(&message, 26), 0x7182_7384, "fights finished here");
+        assert_eq!(message[30], 2, "fights the window still holds");
         // A leg is a result, a duration, and the call sign it was fought
         // against, which is as long as its owner made it.
-        assert_eq!(message[30], modes::LegResult::Cleared.to_byte());
-        assert_eq!(u16::from_le_bytes(message[31..33].try_into().unwrap()), 41);
-        assert_eq!(message[33], 12);
-        assert_eq!(&message[34..46], b"Vantage 0001");
-        assert_eq!(message[46], modes::LegResult::Lost.to_byte());
-        assert_eq!(u16::from_le_bytes(message[47..49].try_into().unwrap()), 7);
-        assert_eq!(message[49], 10);
-        assert_eq!(&message[50..60], b"Sable 0001");
+        assert_eq!(message[31], modes::LegResult::Cleared.to_byte());
+        assert_eq!(u16::from_le_bytes(message[32..34].try_into().unwrap()), 41);
+        assert_eq!(message[34], 12);
+        assert_eq!(&message[35..47], b"Vantage 0001");
+        assert_eq!(message[47], modes::LegResult::Lost.to_byte());
+        assert_eq!(u16::from_le_bytes(message[48..50].try_into().unwrap()), 7);
+        assert_eq!(message[50], 10);
+        assert_eq!(&message[51..61], b"Sable 0001");
     }
 
     /// A body with no fights behind it still says so, rather than leaving the
@@ -4772,10 +4803,11 @@ mod duel_wire_tests {
             },
             None,
             Some(a_state()),
+            0,
         );
-        assert_eq!(message.len(), 8 + 14, "the body with no legs on it");
-        assert_eq!(u32_at(&message, 17), 0, "no fight has finished");
-        assert_eq!(message[21], 0, "and none is carried");
+        assert_eq!(message.len(), 8 + 15, "the body with no legs on it");
+        assert_eq!(u32_at(&message, 18), 0, "no fight has finished");
+        assert_eq!(message[22], 0, "and none is carried");
     }
 
     /// Only the legs the window holds are written. A card claiming more than
@@ -4795,16 +4827,17 @@ mod duel_wire_tests {
             },
             None,
             Some(state),
+            0,
         );
         // Two named legs and the rest of the window at its default, which is
         // a result, a duration and an empty call sign.
         assert_eq!(
             message.len(),
-            8 + 14 + 2 * 4 + 12 + 10 + (modes::DUEL_LOG_LEGS - 2) * 4,
+            8 + 15 + 2 * 4 + 12 + 10 + (modes::DUEL_LOG_LEGS - 2) * 4,
             "a claim past the window is clamped to it"
         );
-        assert_eq!(message[21], modes::DUEL_LOG_LEGS as u8);
-        assert_eq!(u32_at(&message, 17), 300, "and the real count still rides");
+        assert_eq!(message[22], modes::DUEL_LOG_LEGS as u8);
+        assert_eq!(u32_at(&message, 18), 300, "and the real count still rides");
     }
 
     /// Two pilots in one room read two different bodies. This is the only
@@ -4819,11 +4852,11 @@ mod duel_wire_tests {
             seconds_left: 90,
             score: vec![0, 0],
         };
-        let a = match_message(clock.clone(), None, Some(mine));
-        let b = match_message(clock, None, Some(theirs));
+        let a = match_message(clock.clone(), None, Some(mine), 0);
+        let b = match_message(clock, None, Some(theirs), 0);
         assert_ne!(a, b, "the same room, two cards");
-        assert_eq!(u32_at(&a, 9), 4);
-        assert_eq!(u32_at(&b, 9), 0);
+        assert_eq!(u32_at(&a, 10), 4);
+        assert_eq!(u32_at(&b, 10), 0);
     }
 
     fn a_state() -> modes::DuelState {

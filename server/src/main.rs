@@ -1687,13 +1687,11 @@ mod tests {
         z
     }
 
-    /// Tick a duel room past the window it holds the second seat open for a
-    /// person, so the arena starts asking for a bot instead.
-    ///
-    /// Everybody in it keeps sending input, because a real client does and a
-    /// seat that stops is sat out for lag long before ten seconds are up.
-    fn wait_out_the_duel_hold(z: &mut ArenaServer) {
-        for _ in 0..=ArenaServer::DUEL_HOLD_TICKS {
+    /// Tick a duel room, with everybody in it flying the way a real client
+    /// does: a seat that stops sending input is sat out for lag long before
+    /// ten seconds are up, which is longer than most of these tests run.
+    fn tick_duel(z: &mut ArenaServer, ticks: u32) {
+        for _ in 0..ticks {
             let now = z.rooms[0].world.state.tick.wrapping_add(1);
             let seated: Vec<u64> = z.rooms[0].players.keys().copied().collect();
             for id in seated {
@@ -1703,6 +1701,12 @@ mod tests {
             }
             z.rooms[0].tick();
         }
+    }
+
+    /// Tick a duel room past the window it holds the second seat open for a
+    /// person, so the arena starts asking for a bot instead.
+    fn wait_out_the_duel_hold(z: &mut ArenaServer) {
+        tick_duel(z, modes::DUEL_HOLD_TICKS + 1);
     }
 
     fn a_token(
@@ -2464,6 +2468,70 @@ mod tests {
                 target_slot: Some(slot),
             }]),
             "the fight in progress is the population this room wants"
+        );
+    }
+
+    /// How long the seat across the arena is still held open for a person, in
+    /// seconds, said by the room rather than guessed by the client from when
+    /// it noticed the wait. A pilot who arrives to an empty room is looking at
+    /// a countdown with an end on it rather than at a zone that is broken.
+    #[test]
+    fn a_duel_says_how_long_the_second_seat_is_held_for() {
+        let mut z = duel_serving_with_accounts();
+        let (tx, mut rx) = mpsc::channel(OUT_QUEUE);
+        let human = z.rooms[0]
+            .join(Seat::guest("Climber", false), 0, 2, tx)
+            .expect("the human seat");
+        let ship = z.rooms[0].players[&human].ship;
+
+        tick_duel(&mut z, 1);
+        assert_eq!(
+            z.rooms[0].duel_hold_left(),
+            10,
+            "the whole of it, the first tick somebody is alone in the room"
+        );
+        // The byte a client reads it out of, which is the room's half of the
+        // duel body: no artifact rides here, so the header is eight bytes, the
+        // status is the ninth and the hold is the tenth.
+        let waiting = z.rooms[0].match_msg(Some(ship)).expect("a clock");
+        assert_eq!(waiting[8], 1, "the room says it is waiting");
+        assert_eq!(waiting[9], 10, "and how long it will go on waiting");
+
+        // And it reaches the pilot while it moves. A room sends the clock when
+        // the clock changes, and a room waiting for a rival has no other
+        // moving part: without the hold in the packet the number would be
+        // sent once and sit there.
+        let _ = drain(&mut rx);
+        tick_duel(&mut z, 3 * modes::TICKS_PER_SECOND);
+        assert_eq!(z.rooms[0].duel_hold_left(), 7, "three seconds of it gone");
+        let counted: Vec<u8> = drain(&mut rx)
+            .into_iter()
+            .filter(|m| m.first() == Some(&S2C_MATCH))
+            .map(|m| m[9])
+            .collect();
+        assert_eq!(
+            counted,
+            vec![10, 9, 8, 7],
+            "a packet a second, counting down"
+        );
+
+        wait_out_the_duel_hold(&mut z);
+        assert_eq!(
+            z.rooms[0].duel_hold_left(),
+            0,
+            "a hold that has run out counts nothing: what is left is one bot \
+             dialing in, which the room has no number for"
+        );
+
+        let slot = z.status().bot_requests.expect("a request")[0]
+            .target_slot
+            .expect("named by strength");
+        join_duel_bot(&mut z, 5_001, slot, 0);
+        tick_duel(&mut z, 1);
+        assert_eq!(
+            z.rooms[0].duel_hold_left(),
+            0,
+            "and a room with both seats filled is holding nothing at all"
         );
     }
 
