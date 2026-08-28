@@ -2082,9 +2082,9 @@ local function scores(me, pilots, watchers, viewer_name, always)
     -- screen and the feed still says who is killing whom, so it lives behind
     -- the same toggle your own loadout does.
     --
-    -- `always` is the match ending, which is this panel with a head and a foot
-    -- around it: at the whistle the room's numbers stop being something a
-    -- player has to ask for.
+    -- `always` is the match ending, which is this panel with a head over it:
+    -- at the whistle the room's numbers stop being something a player has to
+    -- ask for.
     if not (M.details or always) then return 0 end
     local n = refresh_players(pilots, watchers, nil, viewer_name)
 
@@ -3867,7 +3867,7 @@ local function match_ended(m)
 end
 -- The arena asks the same question, to keep the touch pads off the ending:
 -- the whistle benched every hull, so the pads have nothing to drive, and the
--- board's foot keys land exactly where they draw.
+-- board's own rows land exactly where the gun pad draws.
 M.match_ended = match_ended
 
 -- The clock and the score, dead center at the top, which are the two facts a
@@ -3941,8 +3941,15 @@ local function match_clock(o, m, names, alone)
     local under_y = top + big - under_px / 2
 
     -- The middle first, because everything else is placed off it.
+    --
+    -- The dim is for numbers that have stopped moving, which at the whistle is
+    -- both sides' points. The numerals themselves keep full strength wherever
+    -- they are counting something, and between matches they are counting the
+    -- hardest: the clock is the whole of what the band has left to say then.
+    -- Only the rival search's --:--, which is counting nothing, goes quiet.
     local dim = m.playing and 1 or 0.55
-    txt(clock, F.w / 2, mid, big, pal.a(pal.INK, 0.95 * dim), "center")
+    local clock_dim = duel_waiting(m) and 0.55 or 1
+    txt(clock, F.w / 2, mid, big, pal.a(pal.INK, 0.95 * clock_dim), "center")
     local half = text_w(clock, big) / 2
     -- What the band came to, walked outward from the clock as each side is
     -- laid down and read next frame by the question above.
@@ -3978,6 +3985,26 @@ local function match_clock(o, m, names, alone)
     -- be last fight's. The clock alone until it has.
     if duel_waiting(m) then
         press()
+        return
+    end
+
+    -- Nor is a match that has finished. The ending's own head names both sides
+    -- inside a bar with their points on the ends, a few lines down the same
+    -- window, so a side up here would be that read twice. What the band keeps
+    -- is the clock, in the pixels it has counted the match down in, now
+    -- counting to the next one.
+    --
+    -- And a word under it saying so, because a clock counting down to
+    -- something a player cannot see is a question. Nothing under it while a
+    -- match is being played: the clock is running and "match" beneath it is
+    -- the interface reading its own label back.
+    --
+    -- No press either. The board this box opens is already up and covering the
+    -- window, so the box would be a strip across the top of the ending that
+    -- toggles a panel nobody can see change.
+    if match_ended(m) then
+        txt("NEXT MATCH IN", F.w / 2, band_bottom() + 8 * F.scale,
+            (M.compact and 9 or 11) * F.scale, pal.a(pal.DIM, 0.8), "center")
         return
     end
 
@@ -4067,17 +4094,6 @@ local function match_clock(o, m, names, alone)
             faint and pal.a(pal.DIM, 0.8 * dim) or col, pivot)
     end
     press()
-    -- Nothing under it while a match is being played: the clock is counting
-    -- down and a word saying "match" beneath it is the interface reading its
-    -- own label back. The intermission does need saying, because a clock
-    -- counting down to something a player cannot see is a question.
-    -- Only when the ending is not up. The card says the same thing at its
-    -- foot, with room for it, and two of them at once is the interface
-    -- answering a question nobody asked twice.
-    if match_ended(m) and alone then
-        txt("NEXT MATCH IN", F.w / 2, band_bottom() + 8 * F.scale,
-            (M.compact and 9 or 11) * F.scale, pal.a(pal.DIM, 0.8), "center")
-    end
 end
 
 -- What the room has to say, under the band that carries everything else.
@@ -4113,19 +4129,24 @@ local function match_note(o, m)
         pal.a(pal.INK, 0.9), "center")
 end
 
--- The ending: the board, with a head and a foot.
+-- The ending: the board, with a head over it.
 --
 -- There was a page here. It carried a title, a score bar, both rosters, six
 -- phrase chips, a countdown with a drain bar beside it and a share key the
 -- width of the measure, and most of that was the scoreboard's own content a
 -- second time now that the board is one press off the band. So the ending
 -- stopped being a page. At the whistle the board comes up whether or not
--- anybody asked for it, and grows a line saying who took the match, a bar
--- under that, and a foot with the countdown and one key. Decision 68.
+-- anybody asked for it, and grows a line saying who took the match and a bar
+-- under that. Decision 68.
+--
+-- Nothing under the roster. The foot that held the countdown went to the band
+-- with it, so the clock a player has been reading in the top row all match is
+-- still in the top row after it. Decision 94, which took the two keys that
+-- stood beside that countdown with it.
 --
 -- One layout at every window size. The measure and the type change, and on an
--- upright phone the block hugs the foot of the screen so the key on it lands
--- under a thumb; nothing else about the arrangement moves.
+-- upright phone the block hugs the foot of the screen, where a thumb reaches
+-- the roster; nothing else about the arrangement moves.
 
 -- How long a phrase stands on somebody's row once one arrives.
 --
@@ -4246,38 +4267,6 @@ function END.band(m, names, x, y, w, sides, grow)
     end
 end
 
--- What the room is counting down to, and nothing else.
---
--- The countdown is a reading rather than a draining bar: the bar was a second
--- clock beside the first, and the figure is the clock.
---
--- Two keys stood at the right of this line and both are gone. One shared the
--- match; the other claimed a guest's call sign. They were asks made of
--- somebody who had just finished a fight and was reading how they did, and a
--- screen that answers that question should not also want something. An
--- account is claimed in the menu, where the guest band says so, and an invite
--- is sent from the friends page, which is a page somebody opens because they
--- meant to.
-function END.foot(m, x, y)
-    local px = (M.compact and 10 or 12) * F.scale
-    -- The countdown and its caption keep the interface's own size while the
-    -- block around them wears the zoom: a clock grown with the roster reads as
-    -- a headline about waiting.
-    local unz = M.podium_zoom or 1
-    local cap_px = px / unz
-    local clock_px = (M.compact and 17 or 21) * F.scale / unz
-    -- Still a key's height, which is what the block was measured against and
-    -- what a line of reading wants under a list either way.
-    local key_h = KEY_H * F.scale
-    local mid = y + key_h / 2
-    lbl("next match", x, mid, pal.a(pal.DIM, 0.9), nil, cap_px)
-    local at = x + text_w("NEXT MATCH", cap_px) + 12 * F.scale / unz
-    local left = m.left or 0
-    txt(string.format("%d:%02d", math.floor(left / 60), left % 60),
-        at, mid, clock_px, pal.a(pal.INK, 0.92))
-    return key_h
-end
-
 local function podium(o, m, names)
     -- The room, ordered the way the ending reads it: the side that took the
     -- match first, whether or not it is this viewer's, and the best gun first
@@ -4306,18 +4295,29 @@ local function podium(o, m, names)
         bar_h = (M.compact and 18 or 26) * F.scale / (M.podium_zoom or 1)
         gap = (M.compact and 10 or 14) * F.scale
         head = title_px + gap + bar_h
-        h = head + gap + roster_h(n) + gap + KEY_H * F.scale
+        h = head + gap + roster_h(n)
     end
     measure()
 
+    -- What the block has to clear at the top and at the bottom of the window.
+    --
+    -- The band and the word under it hold the top row now, so the block starts
+    -- under them rather than being centered through them. Both are measured at
+    -- the interface's own scale and before the zoom below touches it, because
+    -- the band is drawn at that scale whatever the block is grown to.
+    local ceil = band_bottom() + 20 * F.scale
+    local floor = F.safe_b + 18 * F.scale
+
     -- The zoom, and everything after this line draws at it. Scaling F.scale
     -- itself is what grows the block as one drawing: every size below, the
-    -- roster's rows and the foot's keys included, is a multiple of it, and
-    -- the hit boxes are published off the same numbers, so the targets grow
-    -- with the ink. Clamped by the window's height rather than its width,
-    -- since the measure already gives way to a narrow screen on its own.
+    -- roster's rows included, is a multiple of it, and the hit boxes are
+    -- published off the same numbers, so the targets grow with the ink.
+    -- Clamped by the room the band has left rather than by the window's
+    -- width, since the measure already gives way to a narrow screen on its
+    -- own. The band itself never wears the zoom: it is not part of this
+    -- drawing.
     local was_scale = F.scale
-    local slack = F.h - 2 * (F.safe_t + 18 * F.scale)
+    local slack = F.h - ceil - floor
     local zoom = math.max(1, math.min(END.ZOOM, slack / h))
     M.podium_zoom = zoom
     if zoom > 1 then
@@ -4338,7 +4338,7 @@ local function podium(o, m, names)
     if m.duel then
         local log = m.duel.log or {}
         h = h + gap + RUN.READ_H * F.scale
-        local spare = F.h - 2 * (F.safe_t + 18 * F.scale) - h - 8 * F.scale
+        local spare = slack - h - 8 * F.scale
         legs = math.max(0, math.floor(spare / (LINE * F.scale)))
         legs = math.min(legs, #log, RUN.SHOWN)
         if legs > 0 then
@@ -4346,15 +4346,17 @@ local function podium(o, m, names)
         end
     end
 
-    -- Centered where there is room, and hugging the foot of an upright phone:
-    -- the roster is dragged with a thumb, and a thumb reaches the bottom of a
-    -- tall screen rather than the middle.
+    -- Centered in what the band has left, and hugging the foot of an upright
+    -- phone: the roster is dragged with a thumb, and a thumb reaches the
+    -- bottom of a tall screen rather than the middle. Never over the band
+    -- either way, which is the one thing above it that is still being read.
     local y
     if M.compact and F.h > F.w then
         y = F.h - F.safe_b - 26 * F.scale - h
     else
-        y = math.max(F.safe_t + 18 * F.scale, (F.h - h) / 2)
+        y = ceil + (slack - h) / 2
     end
+    y = math.max(ceil, y)
 
     -- How long the ending has been up, so the bar arrives rather than appears.
     -- Latched off the frame clock rather than counted from the seconds the
@@ -4406,8 +4408,7 @@ local function podium(o, m, names)
     top_side = nil
     -- Both sections, or the readings alone where the window had no room for
     -- a fight under them. `legs` is what the measure above found space for.
-    if m.duel then bottom = run_log(o, bottom, true, legs) end
-    END.foot(m, x, bottom + gap)
+    if m.duel then run_log(o, bottom, true, legs) end
     F.scale = was_scale
 end
 
@@ -5056,18 +5057,21 @@ function M.hud(o)
     -- wash as well. They are the instrument the board belongs to rather than
     -- something it covers, and the clock is the one reading a player wants
     -- whatever else is up.
-    if reading then F.text_dim = 1 end
-    -- Not while the ending is up. The ending's own head carries the score and
-    -- its foot carries the clock, so a band across the top would be both of
-    -- them a second time, over a block that already owns the window.
     --
-    -- Unless the menu is over the ending, which is the one case where neither
-    -- of those is on screen: the drawer covers the block, and a player reading
-    -- a page still wants to know how long they have.
-    if not ending or o.menu_open then
-        match_clock(o, o.match, o.side_names, o.menu_open)
-        match_note(o, o.match)
-    end
+    -- The ending for the same reason and more so. It washes the whole window
+    -- and then draws the block at full strength on top, and the countdown is
+    -- part of what it is saying rather than something behind it: at a third
+    -- of an alpha the one number on screen that is still moving was the
+    -- faintest thing on it.
+    if reading or ending then F.text_dim = 1 end
+    -- Through the ending as well, which is the whole point of a band: the
+    -- clock is one instrument in one place, and a player who has spent three
+    -- minutes reading the top of the window does not have to find it
+    -- somewhere else the moment the whistle goes. The ending's own head
+    -- carries the score, so the band gives its two sides up while that block
+    -- is on screen and keeps the numerals. See `match_clock`.
+    match_clock(o, o.match, o.side_names, o.menu_open)
+    match_note(o, o.match)
     -- The two big centered lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end

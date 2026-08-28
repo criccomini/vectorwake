@@ -440,10 +440,11 @@ if who_t and verb_t then
           string.format("%.1f", verb_t.x - (who_t.x + nw)))
 end
 check("and the room says when the next one starts",
-      said("next match") ~= nil and said("0:23") ~= nil)
--- Once, at the ending's foot. The topbar's own caption stands down for it.
-check("and says it once", counted("next match") == 1,
-      tostring(counted("next match")))
+      said("next match in") ~= nil and said("0:23") ~= nil)
+-- Once, in the band. The ending has no foot of its own to say it a second
+-- time: the clock is one instrument in one place all match and after it.
+check("and says it once", counted("next match in") == 1,
+      tostring(counted("next match in")))
 
 -- Everybody who flew it is on it, whichever side they were on.
 for _, who in ipairs({"you", "Kestrel", "Plinth", "Vesper"}) do
@@ -691,15 +692,18 @@ end
 check("and the score figures wear the zoom", zoomed ~= nil)
 check("as does the pitch a dragging finger is measured by",
       ui.row_pitch() > 18 * 1.4, tostring(ui.row_pitch()))
--- Two things stand outside the zoom at Chris's request: the countdown at the
--- foot and the bar between the score figures both keep the interface's own
--- size, so the readings stay readings while the block around them grows.
+-- The countdown does not, because it is not part of the block: it is the
+-- band's, drawn at the band's own height at the top of the window, and the
+-- zoom belongs to the drawing under it. The bar between the score figures is
+-- inside the block and stands outside the zoom at Chris's request, so the
+-- reading stays a reading while the block around it grows.
 local clock = nil
 for i = 1, state.n do
     local t = state.text[i]
-    if t.s == "0:23" and math.abs(t.px - 21) < 0.01 then clock = t end
+    if t.s == "0:23" and math.abs(t.px - 26) < 0.01 then clock = t end
 end
-check("while the countdown keeps its size", clock ~= nil)
+check("while the countdown keeps the band's size", clock ~= nil,
+      table.concat(words(), " | "))
 local bar = nil
 for _, r in ipairs(rects) do
     if math.abs(r.h - 26) < 0.01 then bar = r end
@@ -718,23 +722,78 @@ frame({match = {playing = true, left = 96, score = {[0] = 4, [1] = 7}},
 check("and play puts the pitch back", ui.row_pitch() == 18,
       tostring(ui.row_pitch()))
 
--- --- the foot --------------------------------------------------------------
+-- --- the clock is the band's, and the ending has no foot ------------------
 --
--- The countdown as a reading rather than a draining bar, and nothing beside
--- it: the bar was a second clock next to the first, and the keys that used to
--- stand at the right of this line were asks made of somebody reading how they
--- did. INVITE FRIEND shared the match and the one after it claimed a guest's
--- call sign; the menu and the friends page are where both of those live now.
+-- The block had a foot: a countdown at the bottom of it with two keys beside
+-- it, INVITE FRIEND and the one that claimed a guest's call sign. The keys
+-- were asks made of somebody reading how they did, and the menu and the
+-- friends page are where both of those live now. The countdown went up into
+-- the band, which is where a player has been reading the clock for the whole
+-- three minutes before the whistle.
+--
+-- So this measures the clock against the band's own line rather than against
+-- the block, and pins that the block starts under it rather than through it.
 
 ui.hits = {}
 frame({match = {playing = false, left = 23, artifact = 1,
                 score = {[0] = 11, [1] = 14}},
-       side_names = NAMES, side = 0})
-check("the foot counts the next match down", said("next match") ~= nil
-      and said("0:23") ~= nil, table.concat(words(), " | "))
+       side_names = NAMES, side = 0, w = 1280, h = 800})
+
+-- Where the band draws: a key tall, PAD down from the top of the window, and
+-- the numerals centered in that box. Written out rather than read off ui, so
+-- a band that quietly moved fails here instead of agreeing with itself.
+local BAND_TOP, BAND_H = 14, 26
+local clock_t, cap_t = nil, nil
+for i = 1, state.n do
+    local t = state.text[i]
+    if t.s == "0:23" then clock_t = t end
+    if string.lower(t.s) == "next match in" then cap_t = t end
+end
+check("the band carries the countdown", clock_t ~= nil and cap_t ~= nil,
+      table.concat(words(), " | "))
+if clock_t and cap_t then
+    -- `state` holds y up from the bottom, which is what the gui draws in.
+    local clock_y = 800 - clock_t.y
+    local cap_y = 800 - cap_t.y
+    check("in the middle of the band's own line",
+          math.abs(clock_y - (BAND_TOP + BAND_H / 2)) < 0.01,
+          string.format("%.1f", clock_y))
+    check("centered on the window like the match clock before it",
+          math.abs(clock_t.x - 1280 / 2) < 0.01 and clock_t.pivot == "center",
+          string.format("%.1f %s", clock_t.x, tostring(clock_t.pivot)))
+    check("with the word it is counting to under it",
+          cap_y > BAND_TOP + BAND_H, string.format("%.1f", cap_y))
+    -- At full strength, not at the wash the ending lays over everything
+    -- behind its block. The countdown is part of what the ending is saying,
+    -- and drawn through that wash it was the faintest thing on a screen where
+    -- it is the only number still moving. `dim` is set on a run only when the
+    -- frame was drawing at less than full.
+    check("and read rather than washed",
+          clock_t.dim == nil and cap_t.dim == nil,
+          string.format("%s %s", tostring(clock_t.dim), tostring(cap_t.dim)))
+
+    -- And the block clears both. It is centered in what the band leaves
+    -- rather than in the window, so the two never share a line.
+    local panel = nil
+    for _, r in ipairs(ui.hits) do
+        if r.action == "scores" then panel = r end
+    end
+    check("and the block starts under the band, not through it",
+          panel ~= nil and panel.y > cap_y, panel
+              and string.format("%.1f under %.1f", panel.y, cap_y) or "none")
+end
+
+-- One clock. The foot's was a second copy at a size of its own, and two
+-- readings of the same number is what this arrangement exists to be rid of.
+local clocks = 0
+for i = 1, state.n do
+    if state.text[i].s == "0:23" then clocks = clocks + 1 end
+end
+check("and draws it once", clocks == 1, tostring(clocks))
+
 local actions = {}
 for _, hit in ipairs(ui.hits) do actions[hit.action] = true end
-check("and offers no invite", said("invite friend") == nil
+check("the ending offers no invite", said("invite friend") == nil
       and said("link copied") == nil and actions.share == nil)
 check("nor a key that claims a pilot", said("keep you") == nil
       and actions.keep_pilot == nil)
@@ -744,10 +803,15 @@ check("nor a key that claims a pilot", said("keep you") == nil
 check("nor the film", said("watch replay") == nil
       and actions.open_replay == nil)
 -- No anchor either. The browser lays a real one over anything that shares,
--- and a rectangle left published over a foot with nothing in it is a link
--- somewhere on the ending that answers a press.
+-- and a rectangle left published where a foot used to be is a link somewhere
+-- on the ending that answers a press.
 check("and lays down no share anchor", ui.link_dom == nil,
       tostring(ui.link_dom))
+-- Nor is the band itself a control while the ending is up. It opens the board
+-- mid-match, and the board is already up and covering the window here, so the
+-- box would be a strip across the top that toggles a panel nobody sees change.
+check("and the band takes no press behind the board",
+      actions.details == nil)
 
 -- Nothing on the ending sends a phrase. Six chips at the foot of the card
 -- were the widest thing on it, and they are going to be a key: this pins that
@@ -837,9 +901,8 @@ frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1]
 check("the menu covers it", said("takes it") == nil,
       tostring(said("takes it")))
 -- The clock survives, because it is the topbar's and a player reading a menu
--- still wants to know how long they have. And it takes back the caption the
--- card was carrying, since with the card gone nothing else says what the
--- number is counting down to.
+-- still wants to know how long they have. It is the same clock in the same
+-- place with the card up or down, which is the whole reason it lives there.
 check("but the clock does not", said("0:23") ~= nil)
 check("and the topbar says what it is counting to",
       said("next match in") ~= nil)
