@@ -414,6 +414,81 @@ function Layer:ring_fade(x, y, r, width, segs, col)
     end
 end
 
+-- A ring or a part of one, carrying the pixel of falloff every stroke in this
+-- game carries. See Layer:seg for what the profile is and why it is geometry
+-- rather than multisampling.
+--
+-- Layer:arc and Layer:ring above lay hard-edged quads, which is what the
+-- things they were written for wanted: a crater rim and a spawn bracket are
+-- drawn once over a map and read at a distance. A control under a thumb is
+-- neither. Its rim is the whole of its edge, it sits still on the glass where
+-- the eye can settle on it, and a hard-edged band a couple of pixels wide is
+-- exactly the case the falloff exists for -- so the pads asked for this and
+-- the walls went on wanting the cheap one.
+--
+-- Angles run the way Layer:arc's do, and a1 below a0 sweeps the other way.
+-- The joints are shared rather than capped: a cap at every joint would
+-- overlap its neighbour, and on a layer that adds, overlap is a bright bead
+-- at every segment of what is meant to be one even stroke.
+function Layer:arc_aa(x, y, r, a0, a1, width, segs, col)
+    local px = self.px
+    local w, a = width, col[4]
+    -- Never thinner than a pixel, dimmed by whatever it was widened by, so a
+    -- hairline keeps the light it had instead of blinking as it crosses one.
+    if w < px then a = a * w / px w = px end
+    local hc, ho = (w - px) * 0.5, (w + px) * 0.5
+    local ci, co = r - hc, r + hc
+    local oi, oo = r - ho, r + ho
+    if ci < 0 then ci = 0 end
+    if oi < 0 then oi = 0 end
+    local c = col
+    if a ~= col[4] then
+        dimmed[1], dimmed[2], dimmed[3], dimmed[4] = col[1], col[2], col[3], a
+        c = dimmed
+    end
+    local step = (a1 - a0) / segs
+    for i = 0, segs - 1 do
+        local b0, b1 = a0 + step * i, a0 + step * (i + 1)
+        local c0, s0 = math.cos(b0), math.sin(b0)
+        local c1, s1 = math.cos(b1), math.sin(b1)
+        if hc > 1e-6 then
+            self:quad(x + c0 * ci, y + s0 * ci, x + c1 * ci, y + s1 * ci,
+                      x + c1 * co, y + s1 * co, x + c0 * co, y + s0 * co, c)
+        end
+        -- The ramp inside the core, and the one outside it.
+        self:tri_fade(x + c0 * ci, y + s0 * ci, 1,
+                      x + c1 * ci, y + s1 * ci, 1,
+                      x + c1 * oi, y + s1 * oi, 0, c)
+        self:tri_fade(x + c0 * ci, y + s0 * ci, 1,
+                      x + c1 * oi, y + s1 * oi, 0,
+                      x + c0 * oi, y + s0 * oi, 0, c)
+        self:tri_fade(x + c0 * co, y + s0 * co, 1,
+                      x + c1 * co, y + s1 * co, 1,
+                      x + c1 * oo, y + s1 * oo, 0, c)
+        self:tri_fade(x + c0 * co, y + s0 * co, 1,
+                      x + c1 * oo, y + s1 * oo, 0,
+                      x + c0 * oo, y + s0 * oo, 0, c)
+    end
+end
+
+-- The whole circle of the above, at a segment count worth the radius: a ring
+-- is round when its facets are under a pixel across, and that is a question
+-- about how big it is rather than a number a caller should be picking.
+function Layer:ring_aa(x, y, r, width, col, segs)
+    self:arc_aa(x, y, r, 0, math.pi * 2,
+                width, segs or self:round_segs(r), col)
+end
+
+-- How many facets a circle of this radius needs before the eye stops seeing
+-- them: enough that the deepest a chord sags below the arc is under a fifth
+-- of a pixel. Floored so a dot is still a dot, capped so a huge one does not
+-- spend the layer.
+function Layer:round_segs(r)
+    local n = math.ceil(math.pi / math.acos(1 - math.min(0.2, r) / (r + 1e-6)))
+    if n < 12 then n = 12 elseif n > 96 then n = 96 end
+    return n
+end
+
 -- A closed outline through a flat {x1,y1,x2,y2,...} list, already transformed
 -- by the caller. Corners are not mitred: at these widths the overdraw of
 -- overlapping quads is invisible and mitring costs more than it buys. `cap`

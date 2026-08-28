@@ -353,12 +353,25 @@ do
     function u:ring(x, y) if corner(x, y) then drawn.ring = drawn.ring + 1 end end
     function u:disc(x, y) if corner(x, y) then drawn.disc = drawn.disc + 1 end end
     function u:seg(x1, y1) if corner(x1, y1) then drawn.seg = drawn.seg + 1 end end
+    -- A ring is one circle however many passes draw it. The rim carries a
+    -- crisp stroke with two wider, fainter ones under it that are the light
+    -- coming off it, all at the same radius, so counting strokes here would
+    -- count a glow as more rings. Counted by radius instead.
+    function u:arc_aa(x, y, r, _, _, _, _, _)
+        if corner(x, y) then
+            local key = string.format("%.1f", r)
+            if not drawn.radii[key] then
+                drawn.radii[key] = true
+                drawn.ring = drawn.ring + 1
+            end
+        end
+    end
     function u:rect() end
     function u:frame() end
     marks.begin(u, 1)
 
     local function paint()
-        drawn = {ring = 0, disc = 0, seg = 0}
+        drawn = {ring = 0, disc = 0, seg = 0, radii = {}}
         touch.draw(u, W, H, 1)
         return drawn
     end

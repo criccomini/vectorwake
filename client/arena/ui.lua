@@ -266,7 +266,13 @@ local function txt(s, x, y, px, col, pivot, font, raw)
         s, x, F.h - y, px, col, pivot or "left"
     t.font = font
     t.dim = F.text_dim ~= 1 and F.text_dim or nil
+    -- Cleared rather than left, because these tables are pooled and reused
+    -- frame to frame: a node that was turned once and is not this time would
+    -- otherwise keep the angle forever. See `arc_txt`, the one caller that
+    -- ever sets it.
+    t.rot = nil
 end
+
 
 -- The small label the mocks head every group with: mono, upper, MUTE, LABEL.
 -- It is the one piece of type in this interface that is neither a name nor a
@@ -682,6 +688,43 @@ local function text_w(s, px, font, raw)
         w = w + (adv[string.byte(s, i)] or menu_face.widest)
     end
     return w * px
+end
+
+-- One run of type bent around a circle, a glyph at a time.
+--
+-- The mono face advances the same width for every glyph, which is what makes
+-- this arithmetic rather than layout: each letter takes the same angle, so
+-- the run is centred on `at` by stepping out half of what it spans and
+-- walking round. Each glyph is set on the tangent, which is a quarter turn
+-- off its own radius.
+--
+-- Worth the nodes it costs in exactly one place: the stick's rim, where the
+-- thing being labelled is a circle and a straight line under it reads as a
+-- caption for the screen rather than for the control. Every other label in
+-- this interface is a straight run and should stay one.
+local function arc_txt(s, cx, cy, r, at, px, col, flip)
+    local step = px * ADVANCE / r
+    -- UTF-8: the multiplication sign and the middle dot are two bytes each,
+    -- and a run measured in bytes would spread the word out and turn the
+    -- letters wrong.
+    local glyphs = {}
+    for ch in string.gmatch(s, "[%z\1-\127\194-\244][\128-\191]*") do
+        glyphs[#glyphs + 1] = ch
+    end
+    local n = #glyphs
+    if n == 0 then return end
+    -- Under the circle the run reads left to right with the letters turned
+    -- outward, so it walks the other way and each glyph is turned the other
+    -- way with it.
+    local dir = flip and -1 or 1
+    local a = at - dir * step * (n - 1) / 2
+    for i = 1, n do
+        local gx = cx + math.cos(a) * r
+        local gy = cy + math.sin(a) * r
+        txt(glyphs[i], gx, F.h - gy, px, col, "center", nil, true)
+        F.text[F.text_count].rot = a + dir * math.pi / 2
+        a = a + dir * step
+    end
 end
 
 -- What is left of a run of type once the column's edge has cut it: the
@@ -5010,8 +5053,11 @@ function M.hud(o)
     -- middle so it stays put as the words change length.
     if M.touching and o.stick_hint then
         local hint = o.stick_hint
-        txt(hint.text, hint.x, F.h - hint.y, TYPE.LABEL * F.scale,
-            hint.col, "center", nil, true)
+        -- Around the foot of the stick's own rim rather than on a line under
+        -- it: the thing being labelled is a circle, and a straight run below
+        -- it reads as a caption for the screen instead of for the control.
+        arc_txt(hint.text, hint.x, hint.y, hint.r, -math.pi / 2,
+                TYPE.LABEL * F.scale, hint.col)
     end
     -- Stacked, not overlaid: the panel that is always there sits at the
     -- bottom and the one you asked for sits on top of it. A watcher has no

@@ -110,12 +110,31 @@ function layer:ring(x, y, r, w, _, c)
     weigh(2 * math.pi * r * w, x, y, r, x - r - w / 2, x + r + w / 2,
           c and c[4])
 end
+-- How round a circle is drawn, which the real layer works out from the
+-- radius. Here it only has to be a number the drawing can loop over.
+function layer:round_segs(r)
+    return math.max(12, math.min(96, math.ceil(r / 2)))
+end
+-- The falloff-carrying arc the pads stroke with. Recorded as an arc like any
+-- other, plus the middle and the angles it was drawn at, because a lit
+-- segment is three passes at one place and a test counting strokes would
+-- count the light as well as the rim. See `segments`.
+function layer:arc_aa(x, y, r, a0, a1, w, segs, c)
+    local sh = layer.arc(self, x, y, r, a0, a1, w, segs, c)
+    sh.cx, sh.cy, sh.a0, sh.a1, sh.w = x, y, a0, a1, w
+    return sh
+end
+function layer:ring_aa(x, y, r, w, c, segs)
+    return layer.arc_aa(self, x, y, r, 0, math.pi * 2, w, segs or 24, c)
+end
 function layer:arc(x, y, r, a0, a1, w, _, c)
-    put("arc", x - r - w, y - r - w, x + r + w, y + r + w, c).r = r
+    local sh = put("arc", x - r - w, y - r - w, x + r + w, y + r + w, c)
+    sh.r = r
+    sh.cx, sh.cy, sh.a0, sh.a1, sh.w = x, y, a0, a1, w
     -- An arc's weight sits at the middle of its own sweep, not at its center,
     -- and it reaches only as far as its own sweep carries it.
     local d = a1 - a0
-    if math.abs(d) < 1e-6 then return end
+    if math.abs(d) < 1e-6 then return sh end
     local x0, x1 = math.huge, -math.huge
     for i = 0, 24 do
         local t = a0 + d * i / 24
@@ -126,6 +145,7 @@ function layer:arc(x, y, r, a0, a1, w, _, c)
           x + r * (math.sin(a1) - math.sin(a0)) / d,
           y - r * (math.cos(a1) - math.cos(a0)) / d, r,
           x0 - w / 2, x1 + w / 2, c and c[4])
+    return sh
 end
 function layer:rect(x, y, w, h, c) put("rect", x, y, x + w, y + h, c) end
 function layer:frame(x, y, w, h, _, c) put("frame", x, y, x + w, y + h, c) end
@@ -177,6 +197,7 @@ local function reset(w, h, s)
     -- Both triggers ready, which is what a key looks like between shots. The
     -- recovery block below fires one and watches its rim.
     touch.trig_waits, touch.trig_delays = {}, {}
+    touch.trig_fired = nil
     touch.safe_l, touch.safe_r, touch.safe_b = 0, 0, 0
     -- What the dial leaves: ui.radar_span() is 140 points on a phone, being
     -- the margin it keeps from the top of the window, the cropped 112 of
@@ -472,23 +493,42 @@ do
           "no lit ink on the rim of a trigger that can fire")
 
     reset(w, h, s)
-    touch.trig_waits = {[0] = 30, [1] = 0}
-    touch.trig_delays = {[0] = 30, [1] = 30}
+    -- What the core actually does on a gun shot: every trigger locks every
+    -- other for the firing weapon's delay, so both counters are set, and only
+    -- the fire event says which pull did it.
+    touch.trig_fired = 0
+    touch.trig_waits = {[0] = 30, [1] = 30}
+    touch.trig_delays = {[0] = 30, [1] = 40}
     local shot = draw(w, h, s)
     check("the tick it fires, the gun's rim has gone dark",
           rim_ink(shot.guns) == 0,
           "bright ink still on a rim whose whole delay is left")
-    check("and the bomb beside it is untouched",
+    -- The bomb is shut too and says nothing about it. Drawing both would be
+    -- two rings sweeping in lockstep saying one thing twice, and each would
+    -- be drawn as a fraction of its own delay while the wait on it came from
+    -- the other weapon, so neither would be telling the truth about anything.
+    check("and the bomb, shut by the same shot, does not sweep with it",
           rim_ink(shot.bombs) > 0,
-          "the bomb's rim went out on the gun's clock")
+          "the bomb's rim ran down a clock the gun's shot started")
 
     reset(w, h, s)
-    touch.trig_waits = {[0] = 9, [1] = 0}
-    touch.trig_delays = {[0] = 30, [1] = 30}
+    touch.trig_fired = 0
+    touch.trig_waits = {[0] = 9, [1] = 9}
+    touch.trig_delays = {[0] = 30, [1] = 40}
     local back = draw(w, h, s)
     check("and part way through the delay it has grown part of it back",
           rim_ink(back.guns) > 0,
           "nothing lit with two thirds of the delay run")
+
+    -- And the other way round, which is the same shot from the bomb's side.
+    reset(w, h, s)
+    touch.trig_fired = 1
+    touch.trig_waits = {[0] = 40, [1] = 40}
+    touch.trig_delays = {[0] = 30, [1] = 40}
+    local bombed = draw(w, h, s)
+    check("a bomb sweeps its own rim and leaves the gun's alone",
+          rim_ink(bombed.bombs) == 0 and rim_ink(bombed.guns) > 0,
+          "the gun's rim swept on the bomb's clock")
 end
 
 -- --- nothing overlaps anything ---------------------------------------------
@@ -754,15 +794,26 @@ end
 -- is in hand and dim once spent. Counted as bright arcs on the key's own
 -- radius, which is the whole boundary the key has -- there is no inner ring
 -- to mistake for one.
+-- One reading per segment slot rather than per stroke. A segment in hand is
+-- drawn three times, the crisp rim and two wider, fainter passes under it
+-- that are the light coming off it, so counting strokes would count the glow
+-- as extra charges. Slots are told apart by the angle they start at, and each
+-- takes the brightest ink drawn there.
 local function segments(c)
-    local lit, dark = 0, 0
+    local slots, order = {}, {}
     for _, sh in ipairs(shapes) do
-        local cx, cy = (sh.x0 + sh.x1) / 2, (sh.y0 + sh.y1) / 2
         if sh.kind == "arc" and sh.r and math.abs(sh.r - c.r) < c.r * 0.08
-            and math.abs(cx - c.x) < c.r and math.abs(cy - c.y) < c.r then
-            if (sh.col and sh.col[4] or 1) > 0.5 then lit = lit + 1
-            else dark = dark + 1 end
+            and sh.cx and math.abs(sh.cx - c.x) < 1
+            and math.abs(sh.cy - c.y) < 1 then
+            local key = string.format("%.3f", sh.a0)
+            local a = (sh.col and sh.col[4]) or 1
+            if slots[key] == nil then order[#order + 1] = key end
+            slots[key] = math.max(slots[key] or 0, a)
         end
+    end
+    local lit, dark = 0, 0
+    for _, key in ipairs(order) do
+        if slots[key] > 0.5 then lit = lit + 1 else dark = dark + 1 end
     end
     return lit, dark
 end

@@ -7,12 +7,18 @@ function M.noop() end
 function M.layer()
     local layer = {}
     for _, name in ipairs({
-        "arc", "bloom", "clip", "disc", "fan", "flush", "frame", "glow_band",
-        "halo", "outline", "quad", "rect", "reset", "resize", "ring",
-        "ring_fade", "seg", "seg_fade", "seg_flat", "seg_glow", "skirt",
-        "tri", "tri_fade", "unclip",
+        "arc", "arc_aa", "bloom", "clip", "disc", "fan", "flush", "frame",
+        "glow_band", "halo", "outline", "quad", "rect", "reset", "resize",
+        "ring", "ring_aa", "ring_fade", "seg", "seg_fade", "seg_flat",
+        "seg_glow", "skirt", "tri", "tri_fade", "unclip",
     }) do
         layer[name] = M.noop
+    end
+    -- The one layer call that answers rather than draws: how many facets a
+    -- circle of this radius is worth. A caller loops over it, so a stand-in
+    -- that returned nothing would hang or draw nothing at all.
+    layer.round_segs = function(_, r)
+        return math.max(12, math.min(96, math.ceil((r or 1) / 2)))
     end
     return layer
 end

@@ -63,6 +63,7 @@ function init(self)
         self.was[i] = {
             on = false, s = false, pivot = false, x = false, y = false,
             scale = false, r = false, g = false, b = false, a = false,
+            rot = 0,
             font = FONT,
             pos = vmath.vector3(0, 0, 0),
             sc = vmath.vector3(1, 1, 1),
@@ -113,6 +114,16 @@ function update(self)
             p.x, p.y = t.x, t.y
             gui.set_position(node, p)
             w.x, w.y = t.x, t.y
+        end
+
+        -- Turned, for the one run of type in this game that is bent around a
+        -- circle rather than set on a line. Nil is upright, which is every
+        -- other word here, and the compare keeps a node that was turned once
+        -- from staying turned when the pool hands it to a straight run.
+        local rot = t.rot or 0
+        if w.rot ~= rot then
+            gui.set_rotation(node, vmath.quat_rotation_z(rot))
+            w.rot = rot
         end
 
         local s = t.px / SIZES[font]

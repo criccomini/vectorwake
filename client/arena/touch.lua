@@ -150,6 +150,12 @@ M.ceiling = math.huge
 -- the same ship on the same frame.
 M.trig_waits = {}
 M.trig_delays = {}
+-- And which trigger was actually pulled, which the two clocks above cannot
+-- say: every trigger locks every other for the firing weapon's delay, so a
+-- bomb leaves the gun a wait that is real but is not the gun's own. Only the
+-- one that fired draws a recovery. Set by the caller off the core's own fire
+-- event, nil until something has been fired.
+M.trig_fired = nil
 
 local stick = nil         -- {id, ox, oy, x, y, t0, still, flipped}
 -- The last press that ended as a tap: when it let go, and where it sat. A
@@ -607,8 +613,33 @@ function M.draw(u, w, h, s)
     -- shape cut out of the fight. A halo rather than a flat disc, because the
     -- fall-off is the whole of the effect.
     local function key_ground(pad, col, lit)
-        u:halo(pad.x, pad.y, pad.r * 0.98, 22,
+        u:halo(pad.x, pad.y, pad.r * 0.98, u:round_segs(pad.r),
                pal.a(col, lit and 0.24 or 0.14))
+    end
+
+    -- One lit stroke of the cluster: the rim itself, and under it a wider,
+    -- much fainter pass of the same stroke.
+    --
+    -- Both go through arc_aa, so both carry the pixel of falloff every stroke
+    -- in this game carries rather than the hard-edged quads Layer:arc lays.
+    -- That is most of what made these read as chonky: a two pixel band with a
+    -- cut edge, at a facet count picked for a crater rather than for a circle
+    -- sitting still under a thumb.
+    --
+    -- The wide pass is the light coming off it. A rim without one is a shape
+    -- cut out of the fight; the arena's own rounds and blasts all wear a halo
+    -- and a bloom, and a control drawn in the same ink should look like it
+    -- belongs to the same game.
+    local function lit_arc(x, y, r, a0, a1, pen, col)
+        local segs = u:round_segs(r)
+        local a = col[4] or 1
+        u:arc_aa(x, y, r, a0, a1, pen * 3.4, segs, pal.a(col, a * 0.16))
+        u:arc_aa(x, y, r, a0, a1, pen * 1.9, segs, pal.a(col, a * 0.22))
+        u:arc_aa(x, y, r, a0, a1, pen, segs, col)
+    end
+
+    local function lit_ring(x, y, r, pen, col)
+        lit_arc(x, y, r, 0, math.pi * 2, pen, col)
     end
 
     -- A trigger's rim, and what it has to say: full while the weapon answers,
@@ -619,21 +650,33 @@ function M.draw(u, w, h, s)
     -- and the only one nobody has to be taught. The floor stays under the
     -- whole circle rather than only under the missing part, so what a player
     -- sees is one ring brightening round rather than two arcs meeting.
+    --
+    -- Only the trigger that fired recovers on screen, which is a deliberate
+    -- departure from what the core is doing underneath. Every trigger locks
+    -- every other for its own delay, so a bomb genuinely shuts the guns; but
+    -- it shuts them for the bomb's delay, and both counters then run out on
+    -- the same tick. Drawing both is two rings sweeping in lockstep saying
+    -- one thing twice, and worse, each would be drawn as a fraction of its
+    -- own delay while the wait on it came from the other weapon, so the two
+    -- would sweep at visibly different rates and neither would be telling
+    -- the truth about anything. The pilot's question is "how long until the
+    -- thing I just fired comes back", and that is the ring this draws.
     local function trig_ring(pad, col, t, lit)
         local wait = M.trig_waits and M.trig_waits[t] or 0
         local delay = M.trig_delays and M.trig_delays[t] or 0
         local full = pal.a(col, lit and 0.95 or 0.85)
         local pen = 2.6 * s
-        if wait > 0 and delay > 0 then
+        if wait > 0 and delay > 0 and M.trig_fired == t then
             local done = 1 - math.min(1, wait / delay)
-            u:ring(pad.x, pad.y, pad.r, pen, 28, pal.a(col, 0.3))
+            u:arc_aa(pad.x, pad.y, pad.r, 0, math.pi * 2, pen,
+                     u:round_segs(pad.r), pal.a(col, 0.3))
             if done > 0 then
                 local a0 = math.pi / 2
-                u:arc(pad.x, pad.y, pad.r, a0, a0 - math.pi * 2 * done,
-                      pen, math.max(3, math.floor(28 * done)), full)
+                lit_arc(pad.x, pad.y, pad.r, a0, a0 - math.pi * 2 * done,
+                        pen, full)
             end
         else
-            u:ring(pad.x, pad.y, pad.r, pen, 28, full)
+            lit_ring(pad.x, pad.y, pad.r, pen, full)
         end
     end
 
@@ -649,8 +692,8 @@ function M.draw(u, w, h, s)
     for i = 1, #sats - 1 do
         local a, b = sats[i].a - gap, sats[i + 1].a + gap
         if a > b then
-            u:arc(L.guns.x, L.guns.y, L.orbit, a, b, 1.2 * s, 10,
-                  pal.a(pal.DIM, 0.30))
+            u:arc_aa(L.guns.x, L.guns.y, L.orbit, a, b, 1.2 * s,
+                     u:round_segs(L.orbit), pal.a(pal.DIM, 0.30))
         end
     end
 
@@ -703,15 +746,24 @@ function M.draw(u, w, h, s)
         if wait > 0 and delay > 0 then
             lit = SHUT + (1 - SHUT) * (1 - math.min(1, wait / delay))
         end
-        u:halo(c.x, c.y, c.r * 0.98, 18,
+        u:halo(c.x, c.y, c.r * 0.98, u:round_segs(c.r),
                pal.a(pal.CHARGE_COL, (n > 0 and 0.2 or 0.07) * lit))
         local span = math.pi * 2 / cap
         for i = 1, cap do
             -- From the top, and round the way a clock goes, so a rack
             -- emptying and a trigger recovering run in the same direction.
             local a0 = math.pi / 2 - (i - 1) * span - CHARGE_GAP / 2
-            u:arc(c.x, c.y, c.r, a0, a0 - span + CHARGE_GAP, 2.6 * s, 8,
-                  pal.a(pal.CHARGE_COL, (i <= n and 0.9 or 0.22) * lit))
+            local a1 = a0 - span + CHARGE_GAP
+            local col = pal.a(pal.CHARGE_COL, (i <= n and 0.9 or 0.22) * lit)
+            -- The ones in hand are lights and wear the bloom; a spent segment
+            -- is an edge that is still there, and giving it the same halo
+            -- would be drawing a charge nobody has.
+            if i <= n then
+                lit_arc(c.x, c.y, c.r, a0, a1, 2.6 * s, col)
+            else
+                u:arc_aa(c.x, c.y, c.r, a0, a1, 2.6 * s,
+                         u:round_segs(c.r), col)
+            end
         end
         marks.charge(c.slot, c.x, c.y, c.r * 0.55,
                      pal.a(pal.CHARGE_COL, (n > 0 and 0.92 or 0.3) * lit))
@@ -725,8 +777,9 @@ function M.draw(u, w, h, s)
     local hot = reversed and pal.THRUST or pal.FRIEND
     if stick then
         local live = pal.a(hot, 0.9)
-        u:ring(stick.ox, stick.oy, L.home.r, 1.8 * s, 26, dim)
-        u:ring(stick.x, stick.y, L.r * 0.42, 1.8 * s, 16, live)
+        u:arc_aa(stick.ox, stick.oy, L.home.r, 0, math.pi * 2, 1.8 * s,
+                 u:round_segs(L.home.r), dim)
+        lit_ring(stick.x, stick.y, L.r * 0.42, 1.8 * s, live)
         u:seg(stick.ox, stick.oy, stick.x, stick.y, 2 * s, live)
         -- The nose, out the far side of the press. Reverse is the one time
         -- the ship is not pointed where the thumb is, and that is the part of
@@ -765,7 +818,7 @@ function M.draw(u, w, h, s)
         -- letters: a picture of a stance is a thing to learn, and this
         -- control's whole problem was that nobody learned it.
         local rest = reversed and pal.a(hot, 0.5) or pal.a(pal.DIM, 0.28)
-        u:ring(L.home.x, L.home.y, L.home.r, 1.8 * s, 26, rest)
+        lit_ring(L.home.x, L.home.y, L.home.r, 1.8 * s, rest)
         u:disc(L.home.x, L.home.y, 2.6 * s, 8,
                reversed and pal.a(hot, 0.6) or pal.a(pal.DIM, 0.4))
     end
@@ -787,11 +840,14 @@ end
 function M.hint(w, h, s)
     if not M.used then return nil end
     local L = M.layout(w, h, s or 1)
+    -- The stick's middle and a radius, rather than a point to set a line on:
+    -- what the caller draws is the run bent around the rim, so what it needs
+    -- is the circle to bend it around. Far enough out to clear the ring's own
+    -- stroke and the light it sheds.
     return {
         x = L.home.x,
-        -- Under the rim, clear of the stroke, in the space the ring keeps
-        -- empty whether or not a thumb is on it.
-        y = L.home.y - L.home.r - 11 * (s or 1),
+        y = L.home.y,
+        r = L.home.r + 13 * (s or 1),
         text = reversed and "TAP ×2 · FORWARD" or "TAP ×2 · REVERSE",
         col = reversed and pal.a(pal.THRUST, 0.8) or pal.a(pal.DIM, 0.55),
     }
