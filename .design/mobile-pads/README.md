@@ -15,12 +15,12 @@ reversed stance:
   cells, and a rose for the stick with a tappable stance tab at its foot
 - **B · Cluster** one big key for the gun and an even orbit of
   satellites at charge size for bomb, repel and burst, named by their
-  marks alone; a charge key bounded by nothing but its own count ring,
-  multifire as a separated segment in the gun's rim with the volley
-  drawing the same state, the reverse gesture etched around the stick,
-  which rests as a quiet ring and grows its needle only under a thumb; a
-  states board spells out multifire on beside declined and a charge key
-  at three, two and one in hand
+  marks alone; a charge key bounded by nothing but its own count ring;
+  no multifire toggle on a phone, the gun's mark simply drawing the
+  volley the trigger will throw; the double tap gesture etched around
+  the stick, always naming what the next tap does, REVERSE at rest and
+  FORWARD while reversed; a states board shows a charge key at three,
+  two and one in hand
 - **C · Glass** no chrome at all: the controls are the glowing marks
   themselves, the volley is the multifire state, the stick a faint
   reticle with a ghost hint that fades once learned

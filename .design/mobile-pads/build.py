@@ -545,18 +545,16 @@ def controls_gauge(reversed_=False):
 # --- direction B: Cluster ----------------------------------------------------
 
 
-def cluster_key(cx, cy, r, col, grad, mark, segs=None, fan=None):
+def cluster_key(cx, cy, r, col, grad, mark, segs=None):
     """One round key of the hand: glow ground, one bright ring, the mark.
 
     On a charge key the count ring is the boundary: no inner ring at all,
     just the rim split one segment per charge, lit while it is in hand and
     dimmed once spent, so the key keeps its edge down to the last one.
 
-    On a gun carrying a fan the same rim language answers for multifire:
-    the ring opens at the top and the separated segment is the fan's own
-    light, bright while it fires and down to a glimmer when declined. The
-    volley inside draws the same answer, and a chevron under the segment
-    points the upward pull that toggles it."""
+    The gun's volley mark draws whatever the trigger will actually throw.
+    There is no multifire toggle on a phone: declining the fan is a
+    keyboard matter, so the key carries no state of its own."""
     out = [disc(cx, cy, r - 1, f"url(#{grad})")]
     if segs:
         n, cap = segs
@@ -565,14 +563,6 @@ def cluster_key(cx, cy, r, col, grad, mark, segs=None, fan=None):
             t0 = -90 + i * (360 / cap) + 6
             alpha = .9 if i < n else .22
             out.append(arc(cx, cy, r, t0, t0 + span, 2.6, a(col, alpha)))
-    elif fan is not None:
-        out.append(arc(cx, cy, r, 297, 603, 2.2, a(col, .85)))
-        out.append(arc(cx, cy, r, 251, 289, 2.6,
-                       a(col, .95 if fan else .3)))
-        hy = cy - r + 12
-        ch = a(col, .6 if fan else .3)
-        out.append(seg(cx - 5, hy + 4, cx, hy - 2, 1.6, ch, glow=False))
-        out.append(seg(cx, hy - 2, cx + 5, hy + 4, 1.6, ch, glow=False))
     else:
         out.append(ring(cx, cy, r, 2.2, a(col, .85)))
     out.append(mark)
@@ -611,7 +601,9 @@ def cluster_stick(cx, cy, R, engaged=None, reversed_=False):
     x0, y0 = pt(cx, cy, R + 12, 152)
     x1, y1 = pt(cx, cy, R + 12, 28)
     etched = a(THRUST, .8) if reversed_ else a(DIM, .5)
-    label = "REVERSED · ×2 BACK" if reversed_ else "TAP ×2 · REVERSE"
+    # The hint always names what the next double tap does, so a pilot
+    # never has to invert it in their head.
+    label = "TAP ×2 · FORWARD" if reversed_ else "TAP ×2 · REVERSE"
     out.append(
         f'<defs><path id="hint" d="M{x0:.1f} {y0:.1f} A{R + 12} {R + 12} '
         f'0 0 0 {x1:.1f} {y1:.1f}"/></defs>'
@@ -626,8 +618,7 @@ def controls_cluster(reversed_=False):
     gx, gy, gr = 772, 314, 42
     out = [cluster_rail(gx, gy)]
     out.append(cluster_key(gx, gy, gr, GUN, "gy",
-                           volley(gx, gy + 4, 21, 13, GUN, HOT[GUN]),
-                           fan=True))
+                           volley(gx, gy + 4, 21, 13, GUN, HOT[GUN])))
     # The bomb rides the same orbit as the charges, at their size: one big
     # key for the trigger a thumb lives on, satellites for everything it
     # visits, an even fifty degrees apart. The bomb keeps its ring whole;
@@ -650,27 +641,16 @@ def controls_cluster(reversed_=False):
 
 
 def controls_cluster_states():
-    """The cluster's states at reading size, off to the side of the fight:
-    the gun with the fan firing and declined, and a charge key counting
-    down. At zero the key goes away entirely, as it does today."""
+    """A charge key counting down, at reading size and off to the side of
+    the fight. At zero the key goes away entirely, as it does today."""
     out = []
-    for x, declined, label in ((170, False, "MULTIFIRE ON"),
-                               (390, True, "MULTIFIRE DECLINED")):
-        gy, gr = 168, 63
-        out.append(cluster_key(x, gy, gr, GUN, "gy",
-                               volley(x, gy + 6, 30, 13, GUN, HOT[GUN],
-                                      declined=declined),
-                               fan=not declined))
-        out.append(text(x, 262, label, 9, a(DIM, .8)))
-    out.append(text(280, 284, "THE SEGMENT AND THE VOLLEY ARE THE STATE · "
-                    "PULL UP TO TOGGLE", 8, a(DIM, .55)))
-    for x, n, label in ((590, 3, "3 IN HAND"), (690, 2, "2 IN HAND"),
-                        (790, 1, "1 IN HAND")):
+    for x, n, label in ((322, 3, "3 IN HAND"), (422, 2, "2 IN HAND"),
+                        (522, 1, "1 IN HAND")):
         cy, cr = 168, 33
         out.append(cluster_key(x, cy, cr, CHARGE, "gg",
                                burst_glyph(x, cy, 18), segs=(n, 3)))
         out.append(text(x, 232, label, 9, a(DIM, .8)))
-    out.append(text(690, 262, "THE COUNT RING IS THE BOUNDARY", 8,
+    out.append(text(422, 262, "THE COUNT RING IS THE BOUNDARY", 8,
                     a(DIM, .55)))
     return "".join(out)
 
