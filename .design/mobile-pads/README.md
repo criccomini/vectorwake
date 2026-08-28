@@ -39,7 +39,16 @@ from `client/arena/palette.lua`, the shipped geometry from
 `client/arena/marks.lua`, hull outlines to the extents in
 `docs/design/ships.md`.
 
-Rebuild with `python3 build.py`; the seven `.dc.html` files and
+Rebuild with `python3 build.py`; the eight `.dc.html` files and
 `canvas.json` beside it are what a design canvas is seeded from.
 
-Drawings of a proposal, not a plan of record.
+B shipped. `client/arena/touch.lua` draws it, `client/tests/pad_layout_test.lua`
+and `client/tests/touch_test.lua` hold it to what the boards say, and
+`sim.ship_trigger_wait` and `sim.ship_trigger_delay` are new bindings the
+recovery rim needed. Two things the drawings could not settle came up in
+the building and went the way the boards imply: a satellite orbit sized for
+three has to grow rather than spread when a hull carries every charge kind
+the core can store, and the stick's written hint comes from the gui rather
+than the mesh, so `touch.hint` publishes it and `ui.lua` draws it.
+
+The boards stay as the drawing the layout was settled against.
