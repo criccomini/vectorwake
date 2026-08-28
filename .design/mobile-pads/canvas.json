@@ -5,6 +5,7 @@
     { "file": "InstrumentRev.dc.html", "title": "A · Instrument · reversed", "x": 944, "y": 520, "w": 844, "h": 390 },
     { "file": "Cluster.dc.html", "title": "B · Cluster", "x": 1888, "y": 0, "w": 844, "h": 390 },
     { "file": "ClusterRev.dc.html", "title": "B · Cluster · reversed", "x": 1888, "y": 520, "w": 844, "h": 390 },
+    { "file": "ClusterStates.dc.html", "title": "B · Cluster · states", "x": 1888, "y": 1040, "w": 844, "h": 390 },
     { "file": "Glass.dc.html", "title": "C · Glass", "x": 2832, "y": 0, "w": 844, "h": 390 },
     { "file": "GlassRev.dc.html", "title": "C · Glass · reversed", "x": 2832, "y": 520, "w": 844, "h": 390 }
   ],
@@ -22,7 +23,7 @@
     {
       "id": "note-cluster",
       "x": 1888, "y": -250, "w": 340,
-      "text": "B · Cluster\n\nNo boxes anywhere: the corner is one hand of round keys on a faint thread, sized by importance. A charge's count is lit segments of its own rim. Multifire is the gun's satellite moon, tap to decline. The stick is a ring with a course needle, and the reverse gesture is etched around the foot of the rim where a resting thumb reads it; reversed, the needle swings to the far side of the thumb.\n\nCost: five circles have to stay tellable by mark alone, and the etched hint is small type on glass."
+      "text": "B · Cluster\n\nNo boxes anywhere: the corner is one hand of round keys on a faint thread. The two triggers are the same size and tell apart by mark and color alone. A charge key's count ring is its whole boundary: one rim segment per charge, dimming as they spend, gone at zero. Multifire lives in the gun's own rim language: the ring opens at the top and the separated segment is the fan's light, with the volley inside drawing the same state and a chevron pointing the toggling pull. The stick is a ring with a course needle and the reverse gesture etched around the foot of the rim; reversed, the needle swings to the far side of the thumb.\n\nThe states board below spells out multifire on beside declined, and a charge key at three, two and one in hand.\n\nCost: four circles have to stay tellable by mark alone, and the etched hint is small type on glass."
     },
     {
       "id": "note-glass",

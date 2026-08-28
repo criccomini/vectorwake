@@ -545,22 +545,37 @@ def controls_gauge(reversed_=False):
 # --- direction B: Cluster ----------------------------------------------------
 
 
-def cluster_key(cx, cy, r, col, grad, mark, segs=None):
+def cluster_key(cx, cy, r, col, grad, mark, segs=None, fan=None):
     """One round key of the hand: glow ground, one bright ring, the mark.
-    segs draws the count as lit rim segments in place of any pip row."""
-    out = [
-        disc(cx, cy, r - 1, f"url(#{grad})"),
-        ring(cx, cy, r, 2.2, a(col, .85)),
-        mark,
-    ]
+
+    On a charge key the count ring is the boundary: no inner ring at all,
+    just the rim split one segment per charge, lit while it is in hand and
+    dimmed once spent, so the key keeps its edge down to the last one.
+
+    On a gun carrying a fan the same rim language answers for multifire:
+    the ring opens at the top and the separated segment is the fan's own
+    light, bright while it fires and down to a glimmer when declined. The
+    volley inside draws the same answer, and a chevron under the segment
+    points the upward pull that toggles it."""
+    out = [disc(cx, cy, r - 1, f"url(#{grad})")]
     if segs:
         n, cap = segs
-        span = 360 / cap - 14
+        span = 360 / cap - 12
         for i in range(cap):
-            t0 = -90 + i * (360 / cap) + 7
-            alpha = .95 if i < n else .2
-            out.append(arc(cx, cy, r + 5, t0, t0 + span, 2.6,
-                           a(col, alpha)))
+            t0 = -90 + i * (360 / cap) + 6
+            alpha = .9 if i < n else .22
+            out.append(arc(cx, cy, r, t0, t0 + span, 2.6, a(col, alpha)))
+    elif fan is not None:
+        out.append(arc(cx, cy, r, 297, 603, 2.2, a(col, .85)))
+        out.append(arc(cx, cy, r, 251, 289, 2.6,
+                       a(col, .95 if fan else .3)))
+        hy = cy - r + 12
+        ch = a(col, .6 if fan else .3)
+        out.append(seg(cx - 5, hy + 4, cx, hy - 2, 1.6, ch, glow=False))
+        out.append(seg(cx, hy - 2, cx + 5, hy + 4, 1.6, ch, glow=False))
+    else:
+        out.append(ring(cx, cy, r, 2.2, a(col, .85)))
+    out.append(mark)
     return "".join(out)
 
 
@@ -571,22 +586,6 @@ def cluster_rail():
     return (f'<path d="{p}" fill="none" stroke="{a(DIM, .3)}" '
             f'stroke-width="1.2" stroke-dasharray="1 6" '
             f'stroke-linecap="round"/>')
-
-
-def cluster_moon(gx, gy, gr, on=True):
-    """Multifire as the gun's own satellite: a small moon on its rim
-    carrying nothing but the fan, tap to decline it."""
-    mx, my = pt(gx, gy, gr + 13, -58)
-    alpha = .9 if on else .35
-    out = [
-        disc(mx, my, 15, a(GUN, .10)),
-        ring(mx, my, 15, 1.8, a(GUN, alpha)),
-    ]
-    for off in (-26, 0, 26):
-        x1, y1 = pt(mx, my + 6, 10, -90 + off)
-        out.append(seg(mx, my + 6, x1, y1, 1.6, a(GUN, alpha), glow=False))
-        out.append(disc(x1, y1, 1.4, a(HOT[GUN], alpha)))
-    return "".join(out)
 
 
 def cluster_stick(cx, cy, R, engaged=None, reversed_=False):
@@ -628,23 +627,60 @@ def cluster_stick(cx, cy, R, engaged=None, reversed_=False):
 
 def controls_cluster(reversed_=False):
     out = [cluster_rail()]
-    gx, gy, gr = 772, 314, 46
+    gx, gy, gr = 772, 314, 42
     out.append(cluster_key(gx, gy, gr, GUN, "gy",
-                           volley(gx, gy + 2, 22, 13, GUN, HOT[GUN])))
-    out.append(cluster_moon(gx, gy, gr))
-    bx, by, br = 676, 340, 36
+                           volley(gx, gy + 4, 21, 13, GUN, HOT[GUN]),
+                           fan=True))
+    bx, by, br = 674, 338, 42
     out.append(cluster_key(bx, by, br, BOMB, "go",
-                           bomb_mark(bx, by, 24, BOMB, HOT[BOMB])))
-    out.append(cluster_key(700, 258, 21, CHARGE, "gg",
-                           repel_glyph(700, 258, 12), segs=(2, 3)))
-    out.append(cluster_key(756, 232, 21, CHARGE, "gg",
-                           burst_glyph(756, 232, 12), segs=(3, 3)))
+                           bomb_mark(bx, by, 26, BOMB, HOT[BOMB])))
+    out.append(cluster_key(700, 256, 22, CHARGE, "gg",
+                           repel_glyph(700, 256, 12), segs=(2, 3)))
+    out.append(cluster_key(756, 230, 22, CHARGE, "gg",
+                           burst_glyph(756, 230, 12), segs=(3, 3)))
     if reversed_:
         out.append(cluster_stick(96, 300, 54, engaged=(130, 276),
                                  reversed_=True))
     else:
         out.append(cluster_stick(76, 306, 54))
     return "".join(out)
+
+
+def controls_cluster_states():
+    """The cluster's states at reading size, off to the side of the fight:
+    the gun with the fan firing and declined, and a charge key counting
+    down. At zero the key goes away entirely, as it does today."""
+    out = []
+    for x, declined, label in ((170, False, "MULTIFIRE ON"),
+                               (390, True, "MULTIFIRE DECLINED")):
+        gy, gr = 168, 63
+        out.append(cluster_key(x, gy, gr, GUN, "gy",
+                               volley(x, gy + 6, 30, 13, GUN, HOT[GUN],
+                                      declined=declined),
+                               fan=not declined))
+        out.append(text(x, 262, label, 9, a(DIM, .8)))
+    out.append(text(280, 284, "THE SEGMENT AND THE VOLLEY ARE THE STATE · "
+                    "PULL UP TO TOGGLE", 8, a(DIM, .55)))
+    for x, n, label in ((590, 3, "3 IN HAND"), (690, 2, "2 IN HAND"),
+                        (790, 1, "1 IN HAND")):
+        cy, cr = 168, 33
+        out.append(cluster_key(x, cy, cr, CHARGE, "gg",
+                               burst_glyph(x, cy, 18), segs=(n, 3)))
+        out.append(text(x, 232, label, 9, a(DIM, .8)))
+    out.append(text(690, 262, "THE COUNT RING IS THE BOUNDARY", 8,
+                    a(DIM, .55)))
+    return "".join(out)
+
+
+def board_plain(content, seed=33):
+    """A detail sheet: the same sky, none of the fight."""
+    stars = starfield(seed)
+    return (
+        f'<div style="position:absolute;left:0;top:0;width:{W}px;'
+        f'height:{H}px;overflow:hidden;background-color:var(--bg);'
+        f'background-image:{stars}">'
+        f'<svg width="{W}" height="{H}" viewBox="0 0 {W} {H}" '
+        f'style="position:absolute;inset:0">{defs()}{content}</svg></div>')
 
 
 # --- direction C: Glass ------------------------------------------------------
@@ -743,10 +779,11 @@ def main():
     page("Cluster", board(controls_cluster()))
     page("ClusterRev", board(controls_cluster(reversed_=True),
                              reversing=True))
+    page("ClusterStates", board_plain(controls_cluster_states()))
     page("Glass", board(controls_glass()))
     page("GlassRev", board(controls_glass(reversed_=True),
                            reversing=True))
-    print("seven artboards written")
+    print("eight artboards written")
 
 
 if __name__ == "__main__":

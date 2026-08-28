@@ -14,8 +14,11 @@ reversed stance:
   glow, the volley at full size, a rim tab for the fan, hexagonal charge
   cells, and a rose for the stick with a tappable stance tab at its foot
 - **B · Cluster** the corner becomes one hand of round keys on a thumb
-  arc, counts as rim segments, the fan as a satellite moon on the gun's
-  rim, the reverse gesture etched around the stick
+  arc, the two triggers the same size, a charge key bounded by nothing
+  but its own count ring, multifire as a separated segment in the gun's
+  rim with the volley drawing the same state, the reverse gesture etched
+  around the stick; a states board spells out multifire on beside
+  declined and a charge key at three, two and one in hand
 - **C · Glass** no chrome at all: the controls are the glowing marks
   themselves, the volley is the multifire state, the stick a faint
   reticle with a ghost hint that fades once learned
