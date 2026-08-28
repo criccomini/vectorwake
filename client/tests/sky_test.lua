@@ -5,7 +5,7 @@
 -- The budget is watched next door in star_budget_test.lua, which asks whether
 -- the drawing fits. This asks whether it is the right drawing.
 --
--- Five claims, every one of which broke at least once while it was written.
+-- Four claims, every one of which broke at least once while it was written.
 --
 -- A room's sky is the room's, placed from the map's name, so it is the same
 -- every time that map is played and not the same as anybody else's. The band
@@ -14,11 +14,9 @@
 -- window, so the whole view was always inside it, which draws as a starfield
 -- with the density turned up and nothing else. The sky does not stop where the
 -- map does, because past a declared edge every tile answers solid and anything
--- that reads that answer erases itself out there. The flare hangs off the
--- middle of the frame rather than off anything in the world, which is what
--- makes it a flare. And the dust knows the difference between flying and being
--- put somewhere, because a camera that teleports on a respawn would otherwise
--- draw one frame of white rain.
+-- that reads that answer erases itself out there. And the dust knows the
+-- difference between flying and being put somewhere, because a camera that
+-- teleports on a respawn would otherwise draw one frame of white rain.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -147,85 +145,6 @@ _G.sim = open
 check("a sky the core calls solid is still drawn", #out.log > 200,
       "drew " .. #out.log .. " pieces past the edge of the map")
 print(string.format("   outside the room, %d pieces of sky", #out.log))
-
--- --- the flare hangs off the middle of the view ----------------------------
-
--- A lens flare is not out in the sky, it is inside the camera: the ghosts sit
--- on the line from the light through the middle of the frame, so the chain
--- swings about that middle as the light crosses it and goes out when the light
--- leaves. Anchored in the world instead they would drift along with the stars,
--- which is the one thing a smudge on the lens never does, and nothing else in
--- this file would notice.
-local function ghosts(cx, cy)
-    local seen = {}
-    local L = {}
-    function L:rect() end
-    function L:seg_fade() end
-    function L:bloom() end
-    function L:halo(x, y, _, segs)
-        if segs == world.IRIS_SEGS then seen[#seen + 1] = {x - cx, y - cy} end
-    end
-    function L:ring(x, y, _, _, segs)
-        if segs == world.IRIS_SEGS then seen[#seen + 1] = {x - cx, y - cy} end
-    end
-    world.stars(L, L, cx, cy, HW, HH)
-    return seen
-end
-
--- Which map throws one and where it is standing are both the seeding's
--- business, and some maps get no sun at all, so this looks for a sky with a
--- sun in frame rather than assuming a name has one. Finding none at all would
--- mean flares never happen, which is worth failing over.
-local ROOMS = {"drydock", "relay", "foundry", "maelstrom", "gantry",
-               "warren", "redoubt", "ringworks", "alpha", "chaos"}
-local lit_room, lit_x, lit_y, chain = nil, 0, 0, {}
-for _, room in ipairs(ROOMS) do
-    world.sky_seed(room)
-    for _, at in ipairs({{0, 0}, {600, 0}, {0, 400}, {-600, -400}}) do
-        if not lit_room then
-            local c = ghosts(MID + at[1], MID + at[2])
-            if #c >= 5 then
-                lit_room, lit_x, lit_y, chain = room, at[1], at[2], c
-            end
-        end
-    end
-end
-check("some map somewhere throws a chain of ghosts", lit_room ~= nil,
-      "no sun in frame anywhere across " .. #ROOMS .. " rooms")
-world.sky_seed(lit_room or "drydock")
-
--- The first is the aperture, drawn on the sun itself, so everything else is
--- measured against where that sits.
-local sun = chain[1] or {0, 0}
-local bent = nil
-for i = 2, #chain do
-    local g = chain[i]
-    -- Zero cross product against the sun's own offset means on the line.
-    local cross = sun[1] * g[2] - sun[2] * g[1]
-    if not bent and (cross > 0.5 or cross < -0.5) then bent = i end
-end
-check("every ghost is on the line from the sun through the middle",
-      bent == nil, "ghost " .. tostring(bent) .. " is off it")
-
-local swung = ghosts(MID + lit_x + 900, MID + lit_y)
-local across = math.abs((swung[1] or {0})[1] - sun[1])
-check("flying swings the chain", across > 100,
-      "the sun moved " .. string.format("%.0f", across) .. " across the frame")
-
--- Fly far enough in any direction and the light leaves the frame. Walked
--- rather than guessed at, because how far that is belongs to the sun's own
--- depth and this map's is not any other map's.
-local out_at = nil
-for step = 1, 30 do
-    if not out_at and #ghosts(MID + lit_x, MID + lit_y + step * 900) == 0 then
-        out_at = step * 900
-    end
-end
-check("a flare goes out with the light that throws it", out_at ~= nil,
-      "still drawing ghosts 27000 out")
-print(string.format("   %s throws a chain, swinging %.0f px over 900 of" ..
-                    " flight, out by %s", lit_room or "?", across,
-                    tostring(out_at)))
 
 -- --- dust knows flying from being moved ------------------------------------
 

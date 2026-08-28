@@ -109,20 +109,24 @@ constraints that shaped the original's art.
 **Field.** Near-black, under a parallax sky with real depth in it: two vast
 washes beneath everything, clouds drawn as runs of knots rather than round
 smudges, a band of fine grain along one diagonal, three depths of star in four
-temperatures with a rare one burning, whatever suns and comets the map was
-dealt with the flare the brightest of them throws inside the camera, and a near
-layer of dust that streaks along the camera's own motion. Nothing is stored.
-Every part of it is hashed from position, so a map twice the size costs the
-same, and the band and the set pieces are placed from the map's name, so a room
-has a sky of its own and the same one every time it is played.
+temperatures with a rare one burning, and a near layer of dust that streaks
+along the camera's own motion. Nothing is stored. Every part of it is hashed
+from position, so a map twice the size costs the same, and the band and the
+washes are placed from the map's name, so a room has a sky of its own and the
+same one every time it is played.
+
+Nothing in that sky has an outline. No suns, no comets, no planets: shape and
+brightness are what a ship and a shot are read by, so the background is texture
+and never an object. Set pieces were tried and taken back out, which
+[decision 93](../architecture/decisions.md#93-the-sky-has-nothing-in-it-with-a-shape)
+records.
 
 This replaces a rule asking for a sparse starfield and no nebula texture. The
 reasoning under that rule is the part worth keeping and it has not moved: the
 background never competes with a projectile for attention. It is why the clouds
-stay faint enough to read as distance rather than as objects, why the sun is dim
-and sits out at the rim of the view instead of over the fight, and why the
-band's grain is no brighter than the far stars already were. What changed is the
-belief that the only safe background is an empty one.
+stay faint enough to read as distance rather than as objects, and why the band's
+grain is no brighter than the far stars already were. What changed is the belief
+that the only safe background is an empty one.
 
 **Ships.** Crisp geometric silhouettes with thin bright outlines and a darker
 fill. Each class has a distinct shape read at a glance, and each shape stays
