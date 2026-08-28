@@ -1,0 +1,22 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "A · Unfold", "x": 0, "y": 0, "w": 1440, "h": 810 },
+    { "file": "UnfoldLandscape.dc.html", "title": "A · Landscape", "x": 1560, "y": 0, "w": 844, "h": 390 },
+    { "file": "UnfoldPortrait.dc.html", "title": "A · Portrait, ship open", "x": 2524, "y": 0, "w": 390, "h": 844 },
+    { "file": "BoardDesktop.dc.html", "title": "B · Board", "x": 0, "y": 1000, "w": 1440, "h": 810 },
+    { "file": "BoardLandscape.dc.html", "title": "B · Landscape", "x": 1560, "y": 1000, "w": 844, "h": 390 },
+    { "file": "BoardPortrait.dc.html", "title": "B · Portrait", "x": 2524, "y": 1000, "w": 390, "h": 844 },
+    { "file": "DeckShip.dc.html", "title": "C · Deck, ship screen", "x": 0, "y": 2000, "w": 1440, "h": 810 },
+    { "file": "DeckBuild.dc.html", "title": "C · Deck, a build open", "x": 1560, "y": 2000, "w": 1440, "h": 810 },
+    { "file": "DeckPortrait.dc.html", "title": "C · Deck, build on a phone", "x": 3120, "y": 2000, "w": 390, "h": 844 },
+    { "file": "MatchMenu.dc.html", "title": "In a match", "x": 0, "y": 3000, "w": 844, "h": 390 }
+  ],
+  "annotations": [
+    { "id": "brief", "x": 0, "y": -210, "w": 560, "text": "The drawer goes, and the landing's boxes carry everything it held: play, ship, friends, pilot, settings. Three directions, named by what a press on a box does. All three keep PLAY NOW as the one celebrated key, and account, zone and ship keep the boxes they have.\n\nA presses open in place. B never opens at all. C swaps the screen." },
+    { "id": "note-unfold", "x": -420, "y": 0, "w": 360, "text": "A · Unfold. The shipped column with friends and settings aboard as one half-width row. A pressed box opens between its neighbors; everything else stays put. In landscape the column lies down into the rail, and the two utilities ride it as square cells.\n\nClosest to what ships. The cost: a deep page such as the hangar or the bindings makes a long column that scrolls." },
+    { "id": "note-board", "x": -420, "y": 1000, "w": 360, "text": "B · Board. No open state at all: every box stands with its rows already inside, and the fight shows between the glass. Everything is one press away and nothing has to be discovered.\n\nThe cost: the most glass on screen. Portrait covers the stands almost entirely, and landscape has barely the height for it." },
+    { "id": "note-deck", "x": -420, "y": 2000, "w": 360, "text": "C · Deck. A press swaps the column for the next set of boxes, with a back box at the head. Never more than one column of boxes on screen, so it is the same drawing at every size.\n\nThe ship rethink lives here: a build opens into the whole kit, one box per slot, and each box's right edge is either the level you fly or the gold price to raise it. If you cannot turn it on, you can buy it, on the same edge.\n\nThe cost: depth you cannot see past, and back becomes a box to learn." },
+    { "id": "note-match", "x": -420, "y": 3000, "w": 360, "text": "The match, with no drawer left. MENU raises the same column over the fight: the zone you are in, the ship dimmed while a match holds it, friends, settings, and the key reads RESUME. One surface at home and in a room, so the boxes a pilot learned on the landing are the boxes they find mid-match." }
+  ],
+  "launch": { "view": "canvas" }
+}
