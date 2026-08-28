@@ -1,0 +1,29 @@
+#version 140
+
+// The glass: geometry in screen pixels, like every other panel the interface
+// draws, carrying the color it is tinted with.
+//
+// The texture coordinate comes off the vertex's own position rather than out
+// of clip space, because that only needs this file and the render script to
+// agree on how big the window is. The blurred scene covers the window exactly,
+// so a pixel of glass reads the pixel of scene it is standing on.
+
+in highp vec4 position;
+in mediump vec4 color;
+
+out mediump vec2 var_uv;
+out mediump vec4 var_color;
+
+uniform vs_uniforms
+{
+    highp mat4 mtx_worldviewproj;
+    // The drawable, in pixels.
+    highp vec4 resolution;
+};
+
+void main()
+{
+    var_color = color;
+    var_uv = position.xy / resolution.xy;
+    gl_Position = mtx_worldviewproj * vec4(position.xyz, 1.0);
+}

@@ -50,6 +50,16 @@ layer.rect = function(self, x, y, w, h, col)
     rects[#rects + 1] = {x = x, y = y, w = w, h = h, col = col}
 end
 
+-- The glass layer, which is a second mesh and takes rectangles alone: what
+-- goes into it is the boxes the interface wants the scene blurred inside.
+local glass = {}
+local frosted = {}
+glass.reset = function() end
+glass.flush = function() end
+glass.rect = function(_, x, y, w, h)
+    frosted[#frosted + 1] = {x = x, y = y, w = w, h = h}
+end
+
 -- Eight seats, four a side, which is what a melee room holds. Seat 0 is the
 -- one the channel is pointed at; nobody here is this client, because a watcher
 -- has no hull.
@@ -126,6 +136,7 @@ local function frame(w, h, o)
     o = o or {}
     H = h
     boxes, rects = {}, {}
+    frosted = {}
     state.n = 0
     -- The scoreboard is off unless a check asks for it, the way it is off
     -- until a player presses PLAYERS.
@@ -138,7 +149,7 @@ local function frame(w, h, o)
     if not o.keep then
         ui.land_sel, ui.land_sel_value = o.sel, o.sel_value
     end
-    ui.begin(layer, w, h, o.density or 1, false, 0)
+    ui.begin(layer, w, h, o.density or 1, false, 0, glass)
     ui.hud({
         me = 0,
         -- A watcher's HUD: the camera stands behind a hull that is not yours.
@@ -191,6 +202,21 @@ local function word(s)
         end
     end
     return nil
+end
+
+-- Whether the scene was blurred inside a published box. The glass is drawn
+-- into a mesh, which counts up from the bottom, and a hit box is published in
+-- the interface's own space, which counts down from the top, so the two are
+-- compared the way `word` compares type: by flipping one of them.
+local function glazed(b)
+    for _, g in ipairs(frosted) do
+        if math.abs(g.x - b.x) < 1 and math.abs(g.w - b.w) < 1
+           and math.abs(g.h - b.h) < 1
+           and math.abs((H - (g.y + g.h)) - b.y) < 1 then
+            return true
+        end
+    end
+    return false
 end
 
 -- What a press at this point reaches, through the same rule `on_input` uses.
@@ -406,6 +432,35 @@ end
 -- and a chip in the corner offering the same act is the offer made twice.
 check("the landing carries no TAKE SEAT chip",
       box("take_seat") == nil)
+
+-- --- what a stop lets through ----------------------------------------------
+--
+-- A stop dims the room behind it and blurs it. Dimming alone left the rock
+-- that happened to be passing behind ACCOUNT sharp and legible, competing with
+-- the word it was holding; a pane of glass passes the light and not the
+-- picture. What is pinned here is that the blur lands in exactly the box the
+-- press does, on both layouts, and that nothing pays for it in a fight: the
+-- render script draws the frame into a texture only for as long as something
+-- is asking to be read through.
+do
+    for _, s in ipairs(SHAPES) do
+        local w, h, shape = s[1], s[2], s[3]
+        frame(w, h)
+        for _, action in ipairs({"land_account", "land_zone", "land_ship",
+                                 "play_now"}) do
+            local b = box(action)
+            check(shape .. " frosts " .. action,
+                  b ~= nil and glazed(b),
+                  b and string.format("%.0f,%.0f %.0fx%.0f is not glass",
+                                      b.x, b.y, b.w, b.h) or "no box")
+        end
+    end
+    -- A watcher who deployed has no landing and no glass: the HUD's own
+    -- instruments are read against the fight rather than through it.
+    frame(1440, 810, {landing = false})
+    check("a hull's HUD asks for no glass at all", #frosted == 0,
+          #frosted .. " frosted boxes with no landing up")
+end
 
 -- --- a stop's list opens over the glass -------------------------------------
 --

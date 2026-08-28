@@ -1,0 +1,20 @@
+#version 140
+
+// The vertex half of every full-screen pass: the blit that puts the scene on
+// the screen, the downsample, and the two blur passes.
+//
+// The quad behind it is already in clip space, corner to corner, so there is
+// no matrix here and nothing for a camera to say. That also makes the texture
+// coordinate free: clip space runs -1 to 1 and a texture runs 0 to 1, so one
+// multiply and one add is the whole mapping, and it lands on the scene pixel
+// under this one whatever the window is doing.
+
+in highp vec4 position;
+
+out mediump vec2 var_uv;
+
+void main()
+{
+    gl_Position = vec4(position.xy, 0.0, 1.0);
+    var_uv = position.xy * 0.5 + 0.5;
+}

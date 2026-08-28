@@ -1,0 +1,4 @@
+material: "/render/vw_post.material"
+vertices: "/render/post.buffer"
+primitive_type: PRIMITIVE_TRIANGLES
+position_stream: "position"

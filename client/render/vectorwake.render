@@ -1,1 +1,9 @@
 script: "/render/vectorwake.render_script"
+render_resources {
+  name: "down"
+  path: "/render/vw_down.material"
+}
+render_resources {
+  name: "blur"
+  path: "/render/vw_blur.material"
+}

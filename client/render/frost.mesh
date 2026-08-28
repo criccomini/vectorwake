@@ -1,0 +1,4 @@
+material: "/render/vw_frost.material"
+vertices: "/render/frost.buffer"
+primitive_type: PRIMITIVE_TRIANGLES
+position_stream: "position"

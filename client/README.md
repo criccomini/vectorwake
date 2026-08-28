@@ -239,15 +239,18 @@ here while `git clone` is not. It sits at `client/websocket` and not under
 moving it breaks the include path on the build server.
 
 Everything visible is triangles in a dynamic vertex buffer, built in Lua and
-uploaded once per layer per frame. There are five layers, and the order is the
+uploaded once per layer per frame. There are eight layers, and the order is the
 whole design:
 
 | Layer | Space | Blend | Holds |
 |---|---|---|---|
+| `sky` | world | alpha | stars, clouds, the band |
+| `skyglow` | world | additive | what the sky puts out |
 | `bg` | world | alpha | wall interiors, built once per map |
 | `bgglow` | world | additive | wall edges, built once per map |
-| `fill` | world | alpha | the starfield, and the dark inside of a hull |
+| `fill` | world | alpha | the dark inside of a hull |
 | `glow` | world | additive | outlines, bolts, blasts, sparks |
+| `frost` | screen | alpha | the blurred scene, inside a button's box |
 | `ui` | screen | alpha | panels, bars, the radar and the map, buttons |
 
 The starfield is in the per-frame layer rather than the baked one because it
@@ -312,6 +315,22 @@ overlapping bolts brighten instead of stacking, and because addition does not
 care about order, the static wall edges share that pass with the per-frame
 geometry for free. `render/vec.lua` is the whole vocabulary -- segments,
 fans, discs, haloes, rings -- and knows nothing about ships.
+
+The `frost` layer is the one thing here that reads the frame rather than
+adding to it. A button over a live fight dims what is behind it, and a dimmed
+picture is still a picture: a rock passing behind ACCOUNT is a rock in the
+panel, sharp, under the word the panel is holding. So the box gets the scene
+behind it blurred, and the wash and the frame go over the top as they always
+did.
+
+A shader cannot read the screen it is writing to, so a frame with frost in it
+is drawn into a texture first and blitted back. The blurred copy is made at a
+quarter of the window on each axis: a four-tap downsample, then a five-tap
+gaussian across and another down, which is the picture a twenty-five tap kernel
+would give at a sixteenth of the pixels. The arena posts a `frost` message to
+the render script when the answer changes, so until something on screen asks to
+be read through, the pipeline is the one it always was and draws straight at
+the screen.
 
 Text is the one thing a bare mesh cannot do without an atlas, so it goes
 through a gui component (`ui/vwui.gui_script`) that draws a pool of text nodes
