@@ -4636,3 +4636,66 @@ to say for it. Or if the invite is ever worth closing the loop on, per
 [decision 78](#78-the-friends-page-is-who-is-on-and-one-way-to-reach-who-is-not),
 at which point the question is where a link that knows who sent it belongs, and
 the answer may not be the ending either.
+
+---
+
+## 95. The game is a world, and the match is a place in it
+
+**Status:** proposed
+
+**Decision:** replace the match as the whole of the game with one persistent
+1024 tile world. Greens come back as currency and only as currency, placed in
+fields rather than scattered by area or spawned near a pilot. What you carry is
+at risk and drops as greens where you die; what you have docked is permanent.
+Shipyards are safe fields with the existing upgrade shelf behind the door.
+Difficulty is distance from a shipyard. The bot runtime stops filling chairs
+and becomes the world's population. Melee, Team Battle and Duel survive whole,
+behind arena stations you fly to. [open-world.md](../design/open-world.md) is
+the design.
+
+**Why:** the match game answered five of its six gripes and answered the first
+one, that an arena has no point, by deleting the arena. What is left is a game
+where the only verb is aim. A world puts a second decision in front of the
+player about a hundred times a session, which is when to turn around, and it
+does it without a difficulty setting, a bracket or a queue.
+
+Greens rather than rivets because a rivet has no position. It arrives at a kill
+and lives as a number on a page, so it can never be a reason to fly anywhere. A
+green sits somewhere and somebody else can get there first. Splitting money
+from power is what makes them safe to bring back: the kit still decides what a
+ship is, so the pilot who has been alive longer is richer rather than stronger,
+which is the complaint the kit was built to answer.
+
+The engine is not the obstacle. `sim/tools/worldbench.c` stepped a furnished
+1024 tile world with every one of the core's 255 ships thrusting and firing
+every tick at 100 Hz, packing a filtered snapshot for all 255 seats at 20 Hz,
+and spent 1.02 ms of a 10 ms tick at 33.6 KB/s a seat. The same 255 ships in a
+512 tile world cost the same CPU and 119.0 KB/s, because the 84 tile fairness
+radius makes a seat pay for its neighbors rather than for the population. Size
+is free and crowding is not, so a large world is what makes a large population
+affordable rather than what makes it expensive.
+
+**Cost:** the match layer stops being how anybody arrives anywhere. The three
+minute clock, the intermission, the fill ladder and the sort by humans survive
+only inside an arena station, and `sim_restart` loses most of its job. The six
+point symmetric maps and the symmetry rule behind them do not describe a world.
+`SIM_SIDES` is 2, and a world where a pilot is their own side or picks a
+faction is a core change rather than a config one. The drill harness measures
+matched 30 point kits in mirrored four a side matches, so the ten preregistered
+comparisons keep their meaning about that fixture and say nothing about whether
+a loaded hauler and an interceptor are a fair fight in open ground.
+
+The real risk is content rather than code. Alpha already ran the experiment
+where a large map is not a full one, and a player reported it as "war zone
+seems to have no greens." At 12.5 tiles a second the world is 82 seconds edge
+to edge, so wanting something worth stopping for within fifteen seconds of
+anywhere means about twenty five places plus the shipyards. That budget is the
+thing that decides whether this works, and it is the only part of the proposal
+that cannot be bought with an afternoon.
+
+**Reconsider if:** steps one and two of the build order, which are a persistent
+world you can fly around and money you can find, carry and lose, are not
+enjoyable for ten minutes with nothing else in them. That is a fortnight and it
+answers the question everything above it depends on. If flying around a large
+map with other people in it is not itself pleasant, no economy bolted to it
+will make it so, and the match game is still running.

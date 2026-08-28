@@ -16,6 +16,13 @@
 > It replaces the six-gripe proposal that used to live at `progression.md`,
 > which was a persistent layer bolted around an untouched Alpha.
 
+> **There is a proposal to move all of this inside a world.**
+> [open-world.md](open-world.md) argues that the match answered the first gripe
+> by deleting the arena, and that what should replace it is one persistent map
+> with greens as currency and shipyards to spend them at, with the match kept
+> as a place you fly to rather than as the whole game. Nothing is decided and
+> nothing is built. See [decision 95](../architecture/decisions.md#95-the-game-is-a-world-and-the-match-is-a-place-in-it).
+
 ## What playtesting said
 
 Six gripes, from the owner's own sessions:

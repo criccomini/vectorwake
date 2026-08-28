@@ -16,6 +16,7 @@ engineering, see [docs/architecture](../architecture/README.md).
 | [bot-ecosystem.md](bot-ecosystem.md) | Versioned bot pilots: stable identity, behavior profiles, competence axes, derived taste, rating, and the social boundary |
 | [duel-mode.md](duel-mode.md) | One life against a rating-matched person or bot: pairing at the door, the card, the two-second window |
 | [bounty.md](bounty.md) | What you are worth and what you have been paid: bounty derived from what you carry, points paid as the victim's bounty |
+| [open-world.md](open-world.md) | Proposed: one persistent world instead of the match, greens back as currency you carry and can lose, shipyards behind safe fields, danger measured as distance, and the match kept as a place you fly to |
 | [match-game.md](match-game.md) | The whole game as three minute 4v4 matches: owned kits instead of greens, bounty as a run that pays its ender, rivets, small two-pocket maps, and what a drop or a death costs |
 | [rating.md](rating.md) | Skill rating across humans and AI, and how credit for a kill is split among everyone who caused it |
 | [accounts.md](accounts.md) | Guest-first accounts, claiming, generated names, the human/bot/unknown label, and bots as account holders |

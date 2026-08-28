@@ -47,6 +47,9 @@ $(B)/lvl2vw: tools/lvl2vw.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o $(B)/check.o
 $(B)/mapgen: tools/mapgen.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o $(B)/check.o
 	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
 
+$(B)/worldbench: tools/worldbench.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o $(B)/check.o
+	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
+
 $(B)/test_sim: tests/test_sim.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o $(B)/check.o
 	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
 
