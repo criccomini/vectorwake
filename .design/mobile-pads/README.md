@@ -19,9 +19,11 @@ reversed stance:
   no multifire toggle on a phone, the gun's mark simply drawing the
   volley the trigger will throw; the double tap gesture etched around
   the stick, always naming what the next tap does, REVERSE at rest and
-  FORWARD while reversed; a states board shows a charge key at three,
-  two and one in hand and spent, since a spent key stays on screen
-  dimmed rather than vanishing
+  FORWARD while reversed; a trigger's ring as its recovery, dropping
+  dim at the shot and growing back to full as the weapon's delay runs;
+  a states board shows a charge key at three, two and one in hand and
+  spent, since a spent key stays on screen dimmed rather than
+  vanishing, beside a trigger fired, recovering and ready
 - **C · Glass** no chrome at all: the controls are the glowing marks
   themselves, the volley is the multifire state, the stick a faint
   reticle with a ghost hint that fades once learned

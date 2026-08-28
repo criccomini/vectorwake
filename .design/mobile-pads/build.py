@@ -545,7 +545,7 @@ def controls_gauge(reversed_=False):
 # --- direction B: Cluster ----------------------------------------------------
 
 
-def cluster_key(cx, cy, r, col, grad, mark, segs=None):
+def cluster_key(cx, cy, r, col, grad, mark, segs=None, cool=None):
     """One round key of the hand: glow ground, one bright ring, the mark.
 
     On a charge key the count ring is the boundary: no inner ring at all,
@@ -557,7 +557,14 @@ def cluster_key(cx, cy, r, col, grad, mark, segs=None):
 
     The gun's volley mark draws whatever the trigger will actually throw.
     There is no multifire toggle on a phone: declining the fan is a
-    keyboard matter, so the key carries no state of its own."""
+    keyboard matter, so the key carries no state of its own.
+
+    A trigger's ring is its recovery: the shot drops it to the dim floor
+    and a bright arc grows from the top as the weapon's delay runs,
+    closing the circle the tick the trigger is ready again. `cool` is how
+    far along that is, 0 at the shot, and None means ready: the same ramp
+    the shipped charge cells wear, moved onto the rim where this design
+    keeps its state."""
     spent = segs is not None and segs[0] == 0
     ground = disc(cx, cy, r - 1, f"url(#{grad})")
     if spent:
@@ -570,6 +577,11 @@ def cluster_key(cx, cy, r, col, grad, mark, segs=None):
             t0 = -90 + i * (360 / cap) + 6
             alpha = .9 if i < n else .22
             out.append(arc(cx, cy, r, t0, t0 + span, 2.6, a(col, alpha)))
+    elif cool is not None:
+        out.append(ring(cx, cy, r, 2.2, a(col, .3)))
+        if cool > 0:
+            out.append(arc(cx, cy, r, -90, -90 + 360 * min(cool, .999),
+                           2.2, a(col, .85)))
     else:
         out.append(ring(cx, cy, r, 2.2, a(col, .85)))
     out.append(mark)
@@ -624,8 +636,11 @@ def cluster_stick(cx, cy, R, engaged=None, reversed_=False):
 def controls_cluster(reversed_=False):
     gx, gy, gr = 772, 314, 42
     out = [cluster_rail(gx, gy)]
+    # The reversed board is a fight mid-move: the gun has just fired, so
+    # its ring is part way through growing back.
     out.append(cluster_key(gx, gy, gr, GUN, "gy",
-                           volley(gx, gy + 4, 21, 13, GUN, HOT[GUN])))
+                           volley(gx, gy + 4, 21, 13, GUN, HOT[GUN]),
+                           cool=.55 if reversed_ else None))
     # The bomb rides the same orbit as the charges, at their size: one big
     # key for the trigger a thumb lives on, satellites for everything it
     # visits, an even fifty degrees apart. The bomb keeps its ring whole;
@@ -648,18 +663,27 @@ def controls_cluster(reversed_=False):
 
 
 def controls_cluster_states():
-    """A charge key counting down, at reading size and off to the side of
-    the fight. Spent out it stays, dimmed whole, until the rack fills."""
+    """A charge key counting down, and a trigger's ring recovering from a
+    shot, at reading size and off to the side of the fight."""
     out = []
     for x, n, label in ((272, 3, "3 IN HAND"), (372, 2, "2 IN HAND"),
                         (472, 1, "1 IN HAND"), (572, 0, "SPENT")):
-        cy, cr = 168, 33
+        cy, cr = 112, 33
         glyph = burst_glyph(x, cy, 18, alpha=1.0 if n else .3)
         out.append(cluster_key(x, cy, cr, CHARGE, "gg", glyph,
                                segs=(n, 3)))
-        out.append(text(x, 232, label, 9, a(DIM, .8)))
-    out.append(text(422, 262, "THE COUNT RING IS THE BOUNDARY · SPENT, "
+        out.append(text(x, 176, label, 9, a(DIM, .8)))
+    out.append(text(422, 204, "THE COUNT RING IS THE BOUNDARY · SPENT, "
                     "THE KEY DIMS AND STAYS", 8, a(DIM, .55)))
+    for x, cool, label in ((322, 0, "FIRED"), (422, .6, "RECOVERING"),
+                           (522, None, "READY")):
+        cy, cr = 278, 38
+        out.append(cluster_key(x, cy, cr, GUN, "gy",
+                               volley(x, cy + 3, 19, 13, GUN, HOT[GUN]),
+                               cool=cool))
+        out.append(text(x, 336, label, 9, a(DIM, .8)))
+    out.append(text(422, 364, "THE RING GROWS BACK AS THE DELAY RUNS · "
+                    "THE BOMB'S DOES THE SAME", 8, a(DIM, .55)))
     return "".join(out)
 
 
