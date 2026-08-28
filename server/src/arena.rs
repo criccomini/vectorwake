@@ -868,7 +868,7 @@ impl ArenaServer {
     }
 
     /// The class this zone rates into. One number per kind of game, per
-    /// docs/design/rating.md: a warzone and a duel ladder measure different
+    /// docs/design/rating.md: a warzone and a duel measure different
     /// skills and one number for both is a number about nothing.
     /// The zone definition is the authority, not the local config file: a
     /// catalog-served arena takes its mode from the zone it was handed, and
@@ -934,9 +934,9 @@ impl ArenaServer {
     /// running this zone, whose map the new one borrows instead of unpacking a
     /// second megabyte of identical tiles.
     pub(crate) fn build_room(z: &fleet::WireZone, on: Option<&Room>) -> Result<Room, String> {
-        if z.mode == "ladder" && !certified_pilot_fixture_allows(z) {
+        if z.mode == "duel" && !certified_pilot_fixture_allows(z) {
             return Err(
-                "the live Ladder differs from its certified pilot fixture; refusing to serve it"
+                "the live duel zone differs from its certified pilot fixture; refusing to serve it"
                     .into(),
             );
         }
@@ -1048,7 +1048,7 @@ impl ArenaServer {
                     && !certified_pilot_fixture_allows(&z);
                 if protects_certified_fixture {
                     println!(
-                        "catalog: Ladder update does not match the certified pilot fixture; \
+                        "catalog: duel update does not match the certified pilot fixture; \
                          keeping the running map and tuning"
                     );
                 } else {

@@ -4396,3 +4396,87 @@ character call sign is shown as much of itself as fits.
 point the column is the special case and the question is whether an upright
 phone still wants it; or the stops outgrow three, which is the reconsider
 decision 89 already carries.
+
+## 92. Duel is two pilots, and the door decides which two
+
+**Status:** accepted
+
+**Decision:** the Ladder is gone. In its place is a duel: two seats, one life,
+first to a single death, and nothing in the mode that can tell which of them has
+somebody breathing behind it.
+
+Who is across the arena comes from the door. An arriving pilot is put beside the
+nearest-rated person already waiting, as long as that rating is inside a band of
+300; nobody in range opens a room of their own and becomes the person the next
+arrival is matched against. A room holding one pilot asks for no bot until the
+seat across from them has been open ten seconds, and a person arriving later
+takes that seat back through the eviction path a room full of AI already had.
+When a bot is asked for, it is named by strength: the authored archetype whose
+rating sits nearest the waiting pilot's.
+
+What goes with the climb is larger than the climb. The rung, the roster order
+between a rung and a pilot, the fixture that bound the opponent seat to one
+measured archetype in one hull with one kit, the per-account `ladder_progress`
+table, the ladder half of the signed token, and the half of the exclusive-lease
+release barrier that existed to land those rows: all of it. The rating half of
+that barrier stays, because the same read-after-write hazard applies to the
+number that is left.
+
+What each pilot keeps is a card: their streak, their best streak, how many
+fights they have finished here, and the last five by name. That is per seat,
+which makes the duel body the one message in the protocol whose bytes differ
+per recipient. The old body held one card per room, which worked only while the
+other seat was guaranteed to be a bot nobody was drawing a card for.
+
+**Why:** asked for, and it is what this zone was always supposed to be.
+`docs/design/duel-mode.md` has described a duel as "a human near your rating or
+a bot near your rating" since before there was a mode to put it in; it was
+deferred, and the Ladder was what shipped instead.
+
+The Ladder's own failure is what made the question live. The opponent was a pure
+function of the rung, the rung was a pure function of results, and the interval
+that banked a rung sat exactly the loss drop below the top of an eight-rung
+roster. Every loss from the top three landed on the same opponent, so a player
+who had banked the middle of the ladder met two names alternately for as long as
+they kept playing, every evening, for ever. That was the report that started
+this. Removing the save points fixed the arithmetic and left the shape: a solo
+climb through a fixed list, in a zone whose whole reason to exist is that it is
+the cleanest possible measurement of one pilot against another.
+
+Most of what that shape required turns out to be scaffolding for a question the
+new mode does not ask. A rung meant nothing unless the pilot standing on it was
+the pilot the tournament measured, which is why the room checked identity, hull,
+entitlement ceiling and current kit before it would call the seat ready. A duel
+wants an opponent of about the right strength, so a near miss is a slightly
+uneven fight rather than a wrong answer, and all of that goes.
+
+Calibration is unaffected and more relevant than before. It never used the mode:
+it is an in-process harness that needs a zone file with the melee economy, first
+to one, and gantry in its rotation, all of which the duel zone still is. What it
+certifies, a rating for each authored pilot, is now what the matchmaker reads.
+
+**Cost:** a duel zone can seat two people who are far apart, because refusing at
+the door would be the arena telling a player the zone is full when it is not.
+The band only decides who is preferred, not who is admitted.
+
+A person taking a bot's seat voids the fight in progress. That trades a fight
+somebody was enjoying for a better one, and the alternative is making the
+arriving player wait for a whistle they cannot see.
+
+Ten seconds is a guess. It is long enough to lose a pairing that was one second
+away and short enough to feel like a bug on an empty zone, and only play will
+say which way it is wrong.
+
+Nothing durable survives a duel now except the rating. Best rung was the last
+number that said how far an evening got, and players ask for that; it left
+because it was a rung, and rungs are gone.
+
+`CLIENT_PROTOCOL` moves to 28, the catalog to 34 and the token to 4. The zone,
+the mode name and the rating class all become `duel`, so a Ladder-class rating
+does not follow a pilot into it.
+
+**Reconsider if:** the population grows enough that a band of 300 is loose
+rather than merely wide, at which point the number is wrong rather than the rule
+and a deployment-wide queue in the meta-layer starts to earn its keep. Or if the
+hold turns out to be the thing players notice about the mode, in which case it
+belongs on a clock the zone file sets rather than a constant.

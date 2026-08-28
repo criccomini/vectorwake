@@ -461,22 +461,21 @@ drift as a closed system. The repository currently seeds only that anchor. A
 future offline prior must arrive through a powered, fingerprint-matched report;
 generated fill pilots have no separate calibrated prior.
 
-## Ladder
-
-Ladder asks for one stable opponent at a measured difficulty slot. Its normal
-format is one life, with a win advancing one rung and a loss dropping two by
-default, down to the bottom of the roster and with nothing banked on the way
-up. The opponent changes between lives and never changes competence inside
-one. An idle Ladder room climbs with
-a stand-in in the player's seat, so the zone is never an empty arena on the
-menu of somebody deciding whether to play it. See
-[ladder-mode.md](ladder-mode.md).
-
 ## Duels
 
-Duel matchmaking is deferred. No duel queue or duel-specific bot policy ships
-today. [duel-mode.md](duel-mode.md) records the design boundary without making
-it part of the current roster contract.
+A duel asks for one stable opponent chosen by strength: the authored archetype
+whose rating sits nearest the waiting pilot's, measured where a certified
+tournament has measured it and provisional where it has not. Its format is one
+life, and the opponent changes between fights and never changes competence
+inside one.
+
+An idle duel room flies a pair of house pilots so the zone is never an empty
+arena on the menu of somebody deciding whether to play it. Neither of them
+names an archetype: a demonstration should not be moving the pilot the fleet's
+ratings are anchored to.
+
+The pairing itself happens at the arena's door rather than in a queue, and it
+prefers a person: see [duel-mode.md](duel-mode.md).
 
 ## What we are not doing
 

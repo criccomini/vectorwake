@@ -14,8 +14,7 @@ engineering, see [docs/architecture](../architecture/README.md).
 | [interface.md](interface.md) | The design language: color, type, shape, marks, layout, motion, and words, across the menu and the flight HUD |
 | [ai-players.md](ai-players.md) | AI opponents that fill empty arenas and yield to humans: styles, skill, the long-lived roster, and the population director |
 | [bot-ecosystem.md](bot-ecosystem.md) | Versioned bot pilots: stable identity, behavior profiles, competence axes, derived taste, rating, and the social boundary |
-| [ladder-mode.md](ladder-mode.md) | A one-life climb through measured bot opponents: losses, persistence, and replacement rules |
-| [duel-mode.md](duel-mode.md) | One on one against a rating-matched human or bot: format, queue, rating, replays |
+| [duel-mode.md](duel-mode.md) | One life against a rating-matched person or bot: pairing at the door, the card, the two-second window |
 | [bounty.md](bounty.md) | What you are worth and what you have been paid: bounty derived from what you carry, points paid as the victim's bounty |
 | [match-game.md](match-game.md) | The whole game as three minute 4v4 matches: owned kits instead of greens, bounty as a run that pays its ender, rivets, small two-pocket maps, and what a drop or a death costs |
 | [rating.md](rating.md) | Skill rating across humans and AI, and how credit for a kill is split among everyone who caused it |

@@ -1202,14 +1202,14 @@ pub async fn run() {
                 .collect();
             let plan = reconcile_assignments(&current, &desired);
 
-            // A Ladder rung changed while the room is in intermission. The old
+            // A duel room asked for a different opponent. The old
             // opponent is no longer part of the requested final population and
             // must not wait out a minimum lifetime before making room.
             for index in plan.immediate {
                 let bot = &inst.bots[index];
                 bot.yielding.store(true, Ordering::Relaxed);
                 println!(
-                    "{addr}: room {} wants Ladder slot {:?}; {} stands down",
+                    "{addr}: room {} wants duel slot {:?}; {} stands down",
                     bot.room,
                     desired
                         .iter()
@@ -1429,7 +1429,7 @@ impl BotIdentity {
         matches!(self, BotIdentity::House { .. })
     }
 
-    /// What this flight may wear. Ladder keeps the authenticated identity but
+    /// What this flight may wear. A named duel opponent keeps the authenticated identity but
     /// uses the common base account, so a career purchase cannot change a rung.
     fn kit_entitlements(&self, target_slot: Option<u32>) -> [u8; crate::sim::SLOT_COUNT] {
         if !uses_career_power(target_slot) {
@@ -1510,7 +1510,7 @@ async fn bot_identity(
     // Through the endpoints a person's client uses, with nothing added for
     // being ours: the shelf prices it, the wallet is checked at the meta-layer
     // and the refusal is the same one a player gets.
-    // A Ladder appearance is a controlled fixture. It keeps this identity and
+    // A named duel opponent is a controlled fixture. It keeps this identity and
     // session but does not change or draw power from the career wallet.
     if uses_career_power(target_slot)
         && accounts.may_shop(name)
@@ -1668,7 +1668,7 @@ fn welcome_room(message: &[u8]) -> Option<u16> {
     Some(u16::from_le_bytes(message.get(10..12)?.try_into().ok()?))
 }
 
-// Room and Ladder target stay explicit here because they carry independent
+// Room and opponent target stay explicit here because they carry independent
 // wire and account policies through the connection setup.
 #[allow(clippy::too_many_arguments)]
 async fn fly(
@@ -1976,7 +1976,7 @@ where
                         // account owns. A kit outside either is refused whole
                         // and leaves the pilot in the starter kit, which is
                         // the same answer a player gets.
-                        // Ladder substitutes the common base entitlement for
+                        // A named opponent substitutes the common base entitlement for
                         // the career ceiling so a rung stays the same opponent.
                         let arena_ceiling = match &sight {
                             Sight::Shared(rig) => rig.lock_world().kit_ceilings(),
@@ -2358,7 +2358,7 @@ where
 mod tests {
 
     /// An ordinary fill seat in `room`, which is what every request that
-    /// names no rung is outside a Ladder room.
+    /// names no archetype is outside a duel room.
     fn fill(room: u32) -> Assignment {
         Assignment {
             room,
@@ -2367,7 +2367,7 @@ mod tests {
         }
     }
 
-    /// The rival seat a Ladder room's rung asks for.
+    /// The opponent seat a duel room asks for by strength.
     fn rung(slot: u32) -> Assignment {
         Assignment {
             room: 1,
@@ -2574,7 +2574,7 @@ mod tests {
     }
 
     #[test]
-    fn a_certified_ladder_requires_the_same_known_signed_release() {
+    fn a_certified_roster_requires_the_same_known_signed_release() {
         assert!(same_certified_release(
             "abc123", "abc123", "signed-a", "signed-a"
         ));
@@ -2631,7 +2631,7 @@ mod tests {
         );
     }
 
-    /// A room that names a rung is a Ladder room, and no other room ever
+    /// A room that names an archetype is a duel room, and no other room ever
     /// names one. So a slot-less seat there is the stand-in that keeps a duel
     /// in the zone, and a slot-less seat anywhere else is an ordinary fill.
     #[test]
@@ -2678,7 +2678,7 @@ mod tests {
     /// gets no rival from this one. The stand-in goes with it: a climber with
     /// nothing to climb is one ship flying around an empty arena.
     #[test]
-    fn a_ladder_room_on_another_release_is_left_alone_entirely() {
+    fn a_duel_room_on_another_release_is_left_alone_entirely() {
         let wanted = ArenaWant::from_release(
             2,
             Some(vec![
@@ -2771,7 +2771,7 @@ mod tests {
     }
 
     #[test]
-    fn a_changed_ladder_target_yields_before_replacement_connects() {
+    fn a_changed_duel_target_yields_before_replacement_connects() {
         let old = Assignment {
             room: 7,
             target_slot: Some(11),
@@ -2823,7 +2823,7 @@ mod tests {
     }
 
     #[test]
-    fn a_yielding_ladder_bot_blocks_a_retry_storm_until_it_exits() {
+    fn a_yielding_duel_bot_blocks_a_retry_storm_until_it_exits() {
         let assignment = Assignment {
             room: 4,
             target_slot: Some(2),
@@ -3026,7 +3026,7 @@ mod tests {
     }
 
     #[test]
-    fn ladder_keeps_identity_but_leaves_career_power_out() {
+    fn a_named_opponent_keeps_identity_but_leaves_career_power_out() {
         let who = pilots::individual(0);
         let ceiling = [u8::MAX; crate::sim::SLOT_COUNT];
         let house = BotIdentity::House {
@@ -3034,7 +3034,10 @@ mod tests {
             entitlements: ceiling,
         };
         assert!(uses_career_power(None));
-        assert!(!uses_career_power(Some(3)), "Ladder does not shop");
+        assert!(
+            !uses_career_power(Some(3)),
+            "a named opponent does not shop"
+        );
         assert_eq!(house.session(), "session-token", "identity stays attached");
         assert!(
             house.shares_world(),
@@ -3042,11 +3045,14 @@ mod tests {
         );
 
         let ordinary = pilot_kit(&who, &ceiling, &house, None);
-        let ladder = pilot_kit(&who, &ceiling, &house, Some(3));
+        let named = pilot_kit(&who, &ceiling, &house, Some(3));
         let base = pilot_kit(&who, &ceiling, &BotIdentity::Unaccounted, None);
-        assert_eq!(ladder, base, "Ladder wears the common base account");
+        assert_eq!(
+            named, base,
+            "a named opponent wears the common base account"
+        );
         assert_ne!(
-            ordinary, ladder,
+            ordinary, named,
             "career purchases remain ordinary-room power"
         );
     }
