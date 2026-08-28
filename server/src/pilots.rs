@@ -11,18 +11,15 @@
 pub const PILOT_SPEC_VERSION: u16 = 1;
 /// Distinct ordinary house pilots the population director may claim.
 pub const HOUSE_PILOT_POOL: usize = 65_536;
-/// One Ladder rung for each authored pilot the tournament measures.
 /// How many pilots were written by hand rather than generated. They are the
-/// ones a tournament measures and the ones a duel draws an opponent from.
+/// ones a tournament measures.
 pub const AUTHORED_PILOT_COUNT: usize = CALIBRATED.len();
-/// Distinct persistent identities available at one measured rung.
-pub const REPLICAS_PER_ARCHETYPE: usize = 1_024;
-/// Separates Ladder placement from every other deterministic random stream.
+/// Separates tournament placement from every other deterministic random
+/// stream.
 pub const LADDER_START_NAMESPACE: u64 = 0x6c61_6464_6572_2d31;
-const REPLICA_ID_BASE: u32 = 0x8000_0000;
 
-/// Pick one start for each Ladder side from the same policy used by the
-/// calibration harness. Consecutive scenario seeds walk every Cartesian pair
+/// Pick one start for each side from the policy the calibration harness
+/// uses. Consecutive scenario seeds walk every Cartesian pair
 /// once before repeating; the namespace only rotates where that cycle begins.
 pub fn ladder_start_pair(
     namespace: u64,
@@ -204,7 +201,7 @@ impl PilotSpec {
         }
     }
 
-    /// A stable fallback used only to order Ladder opponents before the
+    /// A stable fallback used only to order the roster before the
     /// certified tournament artifact exists. It is deliberately not called a
     /// rating: competence dominates, with a small profile tie-breaker.
     pub fn ordering_prior(&self) -> f32 {
@@ -217,7 +214,7 @@ impl PilotSpec {
     }
 }
 
-/// Prespecified weak-to-strong Ladder order. Calibration tests this order; it
+/// Prespecified weak-to-strong roster order. Calibration tests this order; it
 /// never chooses directions after reading a development pool.
 pub fn provisional_ladder_order(roster: &[PilotSpec]) -> Vec<usize> {
     let mut order: Vec<usize> = (0..roster.len()).collect();
@@ -427,50 +424,10 @@ pub fn individual(n: usize) -> PilotSpec {
     }
 }
 
-/// Resolve one persistent identity that flies an authored Ladder archetype.
-///
-/// Replicas have separate accounts and callsigns, but their controller inputs
-/// stay byte-for-byte equivalent to the archetype the tournament measured.
-pub fn replica(archetype: usize, replica: usize) -> Option<PilotSpec> {
-    if replica >= REPLICAS_PER_ARCHETYPE {
-        return None;
-    }
-    let mut spec = calibrated(archetype)?;
-    let family = spec.id.0.checked_sub(1)?;
-    let offset = family
-        .checked_mul(REPLICAS_PER_ARCHETYPE as u32)?
-        .checked_add(replica as u32)?;
-    spec.id = PilotId(REPLICA_ID_BASE.checked_add(offset)?);
-    spec.callsign = format!("{} {:04}", spec.callsign, replica + 1);
-    Some(spec)
-}
-
-/// Resolve the authored controller family behind a Ladder replica callsign.
-/// The four-digit suffix is part of the generated identity contract.
-pub fn archetype_for_callsign(name: &str) -> Option<usize> {
-    CALIBRATED
-        .iter()
-        .enumerate()
-        .find_map(|(archetype, (callsign, _, _))| {
-            let suffix = name
-                .strip_prefix(callsign)
-                .and_then(|rest| rest.strip_prefix(' '))?;
-            (suffix.len() == 4
-                && suffix.bytes().all(|byte| byte.is_ascii_digit())
-                && suffix
-                    .parse::<usize>()
-                    .is_ok_and(|replica| (1..=REPLICAS_PER_ARCHETYPE).contains(&replica)))
-            .then_some(archetype)
-        })
-}
-
 /// Validate a name the house director may claim without building the full
 /// roster on every account request.
 pub fn is_house_callsign(name: &str) -> bool {
     if CALIBRATED.iter().any(|(callsign, _, _)| *callsign == name) {
-        return true;
-    }
-    if archetype_for_callsign(name).is_some() {
         return true;
     }
 
@@ -619,43 +576,13 @@ mod tests {
     }
 
     #[test]
-    fn ladder_replicas_keep_the_exact_authored_controller_and_build() {
-        for archetype in 0..CALIBRATED.len() {
-            let authored = individual(archetype);
-            let first = replica(archetype, 0).unwrap();
-            let last = replica(archetype, REPLICAS_PER_ARCHETYPE - 1).unwrap();
-            for replica in [&first, &last] {
-                assert_eq!(replica.version, authored.version);
-                assert_eq!(replica.hull, authored.hull);
-                assert_eq!(replica.competence, authored.competence);
-                // Behavior carries taste as well: a kit is derived from it.
-                assert_eq!(replica.behavior, authored.behavior);
-                assert_eq!(replica.configuration_seed, authored.configuration_seed);
-            }
-            assert_ne!(first.id, authored.id);
-            assert_ne!(first.id, last.id);
-            assert_ne!(first.callsign, last.callsign);
-        }
-        assert!(replica(CALIBRATED.len(), 0).is_none());
-        assert!(replica(0, REPLICAS_PER_ARCHETYPE).is_none());
-    }
-
-    #[test]
     fn house_callsign_validation_covers_both_pools_and_their_edges() {
         assert!(is_house_callsign("Ozone"));
-        assert!(is_house_callsign("Ozone 0001"));
-        assert!(is_house_callsign("Ozone 1024"));
-        assert!(!is_house_callsign("Ozone 0000"));
-        assert!(!is_house_callsign("Ozone 1025"));
         assert!(is_house_callsign(
             &individual(HOUSE_PILOT_POOL - 1).callsign
         ));
         assert!(!is_house_callsign(&individual(HOUSE_PILOT_POOL).callsign));
         assert!(!is_house_callsign("Definitely Not A House Pilot"));
-        assert_eq!(archetype_for_callsign("Ozone 0001"), Some(5));
-        assert_eq!(archetype_for_callsign("Ozone 1024"), Some(5));
-        assert_eq!(archetype_for_callsign("Ozone"), None);
-        assert_eq!(archetype_for_callsign("Ozone 1025"), None);
     }
 
     #[test]

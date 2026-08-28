@@ -18,10 +18,6 @@ handle /metrics/a1* {
 	rewrite * /metrics
 	reverse_proxy 127.0.0.1:9101
 }
-handle /metrics/a2* {
-	rewrite * /metrics
-	reverse_proxy 127.0.0.1:9102
-}
 handle /metrics/bots* {
 	rewrite * /metrics
 	reverse_proxy 127.0.0.1:9105
@@ -29,7 +25,4 @@ handle /metrics/bots* {
 
 handle_path /a1* {
 	reverse_proxy 127.0.0.1:9001
-}
-handle_path /a2* {
-	reverse_proxy 127.0.0.1:9002
 }

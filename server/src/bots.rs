@@ -806,8 +806,6 @@ struct Live {
     id: pilots::PilotId,
     name: String,
     room: u32,
-    target_slot: Option<u32>,
-    stand_in: bool,
     born_ms: u64,
     /// Set when this bot has been asked to stand down. It leaves at the next
     /// good moment rather than at once, per the graceful rules in
@@ -886,23 +884,11 @@ struct Instance {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Assignment {
     room: u32,
-    target_slot: Option<u32>,
-    /// A slot-less seat in a duel room: one of the pair that keep the zone
-    /// playing while nobody is here. It draws from the generated roster rather
-    /// than the eight authored personalities, because one of those eight is
-    /// the fixed point every rating in the fleet is measured against and a
-    /// demonstration match should not be moving it. Nothing else about the
-    /// flight differs from an ordinary fill.
-    stand_in: bool,
 }
 
 impl Live {
     fn assignment(&self) -> Assignment {
-        Assignment {
-            room: self.room,
-            target_slot: self.target_slot,
-            stand_in: self.stand_in,
-        }
+        Assignment { room: self.room }
     }
 }
 
@@ -910,107 +896,35 @@ impl Live {
 struct ArenaWant {
     scalar: u32,
     requests: Option<Vec<crate::fleet::BotRequest>>,
-    build: String,
-    pilot_attestation: String,
 }
 
 impl ArenaWant {
-    #[cfg(test)]
     fn new(scalar: u32, requests: Option<Vec<crate::fleet::BotRequest>>) -> Self {
-        Self::from_release(
-            scalar,
-            requests,
-            crate::metrics::commit().to_string(),
-            String::new(),
-        )
-    }
-
-    fn from_release(
-        scalar: u32,
-        requests: Option<Vec<crate::fleet::BotRequest>>,
-        build: String,
-        pilot_attestation: String,
-    ) -> Self {
-        Self {
-            scalar,
-            requests,
-            build,
-            pilot_attestation,
-        }
+        Self { scalar, requests }
     }
 
     fn assignments(&self) -> Vec<Assignment> {
         let Some(requests) = &self.requests else {
-            return (0..self.scalar)
-                .map(|_| Assignment {
-                    room: 0,
-                    target_slot: None,
-                    stand_in: false,
-                })
-                .collect();
+            return (0..self.scalar).map(|_| Assignment { room: 0 }).collect();
         };
         let mut requests = requests.clone();
-        requests.sort_by_key(|request| (request.room, request.target_slot));
-        let certified_release = same_certified_release(
-            &self.build,
-            crate::metrics::commit(),
-            &self.pilot_attestation,
-            crate::arena::certified_pilot_attestation_id(),
-        );
-        // Which rooms are running a duel, which is a thing only a named
-        // archetype can say: no other room ever names a slot. It decides both
-        // what a slot-less seat there means and whether this release may fill
-        // one at all.
-        let duel: HashSet<u32> = requests
-            .iter()
-            .filter(|request| request.target_slot.is_some())
-            .map(|request| request.room)
-            .collect();
+        requests.sort_by_key(|request| request.room);
         requests
             .into_iter()
-            .filter(|request| {
-                (1..=crate::MAX_ROOM_NUMBER).contains(&request.room)
-                    && (!duel.contains(&request.room) || certified_release)
-            })
-            .flat_map(|request| {
-                let stand_in = request.target_slot.is_none() && duel.contains(&request.room);
-                (0..request.count).map(move |_| Assignment {
-                    room: request.room,
-                    target_slot: request.target_slot,
-                    stand_in,
-                })
-            })
+            .filter(|request| (1..=crate::MAX_ROOM_NUMBER).contains(&request.room))
+            .flat_map(|request| (0..request.count).map(move |_| Assignment { room: request.room }))
             .collect()
     }
 }
 
-fn same_certified_release(
-    arena_build: &str,
-    bot_build: &str,
-    arena_attestation: &str,
-    bot_attestation: &str,
-) -> bool {
-    arena_attestation.is_empty()
-        || (!arena_build.is_empty()
-            && arena_build != "unknown"
-            && bot_build != "unknown"
-            && arena_build == bot_build
-            && !bot_attestation.is_empty()
-            && arena_attestation == bot_attestation)
-}
-
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Reconciliation {
-    immediate: Vec<usize>,
     surplus: Vec<usize>,
     missing: Vec<Assignment>,
 }
 
 /// Match the live population to the final room-scoped population an arena
-/// requested. A yielding ordinary bot no longer fills a request. A duel room
-/// that has changed which archetype it wants replaces the seat at once rather
-/// than waiting for the ordinary surplus drain, because a person is sitting in
-/// that room waiting for an opponent.
+/// requested. A yielding bot no longer fills a request.
 fn reconcile_assignments(current: &[(Assignment, bool)], desired: &[Assignment]) -> Reconciliation {
     let mut remaining = desired.to_vec();
     let mut kept = vec![false; current.len()];
@@ -1028,27 +942,12 @@ fn reconcile_assignments(current: &[(Assignment, bool)], desired: &[Assignment])
         missing: remaining,
         ..Reconciliation::default()
     };
-    for (index, (assignment, yielding)) in current.iter().enumerate() {
+    for (index, (_, yielding)) in current.iter().enumerate() {
         if *yielding || kept[index] {
             continue;
         }
-        let opponent_changed = desired.iter().any(|wanted| {
-            wanted.room == assignment.room
-                && wanted.target_slot.is_some()
-                && wanted.target_slot != assignment.target_slot
-        });
-        if opponent_changed {
-            plan.immediate.push(index);
-        } else {
-            plan.surplus.push(index);
-        }
+        plan.surplus.push(index);
     }
-    plan.missing.retain(|wanted| {
-        wanted.target_slot.is_none()
-            || !current
-                .iter()
-                .any(|(present, _)| present.room == wanted.room && present.target_slot.is_some())
-    });
     plan
 }
 
@@ -1202,23 +1101,6 @@ pub async fn run() {
                 .collect();
             let plan = reconcile_assignments(&current, &desired);
 
-            // A duel room asked for a different opponent. The old
-            // opponent is no longer part of the requested final population and
-            // must not wait out a minimum lifetime before making room.
-            for index in plan.immediate {
-                let bot = &inst.bots[index];
-                bot.yielding.store(true, Ordering::Relaxed);
-                println!(
-                    "{addr}: room {} wants duel slot {:?}; {} stands down",
-                    bot.room,
-                    desired
-                        .iter()
-                        .find(|wanted| wanted.room == bot.room)
-                        .and_then(|wanted| wanted.target_slot),
-                    bot.name
-                );
-            }
-
             // Ordinary fill still leaves one pilot at a time and observes the
             // minimum lifetime. Room-scoped requests choose which room loses
             // the seat instead of treating the instance as one bucket.
@@ -1241,16 +1123,15 @@ pub async fn run() {
             if now < inst.retry_after_ms {
                 continue;
             }
-            let ordinary_refill_ready = now.saturating_sub(inst.released_ms) >= REFILL_COOLDOWN_MS;
+            if now.saturating_sub(inst.released_ms) < REFILL_COOLDOWN_MS {
+                continue;
+            }
             let mut sent = 0;
             for assignment in plan.missing {
                 if sent >= ADD_PER_CYCLE {
                     break;
                 }
-                if assignment.target_slot.is_none() && !ordinary_refill_ready {
-                    continue;
-                }
-                let Some(who) = claim(&taken, &blocked, now, assignment) else {
+                let Some(who) = claim(&taken, &blocked, now) else {
                     break;
                 };
                 let yielding = Arc::new(AtomicBool::new(false));
@@ -1258,7 +1139,6 @@ pub async fn run() {
                     addr.clone(),
                     who.clone(),
                     assignment.room,
-                    assignment.target_slot,
                     Arc::clone(&maps),
                     Arc::clone(&rigs),
                     Arc::clone(&yielding),
@@ -1268,8 +1148,6 @@ pub async fn run() {
                     id: who.id,
                     name: who.callsign,
                     room: assignment.room,
-                    target_slot: assignment.target_slot,
-                    stand_in: assignment.stand_in,
                     born_ms: now,
                     yielding,
                     task,
@@ -1283,15 +1161,13 @@ pub async fn run() {
     }
 }
 
-/// Ordinary rooms draw from the authored roster and then a large generated
-/// population. A duel draws its opponent from persistent replicas of the
-/// authored pilots alone, because those are the ones whose strength is known.
+/// A room draws from the authored roster and then a large generated
+/// population.
 const PILOT_POOL: usize = pilots::HOUSE_PILOT_POOL;
 fn claim(
     taken: &Arc<Mutex<HashSet<pilots::PilotId>>>,
     blocked: &Arc<Mutex<HashMap<String, u64>>>,
     now: u64,
-    want: Assignment,
 ) -> Option<pilots::PilotSpec> {
     let mut t = taken.lock().ok()?;
     let mut blocked = blocked.lock().ok()?;
@@ -1308,29 +1184,7 @@ fn claim(
         }
     };
 
-    let Some(target_slot) = want.target_slot else {
-        // A duel's stand-ins start past the authored eight. Those eight are
-        // the opponents a duel draws from, so one of them here could meet a
-        // replica of itself, and one of them is the rating anchor, which a
-        // room that never empties would hold for ever.
-        let from = if want.stand_in {
-            pilots::AUTHORED_PILOT_COUNT
-        } else {
-            0
-        };
-        return (from..PILOT_POOL)
-            .map(pilots::individual)
-            .find_map(&mut take);
-    };
-    // The slot is the authored archetype itself now. It used to be a rung, and
-    // the roster order between the two was the whole of the Ladder.
-    let archetype = usize::try_from(target_slot).ok()?;
-    if archetype >= pilots::AUTHORED_PILOT_COUNT {
-        return None;
-    }
-    (0..pilots::REPLICAS_PER_ARCHETYPE)
-        .filter_map(|replica| pilots::replica(archetype, replica))
-        .find_map(&mut take)
+    (0..PILOT_POOL).map(pilots::individual).find_map(&mut take)
 }
 
 /// Ask a directory what is running, and how many bots each instance wants.
@@ -1349,12 +1203,7 @@ async fn browse(url: &str) -> Vec<(String, ArenaWant, String)> {
             z.instances.iter().map(|i| {
                 (
                     i.address.clone(),
-                    ArenaWant::from_release(
-                        i.bots_wanted,
-                        i.bot_requests.clone(),
-                        i.build.clone(),
-                        i.pilot_attestation.clone(),
-                    ),
+                    ArenaWant::new(i.bots_wanted, i.bot_requests.clone()),
                     z.name.clone(),
                 )
             })
@@ -1369,17 +1218,7 @@ async fn ask(addr: &str) -> Option<(ArenaWant, String)> {
     let body = directory::request(addr, directory::STATUS_REQUEST, directory::STATUS_REPLY).await?;
     serde_json::from_str::<crate::fleet::Status>(&body)
         .ok()
-        .map(|s| {
-            (
-                ArenaWant::from_release(
-                    s.bots_wanted,
-                    s.bot_requests,
-                    s.build,
-                    s.pilot_attestation,
-                ),
-                s.zone,
-            )
-        })
+        .map(|s| (ArenaWant::new(s.bots_wanted, s.bot_requests), s.zone))
 }
 
 /// One bot, from dial to disconnect.
@@ -1400,10 +1239,6 @@ async fn ask(addr: &str) -> Option<(ArenaWant, String)> {
 /// How one roster individual may see the room. A house token earns the complete
 /// snapshot that makes the shared rig sound. A deployment without accounts is
 /// still allowed to fly bots, but each one must use its own filtered world.
-fn uses_career_power(target_slot: Option<u32>) -> bool {
-    target_slot.is_none()
-}
-
 #[derive(Debug, PartialEq, Eq)]
 enum BotIdentity {
     /// A token, and what the account behind it owns. The entitlements come
@@ -1429,12 +1264,8 @@ impl BotIdentity {
         matches!(self, BotIdentity::House { .. })
     }
 
-    /// What this flight may wear. A named duel opponent keeps the authenticated identity but
-    /// uses the common base account, so a career purchase cannot change a rung.
-    fn kit_entitlements(&self, target_slot: Option<u32>) -> [u8; crate::sim::SLOT_COUNT] {
-        if !uses_career_power(target_slot) {
-            return crate::sim::World::base_entitlements();
-        }
+    /// What this flight may wear: what its own account has bought.
+    fn kit_entitlements(&self) -> [u8; crate::sim::SLOT_COUNT] {
         match self {
             BotIdentity::House { entitlements, .. } => *entitlements,
             BotIdentity::Unaccounted => crate::sim::World::base_entitlements(),
@@ -1450,11 +1281,7 @@ impl BotIdentity {
 /// however many times this process restarts. The secret is kept in memory for
 /// the life of the process, which is what stops a restart loop minting a
 /// credential row per attempt.
-async fn bot_identity(
-    who: &pilots::PilotSpec,
-    accounts: &Accounts,
-    target_slot: Option<u32>,
-) -> Result<BotIdentity, String> {
+async fn bot_identity(who: &pilots::PilotSpec, accounts: &Accounts) -> Result<BotIdentity, String> {
     let name = who.callsign.as_str();
     let meta = std::env::var("VW_META").unwrap_or_default();
     let pool = std::env::var("VW_TOKEN").unwrap_or_default();
@@ -1510,12 +1337,7 @@ async fn bot_identity(
     // Through the endpoints a person's client uses, with nothing added for
     // being ours: the shelf prices it, the wallet is checked at the meta-layer
     // and the refusal is the same one a player gets.
-    // A named duel opponent is a controlled fixture. It keeps this identity and
-    // session but does not change or draw power from the career wallet.
-    if uses_career_power(target_slot)
-        && accounts.may_shop(name)
-        && spend(&meta, &secret, who, &reply).await
-    {
+    if accounts.may_shop(name) && spend(&meta, &secret, who, &reply).await {
         accounts.bought(name);
         // A purchase moves the ceiling and the arena reads its copy off the
         // token, so the one in hand is already out of date. This is why the
@@ -1610,9 +1432,8 @@ fn pilot_kit(
     who: &pilots::PilotSpec,
     arena_ceiling: &[u8; crate::sim::SLOT_COUNT],
     identity: &BotIdentity,
-    target_slot: Option<u32>,
 ) -> [u8; crate::sim::SLOT_COUNT] {
-    let owned = identity.kit_entitlements(target_slot);
+    let owned = identity.kit_entitlements();
     let mut ceiling = *arena_ceiling;
     for (slot, top) in ceiling.iter_mut().enumerate() {
         *top = (*top).min(owned[slot]);
@@ -1629,24 +1450,7 @@ fn pilot_kit(
 /// A structured fleet request names the room that asked for this pilot. Zero
 /// keeps the older scalar-fill behavior and lets the arena choose a room.
 fn join_msg(class: u8, name: &str, session: &str, room: u32) -> Option<Vec<u8>> {
-    join_msg_with_release(
-        class,
-        name,
-        session,
-        room,
-        &crate::arena::house_bot_release_claim(),
-    )
-}
-
-fn join_msg_with_release(
-    class: u8,
-    name: &str,
-    session: &str,
-    room: u32,
-    release: &str,
-) -> Option<Vec<u8>> {
     let n = name.as_bytes();
-    let release = release.as_bytes();
     let mut join = vec![
         crate::C2S_JOIN,
         class.min((sim::MAX_CLASSES - 1) as u8),
@@ -1655,11 +1459,9 @@ fn join_msg_with_release(
         0,
         u8::try_from(n.len()).ok()?,
         u8::try_from(room).ok()?,
-        u8::try_from(release.len()).ok()?,
     ];
     debug_assert_eq!(join.len(), crate::C2S_JOIN_HEADER);
     join.extend_from_slice(n);
-    join.extend_from_slice(release);
     join.extend_from_slice(session.as_bytes());
     Some(join)
 }
@@ -1668,14 +1470,11 @@ fn welcome_room(message: &[u8]) -> Option<u16> {
     Some(u16::from_le_bytes(message.get(10..12)?.try_into().ok()?))
 }
 
-// Room and opponent target stay explicit here because they carry independent
-// wire and account policies through the connection setup.
 #[allow(clippy::too_many_arguments)]
 async fn fly(
     addr: String,
     who: pilots::PilotSpec,
     room: u32,
-    target_slot: Option<u32>,
     maps: Arc<Maps>,
     rigs: Arc<Rigs>,
     yielding: Arc<AtomicBool>,
@@ -1704,7 +1503,7 @@ async fn fly(
     // session and must not move a pilot's career. Authentication still happens
     // before join, so a failed meta-layer never turns a house bot into an
     // unaccounted one with a filtered view.
-    let identity = match bot_identity(&who, &accounts, target_slot).await {
+    let identity = match bot_identity(&who, &accounts).await {
         Ok(identity) => identity,
         Err(e) => {
             crate::metrics::BOT_AUTH_RETRIES.inc();
@@ -1714,16 +1513,7 @@ async fn fly(
         }
     };
     fly_socket(
-        addr,
-        who,
-        room,
-        target_slot,
-        maps,
-        rigs,
-        yielding,
-        accounts,
-        identity,
-        ws,
+        addr, who, room, maps, rigs, yielding, accounts, identity, ws,
     )
     .await
 }
@@ -1733,7 +1523,6 @@ async fn fly_socket<S>(
     addr: String,
     who: pilots::PilotSpec,
     room: u32,
-    target_slot: Option<u32>,
     maps: Arc<Maps>,
     rigs: Arc<Rigs>,
     yielding: Arc<AtomicBool>,
@@ -1987,7 +1776,7 @@ where
                             // way to be wrong.
                             Sight::Dark => *crate::sim::World::baseline_kit_ceiling(),
                         };
-                        let kit = pilot_kit(&who, &arena_ceiling, &identity, target_slot);
+                        let kit = pilot_kit(&who, &arena_ceiling, &identity);
                         let mut m = Vec::with_capacity(1 + kit.len());
                         m.push(crate::C2S_KIT);
                         m.extend_from_slice(&kit);
@@ -2357,24 +2146,6 @@ where
 #[cfg(test)]
 mod tests {
 
-    /// An ordinary fill seat in `room`, which is what every request that
-    /// names no archetype is outside a duel room.
-    fn fill(room: u32) -> Assignment {
-        Assignment {
-            room,
-            target_slot: None,
-            stand_in: false,
-        }
-    }
-
-    /// The opponent seat a duel room asks for by strength.
-    fn rung(slot: u32) -> Assignment {
-        Assignment {
-            room: 1,
-            target_slot: Some(slot),
-            stand_in: false,
-        }
-    }
     use super::*;
 
     fn map_message(world: &sim::World) -> Vec<u8> {
@@ -2539,16 +2310,8 @@ mod tests {
     fn name_as_the_arena_reads_it(msg: &[u8]) -> String {
         let zlen = msg[4] as usize;
         let nlen = msg[5] as usize;
-        let h = 8;
+        let h = 7;
         String::from_utf8_lossy(msg.get(h + zlen..h + zlen + nlen).unwrap_or_default()).to_string()
-    }
-
-    fn release_as_the_arena_reads_it(msg: &[u8]) -> String {
-        let zlen = msg[4] as usize;
-        let nlen = msg[5] as usize;
-        let rlen = msg[7] as usize;
-        let start = 8 + zlen + nlen;
-        String::from_utf8_lossy(msg.get(start..start + rlen).unwrap_or_default()).to_string()
     }
 
     #[test]
@@ -2562,34 +2325,8 @@ mod tests {
     fn scalar_population_requests_keep_the_old_fill_behavior() {
         assert_eq!(
             ArenaWant::new(3, None).assignments(),
-            vec![
-                Assignment {
-                    room: 0,
-                    target_slot: None,
-                    stand_in: false,
-                };
-                3
-            ]
+            vec![Assignment { room: 0 }; 3]
         );
-    }
-
-    #[test]
-    fn a_certified_roster_requires_the_same_known_signed_release() {
-        assert!(same_certified_release(
-            "abc123", "abc123", "signed-a", "signed-a"
-        ));
-        assert!(!same_certified_release(
-            "old", "new", "signed-a", "signed-a"
-        ));
-        assert!(!same_certified_release("", "new", "signed-a", "signed-a"));
-        assert!(!same_certified_release("abc123", "abc123", "signed-a", ""));
-        assert!(!same_certified_release(
-            "abc123", "abc123", "signed-a", "signed-b"
-        ));
-        assert!(!same_certified_release(
-            "unknown", "unknown", "signed-a", "signed-a"
-        ));
-        assert!(same_certified_release("old", "new", "", "signed-b"));
     }
 
     #[test]
@@ -2597,163 +2334,17 @@ mod tests {
         let wanted = ArenaWant::new(
             99,
             Some(vec![
-                crate::fleet::BotRequest {
-                    room: 7,
-                    count: 1,
-                    target_slot: Some(12),
-                },
-                crate::fleet::BotRequest {
-                    room: 3,
-                    count: 2,
-                    target_slot: None,
-                },
+                crate::fleet::BotRequest { room: 7, count: 1 },
+                crate::fleet::BotRequest { room: 3, count: 2 },
             ]),
         );
         assert_eq!(
             wanted.assignments(),
             vec![
-                Assignment {
-                    room: 3,
-                    target_slot: None,
-                    stand_in: false,
-                },
-                Assignment {
-                    room: 3,
-                    target_slot: None,
-                    stand_in: false,
-                },
-                Assignment {
-                    room: 7,
-                    target_slot: Some(12),
-                    stand_in: false,
-                },
+                Assignment { room: 3 },
+                Assignment { room: 3 },
+                Assignment { room: 7 },
             ]
-        );
-    }
-
-    /// A room that names an archetype is a duel room, and no other room ever
-    /// names one. So a slot-less seat there is the stand-in that keeps a duel
-    /// in the zone, and a slot-less seat anywhere else is an ordinary fill.
-    #[test]
-    fn a_slot_less_seat_beside_a_rung_is_the_stand_in() {
-        let wanted = ArenaWant::new(
-            3,
-            Some(vec![
-                crate::fleet::BotRequest {
-                    room: 1,
-                    count: 1,
-                    target_slot: Some(3),
-                },
-                crate::fleet::BotRequest {
-                    room: 1,
-                    count: 1,
-                    target_slot: None,
-                },
-                crate::fleet::BotRequest {
-                    room: 2,
-                    count: 1,
-                    target_slot: None,
-                },
-            ]),
-        );
-        assert_eq!(
-            wanted.assignments(),
-            vec![
-                Assignment {
-                    room: 1,
-                    target_slot: None,
-                    stand_in: true,
-                },
-                Assignment {
-                    room: 1,
-                    target_slot: Some(3),
-                    stand_in: false,
-                },
-                fill(2),
-            ]
-        );
-    }
-
-    /// A rung is a measured fixture, so an arena on another signed release
-    /// gets no rival from this one. The stand-in goes with it: a climber with
-    /// nothing to climb is one ship flying around an empty arena.
-    #[test]
-    fn a_duel_room_on_another_release_is_left_alone_entirely() {
-        let wanted = ArenaWant::from_release(
-            2,
-            Some(vec![
-                crate::fleet::BotRequest {
-                    room: 1,
-                    count: 1,
-                    target_slot: Some(3),
-                },
-                crate::fleet::BotRequest {
-                    room: 1,
-                    count: 1,
-                    target_slot: None,
-                },
-            ]),
-            "another-build".into(),
-            "signed-a".into(),
-        );
-        assert!(wanted.assignments().is_empty());
-    }
-
-    /// The stand-in never comes out of the authored eight. Those are the
-    /// rungs, so one of them climbing would put a pilot against a replica of
-    /// itself, and one of them is the fixed point every rating in the fleet
-    /// is measured against, which a room that never empties would hold for
-    /// ever.
-    #[test]
-    fn the_stand_in_is_never_one_of_the_rungs_it_climbs() {
-        let taken = Arc::new(Mutex::new(HashSet::new()));
-        let blocked = Arc::new(Mutex::new(HashMap::new()));
-        let want = Assignment {
-            room: 1,
-            target_slot: None,
-            stand_in: true,
-        };
-        let got = claim(&taken, &blocked, 10_000, want).expect("the roster is not empty");
-        assert_eq!(
-            got.callsign,
-            pilots::individual(pilots::AUTHORED_PILOT_COUNT).callsign,
-            "the first pilot past the authored roster"
-        );
-        assert!(pilots::CALIBRATED
-            .iter()
-            .all(|(callsign, _, _)| *callsign != got.callsign));
-        assert!(pilots::archetype_for_callsign(&got.callsign).is_none());
-        assert_ne!(
-            got.callsign,
-            crate::ai::ANCHOR,
-            "and never the rating anchor"
-        );
-    }
-
-    /// The wait for a rival seat to come free is about the rival's own
-    /// flight. The stand-in beside it holds the other seat, and a rung change
-    /// that waited on that one would wait for ever.
-    #[test]
-    fn a_stand_in_does_not_hold_the_rival_seat() {
-        let stand_in = Assignment {
-            room: 1,
-            target_slot: None,
-            stand_in: true,
-        };
-        let next = rung(12);
-        assert_eq!(
-            reconcile_assignments(&[(stand_in, false)], &[stand_in, next]).missing,
-            vec![next],
-            "the climber in the other seat is not what the wait is about"
-        );
-        assert_eq!(
-            reconcile_assignments(&[(stand_in, false), (rung(11), false)], &[stand_in, next]),
-            Reconciliation {
-                immediate: vec![1],
-                surplus: Vec::new(),
-                missing: Vec::new(),
-            },
-            "and the rung being replaced still stands down before its replacement dials"
         );
     }
 
@@ -2764,58 +2355,21 @@ mod tests {
             Some(vec![crate::fleet::BotRequest {
                 room: crate::MAX_ROOM_NUMBER + 1,
                 count: 1,
-                target_slot: None,
             }]),
         );
         assert!(wanted.assignments().is_empty());
     }
 
     #[test]
-    fn a_changed_duel_target_yields_before_replacement_connects() {
-        let old = Assignment {
-            room: 7,
-            target_slot: Some(11),
-            stand_in: false,
-        };
-        let next = Assignment {
-            room: 7,
-            target_slot: Some(12),
-            stand_in: false,
-        };
-        assert_eq!(
-            reconcile_assignments(&[(old, false)], &[next]),
-            Reconciliation {
-                immediate: vec![0],
-                surplus: Vec::new(),
-                missing: Vec::new(),
-            }
-        );
-        assert_eq!(
-            reconcile_assignments(&[], &[next]).missing,
-            vec![next],
-            "the replacement becomes eligible after the old task is reaped"
-        );
-    }
-
-    #[test]
     fn reconciliation_moves_only_the_room_whose_final_count_changed() {
-        let room_one = Assignment {
-            room: 1,
-            target_slot: None,
-            stand_in: false,
-        };
-        let room_two = Assignment {
-            room: 2,
-            target_slot: None,
-            stand_in: false,
-        };
+        let room_one = Assignment { room: 1 };
+        let room_two = Assignment { room: 2 };
         assert_eq!(
             reconcile_assignments(
                 &[(room_one, false), (room_one, false), (room_two, false)],
                 &[room_one, room_two, room_two],
             ),
             Reconciliation {
-                immediate: Vec::new(),
                 surplus: vec![1],
                 missing: vec![room_two],
             }
@@ -2823,33 +2377,8 @@ mod tests {
     }
 
     #[test]
-    fn a_yielding_duel_bot_blocks_a_retry_storm_until_it_exits() {
-        let assignment = Assignment {
-            room: 4,
-            target_slot: Some(2),
-            stand_in: false,
-        };
-        assert_eq!(
-            reconcile_assignments(&[(assignment, true)], &[assignment]),
-            Reconciliation {
-                immediate: Vec::new(),
-                surplus: Vec::new(),
-                missing: Vec::new(),
-            }
-        );
-        assert_eq!(
-            reconcile_assignments(&[], &[assignment]).missing,
-            vec![assignment]
-        );
-    }
-
-    #[test]
     fn a_yielding_ordinary_bot_no_longer_fills_a_population_request() {
-        let assignment = Assignment {
-            room: 4,
-            target_slot: None,
-            stand_in: false,
-        };
+        let assignment = Assignment { room: 4 };
         assert_eq!(
             reconcile_assignments(&[(assignment, true)], &[assignment]).missing,
             vec![assignment]
@@ -2968,20 +2497,9 @@ mod tests {
         let msg = join_msg(0, "", "", 0).expect("representable join");
         assert_eq!(
             msg.len(),
-            crate::C2S_JOIN_HEADER + crate::arena::house_bot_release_claim().len(),
-            "an empty name still carries the bot release after the header"
+            crate::C2S_JOIN_HEADER,
+            "an empty name and no token is the header alone"
         );
-        assert_eq!(
-            msg[7] as usize,
-            crate::arena::house_bot_release_claim().len()
-        );
-    }
-
-    #[test]
-    fn a_certified_join_carries_the_exact_release_claim() {
-        let msg = join_msg_with_release(0, "Halcyon", "session", 7, "v1:abc:signed")
-            .expect("representable join");
-        assert_eq!(release_as_the_arena_reads_it(&msg), "v1:abc:signed");
     }
 
     #[test]
@@ -3010,7 +2528,7 @@ mod tests {
         assert!(house.shares_world());
         assert_eq!(house.session(), "session-token");
         assert_eq!(
-            house.kit_entitlements(None),
+            house.kit_entitlements(),
             owned,
             "a house bot flies what its account has bought"
         );
@@ -3019,41 +2537,9 @@ mod tests {
         assert!(!unaccounted.shares_world());
         assert_eq!(unaccounted.session(), "");
         assert_eq!(
-            unaccounted.kit_entitlements(None),
+            unaccounted.kit_entitlements(),
             crate::sim::World::base_entitlements(),
             "and one with no account behind it flies what everybody is dealt"
-        );
-    }
-
-    #[test]
-    fn a_named_opponent_keeps_identity_but_leaves_career_power_out() {
-        let who = pilots::individual(0);
-        let ceiling = [u8::MAX; crate::sim::SLOT_COUNT];
-        let house = BotIdentity::House {
-            token: "session-token".into(),
-            entitlements: ceiling,
-        };
-        assert!(uses_career_power(None));
-        assert!(
-            !uses_career_power(Some(3)),
-            "a named opponent does not shop"
-        );
-        assert_eq!(house.session(), "session-token", "identity stays attached");
-        assert!(
-            house.shares_world(),
-            "the authenticated view stays attached"
-        );
-
-        let ordinary = pilot_kit(&who, &ceiling, &house, None);
-        let named = pilot_kit(&who, &ceiling, &house, Some(3));
-        let base = pilot_kit(&who, &ceiling, &BotIdentity::Unaccounted, None);
-        assert_eq!(
-            named, base,
-            "a named opponent wears the common base account"
-        );
-        assert_ne!(
-            ordinary, named,
-            "career purchases remain ordinary-room power"
         );
     }
 
@@ -3249,7 +2735,6 @@ mod tests {
             url,
             pilots::individual(8),
             0,
-            None,
             Arc::clone(&maps),
             Arc::new(Rigs::default()),
             Arc::new(AtomicBool::new(false)),
@@ -3394,7 +2879,6 @@ mod tests {
             url,
             pilots::individual(8),
             0,
-            Some(0),
             Arc::new(Maps::default()),
             Arc::new(Rigs::default()),
             Arc::new(AtomicBool::new(false)),
@@ -3424,7 +2908,6 @@ mod tests {
             url,
             pilots::individual(8),
             0,
-            None,
             Arc::new(Maps::default()),
             Arc::new(Rigs::default()),
             Arc::new(AtomicBool::new(false)),
@@ -3456,7 +2939,6 @@ mod tests {
                 url,
                 pilots::individual(8),
                 6,
-                Some(0),
                 Arc::new(Maps::default()),
                 Arc::new(Rigs::default()),
                 Arc::new(AtomicBool::new(true)),
@@ -3552,65 +3034,8 @@ mod tests {
             .lock()
             .unwrap()
             .insert(first.callsign.clone(), 20_000);
-        let got = claim(&taken, &blocked, 10_000, fill(0)).unwrap();
+        let got = claim(&taken, &blocked, 10_000).unwrap();
         assert_ne!(got.callsign, first.callsign);
         assert_eq!(got.callsign, pilots::individual(1).callsign);
-    }
-
-    /// A named slot is the authored archetype itself. It used to be a rung,
-    /// with a certified roster order in between.
-    #[test]
-    fn a_named_slot_resolves_into_that_archetype() {
-        let taken = Arc::new(Mutex::new(HashSet::new()));
-        let blocked = Arc::new(Mutex::new(HashMap::new()));
-        let target = 7usize;
-        let expected = pilots::replica(target, 0).unwrap();
-        let got = claim(&taken, &blocked, 10_000, rung(target as u32)).unwrap();
-        assert_eq!(got.id, expected.id);
-        assert_eq!(
-            got.callsign,
-            format!("{} 0001", pilots::individual(target).callsign)
-        );
-    }
-
-    /// A slot past the authored roster names nobody, rather than wrapping
-    /// round to a pilot the arena did not ask for.
-    #[test]
-    fn a_slot_past_the_roster_names_nobody() {
-        let taken = Arc::new(Mutex::new(HashSet::new()));
-        let blocked = Arc::new(Mutex::new(HashMap::new()));
-        let past = pilots::AUTHORED_PILOT_COUNT as u32;
-        assert!(claim(&taken, &blocked, 10_000, rung(past)).is_none());
-    }
-
-    #[test]
-    fn concurrent_duel_rooms_get_distinct_persistent_replicas() {
-        let archetype = 7usize;
-        let target = archetype;
-        let taken = Arc::new(Mutex::new(HashSet::new()));
-        let blocked = Arc::new(Mutex::new(HashMap::new()));
-        let first = claim(&taken, &blocked, 10_000, rung(target as u32)).unwrap();
-        let second = claim(&taken, &blocked, 10_000, rung(target as u32)).unwrap();
-        assert_ne!(first.id, second.id);
-        assert_eq!(first.id, pilots::replica(archetype, 0).unwrap().id);
-        assert_eq!(second.id, pilots::replica(archetype, 1).unwrap().id);
-        assert_eq!(first.hull, second.hull);
-        assert_eq!(first.competence, second.competence);
-        // Behavior covers taste as well now: a kit is derived from it.
-        assert_eq!(first.behavior, second.behavior);
-        assert_eq!(first.configuration_seed, second.configuration_seed);
-    }
-
-    #[test]
-    fn an_exhausted_archetype_does_not_change_to_another() {
-        let target = 7u32;
-        let archetype = target as usize;
-        let occupied: HashSet<pilots::PilotId> = (0..pilots::REPLICAS_PER_ARCHETYPE)
-            .map(|replica| pilots::replica(archetype, replica).unwrap().id)
-            .collect();
-        assert_eq!(occupied.len(), pilots::REPLICAS_PER_ARCHETYPE);
-        let taken = Arc::new(Mutex::new(occupied));
-        let blocked = Arc::new(Mutex::new(HashMap::new()));
-        assert!(claim(&taken, &blocked, 10_000, rung(target)).is_none());
     }
 }

@@ -142,9 +142,9 @@ end
 -- the fraction a row with no strip uses. That is the wrong number to measure
 -- the head against.
 local games = base({rows = {
-    {label = "Duel", index = 1, pick = true, live = true,
-     specs = {{"teams", "1 v 1"}, {"time", "one life"},
-              {"scoring", "streak"}}},
+    {label = "Chaos", index = 1, pick = true, live = true,
+     specs = {{"teams", "free for all"}, {"time", "no clock"},
+              {"scoring", "kills"}}},
     {label = "Team Battle", index = 2, pick = true, live = true,
      specs = {{"teams", "4 v 4"}, {"time", "3:00"}, {"scoring", "kills"}}},
 }})

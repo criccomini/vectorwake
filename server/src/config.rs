@@ -123,12 +123,9 @@ pub struct ArenaConfig {
     /// A match game's two clocks, in seconds. Three minutes of play and
     /// fifteen seconds of podium is what `docs/design/match-game.md`
     /// settles on: long enough for a match to have a shape, short enough that
-    /// a bad one is nearly over. Melee and Ladder both read them.
+    /// a bad one is nearly over. Only a match game reads them.
     pub match_seconds: Option<u16>,
     pub intermission_seconds: Option<u16>,
-    /// How many deaths take a duel. Missing means single-life play, which is
-    /// the only shape the catalog accepts for the mode.
-    pub duel_first_to: Option<u16>,
     /// What a pilot is worth the moment they spawn, and what each kill on a
     /// run adds to that. A bounty is the run rather than the kit: the kit is
     /// the same every life, so it is what a pilot has done since their last
@@ -438,18 +435,6 @@ gun_mods = { multi = 2, barrel = 2 }
             Some(0),
             "a wall that gives nothing back is a setting"
         );
-    }
-
-    #[test]
-    fn duel_rules_parse_as_arena_settings() {
-        let src = r#"
-[arena]
-mode = "duel"
-duel_first_to = 5
-"#;
-        let c: ZoneConfig = toml::from_str(src).expect("duel settings parse");
-        assert_eq!(c.arena.mode, "duel");
-        assert_eq!(c.arena.duel_first_to, Some(5));
     }
 
     #[test]

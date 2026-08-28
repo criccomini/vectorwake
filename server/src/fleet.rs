@@ -152,26 +152,17 @@ pub struct RoomView {
     pub clock: u32,
     #[serde(default)]
     pub playing: bool,
-    /// A match room is holding for a required participant rather than running
-    /// an intermission clock. Directory-only clients need this bit because a
-    /// waiting Ladder keeps its full match duration in `clock`.
-    #[serde(default)]
-    pub waiting: bool,
 }
 
 /// One room's requested bot population.
 ///
-/// Ordinary rooms leave `target_slot` empty and ask only for a count. A Ladder
-/// room names the pilot rung it wants, so the bot server can choose an unused
-/// individual at that measured difficulty. The request is about the final
-/// population, not the current shortfall. That lets the bot server reconcile
-/// arrivals and departures without racing the arena's own count.
+/// The request is about the final population, not the current shortfall. That
+/// lets the bot server reconcile arrivals and departures without racing the
+/// arena's own count.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub struct BotRequest {
     pub room: u32,
     pub count: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target_slot: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -182,7 +173,7 @@ pub struct Status {
     #[serde(default)]
     pub build: String,
     /// Signature of the pilot calibration attestation this arena verified.
-    /// Empty means its Ladder is provisional. This is public release metadata,
+    /// Empty means its pilot roster is provisional. This is public release metadata,
     /// not a credential; a house bot must report the same signed artifact at
     /// join before a certified rival seat can open.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -656,21 +647,6 @@ mod tests {
                 "tag {t:#x} is inside the client protocol's range"
             );
         }
-    }
-
-    #[test]
-    fn room_waiting_defaults_off_and_round_trips_when_set() {
-        let old = r#"{"number":7,"players":1,"bots":0,"full":false,"clock":180,"playing":false}"#;
-        let parsed: RoomView = serde_json::from_str(old).expect("old room view parses");
-        assert!(!parsed.waiting);
-
-        let waiting = RoomView {
-            waiting: true,
-            ..parsed
-        };
-        let json = serde_json::to_string(&waiting).expect("room view serializes");
-        let round_trip: RoomView = serde_json::from_str(&json).expect("room view parses");
-        assert!(round_trip.waiting);
     }
 
     #[test]

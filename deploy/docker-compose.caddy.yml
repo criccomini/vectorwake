@@ -37,7 +37,7 @@ services:
       # recreates the container. This label lists what the files route, so
       # adding a route means changing it, and changing it is what makes compose
       # act. Keep it in step with caddy/conf.d.
-      vw.routes: deploy dir meta a1 a2 metrics admin
+      vw.routes: deploy dir meta a1 metrics admin
       # The same trick a third time. This names the client page's cache policy
       # so a policy change in the Caddyfile has something here to move.
       vw.page-cache: no-cache

@@ -230,12 +230,11 @@ do
         ui.begin(harness.layer(), w, h, 1, false, now)
         ui.hud({me = 0, watch = {subject = 0}, side = 0, viewer_name = "p0",
                 menu_open = open, pilots = SEATS, watchers = {}, teams = {},
-                match = {playing = true, left = 169, score = {[0] = 0, [1] = 0},
-                         duel = {streak = 1, best_streak = 3, legs = 4, log = {}}},
+                match = {playing = true, left = 169, score = {[0] = 0, [1] = 0}},
                 side_names = {[0] = "Pylon", [1] = "Caisson"},
                 feed = {}, hurt = 0, charges = {}, cam_x = 3000, cam_y = 3000,
                 half_w = w / 2, half_h = h / 2, banner = "", link_bars = 4,
-                zone = "duel"})
+                zone = "melee"})
         if open or ui.drawer_up() then
             local mv = view(open)
             mv.rows = {}

@@ -265,23 +265,6 @@ dir.rows = {{zone = "chaos", name = "chaos", count = "",
 check("a list with games in it says nothing", menu.view().empty == nil,
       tostring(menu.view().empty))
 
--- A room the directory says is between matches. The landing is the room
--- itself now rather than a panel counting it down from outside, so what this
--- still has to be right about is the row: a zone whose one room is waiting on
--- a rival is marked waiting, which is what the list draws a dial on.
-_G.NEXT_REPLY = {zones = {{
-    name = "duel", players = 1, bots = 0,
-    instances = {{address = "wss://x/duel", rooms = {
-        {number = 1, players = 1, bots = 0, full = false,
-         clock = 0, playing = false, waiting = true},
-    }}},
-}}}
-message(last(), "ignored")
-check("a room with no rival in it is marked waiting",
-      dir.rows[1] and dir.rows[1].waiting == true,
-      tostring(dir.rows[1] and dir.rows[1].waiting))
-
-
 -- --- the rooms of a zone, across the servers holding them ------------------
 --
 -- The panel in the corner lists these and a click on one joins it, so what

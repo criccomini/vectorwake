@@ -144,4 +144,4 @@ layer, seated together whenever they enter any zone. Accounts exist and hold
 durable ids, so the step is small, but it is a second storey and this
 document is the ground floor. A spectator team, the original's parking place
 for the dead and the curious, is likewise cheap under this model and waits
-for a mode that wants an audience, likely [duel-mode.md](duel-mode.md).
+for a mode that wants an audience.

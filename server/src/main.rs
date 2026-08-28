@@ -1157,7 +1157,7 @@ async fn main() {
                 }
                 // Every room, in order. The process holds one arena per room and
                 // ticks them all on this thread: at 16 us for sixty-four ships
-                // and 1.6 for two, a hundred duel rooms is a sixth of a core, so
+                // and 1.6 for two, a hundred two-ship rooms is a sixth of a core, so
                 // there is nothing here a pool would buy.
                 let (snap, combat_snap) = snapshot_lanes(n);
                 // The roster, on a slow clock rather than only when it changes.
@@ -1486,56 +1486,6 @@ mod tests {
         assert!(disconnected.connection_closed);
     }
 
-    /// An uncertified build defines only its fixed reference. Point estimates
-    /// from a small exploratory run must not turn into live priors merely
-    /// because they were checked in, so every other authored pilot falls back
-    /// to the provisional curve until a tournament measures it.
-    #[test]
-    fn the_uncertified_roster_is_anchored_and_ordered() {
-        let anchor = ai::CALIBRATED
-            .iter()
-            .position(|(callsign, _, _)| *callsign == ai::ANCHOR)
-            .expect("the roster contains its own anchor");
-        assert_eq!(
-            arena::archetype_rating(anchor),
-            ai::ANCHOR_RATING,
-            "the anchor is fixed by definition"
-        );
-        let mut by_prior: Vec<usize> = (0..pilots::AUTHORED_PILOT_COUNT).collect();
-        by_prior.sort_by(|a, b| {
-            pilots::individual(*a)
-                .ordering_prior()
-                .total_cmp(&pilots::individual(*b).ordering_prior())
-        });
-        for pair in by_prior.windows(2) {
-            assert!(
-                arena::archetype_rating(pair[0]) < arena::archetype_rating(pair[1]),
-                "a stronger prior has to read as a higher rating"
-            );
-        }
-    }
-
-    /// The matchmaker's whole answer against the AI: the nearest pilot by
-    /// strength, and never one off the end of the roster.
-    #[test]
-    fn a_duel_draws_the_house_pilot_nearest_the_asking_rating() {
-        for archetype in 0..pilots::AUTHORED_PILOT_COUNT {
-            let at = arena::archetype_rating(archetype);
-            assert_eq!(
-                arena::archetype_nearest_rating(at),
-                archetype,
-                "a pilot rated exactly at one of them meets that one"
-            );
-        }
-        let weakest = arena::archetype_nearest_rating(-10_000.0);
-        let strongest = arena::archetype_nearest_rating(10_000.0);
-        assert_ne!(weakest, strongest);
-        assert!(
-            arena::archetype_rating(weakest) < arena::archetype_rating(strongest),
-            "and the ends of the scale meet the ends of the roster"
-        );
-    }
-
     /// A loose ratings file cannot bypass the compiled report gate. The seed
     /// still has to reach rooms opened after startup, so the second room proves
     /// both parts of the contract.
@@ -1665,50 +1615,6 @@ mod tests {
         z
     }
 
-    fn duel_serving_with_accounts() -> ArenaServer {
-        let mut z = serving_with_accounts();
-        let mut def = wire_zone(4, 1, 2);
-        def.name = "duel".into();
-        def.mode = "duel".into();
-        def.max_ships = 2;
-        def.bot_fill = 1.0;
-        def.admission = "claimed".into();
-        def.zone_toml = "label = \"test Duel\"\n\
-                         teams = [\"Pilot\", \"Rival\"]\n\
-                         max_teams = 2\n\
-                         max_humans_per_team = 1\n\
-                         max_bots_per_team = 1\n"
-            .into();
-        if let Some(catalog) = z.catalog.as_mut() {
-            catalog.default_zone = def.name.clone();
-            catalog.zones = vec![def.clone()];
-        }
-        z.serve_zone(&def).expect("a duel room");
-        z
-    }
-
-    /// Tick a duel room, with everybody in it flying the way a real client
-    /// does: a seat that stops sending input is sat out for lag long before
-    /// ten seconds are up, which is longer than most of these tests run.
-    fn tick_duel(z: &mut ArenaServer, ticks: u32) {
-        for _ in 0..ticks {
-            let now = z.rooms[0].world.state.tick.wrapping_add(1);
-            let seated: Vec<u64> = z.rooms[0].players.keys().copied().collect();
-            for id in seated {
-                if let Some(p) = z.rooms[0].players.get_mut(&id) {
-                    p.schedule(now, 0, now);
-                }
-            }
-            z.rooms[0].tick();
-        }
-    }
-
-    /// Tick a duel room past the window it holds the second seat open for a
-    /// person, so the arena starts asking for a bot instead.
-    fn wait_out_the_duel_hold(z: &mut ArenaServer) {
-        tick_duel(z, modes::DUEL_HOLD_TICKS + 1);
-    }
-
     fn a_token(
         kind: token::Kind,
         claimed: bool,
@@ -1737,76 +1643,6 @@ mod tests {
                 entitlements: Vec::new(),
             },
         )
-    }
-
-    fn signed_duel_replica(z: &ArenaServer, account: u64, slot: u32, replica: usize) -> Seat {
-        let archetype = usize::try_from(slot).expect("a roster slot");
-        let pilot = pilots::replica(archetype, replica).expect("a Ladder replica");
-        z.identify(
-            &a_token_for(
-                account,
-                token::Kind::HouseBot,
-                true,
-                &pilot.callsign,
-                Vec::new(),
-            ),
-            "",
-            true,
-            &pilot::Session::new("ws"),
-        )
-        .expect("the signed replica verifies")
-    }
-
-    /// Seat a house pilot as the opponent in room zero.
-    ///
-    /// An ordinary join now. A duel binds nothing about the seat: the arena
-    /// asks the director for an archetype near the waiting pilot's rating and
-    /// seats whoever turns up in whatever their own career bought.
-    fn join_duel_bot(z: &mut ArenaServer, account: u64, slot: u32, replica: usize) -> (u64, u8) {
-        let pilot = pilots::replica(slot as usize, replica).expect("a replica");
-        let seat = signed_duel_replica(z, account, slot, replica);
-        let (tx, rx) = mpsc::channel(OUT_QUEUE);
-        std::mem::forget(rx);
-        let id = z.rooms[0]
-            .join(seat, pilot.hull, 2, tx)
-            .expect("the opponent seat");
-        let ship = z.rooms[0].players[&id].ship;
-        (id, ship)
-    }
-
-    /// A signed house identity that is not one of the rungs: an ordinary
-    /// roster pilot, which is what the director claims for a Ladder room's
-    /// stand-in. `nth` counts from the first generated pilot, so no call sign
-    /// here can be mistaken for a rung's replica.
-    fn signed_stand_in(z: &ArenaServer, account: u64, nth: usize) -> (Seat, pilots::PilotSpec) {
-        let pilot = pilots::individual(pilots::AUTHORED_PILOT_COUNT + nth);
-        let seat = z
-            .identify(
-                &a_token_for(
-                    account,
-                    token::Kind::HouseBot,
-                    true,
-                    &pilot.callsign,
-                    Vec::new(),
-                ),
-                "",
-                true,
-                &pilot::Session::new("ws"),
-            )
-            .expect("the signed stand-in verifies");
-        (seat, pilot)
-    }
-
-    /// Seat the stand-in the empty room is asking for.
-    fn join_stand_in(z: &mut ArenaServer, account: u64, nth: usize) -> (u64, u8) {
-        let (seat, pilot) = signed_stand_in(z, account, nth);
-        let (tx, rx) = mpsc::channel(OUT_QUEUE);
-        std::mem::forget(rx);
-        let id = z.rooms[0]
-            .join(seat, pilot.hull, 2, tx)
-            .expect("the stand-in seat");
-        let ship = z.rooms[0].players[&id].ship;
-        (id, ship)
     }
 
     #[test]
@@ -2386,674 +2222,6 @@ mod tests {
         seat_bots(&mut z.rooms[0], target - 40);
         assert_eq!(z.room_for_bot(), None);
         assert_eq!(z.rooms.len(), 2, "and no third room was built to hold bots");
-    }
-
-    /// A duel room holds the second seat open for a person before it settles
-    /// for a bot, and the bot it then asks for is named by strength.
-    #[test]
-    fn a_duel_holds_the_seat_for_a_person_then_asks_by_rating() {
-        let mut z = duel_serving_with_accounts();
-        let room = z.rooms[0].number;
-
-        // Nobody here, so the room the menu watches fights on without them.
-        // Neither of that pair names an archetype: it is a demonstration
-        // rather than a match, and one of the authored eight is the fixed
-        // point the whole rating scale hangs off.
-        assert_eq!(z.bots_wanted(), 2, "an empty room still shows a fight");
-        assert_eq!(
-            z.status().bot_requests,
-            Some(vec![
-                fleet::BotRequest {
-                    room,
-                    count: 1,
-                    target_slot: None,
-                },
-                fleet::BotRequest {
-                    room,
-                    count: 1,
-                    target_slot: None,
-                },
-            ])
-        );
-
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        z.rooms[0]
-            .join(Seat::guest("Climber", false), 0, 2, tx)
-            .expect("the human seat");
-        z.rooms[0].tick();
-        assert_eq!(
-            z.status().bot_requests,
-            Some(Vec::new()),
-            "the seat across from them is held for a person first"
-        );
-
-        wait_out_the_duel_hold(&mut z);
-        assert_eq!(z.rooms[0].humans(), 1, "the person is still in the room");
-        let asked = z.status().bot_requests.expect("a request");
-        assert_eq!(asked.len(), 1, "one opponent, not a room full");
-        assert_eq!(asked[0].room, room);
-        let slot = asked[0].target_slot.expect("named by strength");
-        assert_eq!(
-            slot as usize,
-            arena::archetype_nearest_rating(rating::UNRATED),
-            "an unrated pilot meets the pilot nearest the middle of the scale"
-        );
-    }
-
-    /// The opponent the door sent is still the opponent the room wants once it
-    /// has landed. The hold is about when a bot is asked for, not about
-    /// whether the seat it took is still wanted: a room that stops asking the
-    /// moment the bot arrives has its own opponent taken off it again by the
-    /// director, mid-fight, as surplus.
-    #[test]
-    fn a_duel_keeps_the_opponent_the_hold_asked_for() {
-        let mut z = duel_serving_with_accounts();
-        let room = z.rooms[0].number;
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        z.rooms[0]
-            .join(Seat::guest("Climber", false), 0, 2, tx)
-            .expect("the human seat");
-        wait_out_the_duel_hold(&mut z);
-        let slot = z.status().bot_requests.expect("a request")[0]
-            .target_slot
-            .expect("named by strength");
-
-        join_duel_bot(&mut z, 5_001, slot, 0);
-        z.rooms[0].tick();
-        assert_eq!(
-            z.status().bot_requests,
-            Some(vec![fleet::BotRequest {
-                room,
-                count: 1,
-                target_slot: Some(slot),
-            }]),
-            "the fight in progress is the population this room wants"
-        );
-    }
-
-    /// How long the seat across the arena is still held open for a person, in
-    /// seconds, said by the room rather than guessed by the client from when
-    /// it noticed the wait. A pilot who arrives to an empty room is looking at
-    /// a countdown with an end on it rather than at a zone that is broken.
-    #[test]
-    fn a_duel_says_how_long_the_second_seat_is_held_for() {
-        let mut z = duel_serving_with_accounts();
-        let (tx, mut rx) = mpsc::channel(OUT_QUEUE);
-        let human = z.rooms[0]
-            .join(Seat::guest("Climber", false), 0, 2, tx)
-            .expect("the human seat");
-        let ship = z.rooms[0].players[&human].ship;
-
-        tick_duel(&mut z, 1);
-        assert_eq!(
-            z.rooms[0].duel_hold_left(),
-            10,
-            "the whole of it, the first tick somebody is alone in the room"
-        );
-        // The byte a client reads it out of, which is the room's half of the
-        // duel body: no artifact rides here, so the header is eight bytes, the
-        // status is the ninth and the hold is the tenth.
-        let waiting = z.rooms[0].match_msg(Some(ship)).expect("a clock");
-        assert_eq!(waiting[8], 1, "the room says it is waiting");
-        assert_eq!(waiting[9], 10, "and how long it will go on waiting");
-
-        // And it reaches the pilot while it moves. A room sends the clock when
-        // the clock changes, and a room waiting for a rival has no other
-        // moving part: without the hold in the packet the number would be
-        // sent once and sit there.
-        let _ = drain(&mut rx);
-        tick_duel(&mut z, 3 * modes::TICKS_PER_SECOND);
-        assert_eq!(z.rooms[0].duel_hold_left(), 7, "three seconds of it gone");
-        let counted: Vec<u8> = drain(&mut rx)
-            .into_iter()
-            .filter(|m| m.first() == Some(&S2C_MATCH))
-            .map(|m| m[9])
-            .collect();
-        assert_eq!(
-            counted,
-            vec![10, 9, 8, 7],
-            "a packet a second, counting down"
-        );
-
-        wait_out_the_duel_hold(&mut z);
-        assert_eq!(
-            z.rooms[0].duel_hold_left(),
-            0,
-            "a hold that has run out counts nothing: what is left is one bot \
-             dialing in, which the room has no number for"
-        );
-
-        let slot = z.status().bot_requests.expect("a request")[0]
-            .target_slot
-            .expect("named by strength");
-        join_duel_bot(&mut z, 5_001, slot, 0);
-        tick_duel(&mut z, 1);
-        assert_eq!(
-            z.rooms[0].duel_hold_left(),
-            0,
-            "and a room with both seats filled is holding nothing at all"
-        );
-    }
-
-    /// The play page watches the room it would deploy you into, so a duel zone
-    /// with nobody in it is an empty arena on the menu of everybody deciding
-    /// whether to press play. The room fights on without them.
-    #[test]
-    fn an_empty_duel_room_flies_a_fight_of_its_own() {
-        let mut z = duel_serving_with_accounts();
-        let room = z.rooms[0].number;
-
-        let (first, _) = signed_stand_in(&z, 5_101, 0);
-        assert_eq!(
-            z.room_for_bot_request(room, &first),
-            Some(0),
-            "an ordinary house pilot may fly where nobody is playing"
-        );
-        let (_, left) = join_stand_in(&mut z, 5_101, 0);
-        assert_eq!(
-            z.rooms[0].world.state.ships[left as usize].team, 0,
-            "and lands on a scored side a person would"
-        );
-
-        let (_, right) = join_stand_in(&mut z, 5_102, 1);
-        assert_eq!(
-            z.rooms[0].world.state.ships[right as usize].team, 1,
-            "the second takes the other side, so they can shoot each other"
-        );
-        z.rooms[0].tick();
-        assert!(
-            z.rooms[0].duel_state().expect("duel state").state.playing,
-            "a fight nobody is watching is still a fight"
-        );
-
-        let (third, _) = signed_stand_in(&z, 5_103, 2);
-        assert_eq!(
-            z.room_for_bot_request(room, &third),
-            None,
-            "and a duel is two ships"
-        );
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        assert!(
-            z.rooms[0].join(third, 0, 2, tx).is_none(),
-            "refused at the door as well as in the request"
-        );
-    }
-
-    /// The pair are holding the room, not keeping it. A person walks into a
-    /// room with two bots in it and both stand down.
-    #[test]
-    fn an_arriving_person_takes_the_stand_ins_seat() {
-        let mut z = duel_serving_with_accounts();
-        join_stand_in(&mut z, 5_111, 0);
-        join_stand_in(&mut z, 5_112, 1);
-        z.rooms[0].tick();
-        assert_eq!(z.rooms[0].bot_count(), 2);
-
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let id = z.rooms[0]
-            .join(Seat::guest("Climber", false), 0, 2, tx)
-            .expect("a person is never refused a room full of AI");
-        assert_eq!(z.rooms[0].bot_count(), 0, "both seats are given back");
-        let ship = z.rooms[0].players[&id].ship;
-        let state = z.rooms[0].mode.duel_state(Some(ship)).expect("duel state");
-        assert_eq!(state.run.legs, 0, "their evening is their own");
-        assert!(!state.playing);
-        assert!(state.waiting, "and the room is looking for an opponent");
-    }
-
-    /// Only the room the menu watches. Rooms open because people arrive and
-    /// are given back when they empty, and a room with bots flying in it never
-    /// empties.
-    #[test]
-    fn a_second_duel_room_does_not_get_a_stand_in() {
-        let mut z = duel_serving_with_accounts();
-        z.open_room().expect("a second duel room");
-        let second = z.rooms[1].number;
-
-        let (stand_in, _) = signed_stand_in(&z, 5_121, 0);
-        assert_eq!(z.room_for_bot_request(second, &stand_in), None);
-        let named = signed_duel_replica(&z, 5_122, 0, 0);
-        assert_eq!(
-            z.room_for_bot_request(second, &named),
-            None,
-            "and no opponent either, because nobody is in it to want one"
-        );
-    }
-
-    /// Two people of about the same rating meet each other rather than each
-    /// getting their own room and their own bot.
-    #[test]
-    fn two_people_of_a_rating_are_put_in_one_room() {
-        let mut z = duel_serving_with_accounts();
-        let mut first = Seat::guest("First", false);
-        first.rid = "a1".into();
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        z.rooms[0]
-            .join(first, 0, 2, tx)
-            .expect("the first human seat");
-
-        let second = Seat::guest("Second", false);
-        let index = z
-            .room_wanted(0, &second)
-            .expect("somewhere to put the second");
-        assert_eq!(index, 0, "beside the person already waiting");
-
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        z.rooms[index]
-            .join(second, 0, 2, tx)
-            .expect("the second human seat");
-        assert_eq!(z.rooms[0].humans(), 2);
-        z.rooms[0].tick();
-        assert_eq!(
-            z.status().bot_requests,
-            Some(Vec::new()),
-            "and a full duel wants no bot at all"
-        );
-    }
-
-    /// A rating far from everybody waiting is not a match. They get a room of
-    /// their own and become the person somebody nearer is matched against.
-    #[test]
-    fn a_far_off_rating_opens_its_own_room() {
-        let mut z = duel_serving_with_accounts();
-        let mut waiting = Seat::guest("Legend", false);
-        waiting.rid = "a1".into();
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        z.rooms[0]
-            .join(waiting, 0, 2, tx)
-            .expect("the first human seat");
-        z.rooms[0]
-            .rating
-            .score
-            .insert("a1".into(), rating::UNRATED + 900.0);
-
-        let index = z
-            .room_wanted(0, &Seat::guest("Newcomer", false))
-            .expect("somewhere");
-        assert_ne!(index, 0, "nine hundred points apart is not a duel");
-        assert_eq!(z.rooms.len(), 2);
-    }
-
-    #[test]
-    fn a_new_ladder_climber_never_receives_the_previous_runs_artifact() {
-        let mut z = duel_serving_with_accounts();
-        z.rooms[0].artifact_id = Some(42);
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        z.rooms[0]
-            .join(Seat::guest("New climber", false), 0, 1, tx)
-            .expect("the new run");
-        assert_eq!(
-            z.rooms[0].artifact_id, None,
-            "join sync must describe a waiting run, not the previous podium"
-        );
-    }
-
-    #[test]
-    fn ladder_progress_and_match_transition_share_one_wire_message() {
-        let mut z = duel_serving_with_accounts();
-        let (tx, mut rx) = mpsc::channel(OUT_QUEUE);
-        z.rooms[0]
-            .join(Seat::guest("Climber", false), 0, 1, tx)
-            .expect("the human seat");
-        join_duel_bot(&mut z, 5_009, 0, 0);
-        let _ = drain(&mut rx);
-
-        z.rooms[0].broadcast_match();
-        let matches: Vec<Vec<u8>> = drain(&mut rx)
-            .into_iter()
-            .filter(|message| message.first() == Some(&S2C_MATCH))
-            .collect();
-        assert_eq!(matches.len(), 1, "one transition uses one queue entry");
-        assert_ne!(
-            matches[0][1] & MATCH_HAS_DUEL,
-            0,
-            "the match packet carries its Ladder snapshot"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_duel_house_bot_cannot_join_as_a_watcher() {
-        let arena = duel_serving_with_accounts();
-        let archetype = usize::try_from(0).expect("a roster slot");
-        let rival = pilots::replica(archetype, 0).expect("a replica");
-        let credential = a_token_for(
-            5_014,
-            token::Kind::HouseBot,
-            true,
-            &rival.callsign,
-            Vec::new(),
-        );
-        let zone = Arc::new(Mutex::new(arena));
-        let (in_tx, inbound) = mpsc::channel(INBOUND_QUEUE);
-        let (out_tx, mut outbound) = mpsc::channel(OUT_QUEUE);
-        let task = tokio::spawn(serve_client(zone.clone(), inbound, out_tx, "test"));
-
-        let name = rival.callsign.as_bytes();
-        let zone_name = b"duel";
-        let mut join = vec![
-            C2S_JOIN,
-            rival.hull,
-            CLIENT_PROTOCOL,
-            JOIN_BOT | JOIN_WATCH,
-            zone_name.len() as u8,
-            name.len() as u8,
-            0,
-            0,
-        ];
-        join.extend_from_slice(zone_name);
-        join.extend_from_slice(name);
-        join.extend_from_slice(credential.as_bytes());
-        in_tx
-            .send(join)
-            .await
-            .expect("the join reaches the handler");
-
-        let denied = loop {
-            let message = tokio::time::timeout(std::time::Duration::from_secs(1), outbound.recv())
-                .await
-                .expect("the join is answered")
-                .expect("the refused connection sends its denial");
-            let Message::Binary(message) = message else {
-                continue;
-            };
-            if message.first() == Some(&S2C_DENIED) {
-                break message;
-            }
-        };
-        assert_eq!(denied.get(1), Some(&DENY_BANNED));
-        task.await.expect("the refused connection exits");
-        let arena = zone.lock().await;
-        assert!(arena.rooms[0].watchers.is_empty());
-        assert!(arena.rooms[0].players.is_empty());
-    }
-
-    #[test]
-    fn every_ladder_anchor_replica_holds_the_rating_scale_fixed() {
-        let mut z = duel_serving_with_accounts();
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let human_id = z.rooms[0]
-            .join(Seat::guest("Climber", false), 0, 1, tx)
-            .expect("the human seat");
-        let human_ship = z.rooms[0].players[&human_id].ship;
-        let anchor_archetype =
-            pilots::archetype_for_callsign("Ozone 0001").expect("the anchor replica family");
-        let anchor_slot = (0..pilots::AUTHORED_PILOT_COUNT as u32)
-            .find(|slot| Some(*slot as usize) == Some(anchor_archetype))
-            .expect("the provisional order contains the anchor");
-        assert!(z.rooms[0].is_duel());
-        let anchor = signed_duel_replica(&z, 5_020, anchor_slot, 0);
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let anchor_id = z.rooms[0]
-            .join(anchor, pilots::individual(anchor_archetype).hull, 1, tx)
-            .expect("the anchor rival");
-        let anchor_ship = z.rooms[0].players[&anchor_id].ship;
-        let anchor_rid = z.rooms[0].names[&anchor_ship].rid.clone();
-        let human_rid = z.rooms[0].names[&human_ship].rid.clone();
-
-        z.rooms[0]
-            .rating
-            .damage(1, &anchor_rid, &human_rid, 1_000, false);
-        z.rooms[0]
-            .rating
-            .death(1, &anchor_rid)
-            .expect("a rated exchange");
-        assert_eq!(
-            z.rooms[0].rating.rating_of(&anchor_rid),
-            ai::ANCHOR_RATING,
-            "a replica of the reference personality cannot drift"
-        );
-    }
-
-    #[test]
-    fn a_new_duel_evicts_the_previous_pilots_opponent() {
-        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
-        let mut def = wire_zone(4, 1, 2);
-        def.name = "duel".into();
-        def.mode = "duel".into();
-        def.max_ships = 2;
-        def.bot_fill = 1.0;
-        z.catalog = Some(fleet::WireCatalog {
-            version: 1,
-            name: "test".into(),
-            default_zone: "duel".into(),
-            zones: vec![def.clone()],
-            ..Default::default()
-        });
-        z.serve_zone(&def).expect("a duel room");
-
-        let archetype = usize::try_from(0).expect("a roster slot");
-        let rival = pilots::replica(archetype, 0).expect("a Ladder replica");
-        let mut seat = Seat::guest(rival.callsign, true);
-        seat.label = token::Label::HouseBot.to_byte();
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        z.rooms[0]
-            .join(seat, rival.hull, 1, tx)
-            .expect("a stale rival seat");
-        assert_eq!(
-            z.rooms[0].names.values().filter(|seat| seat.bot).count(),
-            1,
-            "the stale rival is present"
-        );
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        z.rooms[0]
-            .join(Seat::guest("Next climber", false), 0, 1, tx)
-            .expect("the next run");
-        assert!(
-            z.rooms[0].names.values().all(|seat| !seat.bot),
-            "a seat with an unknown slot cannot survive the run boundary"
-        );
-
-        assert_eq!(
-            z.status().bot_requests,
-            Some(Vec::new()),
-            "and the seat is held open for a person before a bot is asked for"
-        );
-
-        wait_out_the_duel_hold(&mut z);
-        let asked = z.status().bot_requests.expect("a request");
-        assert_eq!(asked.len(), 1);
-        assert_eq!(asked[0].room, z.rooms[0].number);
-        assert!(
-            asked[0].target_slot.is_some(),
-            "and the opponent it asks for is named by strength"
-        );
-    }
-
-    #[test]
-    fn a_ladder_rival_disconnect_replays_without_filing_or_paying_the_life() {
-        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
-        let mut def = wire_zone(4, 1, 2);
-        def.name = "duel".into();
-        def.mode = "duel".into();
-        def.max_ships = 2;
-        def.bot_fill = 1.0;
-        def.zone_toml =
-            "label = \"test Ladder\"\n[arena]\nintermission_seconds = 1\nspawn_radius = 0\n".into();
-        let drydock = std::fs::read("../catalog/zones/melee/drydock.vwmap")
-            .expect("Drydock ships with Ladder");
-        def.maps_b64 = vec![fleet::b64(&drydock)];
-        def.map_names = vec!["drydock".into()];
-        z.catalog = Some(fleet::WireCatalog {
-            version: 1,
-            name: "test".into(),
-            default_zone: "duel".into(),
-            zones: vec![def.clone()],
-            meta_key: token::to_hex(meta_key().verifying_key().as_bytes()),
-            ..Default::default()
-        });
-        z.serve_zone(&def).expect("a duel room");
-
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let human_id = z.rooms[0]
-            .join(Seat::guest("Climber", false), 0, 1, tx)
-            .expect("the human seat");
-        let human_ship = z.rooms[0].players[&human_id].ship;
-        let (bot_id, bot_ship) = join_duel_bot(&mut z, 5_021, 0, 0);
-        z.rooms[0].tick();
-        let before = z.rooms[0].duel_state().expect("duel state").state;
-        assert!(before.playing);
-        let (_, starts_per_team) = z.rooms[0].world.map.spawns();
-        let scenario_seed = u64::from(z.rooms[0].number)
-            .wrapping_mul(0x9e37_79b9_7f4a_7c15)
-            .wrapping_add(u64::from(z.rooms[0].match_no));
-        let starts = pilots::ladder_start_pair(
-            pilots::LADDER_START_NAMESPACE,
-            scenario_seed,
-            starts_per_team,
-        )
-        .expect("Drydock has starts for both sides");
-        for (ship, team) in [(human_ship, 0u8), (bot_ship, 1u8)] {
-            let tile = z.rooms[0]
-                .world
-                .map_spawn(team, starts[team as usize])
-                .expect("the selected start");
-            let row = z.rooms[0].world.state.ships[ship as usize];
-            assert_eq!(
-                (row.x, row.y),
-                (
-                    (tile.0 * sim::TILE_PX + sim::TILE_PX / 2) * 256,
-                    (tile.1 * sim::TILE_PX + sim::TILE_PX / 2) * 256,
-                )
-            );
-        }
-        let human_row = z.rooms[0].world.state.ships[human_ship as usize];
-        let bot_row = z.rooms[0].world.state.ships[bot_ship as usize];
-        assert_eq!(
-            human_row.heading,
-            room::heading_toward((human_row.x, human_row.y), (bot_row.x, bot_row.y))
-        );
-        assert_eq!(
-            bot_row.heading,
-            room::heading_toward((bot_row.x, bot_row.y), (human_row.x, human_row.y))
-        );
-
-        let human_rid = z.rooms[0].names[&human_ship].rid.clone();
-        let bot_rid = z.rooms[0].names[&bot_ship].rid.clone();
-        let damage_tick = z.rooms[0].world.state.tick;
-        z.rooms[0]
-            .rating
-            .damage(damage_tick, &bot_rid, &human_rid, 1_000, false);
-        z.rooms[0]
-            .rating
-            .damage(damage_tick, &human_rid, &bot_rid, 1_000, false);
-        let human_rating_before = z.rooms[0].rating.rating_of(&human_rid);
-        let bot_rating_before = z.rooms[0].rating.rating_of(&bot_rid);
-        let rated_before = z.spools.rated.lock().unwrap().len();
-
-        {
-            let row = &mut z.rooms[0].world.state.ships[human_ship as usize];
-            row.x = 123;
-            row.y = 456;
-            row.energy = 1;
-        }
-        z.rooms[0].world.state.ships[bot_ship as usize].energy = 1;
-        assert!(z.rooms[0].leave(bot_id, pilot::why::LEFT));
-        assert_eq!(z.rooms[0].rating.rating_of(&human_rid), human_rating_before);
-        assert_eq!(z.rooms[0].rating.rating_of(&bot_rid), bot_rating_before);
-        assert_eq!(z.spools.rated.lock().unwrap().len(), rated_before);
-        assert!(
-            z.rooms[0]
-                .rating
-                .death(damage_tick.wrapping_add(1), &human_rid)
-                .is_none(),
-            "the departed rival has no credit left in the replay"
-        );
-        // Win the scheduling race the regression is about: a fresh rival
-        // arrives before the room's next 100 Hz tick.
-        let _ = join_duel_bot(&mut z, 5_022, 0, 1);
-        let artifacts_before = z.spools.matches.lock().unwrap().len();
-        let events_before = z.spools.pilots.lock().unwrap().len();
-        z.rooms[0].tick();
-
-        let interrupted = z.rooms[0].duel_state().expect("duel state").state;
-        assert!(!interrupted.playing);
-        assert_eq!(interrupted.run, before.run);
-        assert_eq!(z.rooms[0].artifact_id, None);
-        assert_eq!(z.spools.matches.lock().unwrap().len(), artifacts_before);
-        assert_eq!(z.spools.pilots.lock().unwrap().len(), events_before);
-        assert_eq!(
-            z.rooms[0].world.state.ships[human_ship as usize].alive, 0,
-            "the invalid life is benched before its replay"
-        );
-
-        for _ in 0..=100 {
-            z.rooms[0].tick();
-            if z.rooms[0]
-                .duel_state()
-                .is_some_and(|state| state.state.playing)
-            {
-                break;
-            }
-        }
-        let replay = z.rooms[0].duel_state().expect("duel state").state;
-        assert!(replay.playing);
-        let row = &z.rooms[0].world.state.ships[human_ship as usize];
-        assert_eq!(row.alive, 1);
-        assert_eq!(
-            row.energy,
-            z.rooms[0].world.eff_max_energy(human_ship as usize)
-        );
-        assert_ne!((row.x, row.y), (123, 456));
-    }
-
-    #[test]
-    fn a_ladder_human_departure_cannot_leave_a_second_quit_for_the_bot() {
-        let mut z = duel_serving_with_accounts();
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let human_id = z.rooms[0]
-            .join(Seat::guest("Climber", false), 0, 1, tx)
-            .expect("the human seat");
-        let human_ship = z.rooms[0].players[&human_id].ship;
-        let (bot_id, bot_ship) = join_duel_bot(&mut z, 5_023, 0, 0);
-        z.rooms[0].tick();
-        let before = z.rooms[0].duel_state().expect("duel state").state;
-        assert!(before.playing);
-
-        let human_rid = z.rooms[0].names[&human_ship].rid.clone();
-        let bot_rid = z.rooms[0].names[&bot_ship].rid.clone();
-        let tick = z.rooms[0].world.state.tick;
-        z.rooms[0]
-            .rating
-            .damage(tick, &human_rid, &bot_rid, 1_000, false);
-        z.rooms[0]
-            .rating
-            .damage(tick, &bot_rid, &human_rid, 1_000, false);
-        z.rooms[0].world.state.ships[human_ship as usize].energy = 1;
-        z.rooms[0].world.state.ships[bot_ship as usize].energy = 1;
-        let artifacts_before = z.spools.matches.lock().unwrap().len();
-        let rating_events_before = z.rooms[0].rating.log.len();
-
-        assert!(z.rooms[0].leave(human_id, pilot::why::LEFT));
-        let interrupted = z.rooms[0].duel_state().expect("duel state").state;
-        assert!(
-            !interrupted.playing,
-            "the departure aborts under the room lock"
-        );
-        assert_eq!(interrupted.run, before.run);
-        assert_eq!(
-            z.rooms[0].rating.log.len(),
-            rating_events_before + 1,
-            "the human's low-energy quit settles once"
-        );
-        let human_after = z.rooms[0].rating.rating_of(&human_rid);
-        let bot_after = z.rooms[0].rating.rating_of(&bot_rid);
-
-        assert!(z.rooms[0].leave(bot_id, pilot::why::EVICTED));
-        assert_eq!(
-            z.rooms[0].rating.log.len(),
-            rating_events_before + 1,
-            "evicting the damaged bot cannot settle the invalid life again"
-        );
-        assert_eq!(z.rooms[0].rating.rating_of(&human_rid), human_after);
-        assert_eq!(z.rooms[0].rating.rating_of(&bot_rid), bot_after);
-        assert!(z.rooms[0].rating.death(tick + 1, &human_rid).is_none());
-        assert!(z.rooms[0].rating.death(tick + 1, &bot_rid).is_none());
-        assert_eq!(z.rooms[0].artifact_id, None);
-        assert_eq!(z.spools.matches.lock().unwrap().len(), artifacts_before);
-        let after = z.rooms[0].duel_state().expect("duel state").state;
-        assert!(!after.playing, "the voided fight is not still running");
     }
 
     #[test]
@@ -5672,8 +4840,8 @@ mod tests {
 
     #[test]
     fn the_clock_the_stands_read_belongs_to_the_frame_under_it() {
-        // The fault this fixes, as it was reported: watching a duel, the last
-        // five seconds ticked away over two ships still fighting, and the
+        // The fault this fixes, as it was reported: watching a match, the last
+        // five seconds ticked away over ships still fighting, and the
         // death that ended the match arrived under a clock already counting
         // the next one down. The picture ran five seconds behind and the
         // clock over it did not.
@@ -5783,7 +4951,7 @@ mod tests {
             a.broadcast_snapshot(&mut buf);
         }
 
-        let live = a.match_msg(None).expect("a match zone has a clock");
+        let live = a.match_msg().expect("a match zone has a clock");
         let door = a.channel_sync();
         let shown = door
             .iter()
@@ -5970,7 +5138,6 @@ mod tests {
             zone_name.len() as u8,
             name.len() as u8,
             0,
-            0,
         ];
         join.extend_from_slice(zone_name);
         join.extend_from_slice(name);
@@ -6076,7 +5243,6 @@ mod tests {
             0,
             zone_name.len() as u8,
             name.len() as u8,
-            0,
             0,
         ];
         join.extend_from_slice(zone_name);
@@ -6353,7 +5519,7 @@ mod tests {
     }
 
     #[test]
-    fn a_duel_zone_can_ask_for_claimed_pilots() {
+    fn a_zone_can_ask_for_claimed_pilots() {
         let mut z = serving_with_accounts();
         assert!(
             !z.wants_claimed(),
@@ -6361,7 +5527,6 @@ mod tests {
         );
         if let Some(c) = z.catalog.as_mut() {
             c.zones[0].admission = "claimed".into();
-            c.zones[0].mode = "duel".into();
         }
         let def = z.catalog.as_ref().unwrap().zones[0].clone();
         z.serve_zone(&def).expect("a room");
@@ -6386,19 +5551,6 @@ mod tests {
             )
             .expect("verifies");
         assert_eq!(claimed.label, token::Label::Human.to_byte());
-
-        let third_party = Seat::guest("Outside bot", true);
-        assert_eq!(third_party.label, token::Label::ThirdPartyBot.to_byte());
-        assert!(
-            !z.accepts_bot_seat(&third_party),
-            "a declared bot cannot take a duel's opponent seat"
-        );
-        let mut house = third_party;
-        house.label = token::Label::HouseBot.to_byte();
-        assert!(
-            z.accepts_bot_seat(&house),
-            "the authenticated house director may fill the opponent seat"
-        );
     }
 
     #[test]
@@ -6424,12 +5576,10 @@ mod tests {
 
         let synthetic = HashMap::from([("Kestrel".to_string(), 1042.5)]);
         assert_eq!(
-            crate::arena::calibrated_rating_from("Kestrel 0042", &synthetic),
+            crate::arena::calibrated_rating_from("Kestrel", &synthetic),
             Some(1042.5),
-            "a Ladder replica inherits its measured archetype prior"
+            "an authored pilot reads its measured prior"
         );
-        assert_eq!(crate::meta::house_rating_class("Kestrel 0042"), "ladder");
-        assert_eq!(crate::meta::house_rating_class("Kestrel"), "arena");
     }
 
     #[test]
@@ -7065,24 +6215,20 @@ mod tests {
         }
         assert_eq!(numbers(&z), vec![1, 2, 3]);
         // Asking for one that exists and has a seat gets it.
-        let i = z
-            .room_wanted(3, &Seat::guest("Asked", false))
-            .expect("room three");
+        let i = z.room_wanted(3).expect("room three");
         assert_eq!(z.rooms[i].number, 3);
         // Fill it, and the same ask is answered by the ladder rather than
         // turned away: the player asked to play, and named a room to say it.
         seat(&mut z, i, 1);
-        let i = z
-            .room_wanted(3, &Seat::guest("Asked", false))
-            .expect("somewhere");
+        let i = z.room_wanted(3).expect("somewhere");
         assert_ne!(z.rooms[i].number, 3, "room three is full");
         // A number nothing here holds is the same kind of miss.
         assert!(
-            z.room_wanted(99, &Seat::guest("Asked", false)).is_some(),
+            z.room_wanted(99).is_some(),
             "a stale number still seats you"
         );
         // And zero is what an arrival that was never shown a list says.
-        assert!(z.room_wanted(0, &Seat::guest("Asked", false)).is_some());
+        assert!(z.room_wanted(0).is_some());
     }
 
     #[test]

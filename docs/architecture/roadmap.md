@@ -10,7 +10,6 @@
 | M2 server authoritative | Done. Peak prediction error 0.9 px at 150 ms, 11 KB/s per client |
 | M3.5 AI opponents | Done server-side: input-only bots, labeled, taking and yielding seats |
 | M4 rating and modes | Done: damage ledgers, attribution, and the warzone flag game |
-| M4.5 duels | Deferred. The catalog name currently uses free-for-all rules; the dedicated design remains unbuilt |
 | M5 zone operator surface | Done: zone.toml, live reload, bans, capabilities |
 | M5.5 Defold client | Done: real core as a native extension, builds for host and browser, predicts against a live zone |
 | M6 meta-layer | Done in code: calibrated bot ladder, visible tiers, touch controls, zone directory and the games list in the menu |
@@ -138,22 +137,6 @@ there is enough data to trust them.
 Done when a warzone-style flag game and a powerball game both run as modules,
 with no game-mode logic in the sim core or the server.
 
-## M4.5: duels
-
-One on one against a rating-matched bot or human, per
-[design/duel-mode.md](../design/duel-mode.md). Ephemeral arenas from a duel
-template, the ruleset as a zone module, an in-zone matchmaking queue with rating
-and latency bands, practice duels against any bot difficulty, and match replays
-from the input log.
-
-Done when a new player can go from launch to a fought duel in under a minute
-with nobody else online, and when a replay of that duel plays back frame-exact
-from a few kilobytes.
-
-Duels come before the meta-layer because they are the cheapest test of the module
-API, the cleanest rating signal we can collect, and the onboarding path for every
-player who arrives before the game has a population.
-
 ## M5: a zone somebody else can run
 
 Zone directory layout, settings reload without restart, map and overlay
@@ -229,8 +212,8 @@ killing every directory leaves every room playing.
 
 **M7.5, rooms on demand.** More than one simulation in a process, sharing a map,
 created as players arrive and reclaimed as rooms empty, capped by the zone's
-`max_rooms`. This is where the fill ladder's second rung lands. Done when a duel
-zone grows to a hundred rooms in one process at the memory
+`max_rooms`. This is where the fill ladder's second rung lands. Done when a
+zone of small rooms grows to a hundred of them in one process at the memory
 [hosting.md](hosting.md) predicts, shrinks back as matches end, and refuses the
 hundred-and-first rather than growing past the cap.
 
@@ -256,9 +239,9 @@ of claim worth writing down once rather than re-deriving:
   two-hundred-and-first, and fell back as they left. RSS went from 8 MB to
   30 MB, which is the rooms plus two connections each rather than the rooms
   alone.
-- A duel zone was the original wording of that last one. Duels are out, so it
-  was a small-room test zone instead; the shape of the test is the same and the
-  ladder does not know what a zone is for.
+- A duel zone was the original wording of that last one. It was a small-room
+  test zone instead; the shape of the test is the same and the ladder does not
+  know what a zone is for.
 
 **M7.7, durable state leaves the arena. Built.** `ratings.json` beside the
 process was correct while one instance served a zone and wrong the moment two
@@ -293,12 +276,6 @@ Two things came out of building it. The arena frees a seat the moment a client
 closes, which the population loop depends on and which nothing had measured;
 and the roster had to grow past its calibrated group, because a 64-seat room
 asks for fifty-one, so the calibrated pilots are followed by generated individuals.
-
-Duels return after M7.1 and M7.5, because they need a mode to be a catalog row
-and rooms on demand in a process. They also need spectating, since a queue is
-pilots present and not playing. See
-[design/duel-mode.md](../design/duel-mode.md) for what came out and what putting
-it back requires.
 
 Chat is not deferred, it is gone, per
 [decision 28](decisions.md#28-no-chat). Spectating and the server lag policy

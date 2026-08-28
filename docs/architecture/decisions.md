@@ -449,10 +449,10 @@ recoverable.
 
 ## 16. Duels are an ephemeral arena plus a zone module
 
-**Status:** deferred, code removed
+**Status:** superseded by [decision 95](#95-duels-are-gone)
 
 One on one against a rating-matched human or bot, per
-[design/duel-mode.md](../design/duel-mode.md). When a match forms, the server
+`docs/design/duel-mode.md`. When a match forms, the server
 creates an arena from the duel template under a generated name, loads the duel
 module, and unloads the whole thing when the match ends.
 
@@ -479,7 +479,7 @@ a duel-shaped hole in every piece of it: a bespoke `C2S_DUEL` message, a second
 map generator in the simulation core, a second copy of the ruleset in Lua for the
 offline page, and the multi-arena container that existed for nothing else. What
 remains of the removal is written up in
-[design/duel-mode.md](../design/duel-mode.md), which is the plan for bringing
+`docs/design/duel-mode.md`, which is the plan for bringing
 them back once a mode is a row in a catalog rather than a branch in the server.
 
 **Amended by [decision 23](#23-one-arena-per-process):** that reconsideration has
@@ -516,7 +516,7 @@ except rotation inputs, which the simulation clamps to the ship's own
 `MaximumRotation`. Perfect play is bounded by the ship, not by the mouse.
 
 **Cost:** A higher skill floor than twin-stick players expect. The practice
-duels in [design/duel-mode.md](../design/duel-mode.md) are the mitigation, and
+duels in `docs/design/duel-mode.md` are the mitigation, and
 they need to be good.
 
 **Reconsider if:** playtests show new players bouncing off the controls
@@ -2539,7 +2539,7 @@ shape contract over another.
 
 ## 58. The Ladder zone always has a duel in it
 
-**Status:** accepted
+**Status:** superseded by [decision 95](#95-duels-are-gone)
 
 Decision 56 made the play page a watcher on the zone under the cursor, so the
 match behind the menu is the match a deploy would put you in. That works
@@ -3425,6 +3425,8 @@ not a reason.
 
 ## 74. The duel counts a streak, and names who it beat
 
+**Status:** superseded by [decision 95](#95-duels-are-gone)
+
 **What:** the Duel's board drops the rung and the floor, and the panel under
 its roster becomes two sections. The readings say where the run stands, as a
 label over a value with a thin rule between the stacks: `STREAK`, `BEST`,
@@ -3606,7 +3608,7 @@ kill in the match would still be nowhere on this measure.
 
 ## 77. A duel that runs the clock out is a draw
 
-**Status:** accepted
+**Status:** superseded by [decision 95](#95-duels-are-gone)
 
 **Decision:** the Duel match timer ends the life. Whoever is ahead takes it,
 and a life nobody has scored in is a draw. A drawn leg is filed like any
@@ -4320,7 +4322,7 @@ is the trap the old forced `spectate = false` existed to avoid.
 
 ## 90. A duel stays open for two seconds after the death that decides it
 
-**Status:** accepted
+**Status:** superseded by [decision 95](#95-duels-are-gone)
 
 **Decision:** the deciding death no longer files a Duel life. The arena keeps
 running for two seconds afterwards, and a death of the other ship inside that
@@ -4409,7 +4411,7 @@ decision 89 already carries.
 
 ## 92. Duel is two pilots, and the door decides which two
 
-**Status:** accepted
+**Status:** superseded by [decision 95](#95-duels-are-gone)
 
 **Decision:** the Ladder is gone. In its place is a duel: two seats, one life,
 first to a single death, and nothing in the mode that can tell which of them has
@@ -4439,7 +4441,7 @@ per recipient. The old body held one card per room, which worked only while the
 other seat was guaranteed to be a bot nobody was drawing a card for.
 
 **Why:** asked for, and it is what this zone was always supposed to be.
-`docs/design/duel-mode.md` has described a duel as "a human near your rating or
+`docs/design/duel-mode.md` described a duel as "a human near your rating or
 a bot near your rating" since before there was a mode to put it in; it was
 deferred, and the Ladder was what shipped instead.
 
@@ -4636,3 +4638,63 @@ to say for it. Or if the invite is ever worth closing the loop on, per
 [decision 78](#78-the-friends-page-is-who-is-on-and-one-way-to-reach-who-is-not),
 at which point the question is where a link that knows who sent it belongs, and
 the answer may not be the ending either.
+
+---
+
+## 95. Duels are gone
+
+**Status:** accepted, superseding
+[decision 16](#16-duels-are-an-ephemeral-arena-plus-a-zone-module),
+[decision 58](#58-the-ladder-zone-always-has-a-duel-in-it),
+[decision 74](#74-the-duel-counts-a-streak-and-names-who-it-beat),
+[decision 77](#77-a-duel-that-runs-the-clock-out-is-a-draw),
+[decision 90](#90-a-duel-stays-open-for-two-seconds-after-the-death-that-decides-it)
+and [decision 92](#92-duel-is-two-pilots-and-the-door-decides-which-two)
+
+**Decision:** the duel zone is removed, and so is everything that existed to
+serve it. Chris asked for the feature to go.
+
+The zone file and its entry in the catalog, first, which is what stops a
+deployment serving one. Then the mode: `Duel`, the card a pilot kept there, the
+window a decided fight was held open for, the ten second hold on the second
+seat, and the draw a whistle produced. The `ModeCtx` fields nothing else read
+go with it, which is the seat name list, the seats slice, and the abort flag,
+along with `Mode::on_departure`, `Mode::first_human` and `Mode::duel_state`.
+Melee and warzone never set any of them.
+
+The matchmaking is the larger half. Pairing an arrival against the nearest
+rating inside a band of 300, the room a lone pilot opened to become the next
+arrival's rival, the stand-in pair that kept an empty room playing for the play
+page, the bot named by strength, and the persistent replicas that named one:
+all of it. A bot request is a room and a count again. `RoomView.waiting` leaves
+the directory, so a games row no longer has a rival wait to draw.
+
+Two protocol changes fall out. `S2C_MATCH` loses its per pilot card, which
+makes the clock the same bytes for everybody in a room and takes the one
+message whose contents differed per recipient out of the protocol; and
+`C2S_JOIN` loses the build claim field, whose only reader was the check that a
+certified duel zone ran house opponents from the verified release. The wire is
+protocol 30.
+
+The offline pilot tournament stays and moves house. It flew gantry under the
+duel zone's tuning, and that tuning was held line for line against melee's by a
+test, so its fixture is melee's own `zone.toml` now and the ruleset it measures
+under is unchanged. Single life is the harness's rule rather than the zone's,
+which is where it belonged: the rig plays each leg to a death and past the
+whistle on purpose.
+
+**Cost:** the game is one thing to play again. What a duel offered that melee
+does not is a fight where the result is about you and one other person, which
+is the shape a player who wants to know how good they are goes looking for.
+Melee's rating still measures a pilot, and it measures them in a room of eight
+where a death has four people's damage in it.
+
+Duel ratings already earned are dropped from the `ratings` table by the meta
+migration. Nothing reads the class now, and leaving the rows would have the
+pilot page name a game that does not exist: the career line reports whichever
+class a pilot has flown most.
+
+**Reconsider if:** a rated one against one is wanted again. It would not come
+back as this: the pieces worth keeping are the pairing rule at the door and the
+card, and both were built around a zone whose rooms hold two seats, which is
+the constraint that made every other piece necessary.

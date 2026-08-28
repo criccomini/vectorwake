@@ -20,7 +20,7 @@ inconveniences.
 ## Vocabulary
 
 **Zone.** A named game: one configuration, plus however many arena servers are
-running it. Alpha, Chaos, War, Duel. This is what a player picks from a list,
+running it. Alpha, Chaos, War. This is what a player picks from a list,
 and it is what the original's directory listed.
 
 **Arena server**, or **arena**. One process running one zone's configuration:
@@ -54,7 +54,7 @@ flowchart TB
     A3["arena server<br/>Alpha, 3 players, us-west"]
     D1 <--> A1 & A2 & A3
     D2 <--> A1 & A3
-    P["Client"] -. "browse: Alpha, Chaos, War, Duel" .-> D1
+    P["Client"] -. "browse: Alpha, Chaos, War" .-> D1
     P -- play --> A1
 ```
 
@@ -288,10 +288,10 @@ serving the last version it received.
 A zone also declares `max_rooms`, the most simulations one process may hold for
 it. Rooms are created on demand up to that ceiling and reclaimed when they empty,
 so the number is a cap rather than a count: a process configured for a hundred
-duel rooms holds as many as there are matches, and its memory is bounded at
-`max_rooms` times 107 KB plus one shared map. War sets it to 1, because a 64-player
-fight deserves its own blast radius. Duel sets it to 100, because the rooms are
-tiny and share a map. Same binary either way. The measurements are in
+rooms holds as many as there are matches, and its memory is bounded at
+`max_rooms` times 107 KB plus one shared map. War sets it to 1, because a
+64-player fight deserves its own blast radius. A zone of small rooms that share
+a map can set it to 100. Same binary either way. The measurements are in
 [hosting.md](hosting.md), and the amendment to [decision 23](decisions.md) records
 why the original fixed one-room-per-process rule did not survive contact with
 them.
@@ -350,7 +350,7 @@ procedure:
    an announcement, and a wait. It fires when every instance of the zone is at
    `max_rooms` with every room at target.
 
-Rung 2 is the one that changes the shape of the fleet. A duel zone with
+Rung 2 is the one that changes the shape of the fleet. A zone with
 `max_rooms = 100` covers its first hundred concurrent matches inside a single
 registered process, so the fleet stays small, `VIEW` stays short, and the herding
 problem barely arises because there is rarely a reason to add an instance. The
@@ -432,7 +432,6 @@ sets `max_teams` to the count of its own, which is what a flag round does.
 Spectating keeps arriving from different directions, which is the sign it should
 be built once rather than three times:
 
-- The duel queue needs pilots present but not playing while they wait for a pair.
 - Lag response needs `SpecToSpec`'s force-to-spectator, which
   [server.md](server.md) lifts from ASSS as the gentlest of the four thresholds.
 - An operator wants to watch a room without joining it, and the admin surface has
@@ -446,8 +445,7 @@ does need is a snapshot that is not centered on a ship the viewer does not have,
 which the interest radius currently assumes.
 
 A pilot moving between spectating and flying is a spawn and a despawn, not a
-reconnect. That matters for the duel queue especially: waiting in a room and then
-being paired should not cost a round trip to a directory.
+reconnect, so moving between the two costs no round trip to a directory.
 
 ### What a refusal has to say
 
@@ -481,47 +479,6 @@ leaves and the browse reply a client is acting on may be seconds old. Empty mean
 "whatever you are running", which is what typing an address directly means. It is
 answered the same way when the answer is nothing: an instance still waiting to be
 told its zone has no room to put anybody in, and says re-browse.
-
-## Duel is the exception
-
-Duels are not currently built. They worked, offline and networked, and the code
-came out rather than being carried through this rebuild; the reasoning is under
-[decision 16](decisions.md) and the plan for their return is in
-[design/duel-mode.md](../design/duel-mode.md). This section is what the shape
-should be when they come back, and it is the case that most tests whether a mode
-can really be a row in a catalog.
-
-A War arena server is long-lived and shared. A duel is one match between two
-pilots, and [decision 16](decisions.md) makes each match its own arena, created
-when the match forms and destroyed when it ends. That was cheap when arenas
-shared a process: build a small map, construct the mode, insert it into a map of
-live arenas. Microseconds, and you could do it per match forever.
-
-One arena per process makes it expensive. Not because launching a program is
-slow, which it is not, but because of everything between launch and being ready
-for a player: a TLS handshake to each directory, the registration exchange, the
-catalog fetch, and the directory's verification call back. That is a second or
-more, and on a platform that has to schedule a container first it is several.
-Nobody should wait that long to fight someone.
-
-So a duel arena server stays alive and runs matches back to back, out of a small
-set of them kept registered and idle. A player waits for an opponent and never
-for a machine. This is the warm pool [decision 16](decisions.md) held in reserve,
-promoted from fallback to design.
-
-Something has to pair players, and nothing in this architecture is a matchmaker.
-The answer that needs no new authority is to put the queue inside the duel arena
-server: everyone waiting for a duel joins the same one and is paired with whoever
-else is waiting there. The join rule already sends a client to the fullest
-instance below its cap, which is exactly the concentration a waiting room wants.
-The cost is that rating-matched pairing is only as good as one room's queue,
-which is fine while the players fit in one room and worse when they do not. A
-queue that spans a deployment needs somewhere to live, and that somewhere is the
-meta-layer matchmaker in [decision 11](decisions.md) rather than the directory.
-
-So Duel appears in the catalog and in the player's list like any other zone, but
-what it offers is a queue rather than a room. Worth naming, rather than
-pretending the four are symmetric.
 
 ## Joining
 
@@ -564,7 +521,7 @@ doing serious work and this document needs revisiting.
 Rooms sharing a process share its fate. A wedged or killed arena server takes
 down every room it holds, so `max_rooms` is also a blast-radius setting and not
 only a memory one. That is the honest reason War keeps it at 1: a hundred
-duellists losing their match to one crash is annoying, and sixty-four players
+two pilots losing their match to one crash is annoying, and sixty-four players
 losing a flag game they were twenty minutes into is worse.
 
 Population is no longer one social space by construction. ASSS got zone-wide
@@ -634,7 +591,7 @@ field. What the build added is the sight rules, which the join-path sketch
 never had to answer: live follow is your own side only, everyone else gets the
 room channel, one shared feed per room running a zone-set delay behind, and
 the subject is told they are on air. [design/spectating.md](../design/spectating.md)
-says why each of those is load-bearing. The duel queue and lag response's
+says why each of those is load-bearing. Lag response's
 force-to-spectator now have the state they were waiting on. Every route into
 the stands, including voluntary sit-out, counts against `max_watchers`.
 Voluntary sit-out also uses the alive-and-full-energy gate for hull and side

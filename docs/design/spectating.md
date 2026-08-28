@@ -32,9 +32,9 @@ announce a death the delayed picture has not shown yet.
 **The delay is on the whole broadcast rather than on the picture alone.** The
 clock, the score, the banner, the scoreboard and the ground ride the ring
 beside the frame they belong to. Sent live they described a room five seconds
-ahead of the one on screen: a duel's last five seconds ticked away over two
-ships still fighting, and the death that settled it arrived under a clock
-already counting the next match down. The ground was the worse half of it. A
+ahead of the one on screen: a match's last five seconds ticked away over ships
+still fighting, and the death that settled it arrived under a clock already
+counting the next match down. The ground was the worse half of it. A
 whistle changes the map and bumps the settings generation, and a client refuses
 a frame whose generation is not the one it holds, so every frame still in the
 ring at a rotation was thrown away and the stands went blank for the whole
@@ -283,9 +283,9 @@ watcher in a match can be partisan and relay to one side, and four a side is
 small enough that one relayed position decides a fight.
 
 What does change is the reason anybody is in the stands. The old one is gone,
-since duels wanted a gallery because a queue is pilots present and not
-playing, and there is no queue any more. Three reasons replace it, and they
-are worth ranking by how often they actually fire.
+since it was a queue of pilots present and not playing, and there is no queue
+any more. Three reasons replace it, and they are worth ranking by how often
+they actually fire.
 
 **Sitting out, which is now the common one.** In an open arena a pilot who sat
 out simply left their side short. Four a side cannot absorb that, so sitting

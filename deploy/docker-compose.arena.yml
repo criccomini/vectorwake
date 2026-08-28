@@ -93,21 +93,6 @@ services:
       # reads two PEM files out of it.
       - ${VW_CERT_DIR:-caddy-data}:/certs:ro
 
-  a2:
-    <<: *arena
-    command: ["127.0.0.1:9002", "/var/lib/vectorwake"]
-    environment:
-      <<: *arena-env
-      VW_ADDRESS: wss://${VW_HOST:?set VW_HOST}/a2
-      VW_WT_LISTEN: 0.0.0.0:9444
-      VW_WT_ADDRESS: https://${VW_HOST}:9444/a2
-      VW_WT_CERT: /certs/caddy/certificates/*/${VW_HOST}/${VW_HOST}.crt
-      VW_WT_KEY: /certs/caddy/certificates/*/${VW_HOST}/${VW_HOST}.key
-      VW_METRICS: 127.0.0.1:9102
-    volumes:
-      - a2:/var/lib/vectorwake
-      - ${VW_CERT_DIR:-caddy-data}:/certs:ro
-
   # The population. One process flies every bot on this host: it asks the
   # arena how many it wants and opens that many connections, each an ordinary
   # client that decodes snapshots through the simulation core. See decision 29.
@@ -143,7 +128,7 @@ services:
     <<: *arena
     command: ["bots"]
     environment:
-      VW_ARENAS: ws://127.0.0.1:9001,ws://127.0.0.1:9002
+      VW_ARENAS: ws://127.0.0.1:9001
       VW_METRICS: 127.0.0.1:9105
       VW_META: ${VW_META:-http://127.0.0.1:9400}
       VW_TOKEN: ${VW_POOL_TOKEN:?set VW_POOL_TOKEN}
@@ -153,7 +138,7 @@ services:
     # another host and were never load bearing: an arena retries registration
     # and a bot retries its claim. Ordering that only holds on one shape of
     # host is worse than no ordering at all.
-    depends_on: [a1, a2]
+    depends_on: [a1]
 
 volumes:
   # The reason it has one at all is the instance id: it is written on first start
@@ -161,4 +146,3 @@ volumes:
   # looking like a different instance and the directory lists a ghost until the
   # old registration is reaped.
   a1:
-  a2:

@@ -40,15 +40,6 @@ mod upgrades;
 /// The default mode class. A zone declares which class it rates into, and a
 /// pilot carries one rating per class, per docs/design/rating.md.
 pub const DEFAULT_CLASS: &str = "arena";
-pub const LADDER_CLASS: &str = "ladder";
-
-pub(crate) fn house_rating_class(name: &str) -> &'static str {
-    if crate::pilots::archetype_for_callsign(name).is_some() {
-        LADDER_CLASS
-    } else {
-        DEFAULT_CLASS
-    }
-}
 
 /// Account kinds as they sit in the database. The wire and the token use the
 /// same numbering, so a kind never needs translating between layers.
@@ -133,9 +124,14 @@ create table if not exists ratings (
     primary key (account, class)
 );
 -- Per-account duel progress is gone with the ladder it measured (decision 92).
--- A duel is one sitting against whoever the door sent, and the only number it
--- leaves behind is a rating, which lives in `ratings` with every other class.
 drop table if exists ladder_progress;
+-- And the duel itself is gone (decision 95). Nothing rates into the class any
+-- more, so the rows left in it are a game no arena serves: the career line
+-- reports whichever class a pilot has flown most, and a stale duel rating
+-- there would name one that does not exist. The event history is not touched.
+-- Those rows are what the kill and death totals are projected from, and they
+-- describe fights that happened.
+delete from ratings where class = 'duel';
 create table if not exists rated_events (
     id             bigserial primary key,
     at             timestamptz not null default now(),
@@ -3078,7 +3074,7 @@ async fn route(
                 }
             };
             if let Some(seed) = crate::calibrated_rating(&name) {
-                let class = house_rating_class(&name);
+                let class = DEFAULT_CLASS;
                 if let Err(e) = transaction
                     .execute(
                         "insert into ratings (account, class, rating, games)

@@ -204,7 +204,7 @@ check("the join rides the reliable lane", #wt.sent == 1
 check("and speaks the wire's own protocol",
       string.byte(wt.sent[1], 3) == net.PROTOCOL,
       "spoke " .. tostring(string.byte(wt.sent[1], 3)))
-local canonical_join = string.char(1, 0, net.PROTOCOL, 0, 5, 5, 0, 0)
+local canonical_join = string.char(1, 0, net.PROTOCOL, 0, 5, 5, 0)
     .. "chaospilot"
 check("the join header and payload agree byte for byte",
       wt.sent[1] == canonical_join)
@@ -265,83 +265,6 @@ wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
 check("the whistle carries its public match film",
       net.match and net.match.artifact == artifact,
       tostring(net.match and net.match.artifact))
-
-wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(14, 4, 180, 2, 0, 0, 0, 0, 1, 6)
-                .. u32le(0) .. u32le(0) .. u32le(0) .. string.char(0)})
-check("an unopened duel arrives as one waiting match state",
-      net.match and not net.match.playing and net.match.artifact == nil
-      and net.match.duel and net.match.duel.waiting
-      and net.match.duel.streak == 0
-      and net.match.duel.legs == 0
-      and #net.match.duel.log == 0)
--- The byte after the status: how long the room will go on keeping the second
--- seat open for a person. Timed by the room, because the room is what started
--- the wait, and drawn in the middle of the screen while it runs.
-check("and carries how long the second seat is still held for",
-      net.match.duel.hold == 6, tostring(net.match.duel.hold))
-
--- One opponent taken and the next one lost, which is the shape of every
--- evening. A leg is variable width, because it carries a call sign: result,
--- seconds, the length of the name and then the name.
-local function leg(rival, result, seconds)
-    return string.char(result)
-        .. string.char(seconds % 256, math.floor(seconds / 256))
-        .. string.char(#rival) .. rival
-end
-
-wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(14, 6, 24, 2, 3, 0, 5, 0)
-                .. u32le(123456) .. u32le(1) .. string.char(0, 0)
-                .. u32le(3) .. u32le(4) .. u32le(19) .. string.char(2)
-                .. leg("Vantage 0001", 1, 41) .. leg("Sable 0001", 0, 7)})
-check("a duel result replaces clock, film, and card atomically",
-      net.match and net.match.duel
-      and not net.match.duel.waiting
-      and net.match.duel.hold == 0
-      and net.match.duel.streak == 3
-      and net.match.duel.best_streak == 4
-      and net.match.artifact == artifact)
--- The card rides in the same packet as the result that moved it, so no client
--- ever holds a log from one state beside a streak from another.
-check("and the card rides with it, oldest fight first",
-      net.match.duel.legs == 19
-      and #net.match.duel.log == 2
-      and net.match.duel.log[1].rival == "Vantage 0001"
-      and net.match.duel.log[1].result == "cleared"
-      and net.match.duel.log[1].seconds == 41
-      and net.match.duel.log[2].rival == "Sable 0001"
-      and net.match.duel.log[2].result == "lost"
-      and net.match.duel.log[2].seconds == 7,
-      tostring(net.match.duel.legs) .. " legs, "
-      .. tostring(#net.match.duel.log) .. " logged")
-
--- A body promising more legs than it carries is a truncated message, not a
--- short run. Half a log would draw an evening that stopped where the packet
--- did, so the whole message is dropped and the last good one stands.
-local before = net.match.duel.log[2].rival
-wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(14, 4, 24, 2, 3, 0, 5, 0)
-                .. string.char(0)
-                .. u32le(3) .. u32le(4) .. u32le(19)
-                .. string.char(4) .. leg("Kestrel 0001", 1, 5)})
-check("a truncated card is refused rather than half read",
-      net.match.duel.log[2] ~= nil
-      and net.match.duel.log[2].rival == before
-      and #net.match.duel.log == 2)
-
--- And a name that runs past the end of the body is the same fault: the length
--- byte is a promise the packet has to keep.
-wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(14, 4, 24, 2, 3, 0, 5, 0)
-                .. string.char(0)
-                .. u32le(3) .. u32le(4) .. u32le(19) .. string.char(1)
-                .. string.char(1) .. string.char(5, 0) .. string.char(20)
-                .. "short"})
-check("a call sign cut off by the end of the body is refused too",
-      net.match.duel.log[2] ~= nil
-      and net.match.duel.log[2].rival == before
-      and #net.match.duel.log == 2)
 
 local reliable_before, unreliable_before = #wt.sent, #wt.unsent
 check("focus loss can release held controls", net.release_controls())

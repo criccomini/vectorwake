@@ -259,7 +259,7 @@ impl ArenaServer {
     /// answers instead and the welcome says where they actually are. A refusal
     /// would be the honest-looking answer and the wrong one: the player asked
     /// to play this game, and the room was how they said it.
-    pub(crate) fn room_wanted(&mut self, want: u32, seat: &Seat) -> Option<usize> {
+    pub(crate) fn room_wanted(&mut self, want: u32) -> Option<usize> {
         let cap = self.max_players();
         if want != 0 {
             if let Some(i) = self.rooms.iter().position(|r| r.number == want) {
@@ -268,79 +268,6 @@ impl ArenaServer {
                 }
             }
         }
-        // A duel is one fight against one person, so who is already waiting
-        // decides where an arrival goes. Every other zone wants the fullest
-        // room, because what it is filling is a crowd.
-        if self.rooms.iter().any(|room| room.is_duel()) {
-            let class = self.rating_class();
-            let rating = self
-                .token_rating(seat, &class)
-                .map(|(rating, _)| rating)
-                .unwrap_or(rating::UNRATED);
-            return self.duel_room_for_join(rating);
-        }
-        self.room_for_join()
-    }
-
-    /// How far apart two ratings may be and still be called a match.
-    ///
-    /// About two of the five visible tiers. Wide, deliberately: on a zone this
-    /// size the choice is usually between one waiting person and no waiting
-    /// person, and a fight against somebody a tier off is a better evening
-    /// than a fight against the AI. What the band is really for is the case
-    /// worth refusing, which is a Legend and a newcomer meeting because they
-    /// happened to press play in the same minute.
-    const DUEL_PAIR_BAND: f64 = 300.0;
-
-    /// Who to put an arriving duellist with.
-    ///
-    /// The nearest rating among the rooms holding one person and a free seat,
-    /// as long as it is inside the band. Rooms still waiting for anybody are
-    /// preferred over rooms where a bot has already taken the seat, because
-    /// taking that seat back costs the pair in it their fight.
-    ///
-    /// There is no queue and no widening band. A player who finds nobody opens
-    /// their own room and becomes the person the next arrival is matched
-    /// against, which is the same rule read from the other side, and the wait
-    /// is bounded by the bot the arena sends after `DUEL_HOLD_TICKS`.
-    fn duel_room_for(&self, rating: f64) -> Option<usize> {
-        let mut best: Option<(usize, bool, f64)> = None;
-        for (index, room) in self.rooms.iter().enumerate() {
-            if room.humans() != 1 || room.humans() >= self.max_players() {
-                continue;
-            }
-            let Some(theirs) = room.lone_human_rating() else {
-                continue;
-            };
-            let gap = (theirs - rating).abs();
-            if gap > Self::DUEL_PAIR_BAND {
-                continue;
-            }
-            let free = room.bot_count() == 0;
-            let better =
-                best.is_none_or(|(_, best_free, best_gap)| (free, -gap) > (best_free, -best_gap));
-            if better {
-                best = Some((index, free, gap));
-            }
-        }
-        best.map(|(index, _, _)| index)
-    }
-
-    /// Where an arriving duellist goes: beside the nearest-rated person
-    /// waiting, or into a room of their own to become that person.
-    pub(crate) fn duel_room_for_join(&mut self, rating: f64) -> Option<usize> {
-        if let Some(index) = self.duel_room_for(rating) {
-            return Some(index);
-        }
-        if self.rooms.len() < self.max_rooms() {
-            match self.open_room() {
-                Ok(index) => return Some(index),
-                Err(e) => println!("cannot open another room: {e}"),
-            }
-        }
-        // Every room is taken and none of them is a match. A fight against
-        // somebody far off is still a fight, and refusing at the door would be
-        // the arena telling a player the zone is full when it is not.
         self.room_for_join()
     }
 
@@ -401,14 +328,9 @@ impl ArenaServer {
 
     /// Honor a room named by the bot director. Zero keeps the old behavior for
     /// ordinary zones whose directors only understand an instance-wide count.
-    /// A duel zone requires an exact room, because which room a bot lands in
-    /// decides who it is fighting.
     pub(crate) fn room_for_bot_request(&self, room: u32, seat: &Seat) -> Option<usize> {
         let _ = seat;
         if room == 0 {
-            if self.rooms.iter().any(|candidate| candidate.is_duel()) {
-                return None;
-            }
             return self.room_for_bot();
         }
         if self.draining {
@@ -422,58 +344,8 @@ impl ArenaServer {
         (self.bots_requested_by(index) > found.bot_count()).then_some(index)
     }
 
-    /// Whether this room is the one that keeps a duel going for anybody
-    /// reading the menu: the zone's first, which `reclaim_rooms` keeps and a
-    /// browsing client watches, and only while nobody is playing in it.
-    ///
-    /// Only the first, because a room is given back when it empties and one
-    /// with bots flying in it never empties. One duel is also all this buys:
-    /// the menu shows the room it would deploy you into.
-    fn wants_stand_in(&self, index: usize) -> bool {
-        index == 0
-            && self
-                .rooms
-                .first()
-                .is_some_and(|room| room.is_duel() && room.humans() == 0)
-    }
-
-    /// Whether this duel room has waited out the hold it keeps the second seat
-    /// under and should be given a bot. A room whose seat has only just
-    /// emptied keeps holding. See `modes::DUEL_HOLD_TICKS`, which the room
-    /// reads too: the wait is drawn while it runs.
-    fn duel_hold_elapsed(&self, index: usize) -> bool {
-        let Some(room) = self.rooms.get(index) else {
-            return false;
-        };
-        room.duel_alone_ticks() >= modes::DUEL_HOLD_TICKS
-    }
-
     fn bots_requested_by(&self, index: usize) -> usize {
-        let Some(room) = self.rooms.get(index) else {
-            return 0;
-        };
-        if !room.is_duel() {
-            return room.bots_wanted();
-        }
-        // A duel is two ships. Two people in it want no bot at all; one person
-        // wants one, but not before the seat has been held open for a person
-        // first; and a room with nobody in it gets the pair that keep the zone
-        // playing for whoever is reading the menu.
-        if room.humans() >= 2 {
-            0
-        } else if room.humans() == 1 {
-            // The hold decides when a bot is sent, not whether the one
-            // already flying is still wanted. A room that stopped asking the
-            // moment its opponent landed left that opponent spare, so the
-            // director stood it down thirty seconds later: a rival that broke
-            // off mid-fight and vanished, and then ten more seconds of empty
-            // room before the next one was asked for.
-            usize::from(room.bot_count() > 0 || self.duel_hold_elapsed(index))
-        } else if self.wants_stand_in(index) {
-            2
-        } else {
-            0
-        }
+        self.rooms.get(index).map_or(0, |room| room.bots_wanted())
     }
 
     fn bot_requests(&self) -> Vec<fleet::BotRequest> {
@@ -483,41 +355,15 @@ impl ArenaServer {
         self.rooms
             .iter()
             .enumerate()
-            .flat_map(|(index, room)| {
+            .filter_map(|(index, room)| {
                 let count = self.bots_requested_by(index);
                 if count == 0 {
-                    return Vec::new();
+                    return None;
                 }
-                if !room.is_duel() {
-                    return vec![fleet::BotRequest {
-                        room: room.number,
-                        count: count as u32,
-                        target_slot: None,
-                    }];
-                }
-                // An opponent for the person waiting, named by strength: the
-                // authored archetype whose rating sits closest to theirs. The
-                // director sends a replica of that pilot, and a near miss is a
-                // slightly uneven fight rather than a wrong answer.
-                //
-                // The pair that keep an empty room playing name nobody. They
-                // are a demonstration rather than a match, and drawing them
-                // from the whole roster keeps the menu from showing the same
-                // two pilots every time somebody looks.
-                let target_slot = room.lone_human_rating().map(archetype_nearest_rating);
-                let mut asked = vec![fleet::BotRequest {
+                Some(fleet::BotRequest {
                     room: room.number,
-                    count: 1,
-                    target_slot: target_slot.map(|slot| slot as u32),
-                }];
-                if count > 1 {
-                    asked.push(fleet::BotRequest {
-                        room: room.number,
-                        count: 1,
-                        target_slot: None,
-                    });
-                }
-                asked
+                    count: count as u32,
+                })
             })
             .collect()
     }
@@ -854,16 +700,8 @@ impl ArenaServer {
             .unwrap_or(false)
     }
 
-    pub(crate) fn accepts_bot_seat(&self, seat: &Seat) -> bool {
-        let duel = self
-            .wire_zone()
-            .map(|zone| zone.mode == "duel")
-            .unwrap_or_else(|| self.cfg.current.arena.mode == "duel");
-        !duel || seat.label == token::Label::HouseBot.to_byte()
-    }
-
     /// The class this zone rates into. One number per kind of game, per
-    /// docs/design/rating.md: a warzone and a duel measure different
+    /// docs/design/rating.md: a warzone and a melee measure different
     /// skills and one number for both is a number about nothing.
     /// The zone definition is the authority, not the local config file: a
     /// catalog-served arena takes its mode from the zone it was handed, and
@@ -929,12 +767,6 @@ impl ArenaServer {
     /// running this zone, whose map the new one borrows instead of unpacking a
     /// second megabyte of identical tiles.
     pub(crate) fn build_room(z: &fleet::WireZone, on: Option<&Room>) -> Result<Room, String> {
-        if z.mode == "duel" && !certified_pilot_fixture_allows(z) {
-            return Err(
-                "the live duel zone differs from its certified pilot fixture; refusing to serve it"
-                    .into(),
-            );
-        }
         let (maps, names) = match on {
             Some(r) => (r.maps.clone(), r.map_names.clone()),
             None => {
@@ -1039,71 +871,62 @@ impl ArenaServer {
         // next drain. A catalog edit is not a reason to disconnect anybody.
         if !self.zone_name.is_empty() {
             if let Some(z) = c.zone(&self.zone_name).cloned() {
-                let protects_certified_fixture = self.rooms.iter().any(|room| room.is_duel())
-                    && !certified_pilot_fixture_allows(&z);
-                if protects_certified_fixture {
-                    println!(
-                        "catalog: duel update does not match the certified pilot fixture; \
-                         keeping the running map and tuning"
-                    );
-                } else {
-                    // The rotation is taken here too, and it is the reason an
-                    // operator can change what a zone plays without emptying it.
-                    // Unpacked once for the whole process rather than per room,
-                    // the way `build_room` shares one set of tiles between rooms
-                    // serving the same zone.
-                    //
-                    // The match in progress finishes on the ground it started on:
-                    // swapping the map under a live fight is a desync everybody
-                    // sees, and the next whistle is seconds away.
-                    let maps: Vec<std::sync::Arc<sim::sim_map>> = z
-                        .maps_b64
-                        .iter()
-                        .filter_map(|m| fleet::unb64(m))
-                        .filter_map(|b| sim::unpack_map(&b).ok())
-                        .collect();
-                    if !maps.is_empty() {
-                        for r in self.rooms.iter_mut() {
-                            let same = r.maps.len() == maps.len()
-                                && r.maps
-                                    .iter()
-                                    .zip(maps.iter())
-                                    .all(|(a, b)| std::sync::Arc::ptr_eq(a, b) || a.tile == b.tile);
-                            if same {
-                                continue;
-                            }
-                            println!("room {}: rotation is now {} map(s)", r.number, maps.len());
-                            r.maps = maps.clone();
-                            // Only when they line up: the tiles above skip
-                            // anything unreadable, and a shifted list would
-                            // caption the wrong ground, which is worse than no
-                            // caption.
-                            r.map_names = if z.map_names.len() == maps.len() {
-                                z.map_names.clone()
-                            } else {
-                                Vec::new()
-                            };
-                            // Whatever the room is standing on stays under it, so
-                            // the index only has to be somewhere the next whistle
-                            // can step from.
-                            if r.map_at >= r.maps.len() {
-                                r.map_at = 0;
-                            }
+                // The rotation is taken here too, and it is the reason an
+                // operator can change what a zone plays without emptying it.
+                // Unpacked once for the whole process rather than per room,
+                // the way `build_room` shares one set of tiles between rooms
+                // serving the same zone.
+                //
+                // The match in progress finishes on the ground it started on:
+                // swapping the map under a live fight is a desync everybody
+                // sees, and the next whistle is seconds away.
+                let maps: Vec<std::sync::Arc<sim::sim_map>> = z
+                    .maps_b64
+                    .iter()
+                    .filter_map(|m| fleet::unb64(m))
+                    .filter_map(|b| sim::unpack_map(&b).ok())
+                    .collect();
+                if !maps.is_empty() {
+                    for r in self.rooms.iter_mut() {
+                        let same = r.maps.len() == maps.len()
+                            && r.maps
+                                .iter()
+                                .zip(maps.iter())
+                                .all(|(a, b)| std::sync::Arc::ptr_eq(a, b) || a.tile == b.tile);
+                        if same {
+                            continue;
+                        }
+                        println!("room {}: rotation is now {} map(s)", r.number, maps.len());
+                        r.maps = maps.clone();
+                        // Only when they line up: the tiles above skip
+                        // anything unreadable, and a shifted list would
+                        // caption the wrong ground, which is worse than no
+                        // caption.
+                        r.map_names = if z.map_names.len() == maps.len() {
+                            z.map_names.clone()
+                        } else {
+                            Vec::new()
+                        };
+                        // Whatever the room is standing on stays under it, so
+                        // the index only has to be somewhere the next whistle
+                        // can step from.
+                        if r.map_at >= r.maps.len() {
+                            r.map_at = 0;
                         }
                     }
-                    if let Ok(def) = toml::from_str::<catalog::ZoneDef>(&z.zone_toml) {
-                        let name = self.zone_name.clone();
-                        for r in self.rooms.iter_mut() {
-                            for w in r.retune(&def.arena) {
-                                println!("zone {name}: {w}");
-                            }
-                            if let Some(m) = def.max_ships {
-                                r.world.cfg.max_ships = m;
-                            }
-                            r.max_watchers = def.max_watchers.unwrap_or(DEFAULT_MAX_WATCHERS);
-                            r.lag_policy = def.arena.lag.clone();
-                            r.broadcast_settings();
+                }
+                if let Ok(def) = toml::from_str::<catalog::ZoneDef>(&z.zone_toml) {
+                    let name = self.zone_name.clone();
+                    for r in self.rooms.iter_mut() {
+                        for w in r.retune(&def.arena) {
+                            println!("zone {name}: {w}");
                         }
+                        if let Some(m) = def.max_ships {
+                            r.world.cfg.max_ships = m;
+                        }
+                        r.max_watchers = def.max_watchers.unwrap_or(DEFAULT_MAX_WATCHERS);
+                        r.lag_policy = def.arena.lag.clone();
+                        r.broadcast_settings();
                     }
                 }
             }
@@ -1448,11 +1271,6 @@ pub(crate) const PILOT_CALIBRATION: &str = include_str!("../../zone/pilot-calibr
 pub(crate) const PILOT_CALIBRATION_ATTEMPTS: &str =
     include_str!("../../zone/pilot-calibration-attempts.json");
 
-fn certified_pilot_fixture_allows(zone: &fleet::WireZone) -> bool {
-    certified_pilot_attestation()
-        .is_none_or(|release| calibrate::runtime_pilot_fixture_matches(&release.fixture, zone))
-}
-
 /// Whether this build can read every zone the catalog carries: the zone text
 /// parses and each map unpacks. This is the door check `take_catalog` runs
 /// before any version bookkeeping, because the version rules are only safe
@@ -1506,21 +1324,6 @@ pub(crate) fn certified_pilot_attestation_id() -> &'static str {
         .unwrap_or_default()
 }
 
-fn pilot_release_claim(build: &str, attestation: &str) -> String {
-    if build.is_empty() || build == "unknown" || attestation.is_empty() {
-        build.to_string()
-    } else {
-        format!("v1:{build}:{attestation}")
-    }
-}
-
-/// What a house bot presents in the existing JOIN build field. Provisional
-/// play stays build-only. Certified play binds that build to the precise
-/// attestation this binary verified locally.
-pub(crate) fn house_bot_release_claim() -> String {
-    pilot_release_claim(crate::metrics::commit(), certified_pilot_attestation_id())
-}
-
 fn certified_pilot_ratings() -> &'static HashMap<String, f64> {
     static RATINGS: OnceLock<HashMap<String, f64>> = OnceLock::new();
     RATINGS.get_or_init(|| {
@@ -1541,14 +1344,9 @@ fn certified_pilot_ratings() -> &'static HashMap<String, f64> {
 /// moment their rating started being filed under an account rather than a name:
 /// a room primes what it knows, and it no longer knows them by name.
 pub(crate) fn calibrated_rating_from(name: &str, ratings: &HashMap<String, f64>) -> Option<f64> {
-    let authored = pilots::archetype_for_callsign(name)
-        .and_then(|archetype| ai::CALIBRATED.get(archetype))
-        .map(|(callsign, _, _)| *callsign)
-        .or_else(|| {
-            ai::CALIBRATED
-                .iter()
-                .find_map(|(callsign, _, _)| (*callsign == name).then_some(*callsign))
-        })?;
+    let authored = ai::CALIBRATED
+        .iter()
+        .find_map(|(callsign, _, _)| (*callsign == name).then_some(*callsign))?;
     if authored == ai::ANCHOR {
         // The pinned reference personality. It is a definition rather than a
         // measurement, so it does not depend on a calibration run having
@@ -1560,32 +1358,6 @@ pub(crate) fn calibrated_rating_from(name: &str, ratings: &HashMap<String, f64>)
 
 pub fn calibrated_rating(name: &str) -> Option<f64> {
     calibrated_rating_from(name, certified_pilot_ratings())
-}
-
-/// What one authored archetype is rated, measured where a certified tournament
-/// has measured it and provisional where it has not.
-pub(crate) fn archetype_rating(archetype: usize) -> f64 {
-    ai::CALIBRATED
-        .get(archetype)
-        .and_then(|(callsign, _, _)| calibrated_rating(callsign))
-        .unwrap_or_else(|| ai::provisional_rating(archetype))
-}
-
-/// The authored archetype closest in strength to a given rating.
-///
-/// This is the whole of duel matchmaking against the AI: a person waiting for
-/// an opponent gets the house pilot nearest their own number. The roster is
-/// eight, so the answer is a scan, and ties go to the weaker pilot because an
-/// opponent slightly under a pilot's level is a better first guess than one
-/// slightly over it.
-pub(crate) fn archetype_nearest_rating(rating: f64) -> usize {
-    (0..pilots::AUTHORED_PILOT_COUNT)
-        .min_by(|a, b| {
-            let d = |n: &usize| (archetype_rating(*n) - rating).abs();
-            d(a).total_cmp(&d(b))
-                .then_with(|| archetype_rating(*a).total_cmp(&archetype_rating(*b)))
-        })
-        .unwrap_or(0)
 }
 
 /// Read a certified seed an operator placed beside the arena, falling back to
@@ -1701,7 +1473,6 @@ impl ArenaServer {
                         full: r.humans() >= self.max_players(),
                         clock: m.as_ref().map(|m| m.seconds_left as u32).unwrap_or(0),
                         playing: m.is_some_and(|m| m.playing),
-                        waiting: r.duel_state().is_some_and(|duel| duel.state.waiting),
                     }
                 })
                 .collect(),
@@ -1793,7 +1564,7 @@ impl ArenaServer {
 mod tests {
     use std::collections::HashSet;
 
-    use super::{account_entitlements, pilot_release_claim, ArenaServer, MAX_ROOM_NUMBER};
+    use super::{account_entitlements, ArenaServer, MAX_ROOM_NUMBER};
 
     #[test]
     fn a_token_cannot_lower_a_new_universal_entitlement() {
@@ -1827,20 +1598,6 @@ mod tests {
             ArenaServer::lowest_free(&taken),
             Some(137),
             "an out-of-range observation cannot consume or become a room name"
-        );
-    }
-
-    #[test]
-    fn a_certified_pilot_claim_identifies_the_exact_signed_artifact() {
-        assert_eq!(
-            pilot_release_claim("abc123", "deadbeef"),
-            "v1:abc123:deadbeef"
-        );
-        assert_eq!(pilot_release_claim("abc123", ""), "abc123");
-        assert_eq!(
-            pilot_release_claim("unknown", "deadbeef"),
-            "unknown",
-            "a signature cannot turn an unidentified build into a certified release"
         );
     }
 }

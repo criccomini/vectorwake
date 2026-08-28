@@ -75,7 +75,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 29
+local CLIENT_PROTOCOL = 30
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -779,14 +779,6 @@ local function on_kill(s)
     else pending_kills[#pending_kills + 1] = e end
 end
 
--- What a finished Ladder life was, in the mode's own words rather than in the
--- byte it arrives as. Three values, because a single-life rung can also be
--- drawn: both pilots died inside the two seconds a duel stays open after the
--- first of them, and the rung is replayed. Named here for the same reason a
--- rating becomes a tier here, which is that the wire is where a number stops
--- being a number.
-local LEG_RESULT = {[0] = "lost", [1] = "cleared", [2] = "drawn"}
-
 -- The clock and the score. Replaces whatever was held rather than queueing,
 -- because there is one answer and the newest is it: a message lost to a full
 -- socket queue costs a second of clock and the next one repairs it.
@@ -807,56 +799,12 @@ local function on_match(s)
         local lo = u32(string.byte(s, at, at + 3))
         local hi = u32(string.byte(s, at + 4, at + 7))
         artifact = lo + hi * 4294967296
-        at = at + 8
-    end
-    local duel = nil
-    if math.floor(flags / 4) % 2 == 1 then
-        if #s < at + 14 then return end
-        local status = string.byte(s, at)
-        duel = {
-            -- The room is looking for a second pilot rather than counting
-            -- down, so there is no fight for the clock to be about.
-            waiting = status % 2 == 1,
-            -- Seconds the seat across the arena is still being kept open for
-            -- a person. Zero once the room is holding nothing, which is a
-            -- different sentence rather than a countdown at its end: what is
-            -- left to wait for then is a house pilot dialing in, and the room
-            -- has no number for that.
-            hold = string.byte(s, at + 1),
-            streak = u32(string.byte(s, at + 2, at + 5)),
-            -- The longest this pilot has managed here, which is the reading a
-            -- broken streak does not take away.
-            best_streak = u32(string.byte(s, at + 6, at + 9)),
-            -- Every fight finished here, which is larger than the log once a
-            -- long evening outruns the window the room carries.
-            legs = u32(string.byte(s, at + 10, at + 13)),
-            log = {},
-        }
-        local logged = string.byte(s, at + 14)
-        -- Walked rather than indexed, because a leg carries a call sign and a
-        -- call sign is as long as its owner made it. A body that promises more
-        -- legs than it carries is a truncated message rather than a short run,
-        -- and half a log is worse than none: the panel would draw an evening
-        -- that stopped where the packet did.
-        local o = at + 15
-        for k = 1, logged do
-            if #s < o + 3 then return end
-            local n = string.byte(s, o + 3)
-            if #s < o + 3 + n then return end
-            duel.log[k] = {
-                result = LEG_RESULT[string.byte(s, o)] or "drawn",
-                seconds = u16(string.byte(s, o + 1, o + 2)),
-                rival = string.sub(s, o + 4, o + 3 + n),
-            }
-            o = o + 4 + n
-        end
     end
     M.match = {
         playing = flags % 2 == 1,
         left = string.byte(s, 3),
         score = score,
         artifact = artifact,
-        duel = duel,
     }
 end
 
@@ -1532,7 +1480,7 @@ local function join_msg()
     -- rather than a demand: the room can fill before this lands, and the
     -- welcome says where we actually ended up.
     return string.char(C2S_JOIN, join.class, CLIENT_PROTOCOL, flags,
-                       #want, #name, byte_or_zero(join.room), 0)
+                       #want, #name, byte_or_zero(join.room))
         .. want .. name .. session
 end
 

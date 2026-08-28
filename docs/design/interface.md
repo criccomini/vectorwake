@@ -377,18 +377,17 @@ The band stands down while it is up, since the head carries the score and the
 foot carries the clock.
 
 Top center is the band: the clock, with a side either side of it as a name
-over a number (a team over its score, a duel's pilot over their rating),
-the two lines of a side adding up to the clock's own height so the whole
+over a number, a team over its score, the two lines of a side adding up to the
+clock's own height so the whole
 thing reads as one line. The clock is one key tall, the same at every window
 size, so the band and the way into the menu are the same height and the top
 row reads as a row. Under it, the flag pennants and whatever the room
 has to say. The band is also the control: a press opens the board under it,
-which is the roster, then whatever else the zone keeps (a run of fights, in
-the mode that is a run), then the pilot box a row was pressed on. While that
+which is the roster, then the pilot box a row was pressed on. While that
 board is up the fight behind it is washed and every other instrument's type
 recedes, because the board is the thing being read. Dead center is reserved for
-the big statements, DESTROYED, SAFE ZONE and the line a duel draws while it
-looks for a rival, and for the cards and tables a player asks for. On a
+the big statements, DESTROYED and SAFE ZONE, and for the cards and tables a
+player asks for. On a
 touchscreen the bottom of the screen belongs to the thumbs and everything else
 lifts out of their way.
 

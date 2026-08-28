@@ -141,7 +141,7 @@ local PAGES = {
         view = function()
             return {depth = 1, sel = 2, rail = RAIL, rail_sel = 1,
                     focus = "stage", closable = true, rows = {
-                {label = "Duel", index = 1, pick = true,
+                {label = "Chaos", index = 1, pick = true,
                  specs = {{"teams", "1 v 1"}, {"time", "one life"},
                           {"scoring", "streak"}}},
                 {label = "Team Battle", index = 2, pick = true,
@@ -288,7 +288,7 @@ do
     -- one of each weight.
     draw({depth = 1, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
           closable = true, rows = {
-        {label = "Duel", index = 1, pick = true},
+        {label = "Chaos", index = 1, pick = true},
         {label = "Team Battle", index = 2, pick = true, mark = true},
     }})
     local lit = row_fields()
@@ -307,7 +307,7 @@ do
     -- a row lit twice.
     draw({depth = 1, sel = 2, rail = RAIL, rail_sel = 1, focus = "stage",
           closable = true, rows = {
-        {label = "Duel", index = 1, pick = true},
+        {label = "Chaos", index = 1, pick = true},
         {label = "Team Battle", index = 2, pick = true, mark = true},
     }})
     lit = row_fields()
@@ -338,7 +338,7 @@ do
     layer.tri = function() tris = tris + 1 end
     draw({depth = 1, sel = 0, rail = RAIL, rail_sel = 1, focus = "rail",
           closable = true, rows = {
-        {label = "Duel", index = 1, pick = true, mark = true},
+        {label = "Chaos", index = 1, pick = true, mark = true},
     }})
     layer.tri = harness.noop
     check("the row you are on draws no wedge beside it", tris == 0,
@@ -427,7 +427,7 @@ do
                      focus = "stage", closable = true, rows = {
         {label = "Team Battle", note = long, index = 1, pick = true,
          acts = {{label = "leave"}}},
-        {label = "Duel", index = 2, pick = true},
+        {label = "Chaos", index = 2, pick = true},
     }})
     local pieces = 0
     for i = 1, st.n do
@@ -441,7 +441,7 @@ do
     local note_y, next_y
     for i = 1, st.n do
         local t = st.text[i]
-        if t and t.s == "Duel" then next_y = t.y end
+        if t and t.s == "Chaos" then next_y = t.y end
         if t and t.s and t.s:find("odds", 1, true) then note_y = t.y end
     end
     check("and the line it grew into clears the row below it",

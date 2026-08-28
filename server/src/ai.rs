@@ -81,40 +81,6 @@ pub fn individual(n: usize) -> RosterEntry {
 pub const ANCHOR: &str = "Ozone";
 pub const ANCHOR_RATING: f64 = 1200.0;
 
-/// How wide the authored roster is expected to spread on the rating scale,
-/// weakest to strongest, before a tournament has measured any of it.
-///
-/// 550 puts the weakest authored pilot near the bottom of Newb and the
-/// strongest a little past the Ace floor, which is the band the five visible
-/// tiers cover and the range a person climbing through them meets. It is a
-/// guess with a fixed point in it rather than a measurement: the shape comes
-/// from the authored competence and the anchor pins where the middle sits.
-const PROVISIONAL_RATING_SPREAD: f64 = 550.0;
-
-/// What one authored archetype is expected to be rated.
-///
-/// Provisional, and deliberately so. The matchmaker needs a strength for every
-/// house pilot in order to send somebody an opponent near their own, and until
-/// a certified tournament has measured the roster there is nothing to read but
-/// the priors the pilots were written with. `arena::calibrated_rating` is
-/// preferred wherever a signed measurement exists.
-///
-/// Anchored rather than merely scaled: the reference personality's rating is a
-/// definition, so the curve is shifted to pass exactly through it. That keeps
-/// the provisional numbers on the same scale as the live ones, which are all
-/// floating against that same fixed point.
-pub fn provisional_rating(archetype: usize) -> f64 {
-    let prior = |n: usize| crate::pilots::individual(n).ordering_prior() as f64;
-    let anchor = CALIBRATED
-        .iter()
-        .position(|(callsign, _, _)| *callsign == ANCHOR)
-        .map(prior);
-    let Some(anchor) = anchor else {
-        return ANCHOR_RATING;
-    };
-    ANCHOR_RATING + (prior(archetype) - anchor) * PROVISIONAL_RATING_SPREAD
-}
-
 /// Map a class name from a zone file to its index, so an operator writes
 /// "Apex" rather than remembering that Apex is 0.
 /// The roster, in the core's class order. Zone files name hulls, and so do

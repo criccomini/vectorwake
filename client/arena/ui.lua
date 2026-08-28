@@ -2283,10 +2283,9 @@ local function scores(me, pilots, watchers, viewer_name, always)
     -- Level on that, the one with more kills: the same net through more of
     -- the fight is more of the fight.
     --
-    -- And only in a room big enough for the mark to say something. A duel is
-    -- first to one, so the winner is the only pilot with a kill and the mark
-    -- would be the bar over it said a second time. Three scorers is where a
-    -- prize starts picking somebody out rather than restating the result.
+    -- And only in a room big enough for the mark to say something. Three
+    -- scorers is where a prize starts picking somebody out rather than
+    -- restating the result.
     local best = nil
     if top_side ~= nil then
         local scored = 0
@@ -2425,187 +2424,6 @@ local function scores(me, pilots, watchers, viewer_name, always)
     -- The bottom edge, not the height: what the loadout below needs to know
     -- is where this ends, and it does not start at the top of the screen.
     return top + h
-end
-
--- What a finished leg was, as the row says it and in the color it says it.
---
--- "won" rather than the mode's "cleared", because a row in a list of fights is
--- read as a result and clearing is what the rung was, not what you did.
-local LEG_WORD = {
-    lost = {"lost", pal.ENEMY},
-    cleared = {"won", pal.FRIEND},
-    drawn = {"drew", pal.DIM},
-}
-
--- The run so far, under the roster, for the one game that is a run.
---
--- Two sections, in the order a duel is read: where the run stands, and then
--- the fights that got it there. Ladder is an evening of ten-second fights and
--- what a climber is playing for is how many they take without dying; the room
--- is the only thing that sees a whole run, so the room is where both come
--- from and this draws what arrived.
---
--- Behind the scoreboard's own toggle, because they answer the same kind of
--- question and a player who opened one wants the others.
---
--- What used to be here was a rung number at the head and another on every
--- row, with a scoreline between them. None of the three said anything a
--- player could act on: a rung was a roster slot, the floor beside it a save
--- point a loss could not cross, and the scoreline is 1-0 or 0-1 in a mode that
--- is first to one. See decision 74. All three are gone from the game as well
--- now, with the ladder they belonged to: decision 92.
-
--- One table for the run's two sections, because ui.lua sits on Lua's ceiling
--- of two hundred locals in a chunk and four names here would put it over.
--- `SHOWN` is how many fights the panel draws, which is exactly what the room
--- sends, and `READ_H` is the height of the readings band. Both are published
--- because the ending measures the whole block before it places any of it.
-local RUN = {SHOWN = 5, READ_H = 44}
-M.RUN = RUN
-
--- How many legs the column has room for, and so how tall the fights section
--- comes out. Two thirds of the screen is the ceiling, because the pilot box
--- hangs under whatever this returns and the corner stack grows up from the
--- bottom left into the same column. A phone gets fewer rows rather than a
--- panel running off the bottom, and the rows it drops are the oldest.
---
--- Its own function because the match ending measures the whole block before
--- it places any of it, exactly as it does with the roster above this.
-function RUN.shown(o, y0, cap)
-    local duel = o.match and o.match.duel
-    local log = duel and duel.log or {}
-    -- The ending hands down a cap, and that cap is the answer: it was measured
-    -- against the whole block before any of it was placed, and the block is
-    -- centered rather than hung off the top of the screen. Intersecting it
-    -- with the rule below cost the ending three of its five rows, because
-    -- two thirds of the screen is above where a centered block's list starts.
-    if cap then return math.min(#log, RUN.SHOWN, math.max(0, cap)) end
-    local room = math.floor((F.h * 0.66 - y0 - RUN.READ_H * F.scale
-                             - 8 * F.scale) / (LINE * F.scale))
-    return math.min(#log, RUN.SHOWN, math.max(0, room))
-end
-
--- Where the run stands: three readings, label over value, with a thin rule
--- between the stacks.
---
--- The grammar is the play page's format strip and the band's own TIME and
--- PLAYERS: a reading is a label over a number, and a heading is a word in a
--- row of words above columns. These were drawn as the second thing for a
--- while, sitting where the roster's own K D A sit, at the same size under the
--- same ticked rule, heading columns they had nothing to do with. A shape is
--- read before the words in it are.
---
--- Above the fights rather than below them, because the streak is what the
--- mode is played for and the fights are how it got there.
-function RUN.readings(o, top)
-    local duel = o.match.duel
-    local x, w = board.x, board.w
-    local h = RUN.READ_H * F.scale
-    local small = LBL_PX * F.scale
-    local num = (FONT) * F.scale
-    rect(x, top, w, h, pal.a(pal.BG, 0.62))
-    vrule(x, top, h, pal.a(pal.RADAR_TILE, 0.7))
-
-    local at = x + 12 * F.scale
-    local streak = duel.streak or 0
-    local stacks = {
-        {"streak", streak, streak > 0 and pal.FRIEND or pal.DIM},
-        {"best", math.max(duel.best_streak or 0, streak), pal.INK},
-        {"fights", duel.legs or #(duel.log or {}), pal.INK},
-    }
-    for i, stack in ipairs(stacks) do
-        if i > 1 then
-            -- Between the stacks rather than around them, and the height of
-            -- the pair it separates: the strip is one instrument with three
-            -- readings on it, not three boxes.
-            F.layer:seg(at, ry(top + 11 * F.scale), at,
-                        ry(top + h - 11 * F.scale), 1.0 * F.scale,
-                        pal.a(pal.RADAR_TILE, 0.45))
-            at = at + 15 * F.scale
-        end
-        lbl(stack[1], at, top + 15 * F.scale, pal.a(pal.DIM, 0.85), nil, small)
-        txt(tostring(stack[2]), at, top + 31 * F.scale, num,
-            pal.a(stack[3], 0.9))
-        at = at + math.max(text_w(string.upper(stack[1]), small, nil, true),
-                           text_w(tostring(stack[2]), num)) + 15 * F.scale
-    end
-
-    hit(x, top, w, h, "run_readings", nil, nil, -1)
-    return top + h
-end
-
--- And the fights themselves, newest first, one row each: who was across the
--- arena, what came of it, and how long it took.
---
--- No head. Everything that was ever in one is either gone or in the section
--- above, and a column of "won", "lost" and "drew" is labelled by its own rows,
--- as is a column of "0:44". The rival is set in the menu face because it is a
--- name being read, and the two beside it in the mono every number wears.
-function RUN.fights(o, top, shown)
-    local log = o.match.duel.log or {}
-    local num = (FONT - 2) * F.scale
-    local x, w = board.x, board.w
-    local h = shown * LINE * F.scale + 12 * F.scale
-    rect(x, top, w, h, pal.a(pal.BG, 0.62))
-    vrule(x, top, h, pal.a(pal.RADAR_TILE, 0.7))
-
-    local GAP = 7 * F.scale
-    local function col_w(of)
-        local wide = 26 * F.scale
-        for k = 1, shown do
-            wide = math.max(wide, text_w(of(log[#log - k + 1]), num))
-        end
-        return wide
-    end
-    local function clocked(leg)
-        local secs = leg.seconds or 0
-        return string.format("%d:%02d", math.floor(secs / 60), secs % 60)
-    end
-    local function verdict(leg)
-        return (LEG_WORD[leg.result] or LEG_WORD.drawn)[1]
-    end
-    local tw = col_w(clocked)
-    local vw = col_w(verdict)
-    local tx = x + w - 12 * F.scale
-    local vx = tx - tw - GAP
-    local name_x = x + 12 * F.scale
-    -- Cut to what the column has left, the way the roster cuts a call sign
-    -- against its own mark column.
-    local name_n = math.max(3, math.floor((vx - vw - GAP - name_x) /
-                                          (num * ADVANCE)))
-
-    local y = top + 6 * F.scale
-    for k = 1, shown do
-        local leg = log[#log - k + 1]
-        local cy = y + LINE * F.scale / 2
-        local said = LEG_WORD[leg.result] or LEG_WORD.drawn
-        txt(string.sub(leg.rival or "", 1, name_n), name_x, cy, num,
-            pal.a(pal.INK, 0.85), nil, MENU_FONT, true)
-        txt(said[1], vx, cy, num, pal.a(said[2], 0.9), "right")
-        txt(clocked(leg), tx, cy, num, pal.a(pal.INK, 0.8), "right")
-        y = y + LINE * F.scale
-    end
-
-    -- A backdrop, the way the roster's own is one: nothing in here is a
-    -- control, and a press landing on the arena behind a solid panel is the
-    -- kind of thing that shoots a wall.
-    hit(x, top, w, h, "run_log", nil, nil, -1)
-    return top + h
-end
-
-local function run_log(o, top, always, cap)
-    if not (M.details or always) then return top end
-    local duel = o.match and o.match.duel
-    if not duel then return top end
-    -- The readings draw with nothing under them. A run that has not finished a
-    -- fight yet is still a run, and a streak of zero is a reading rather than
-    -- an absence: the shipped panel hid it at zero, so the one number this
-    -- mode is played for went missing exactly on the screen a player reads
-    -- after losing.
-    local y = RUN.readings(o, top + 8 * F.scale)
-    local shown = RUN.shown(o, top + 8 * F.scale, cap)
-    if shown > 0 then y = RUN.fights(o, y + 8 * F.scale, shown) end
-    return y
 end
 
 -- The notification feed: kills, arrivals, departures and flags. Newest first.
@@ -3571,44 +3389,6 @@ local function stack_card(o, me)
     F.case = was
 end
 
--- What a duelist reads while the room looks for somebody to fight.
---
--- The room benches both seats until the fight opens, and a benched hull is a
--- dead one as far as the core is concerned, so this used to be the word
--- DESTROYED: a player's first ten seconds of the game were spent being told
--- they had been shot before they had flown anywhere. The clock reads dashes
--- above, which says something is not running but not what.
---
--- The second line is why nothing is happening, and how much longer it will
--- go on. The seat across the arena is held open for a person for ten seconds
--- before a house pilot is sent to it, so a player who arrives to an empty room
--- is looking at a wait with an end on it rather than at a zone that is broken.
---
--- The number comes off the wire rather than being timed here. The room began
--- the wait; this client knows when it noticed one, which is the same thing
--- only for the pilot whose own arrival started it. A rejoin, a rival leaving
--- while the tab was in the background, or a socket that dropped a second of
--- clock would each count from the wrong moment.
---
--- Zero is a different sentence rather than a countdown at rest. The room has
--- asked for a house pilot by then and what is left is the dial, which nothing
--- has a number for: counting down to a moment a rival does not arrive at
--- would be the screen lying again, in a smaller way than DESTROYED did.
---
--- Not spaced out the way DESTROYED is: that is one word standing on its own,
--- and a whole sentence set letter by letter is a thing to decode. The same
--- treatment SAFE ZONE gets, in the same place, for the same reason.
-local function rival_note(hold)
-    local y = F.h * 0.46
-    txt("WAITING FOR A RIVAL", F.w / 2, y, (M.compact and 12 or 16) * F.scale,
-        pal.a(pal.INK, 0.9), "center")
-    local under = (hold or 0) > 0
-        and ("a house pilot takes the seat in " .. hold)
-        or "a house pilot is on the way"
-    txt(under, F.w / 2, y + (M.compact and 15 or 20) * F.scale,
-        (M.compact and 10 or 12) * F.scale, pal.a(pal.DIM, 0.9), "center")
-end
-
 local function safe_note(spent, limit)
     local y = F.h * 0.62
     txt("SAFE ZONE", F.w / 2, y, (M.compact and 12 or 16) * F.scale,
@@ -3922,15 +3702,8 @@ local function flag_strip(me)
     end
 end
 
-local function duel_waiting(m)
-    return m ~= nil and not m.playing and m.duel ~= nil
-        and m.duel.waiting == true
-end
-
 local function match_ended(m)
-    if m == nil or m.playing then return false end
-    if m.duel == nil then return true end
-    return m.artifact ~= nil and not duel_waiting(m)
+    return m ~= nil and not m.playing
 end
 -- The arena asks the same question, to keep the touch pads off the ending:
 -- the whistle benched every hull, so the pads have nothing to drive, and the
@@ -3948,34 +3721,6 @@ M.match_ended = match_ended
 -- Drawn under the menu as well, unlike the two big centered lines below,
 -- because the menu is a scrim rather than a curtain and "how are you doing in
 -- the thing you are in" is exactly what a player opening it wants to keep.
--- The one pilot on a side, for a game that has one to a side.
---
--- Ladder is that game: one person, one house rival, and the whole question a
--- climber has about the rung in front of them is who they are fighting. The
--- roster already carries every seat's rating and how many rated games are
--- behind it, so this is a lookup rather than anything new on the wire.
-local function side_seat(o, team)
-    for i = 0, sim.ship_count() - 1 do
-        local p = o.pilots and o.pilots[i]
-        if (p or seat_here(i)) and seat_team(i, p) == team then
-            return i, p
-        end
-    end
-end
-
--- A rating as the corner stack would say it, or nil where there is nothing
--- honest to say. Still placing draws dim: ten games in it is a number that has
--- not settled, and reading it as firm is reading it wrong. The same rule the
--- pilot card follows, because it is the same number.
-local function rating_line(o, team)
-    local i, p = side_seat(o, team)
-    if i == nil then return end
-    local score = o.ratings and o.ratings[i]
-    if not score then return end
-    local placing = (p and p.tier) == "placing"
-    return string.format("%d", math.floor(score + 0.5)), placing
-end
-
 -- How far the clock band reached last frame, so the drawer can ask whether it
 -- is standing over it. Measured rather than guessed: the band is centered but
 -- grows outward with the scores, the side names and their ratings, and a
@@ -3994,8 +3739,7 @@ local function match_clock(o, m, names, alone)
         return
     end
     local left = m.left or 0
-    local clock = duel_waiting(m) and "--:--"
-        or string.format("%d:%02d", math.floor(left / 60), left % 60)
+    local clock = string.format("%d:%02d", math.floor(left / 60), left % 60)
     local big, name_px, under_px = band_type()
     local top = band_top()
     -- Every line is placed off the clock's own box rather than off a baseline
@@ -4015,8 +3759,7 @@ local function match_clock(o, m, names, alone)
     -- hardest: the clock is the whole of what the band has left to say then.
     -- Only the rival search's --:--, which is counting nothing, goes quiet.
     local dim = m.playing and 1 or 0.55
-    local clock_dim = duel_waiting(m) and 0.55 or 1
-    txt(clock, F.w / 2, mid, big, pal.a(pal.INK, 0.95 * clock_dim), "center")
+    txt(clock, F.w / 2, mid, big, pal.a(pal.INK, 0.95), "center")
     local half = text_w(clock, big) / 2
     -- What the band came to, walked outward from the clock as each side is
     -- laid down and read next frame by the question above.
@@ -4047,17 +3790,9 @@ local function match_clock(o, m, names, alone)
             x1 - x0 + 12 * F.scale, big + 8 * F.scale, "details")
     end
 
-    -- A rival search is not a scored life, and it is not a named one either:
-    -- the room has not chosen who is across the arena yet, so both sides would
-    -- be last fight's. The clock alone until it has.
-    if duel_waiting(m) then
-        press()
-        return
-    end
-
-    -- Nor is a match that has finished. The ending's own head names both sides
-    -- inside a bar with their points on the ends, a few lines down the same
-    -- window, so a side up here would be that read twice. What the band keeps
+    -- A match that has finished draws no sides. The ending's own head names
+    -- both of them inside a bar with their points on the ends, a few lines
+    -- down the same window, so a side up here would be that read twice. What the band keeps
     -- is the clock, in the pixels it has counted the match down in, now
     -- counting to the next one.
     --
@@ -4075,15 +3810,8 @@ local function match_clock(o, m, names, alone)
         return
     end
 
-    -- What a side is, which is the one thing the two games do not share.
-    --
-    -- A team game's side is a team: its name over what it has scored, which is
-    -- the pair a player checks the clock to find out about. A duel's side is a
-    -- person: their call sign over their rating, and no score at all, because
-    -- first-to-one has nothing to say until it is over, and the board behind
-    -- the band says it better: which fight, won or lost, and how long it
-    -- took.
-    local duel = m.duel ~= nil
+    -- A side is a team: its name over what it has scored, which is the pair a
+    -- player checks the clock to find out about.
     local mine = view_team
     local sides = {}
     for team, n in pairs(m.score or {}) do
@@ -4121,16 +3849,6 @@ local function match_clock(o, m, names, alone)
         -- quote it. Which of the two this is decides the case.
         local quoted = false
         local under, faint = tostring(side.n), false
-        if duel then
-            -- The seat rather than the side. One pilot is one side here, so
-            -- the name over the number is a person's, and a rating nobody has
-            -- settled yet reads dim for the same reason it does on the card:
-            -- ten games in it is a number that has not stopped moving.
-            local _, p = side_seat(o, side.team)
-            if p and p.name ~= "" then label, quoted = p.name, true end
-            local rated, placing = rating_line(o, side.team)
-            under, faint = rated or "--", placing or not rated
-        end
         -- Right-aligned against the clock on the left of it and left-aligned
         -- on the right, so both lines of a side run away from the middle and
         -- the numbers that matter sit against the numerals they are read with.
@@ -4259,25 +3977,6 @@ function END.result(o, m, names)
         if n > best then best, best_at, drawn = n, team, false
         elseif n == best then drawn = true end
     end
-    local last = m.duel and (m.duel.log or {})[#(m.duel.log or {})]
-    if last and last.rival ~= "" then
-        -- A duel's result is about the two people in it, so it is said the way
-        -- melee says one: a name and a verb. Both come off the fight the room
-        -- just filed on this viewer's own card, which already knows which side
-        -- of it they were on. Off the card rather than off the roster, because
-        -- the seat across the arena is handed to somebody else within seconds
-        -- of the whistle and a name read late is the wrong one.
-        --
-        -- A watcher's card is empty, so they fall through to the side naming
-        -- below: nobody in the stands has a side in this.
-        if last.result == "drawn" then
-            return "drawn", pal.DIM, best_at, false
-        end
-        if last.result == "cleared" then
-            return last.rival, pal.FRIEND, best_at, "beaten"
-        end
-        return last.rival, pal.ENEMY, best_at, "takes it"
-    end
     if drawn or best_at == nil then return "drawn", pal.INK, nil, false end
     -- The side keeps the case it was supplied in; the verb is the interface
     -- speaking, so it is drawn separately by the caller.
@@ -4392,27 +4091,6 @@ local function podium(o, m, names)
         measure()
     end
 
-    -- The zone's own sections under the roster, for the mode that keeps them:
-    -- a duel's ending is about the run, so the board puts where the run stands
-    -- and the fights that got it there under the two rows. Measured off the
-    -- room the window has left rather than off where this block lands, since
-    -- where it lands depends on how tall it comes out.
-    --
-    -- The readings are a fixed band and go up whenever there is a run at all,
-    -- including one with no finished fight in it. The fights under them take
-    -- whatever is left.
-    local legs = 0
-    if m.duel then
-        local log = m.duel.log or {}
-        h = h + gap + RUN.READ_H * F.scale
-        local spare = slack - h - 8 * F.scale
-        legs = math.max(0, math.floor(spare / (LINE * F.scale)))
-        legs = math.min(legs, #log, RUN.SHOWN)
-        if legs > 0 then
-            h = h + 8 * F.scale + legs * LINE * F.scale + 12 * F.scale
-        end
-    end
-
     -- Centered in what the band has left, and hugging the foot of an upright
     -- phone: the roster is dragged with a thumb, and a thumb reaches the
     -- bottom of a tall screen rather than the middle. Never over the band
@@ -4441,8 +4119,6 @@ local function podium(o, m, names)
     local ty = y + title_px * 0.5
     if verbed then
         -- The name keeps its supplied case; the verb is the interface talking.
-        -- A duel supplies its own, since one pilot beating another and one
-        -- taking it off them are two results rather than one.
         local verb = verbed == true and "takes it" or verbed
         local word_gap = title_px * 0.42
         local nw = text_w(said, title_px, MENU_FONT, true)
@@ -4471,11 +4147,8 @@ local function podium(o, m, names)
     board.x, board.w = x, w
     board.y = y + head + gap
     top_side = winner
-    local bottom = scores(o.me, o.pilots, o.watchers, o.viewer_name, true)
+    scores(o.me, o.pilots, o.watchers, o.viewer_name, true)
     top_side = nil
-    -- Both sections, or the readings alone where the window had no room for
-    -- a fight under them. `legs` is what the measure above found space for.
-    if m.duel then run_log(o, bottom, true, legs) end
     F.scale = was_scale
 end
 
@@ -5025,9 +4698,6 @@ function M.hud(o)
         local behind = F.text_dim
         if reading then F.text_dim = 1 end
         local top = scores(me, o.pilots, o.watchers, o.viewer_name)
-        -- And under the roster, for a mode whose roster is two rows and whose
-        -- real scoreboard is the run behind them.
-        top = run_log(o, top)
         -- And under that, the pilot a row was pressed on. It belongs to this
         -- column and is drawn with it, rather than after the instruments: all
         -- three are one panel with one wash behind them.
@@ -5190,16 +4860,8 @@ function M.hud(o)
             pal.a(pal.HURT, 0.95), "center")
     end
     if not o.watch and sim.ship_alive(me) == 0 then
-        -- Down because the room has nobody to fight yet is not down because
-        -- somebody shot you, and the two are the same benched hull from here.
-        -- The room is the only thing that can tell them apart, and it does:
-        -- see `duel_waiting`.
-        if duel_waiting(o.match) then
-            rival_note(o.match.duel.hold)
-        else
-            txt("D E S T R O Y E D", F.w / 2, F.h * 0.46,
-                (M.compact and 15 or 22) * F.scale, pal.ENEMY, "center")
-        end
+        txt("D E S T R O Y E D", F.w / 2, F.h * 0.46,
+            (M.compact and 15 or 22) * F.scale, pal.ENEMY, "center")
     elseif not o.watch and (o.safe or 0) > 0 then
         safe_note(o.safe, o.safe_limit or 0)
     end
@@ -6670,14 +6332,12 @@ function pages.pilot(v, x, y, w, h, focused)
     end
     local career = c.career
     if career and career.class then
-        local word = career.class == "duel" and "Duel rating"
-            or "Arena rating"
         local val = "provisional"
         if career.rating then
             val = string.format("%d, %s", math.floor(career.rating + 0.5),
                                 string.lower(career.tier or ""))
         end
-        fact(word, val)
+        fact("Arena rating", val)
     end
     if career then
         fact("Record", career.kills .. " kills, " .. career.deaths

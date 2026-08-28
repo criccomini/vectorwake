@@ -5,7 +5,7 @@
 # whole of the conflict resolution and a rollback needs a new higher number
 # rather than a reused one.
 
-version = 34
+version = 35
 name = "vectorwake"
 description = "the reference deployment"
 
@@ -62,9 +62,3 @@ max_instances = 8
 # requirement tied to this list.
 [[zone]]
 name = "melee"
-
-# Two pilots, one life. The door pairs people of about the same rating where
-# it can and sends a house pilot of about the same rating where it cannot.
-# Duel sits after melee so the shared room stays the default place to play.
-[[zone]]
-name = "duel"

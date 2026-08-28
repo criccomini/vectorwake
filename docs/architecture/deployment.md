@@ -23,12 +23,10 @@ to hosts that scale independently is [scaling-plan.md](scaling-plan.md).
       /dir   ──────────────────────►  directory :9000
       /meta  ──────────────────────►  meta      :9400
       /a1    ──────────────────────►  arena     :9001   one zone process
-      /a2    ──────────────────────►  arena     :9002   one zone process
       /metrics/* ──────────────────►  each process     open, loopback ports
 
-  play.vectorwake.net, 9443-9444/udp   direct, no Caddy
+  play.vectorwake.net, 9443/udp        direct, no Caddy
       :9443  ──────────────────────►  arena     WebTransport, terminated in-process
-      :9444  ──────────────────────►  arena     WebTransport, terminated in-process
 ```
 
 **The client is served from here because it cannot be served from anywhere
@@ -165,7 +163,7 @@ loopback and Caddy is the wss endpoint, so `VW_ADDRESS` advertises
 **The WebTransport door is the exception, and it borrows rather than owns.**
 Caddy cannot front QUIC the way it fronts the socket: a WebTransport session
 is the HTTP/3 connection itself, not an upgrade a proxy can pass along. So
-each arena terminates QUIC on its own public UDP port, 9443 and 9444 today, and
+each arena terminates QUIC on its own public UDP port, 9443 today, and
 reads the certificate out of Caddy's own store, mounted read-only into the
 container. `VW_WT_CERT` and `VW_WT_KEY` are glob patterns because the store
 nests the PEM pair under the ACME issuer's directory name, which is Caddy's
@@ -179,10 +177,10 @@ A host provisioned before that port existed needs it opened in both firewalls,
 once. On the host:
 
 ```sh
-ufw allow 9443:9444/udp
+ufw allow 9443/udp
 ```
 
-And in the Vultr firewall group the instance belongs to, UDP 9443 through 9444 from
+And in the Vultr firewall group the instance belongs to, UDP 9443 from
 anywhere. Opening one and not the other looks exactly like opening neither,
 because the arena binds its endpoint either way and reports itself listening.
 
@@ -344,7 +342,7 @@ What a stranger can reach, what each layer is for, and the risks that are
 accepted rather than closed. Checked against the live host from outside, not
 asserted from the config.
 
-**Reachable from the internet: 22, 80 and 443, and UDP 9443 through 9444.** The
+**Reachable from the internet: 22, 80 and 443, and UDP 9443.** The
 directory, the meta-layer and the admin surface bind loopback; the arena binds
 loopback for its WebSocket and Caddy is the only way in. Its WebTransport
 endpoint is the exception, and the only part of this fleet a stranger reaches

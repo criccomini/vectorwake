@@ -824,8 +824,7 @@ void sim_map_arena(sim_map *m) {
  * a pilot that wandered into one stopped dead, could not be shot and could not
  * shoot, and the match ended with nobody having landed anything.
  *
- * Offline ladder calibration is the only caller. It was the duel room too,
- * until duels were taken out; see docs/design/duel-mode.md. */
+ * Offline pilot calibration is the only caller. */
 void sim_map_pit(sim_map *m) {
     const int LO = 496, HI = 528;
     /* Left at the full square, and drawn where it always was. It is the only

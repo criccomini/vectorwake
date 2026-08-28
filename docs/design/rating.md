@@ -161,15 +161,14 @@ rather than per arena.
 ## What it means, and what it does not
 
 Rating is per mode class rather than global. A hockey zone, a warzone, and a
-duel ladder measure different skills, and one number for all of them is a number
-about nothing. Zones declare which class they belong to and a player carries one
-rating per class, with the default class being general arena combat.
+three minute melee measure different skills, and one number for all of them is a
+number about nothing. Zones declare which class they belong to and a player
+carries one rating per class, with the default class being general arena
+combat.
 
-Duels are their own class and are rated per match rather than per kill, since a
-first-to-five result is a stronger signal than the five correlated outcomes
-inside it. The attribution math below degenerates to ordinary Elo when there is
-exactly one contributor, so duels need no separate implementation. See
-[duel-mode.md](duel-mode.md).
+The attribution math below degenerates to ordinary Elo when there is exactly
+one contributor, so a mode where a kill has a single cause needs no separate
+implementation.
 
 Rating measures killing and dying. It does not measure flag captures, goals, or
 the thousand quiet things good players do. That is a real gap, and the plan is

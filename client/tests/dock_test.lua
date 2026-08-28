@@ -76,7 +76,7 @@ local ROWS = {
     {sect = "zones", label = "melee", detail = "3 + 5 AI", index = 1,
      pick = true, players = 3, bots = 5, live = true,
      note = "four a side, three minutes"},
-    {label = "duel", detail = "1 + 1 AI", index = 2, pick = true,
+    {label = "chaos", detail = "1 + 1 AI", index = 2, pick = true,
      players = 1, bots = 1, live = true, note = "one life at a time"},
     -- A row whose sentence is there and empty, which is what a game whose
     -- catalog left the hook line blank hands the list. It read as a row with

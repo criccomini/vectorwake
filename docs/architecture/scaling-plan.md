@@ -331,7 +331,7 @@ repository keeps paying to remove.
 ## The one measurement that reorders this plan
 
 Everything above sizes hosts by 30 KB/s per client, measured in a busy 64-ship
-room. Interest management should put a duel far below that; if it lands near
-5 KB/s, a thousand concurrent duels fit on one instance's uplink and the
-remote-arena stages move out past a second directory in priority. Take that
-measurement before sizing anything for duels.
+room. Interest management should put a small room far below that; if it lands
+near 5 KB/s, a thousand concurrent small rooms fit on one instance's uplink and
+the remote-arena stages move out past a second directory in priority. Take that
+measurement before sizing anything for them.

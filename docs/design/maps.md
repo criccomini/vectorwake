@@ -220,7 +220,7 @@ The public arena is the map's full size: **1024 tiles square**, 16384 pixels on
 a side, which is the size the original's maps were.
 
 It was an 84-tile room in the middle of all that space, about ten seconds to
-cross at a hull's top speed. That is a duel room wearing an arena's name --
+cross at a hull's top speed. That is a two-ship room wearing an arena's name:
 nowhere to go, no distance for a chase to happen over, no reason to choose a
 direction.
 
@@ -315,10 +315,11 @@ almost all of it greens nowhere near the player reading them. Interest managemen
 came in and cut what is sent to a 256-tile circle; placing greens where the
 pilots are means what is sent is also what is worth sending.
 
-The duel arena has neither. A duel is decided by two pilots, and a room that
-size with somewhere invulnerable in it is not a duel. The ladder found that
-one too: a bot that wandered into a safe zone stopped dead, could not be shot
-and could not shoot, and the match ended with nothing having happened.
+The calibration pit has neither. It measures two pilots against each other,
+and a room that size with somewhere invulnerable in it settles nothing. The bot
+ladder found that one the hard way: a pilot that wandered into a safe zone
+stopped dead, could not be shot and could not shoot, and the match ended with
+nothing having happened.
 
 Both are lessons about *placement*, not about the features. A map large
 enough to hold a wormhole should have one.
@@ -385,8 +386,7 @@ make -C sim build/mapdump
 
 ## The match maps
 
-Five ship, and Team Battle and Duel play the same five, so a pilot who learns
-a room learns it once. One theme apiece, because a theme is a whole geometry
+Five ship. One theme apiece, because a theme is a whole geometry
 rather than a texture: these are five rooms a pilot can tell apart from the
 radar corner.
 

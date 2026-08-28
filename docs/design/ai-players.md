@@ -65,7 +65,7 @@ that suddenly starts missing, and it insults them.
 controller. Each roster individual resolves from a versioned pilot
 specification with its own identity, behavior profile and competence, the
 profile carrying both how it flies and what it buys. Zones choose fill and
-simulation settings. Ladder also asks for a particular difficulty slot.
+simulation settings.
 [bot-ecosystem.md](bot-ecosystem.md) defines the split.
 
 ## Styles
@@ -116,8 +116,8 @@ Those older runs were exploratory. They did not freeze one hypothesis family,
 power the sample from a declared minimum effect, correct every comparison, or
 hold back an untouched release pool. Their percentages and descriptive z
 scores remain below because they explain why the controller changed, not
-because they certify the current roster. None of them may seed ratings, order a
-Ladder rung, or support a current balance claim.
+because they certify the current roster. None of them may seed ratings or
+support a current balance claim.
 
 Reaction time deserves its own line, because it was built twice and failed
 twice, differently. As re-plan cadence it measured as a coin: in a fight the
@@ -330,15 +330,13 @@ report and its current-content fingerprints ship together. See
 [accounts.md](accounts.md) and
 [meta-layer.md](../architecture/meta-layer.md).
 
-**Presence.** Presence follows room demand today. Ordinary fill walks the stable
-roster and claims an unused individual when an arena needs a seat. Ladder names
-a difficulty slot for one room. The director does not keep hours or a weekly
-schedule.
+**Presence.** Presence follows room demand today. Fill walks the stable roster
+and claims an unused individual when an arena needs a seat. The director does
+not keep hours or a weekly schedule.
 
 **Careers.** Rating, wallet, and purchased upgrades change through ordinary
-play. Ladder keeps the identity but flies the base-account kit used in
-calibration and does not shop, so a rung cannot drift with traffic. Hull,
-competence, behavior, and build remain fixed for a pilot specification version.
+play. Hull, competence, behavior, and build remain fixed for a pilot
+specification version.
 There is no automatic competence progression, plateau, retirement, or
 replacement policy today. Those systems need rules for timing and account
 history before they can be added without quietly changing who a familiar pilot
@@ -397,9 +395,8 @@ profile makes the claim true rather than aspirational, and keeps the behavior
 numbers the one place a pilot is described.
 
 A bought-up bot may win more, and its account rating then moves with its record.
-Ordinary fill does not select by rating, so a long-lived individual can still
-meet a first-week player. Ladder's explicit difficulty request does not change
-that policy in regular rooms.
+Fill does not select by rating, so a long-lived individual can still meet a
+first-week player.
 
 ## The population director
 
@@ -416,15 +413,9 @@ tips it over target and a bot stands down, and a room with humans past the
 target holds no bots at all. The unfilled remainder is headroom, so a human
 join never waits on a bot leaving.
 
-**Draw from the roster.** Ordinary fill claims unused individuals from the
-deterministic deployment roster. A Ladder room instead requests one bot for its
-room and names the next difficulty rung. Each rung is one authored archetype
-with 1,024 persistent account replicas. This is a mode request rather than a
-human rating lookup, so it does not expose account records. A life locks one
-replica and never changes its competence while the player is fighting it. With
-nobody climbing, that room asks for a second bot with no rung on it: the
-stand-in that keeps a duel in the zone for the menu to show, drawn from the
-ordinary roster and never from the eight archetypes the rungs are made of.
+**Draw from the roster.** Fill claims unused individuals from the
+deterministic deployment roster. A request names a room and a count, and the
+director picks who goes.
 
 **Yield to humans.** When a human joins, a bot is marked for removal and leaves
 under the graceful rules above. Bots never outnumber humans on the opposing team
@@ -460,22 +451,6 @@ one reference personality is pinned to a fixed rating so the population cannot
 drift as a closed system. The repository currently seeds only that anchor. A
 future offline prior must arrive through a powered, fingerprint-matched report;
 generated fill pilots have no separate calibrated prior.
-
-## Duels
-
-A duel asks for one stable opponent chosen by strength: the authored archetype
-whose rating sits nearest the waiting pilot's, measured where a certified
-tournament has measured it and provisional where it has not. Its format is one
-life, and the opponent changes between fights and never changes competence
-inside one.
-
-An idle duel room flies a pair of house pilots so the zone is never an empty
-arena on the menu of somebody deciding whether to play it. Neither of them
-names an archetype: a demonstration should not be moving the pilot the fleet's
-ratings are anchored to.
-
-The pairing itself happens at the arena's door rather than in a queue, and it
-prefers a person: see [duel-mode.md](duel-mode.md).
 
 ## What we are not doing
 

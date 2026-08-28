@@ -91,8 +91,6 @@ pub struct ClassRating {
     pub games: u32,
 }
 
-/// Durable progress in one Ladder zone, which is a record and not a position.
-/// Every run starts on the bottom rung, so nothing here says where a pilot
 /// The contents of a token, once the signature has been checked.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Claims {

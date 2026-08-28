@@ -10,9 +10,7 @@
 -- that opens the roster, so the corner row carries the way into the menu and
 -- nothing else.
 --
--- Against the real `M.hud` and a stubbed engine, the way ladder_hud_test does.
--- The duel's own reading of the band is pinned there; this is the team game's,
--- and the parts both games share.
+-- Against the real `M.hud` and a stubbed engine.
 
 package.path = "client/?.lua;" .. package.path
 

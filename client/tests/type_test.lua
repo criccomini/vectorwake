@@ -121,7 +121,7 @@ local PAGES = {
          players = 3, bots = 5, live = true,
          specs = {{"teams", "4 v 4"}, {"time", "3 min"},
                   {"scoring", "kills"}}},
-        {label = "Duel", index = 2, pick = true, players = 1, bots = 1,
+        {label = "Chaos", index = 2, pick = true, players = 1, bots = 1,
          live = true, mark = true,
          specs = {{"teams", "1 v 1"}, {"time", "one life"},
                   {"scoring", "streak"}}},

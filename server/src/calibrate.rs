@@ -3460,17 +3460,25 @@ pub const PILOT_ATTESTATION_SCHEMA: u32 = 1;
 pub const PILOT_CONTROLLER_VERSION: &str = "profile-brain-v2";
 pub const PILOT_MAP: &str = "gantry";
 pub const PILOT_ECONOMY: &str = "base-entitlement-personal-builds";
-const PILOT_ZONE: &str = "duel";
-const PILOT_ZONE_FILE: &str = "catalog/zones/duel/zone.toml";
+const PILOT_ZONE: &str = "melee";
+const PILOT_ZONE_FILE: &str = "catalog/zones/melee/zone.toml";
 const PILOT_MAP_FILE: &str = "catalog/zones/melee/gantry.vwmap";
-const PILOT_ZONE_DECLARED_MAP: &str = "../melee/gantry.vwmap";
-const PILOT_ZONE_BYTES: &[u8] = include_bytes!("../../catalog/zones/duel/zone.toml");
+const PILOT_ZONE_DECLARED_MAP: &str = "gantry.vwmap";
+const PILOT_ZONE_BYTES: &[u8] = PROFILE_POWERED_ZONE;
 const PILOT_MAP_BYTES: &[u8] = include_bytes!("../../catalog/zones/melee/gantry.vwmap");
 const PILOT_WORLD_SEED_LABEL: u64 = 0x0077_6f72_6c64;
 const PILOT_BOOTSTRAP_SEED_LABEL: u64 = 0x626f_6f74_7374_7261;
+/// Deaths that take one leg of the tournament.
+///
+/// The harness's own rule rather than the zone's. It measures two pilots
+/// against each other, and one life apiece is what makes a leg a clean
+/// observation: a first-to-three would fold three fights into one number and
+/// tell us less about each of them.
+const PILOT_FIXTURE_FIRST_TO: u16 = 1;
+
 /// How far past regulation a leg is flown before the harness gives up on it.
 ///
-/// A live Ladder draws at the whistle, and this rig deliberately does not:
+/// The live game draws at the whistle, and this rig deliberately does not:
 /// the question it is asking is which of two pilots wins when the fight is
 /// played to a finish, and stopping at the whistle would censor exactly the
 /// matchups that are hardest to call, which are the ones the ranking needs
@@ -3498,7 +3506,7 @@ impl fmt::Display for PilotCalibrationError {
             Self::InvalidRoster(message) => write!(f, "invalid pilot roster: {message}"),
             Self::InvalidRequest(message) => write!(f, "invalid calibration request: {message}"),
             Self::InvalidDataset(message) => write!(f, "invalid calibration dataset: {message}"),
-            Self::InvalidFixture(message) => write!(f, "invalid Ladder fixture: {message}"),
+            Self::InvalidFixture(message) => write!(f, "invalid fixture: {message}"),
         }
     }
 }
@@ -3755,33 +3763,24 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
         PilotCalibrationError::InvalidFixture(format!("{PILOT_ZONE_FILE}: {error}"))
     })?;
     definition.raw = text.to_string();
-    if definition.mode != "duel" {
+    if definition.mode != PILOT_ZONE {
         return Err(PilotCalibrationError::InvalidFixture(format!(
-            "{PILOT_ZONE_FILE} runs mode {:?}, not Ladder",
+            "{PILOT_ZONE_FILE} runs mode {:?}, not the game this measures",
             definition.mode
         )));
     }
-    let first_to = definition
-        .arena
-        .duel_first_to
-        .unwrap_or(crate::modes::DEFAULT_DUEL_FIRST_TO)
-        .max(1);
-    if first_to != 1 {
-        return Err(PilotCalibrationError::InvalidFixture(format!(
-            "the shipped Ladder is first to {first_to}, not single life"
-        )));
-    }
-    // Calibration flies one fixed map, and that map has to be ground the
-    // live Ladder actually serves: a rating measured somewhere nobody plays
-    // describes nothing. The zone rotates now, so the fixture asks to be in
-    // the rotation rather than to be the whole of it.
+    let first_to = PILOT_FIXTURE_FIRST_TO;
+    // Calibration flies one fixed map, and that map has to be ground the live
+    // zone actually serves: a rating measured somewhere nobody plays describes
+    // nothing. The zone rotates, so the fixture asks to be in the rotation
+    // rather than to be the whole of it.
     if !definition
         .maps
         .iter()
         .any(|name| name == PILOT_ZONE_DECLARED_MAP)
     {
         return Err(PilotCalibrationError::InvalidFixture(format!(
-            "the shipped Ladder rotates {:?}, which does not include the calibration map {PILOT_ZONE_DECLARED_MAP:?}",
+            "the shipped zone rotates {:?}, which does not include the calibration map {PILOT_ZONE_DECLARED_MAP:?}",
             definition.maps
         )));
     }
@@ -3793,7 +3792,7 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
     let warnings = crate::Room::apply_config(&mut probe, &definition.arena);
     if !warnings.is_empty() {
         return Err(PilotCalibrationError::InvalidFixture(format!(
-            "the Ladder tuning only partially applied: {}",
+            "the fixture tuning only partially applied: {}",
             warnings.join("; ")
         )));
     }
@@ -3802,13 +3801,13 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
         .any(|pilot| pilot.hull >= probe.cfg.class_count)
     {
         return Err(PilotCalibrationError::InvalidRoster(
-            "a pilot names a hull outside the Ladder fixture".into(),
+            "a pilot names a hull outside the fixture".into(),
         ));
     }
     let (_, starts_per_team) = probe.map.spawns();
     if starts_per_team.contains(&0) {
         return Err(PilotCalibrationError::InvalidFixture(
-            "Drydock needs a start for each Ladder side".into(),
+            "the calibration map needs a start for each side".into(),
         ));
     }
     let mut start_pairs = Vec::with_capacity(starts_per_team[0] * starts_per_team[1]);
@@ -3870,7 +3869,7 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
     let overtime_safety_ticks = regulation_ticks
         .checked_mul(PILOT_OVERTIME_SAFETY_MULTIPLIER)
         .ok_or_else(|| {
-            PilotCalibrationError::InvalidFixture("the Ladder clock overflows ticks".into())
+            PilotCalibrationError::InvalidFixture("the fixture clock overflows ticks".into())
         })?;
     let zone_fingerprint = fingerprint(&[&raw]);
     let map_fingerprint = fingerprint(&[&map]);
@@ -3925,7 +3924,7 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
         pilot_kits,
         limitations: vec![
             "Persistent account purchases are not replayed. Both pilots use the base account entitlement ceiling recorded in this manifest.".into(),
-            "A live Ladder draws at the whistle; this harness flies each leg to a death instead, so an undecided matchup is measured rather than censored. It censors a leg after ten additional regulation clocks, records it, and refuses certification if any leg is censored.".into(),
+            "The live game draws at the whistle; this harness flies each leg to a death instead, so an undecided matchup is measured rather than censored. It censors a leg after ten additional regulation clocks, records it, and refuses certification if any leg is censored.".into(),
             "The experiment ranks bot-versus-bot performance. It does not estimate human win probability, retention, or fun.".into(),
         ],
     };
@@ -3936,42 +3935,6 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
         route,
         effective_entitlement_ceiling: effective_ceiling,
         manifest,
-    })
-}
-
-/// Whether a directory-delivered Ladder still describes the exact fixture a
-/// report measured. A catalog can be newer than the arena binary, and map
-/// publications can replace its rotation without changing that binary. A
-/// certified order must fail closed in either case instead of silently being
-/// attached to a different game.
-pub(crate) fn runtime_pilot_fixture_matches(
-    fixture: &PilotFixtureManifest,
-    zone: &crate::fleet::WireZone,
-) -> bool {
-    if zone.name != fixture.zone
-        || zone.mode != fixture.mode
-        || fingerprint(&[zone.zone_toml.as_bytes()]) != fixture.zone_fingerprint
-        || zone.maps_b64.is_empty()
-    {
-        return false;
-    }
-    let Ok(definition) = toml::from_str::<crate::catalog::ZoneDef>(&zone.zone_toml) else {
-        return false;
-    };
-    if zone.max_ships != definition.max_ships.unwrap_or(64)
-        || zone.max_players != definition.max_players() as u32
-        || zone.fill_target != definition.fill_target() as u32
-        || zone.bot_fill.to_bits() != definition.bot_fill().to_bits()
-        || zone.max_rooms != definition.max_rooms() as u32
-        || zone.admission != definition.admission
-    {
-        return false;
-    }
-    // The calibration map has to be served, and served unaltered. Which slot
-    // of the rotation it arrives in is the zone's business.
-    zone.maps_b64.iter().any(|served| {
-        crate::fleet::unb64(served)
-            .is_some_and(|map| fingerprint(&[&map]) == fixture.map_fingerprint)
     })
 }
 
@@ -4510,9 +4473,9 @@ fn death_tick_score(deaths: &[(u8, u8)], a_ship: u8, b_ship: u8) -> Option<f64> 
     }
 }
 
-/// Open the measured life in the same order as a live Ladder room: deal the
+/// Open the measured life in the same order as a live room: deal the
 /// selected kits, restart to refill their upgraded bars and ammunition, then
-/// apply the seeded Ladder start pair and headings over the core's ordinary
+/// apply the seeded start pair and headings over the core's ordinary
 /// team lineup.
 fn restart_pilot_leg(world: &mut sim::World, ships: [u8; 2], positions: [(i32, i32); 2]) {
     world.restart();
@@ -4542,7 +4505,7 @@ fn pilot_leg(
     let world_seed = mixed_seed(namespace, seed, PILOT_WORLD_SEED_LABEL);
     let mut world = sim::World::from_packed(world_seed, &fixture.map).expect("the shipped map");
     let warnings = crate::Room::apply_config(&mut world, &fixture.definition.arena);
-    debug_assert!(warnings.is_empty(), "validated Ladder tuning changed");
+    debug_assert!(warnings.is_empty(), "validated fixture tuning changed");
     world.cfg.max_ships = fixture.definition.max_ships.unwrap_or(2).min(2);
 
     let assignments = pilot_mirror_assignments(a, b, start_indices, start_positions);
@@ -4733,7 +4696,7 @@ pub fn collect_pilot_calibration(
     let fixture = load_pilot_fixture(roster)?;
     if fixture.manifest != plan.fixture {
         return Err(PilotCalibrationError::InvalidFixture(
-            "the shipped Ladder changed after the experiment was planned".into(),
+            "the shipped fixture changed after the experiment was planned".into(),
         ));
     }
     let mut pools = Vec::with_capacity(plan.manifest.seed_pools.len());
@@ -5072,7 +5035,7 @@ fn verified_current_report(
     }
 
     // A report may describe a sound experiment without meeting the release
-    // contract for the shipped Ladder. In particular, re-planning a
+    // contract for the shipped fixture. In particular, re-planning a
     // self-consistent report with an optimistic variance can reduce the
     // required sample to almost nothing. Keep exploratory flexibility in the
     // planner, but admit a live ordering only under the prespecified policy.
@@ -5819,7 +5782,7 @@ fn validate_pilot_dataset(
             )
             .ok_or_else(|| {
                 PilotCalibrationError::InvalidDataset(
-                    "the planned fixture has no Ladder start pair".into(),
+                    "the planned fixture has no start pair".into(),
                 )
             })?;
             let expected_starts = plan
@@ -6693,52 +6656,9 @@ mod pilot_certification_tests {
     }
 
     #[test]
-    fn a_runtime_catalog_must_match_the_certified_fixture() {
-        let roster = pilots::roster();
-        let plan = plan_pilot_calibration(&roster, &quick_request()).expect("a plan");
-        let text = std::str::from_utf8(PILOT_ZONE_BYTES).expect("the Ladder zone is text");
-        let definition: crate::catalog::ZoneDef =
-            toml::from_str(text).expect("the Ladder zone parses");
-        let exact = crate::fleet::WireZone {
-            name: PILOT_ZONE.into(),
-            mode: definition.mode.clone(),
-            max_ships: definition.max_ships.unwrap_or(64),
-            max_players: definition.max_players() as u32,
-            fill_target: definition.fill_target() as u32,
-            bot_fill: definition.bot_fill(),
-            max_rooms: definition.max_rooms() as u32,
-            admission: definition.admission.clone(),
-            maps_b64: vec![crate::fleet::b64(PILOT_MAP_BYTES)],
-            map_names: vec![PILOT_MAP.into()],
-            zone_toml: text.into(),
-        };
-        assert!(runtime_pilot_fixture_matches(&plan.fixture, &exact));
-
-        let mut changed_zone = exact.clone();
-        changed_zone.zone_toml.push('\n');
-        assert!(!runtime_pilot_fixture_matches(&plan.fixture, &changed_zone));
-
-        let mut changed_map = exact.clone();
-        let mut map = PILOT_MAP_BYTES.to_vec();
-        map[0] ^= 1;
-        changed_map.maps_b64[0] = crate::fleet::b64(&map);
-        assert!(!runtime_pilot_fixture_matches(&plan.fixture, &changed_map));
-
-        // Served admission has to agree with the zone file it claims to be
-        // serving. The shipped Ladder admits anybody, so the mutation that has
-        // to be caught is a fleet quietly shutting the door.
-        let mut changed_policy = exact;
-        changed_policy.admission = "claimed".into();
-        assert!(!runtime_pilot_fixture_matches(
-            &plan.fixture,
-            &changed_policy
-        ));
-    }
-
-    #[test]
     fn a_pilot_leg_restarts_with_full_bars_on_its_seeded_starts() {
         let roster = pilots::roster();
-        let fixture = load_pilot_fixture(&roster).expect("the live Ladder fixture");
+        let fixture = load_pilot_fixture(&roster).expect("the live fixture");
         let pair = fixture.manifest.start_pairs[5];
         let specs = [&roster[0], &roster[1]];
         let mut world = sim::World::from_packed(7, &fixture.map).expect("Drydock");
@@ -8202,66 +8122,6 @@ the room"
     ///
     /// It is worth an assertion for the reason the old one was: nothing in
     /// any column this harness prints would look wrong.
-    /// A rung measures the opponent, not a private ruleset.
-    ///
-    /// Ladder's zone file says in prose that it runs melee's movement,
-    /// collision, weapon and kit economy, and prose does not fail a build.
-    /// Melee's spray tuning moved and Ladder's did not, so for a while a climb
-    /// was scored under numbers nobody played in the main game. Both files are
-    /// already compiled in, so hold them against each other.
-    ///
-    /// Only the shared economy. What a mode legitimately owns stays out:
-    /// the clocks, the rung rules, the maps, and how many seats there are.
-    #[test]
-    fn a_duel_runs_the_melee_economy() {
-        let read = |bytes: &[u8]| -> crate::config::ArenaConfig {
-            let text = std::str::from_utf8(bytes).expect("a zone file is text");
-            let zone: crate::catalog::ZoneDef = toml::from_str(text).expect("a zone parses");
-            zone.arena.clone()
-        };
-        let melee = read(PROFILE_POWERED_ZONE);
-        let duel = read(PILOT_ZONE_BYTES);
-
-        // The space and what a hull does in it.
-        assert_eq!(duel.bounce, melee.bounce, "bounce");
-        assert_eq!(duel.friction, melee.friction, "friction");
-        assert_eq!(duel.respawn_delay, melee.respawn_delay, "respawn_delay");
-        assert_eq!(duel.spawn_radius, melee.spawn_radius, "spawn_radius");
-        assert_eq!(duel.safe_limit, melee.safe_limit, "safe_limit");
-
-        // What a kill is worth.
-        assert_eq!(duel.bounty_base, melee.bounty_base, "bounty_base");
-        assert_eq!(
-            duel.bounty_per_kill, melee.bounty_per_kill,
-            "bounty_per_kill"
-        );
-        assert_eq!(
-            duel.points_per_flag, melee.points_per_flag,
-            "points_per_flag"
-        );
-
-        // The weapons, which is where this actually went wrong.
-        assert_eq!(duel.mod_spread, melee.mod_spread, "mod_spread");
-        assert_eq!(duel.multi_energy, melee.multi_energy, "multi_energy");
-        assert_eq!(duel.multi_delay, melee.multi_delay, "multi_delay");
-        assert_eq!(duel.prox_step, melee.prox_step, "prox_step");
-        assert_eq!(duel.prox_delay, melee.prox_delay, "prox_delay");
-        assert_eq!(duel.bomb_safety, melee.bomb_safety, "bomb_safety");
-        assert_eq!(duel.bbomb_damage, melee.bbomb_damage, "bbomb_damage");
-        assert_eq!(duel.shrap_inactive, melee.shrap_inactive, "shrap_inactive");
-        assert_eq!(
-            duel.shrap_inactive_ticks, melee.shrap_inactive_ticks,
-            "shrap_inactive_ticks"
-        );
-        assert_eq!(duel.mod_step, melee.mod_step, "mod_step");
-        assert_eq!(duel.weapons, melee.weapons, "weapons");
-
-        // And what a pilot may carry, which is the other half of it.
-        assert_eq!(duel.kit.gun_mods, melee.kit.gun_mods, "gun_mods");
-        assert_eq!(duel.kit.bomb_mods, melee.kit.bomb_mods, "bomb_mods");
-        assert_eq!(duel.kit.charges, melee.kit.charges, "charges");
-    }
-
     #[test]
     fn a_zones_kit_ceiling_reaches_the_kits_it_deals() {
         let cipher = ai::class_index("Cipher").unwrap() as u8;

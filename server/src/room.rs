@@ -7,7 +7,7 @@ use crate::delivery::*;
 use crate::presence::*;
 use crate::protocol::*;
 use crate::{
-    ai, catalog, config, fleet, growth, metrics, modes, pilot, pilots, rating, sim, spool, token,
+    ai, catalog, config, fleet, growth, metrics, modes, pilot, rating, sim, spool, token,
     CHANNEL_DELAY, CHANNEL_HOLD, DEFAULT_MAX_WATCHERS,
 };
 
@@ -228,8 +228,8 @@ pub(crate) struct ChannelFrame {
 /// The delay is on the whole broadcast rather than on the picture alone. A
 /// watcher used to be sent the clock, the score, the banner and the ground the
 /// moment they changed, while the frames they were drawing were five seconds
-/// old: a duel's last five seconds ticked away over two ships still fighting,
-/// and the death that ended it landed under a clock already counting the next
+/// old: a match's last five seconds ticked away over ships still fighting, and
+/// the death that ended it landed under a clock already counting the next
 /// match down. Everything a watcher reads about the room goes through the ring
 /// now, so one clock governs the whole screen. What a side is called and who
 /// may open which door is the exception, and stays live: it describes the room
@@ -514,7 +514,6 @@ pub(crate) struct Seat {
     /// it was minted. This is how a career crosses zones without an arena
     /// asking anybody anything.
     pub(crate) carried: Option<Vec<token::ClassRating>>,
-    /// Saved progress for each Ladder zone, carried beside ratings so a room
     /// What this account may slot, over the core's flat kit space, out of the
     /// token that admitted them. A kit is checked against this and against the
     /// hull's own row, and the smaller of the two wins.
@@ -634,24 +633,10 @@ pub(crate) fn file_event(
 ///
 /// An arena server holds one of these per room it has open, up to the zone's
 /// `max_rooms`. See `ArenaServer` below.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct DuelRoomState {
-    pub room: u32,
-    pub state: modes::DuelState,
-}
-
-fn match_message(
-    state: modes::MatchState,
-    artifact: Option<u64>,
-    duel: Option<modes::DuelState>,
-    hold: u8,
-) -> Vec<u8> {
+fn match_message(state: modes::MatchState, artifact: Option<u64>) -> Vec<u8> {
     let mut flags = u8::from(state.playing) * MATCH_PLAYING;
     if artifact.is_some() {
         flags |= MATCH_HAS_ARTIFACT;
-    }
-    if duel.is_some() {
-        flags |= MATCH_HAS_DUEL;
     }
     let mut out = vec![
         S2C_MATCH,
@@ -664,32 +649,6 @@ fn match_message(
     }
     if let Some(id) = artifact {
         out.extend_from_slice(&id.to_le_bytes());
-    }
-    let Some(duel) = duel else { return out };
-    debug_assert_eq!(state.playing, duel.playing);
-    out.push(u8::from(duel.waiting));
-    // How much of the hold on the second seat is left, which is the room's
-    // half of the body rather than the mode's: the mode knows the seat is
-    // empty and nothing about who is being waited for. Zero once the arena
-    // has asked for a house pilot, and the client says so rather than
-    // counting a wait it has no number for. See `Room::duel_hold_left`.
-    out.push(hold);
-    for value in [duel.run.streak, duel.run.best_streak, duel.run.legs] {
-        out.extend_from_slice(&value.to_le_bytes());
-    }
-    // The reader's own evening, oldest fight first. It rides in the same
-    // packet as the clock for the same reason the rest of the body does: a
-    // client that can hold only one message must not end up with a result
-    // from one state and a card from another.
-    let logged = (duel.run.logged as usize).min(modes::DUEL_LOG_LEGS);
-    out.push(logged as u8);
-    // A leg is who, what, and how long.
-    for leg in &duel.run.log[..logged] {
-        out.push(leg.result.to_byte());
-        out.extend_from_slice(&leg.seconds.to_le_bytes());
-        let name = leg.rival.as_str().as_bytes();
-        out.push(name.len().min(modes::CallSign::MAX) as u8);
-        out.extend_from_slice(&name[..name.len().min(modes::CallSign::MAX)]);
     }
     out
 }
@@ -740,8 +699,6 @@ pub(crate) struct Room {
     pub(crate) accounts: HashMap<rating::Id, u64>,
     pub(crate) next_id: u64,
     pub(crate) rating: rating::Rating,
-    /// Ticks this duel room has held one pilot and nobody across from them.
-    duel_alone: u32,
     pub(crate) mode: Box<dyn modes::Mode>,
     pub(crate) banner: String,
     pub(crate) finished: bool,
@@ -1123,95 +1080,7 @@ impl Room {
             teams: self.public_teams,
             match_ticks: c.match_seconds.unwrap_or(180) as u32 * 100,
             intermission_ticks: c.intermission_seconds.unwrap_or(25) as u32 * 100,
-            duel: modes::DuelRules {
-                first_to: c.duel_first_to.unwrap_or(modes::DEFAULT_DUEL_FIRST_TO),
-            },
         }
-    }
-
-    /// The room-addressed duel surface. Arena and bot assignment code can read
-    /// this without knowing the concrete mode implementation. The card in it is
-    /// nobody's: a room-level question is about the room.
-    pub(crate) fn duel_state(&self) -> Option<DuelRoomState> {
-        Some(DuelRoomState {
-            room: self.number,
-            state: self.mode.duel_state(None)?,
-        })
-    }
-
-    /// Whether this room is running a duel at all.
-    pub(crate) fn is_duel(&self) -> bool {
-        self.mode.duel_state(None).is_some()
-    }
-
-    /// How long this duel room has held one pilot and an empty seat across
-    /// from them. Zero the moment anybody else is in it.
-    ///
-    /// The arena reads it to decide when to stop holding the seat for a person
-    /// and send a bot instead. Counted here because the room is what ticks.
-    pub(crate) fn duel_alone_ticks(&self) -> u32 {
-        self.duel_alone
-    }
-
-    /// Seconds this room will go on holding the second seat open for a person,
-    /// for the pilot sitting in the first one to read.
-    ///
-    /// Zero when it is holding nothing: the seat across the arena is filled,
-    /// or the hold has run out and the arena has asked for a house pilot. What
-    /// is left to wait for then is one bot dialing in, which nothing here has
-    /// a number for, so the client stops counting rather than counting to a
-    /// moment that is not the one a rival arrives at.
-    ///
-    /// Rounded up, so the last second reads 1 rather than sitting on 0 with a
-    /// second still to wait. The same rule the match clock follows.
-    pub(crate) fn duel_hold_left(&self) -> u8 {
-        if self.duel_alone == 0 {
-            return 0;
-        }
-        modes::DUEL_HOLD_TICKS
-            .saturating_sub(self.duel_alone)
-            .div_ceil(modes::TICKS_PER_SECOND)
-            .min(255) as u8
-    }
-
-    /// What the one person in this room is rated, when there is exactly one.
-    ///
-    /// The number the arena matches an opponent against. A pilot who has never
-    /// been rated reads as the scale's middle, which is where the anchor sits,
-    /// and their first fights move them fast enough to find their level in an
-    /// evening: see `rating::K_NEW`.
-    pub(crate) fn lone_human_rating(&self) -> Option<f64> {
-        let mut people = self.names.values().filter(|seat| !seat.bot);
-        let seat = people.next()?;
-        people
-            .next()
-            .is_none()
-            .then(|| self.rating.rating_of(&seat.rid))
-    }
-
-    /// The one bot a duel room takes.
-    ///
-    /// A duel is two ships, so a room already holding a bot wants no more of
-    /// them, and a room holding two people wants none at all. Which bot it
-    /// gets is the arena's question rather than the room's: see
-    /// `ArenaServer::bot_requests`, which names an archetype close to the
-    /// rating of whoever is waiting. A bot arriving with a different one is
-    /// seated anyway. The old Ladder bound this seat to one authored pilot in
-    /// one hull with one measured kit, because a rung meant nothing if the
-    /// pilot on it was not the pilot the tournament measured. A duel wants an
-    /// opponent of about the right strength, and a near miss is a slightly
-    /// uneven fight rather than a wrong answer.
-    pub(crate) fn accepts_duel_bot(&self) -> bool {
-        if !self.is_duel() {
-            return true;
-        }
-        self.humans() + self.bot_count() < 2
-    }
-
-    /// Seats visible to the mode on this tick, which is everybody in a duel:
-    /// both seats are ordinary pilots flying whatever their own career bought.
-    fn ready_mode_seats(&self) -> Vec<u8> {
-        self.names.keys().copied().collect()
     }
 
     /// The weapons that belong to a settings slot rather than to a hull, under
@@ -1466,7 +1335,6 @@ impl Room {
             ))),
             next_id: 1,
             rating: rating::Rating::new(),
-            duel_alone: 0,
             mode: Box::new(modes::FreeForAll),
             banner: String::new(),
             finished: false,
@@ -1702,9 +1570,6 @@ impl Room {
     ) -> Option<u64> {
         let name = seat.name.clone();
         let bot = seat.bot;
-        if bot && !self.accepts_duel_bot() {
-            return None;
-        }
         let valid_entry = match (member, presence.current()) {
             (None, Presence::Unjoined) => true,
             (
@@ -1728,13 +1593,6 @@ impl Room {
         // mostly full of AI and still admit every human its operator allowed.
         if !bot && self.humans() >= max_players {
             return None;
-        }
-        // The pair of bots that keep a duel zone playing while nobody is here
-        // are not an opponent for the person now at the door. Remove them
-        // synchronously, so the room is empty for the arrival and the arena
-        // can ask for one bot at their own rating.
-        if !bot && self.humans() == 0 && self.is_duel() {
-            while self.evict_bot().is_some() {}
         }
         // A joining pilot takes the next start in the map's rotation, so
         // arrivals spread across them instead of landing on each other.
@@ -1767,17 +1625,9 @@ impl Room {
         // emptiest of the zone's own that has room, or a side of their own
         // where the zone names none. Moving is then one selection away in the
         // team list, and only a full side can refuse it.
-        let team = if self.is_duel() {
-            self.seat_team(ship, &seat)
-        } else {
-            match prefer {
-                Some(t)
-                    if self.teams.contains_key(&t) && self.team_has_room(t, bot, Some(ship)) =>
-                {
-                    t
-                }
-                _ => self.seat_team(ship, &seat),
-            }
+        let team = match prefer {
+            Some(t) if self.teams.contains_key(&t) && self.team_has_room(t, bot, Some(ship)) => t,
+            _ => self.seat_team(ship, &seat),
         };
         // Where a fresh pilot starts, worked out before anything about them is
         // set: a seat is furniture, and its last occupant does not come with
@@ -1881,10 +1731,7 @@ impl Room {
         // The pinned reference personality, by account rather than by name once
         // it has one. It is the fixed point every other rating in the fleet is
         // measured against, so it is set wherever it sits.
-        let anchor_replica = pilots::archetype_for_callsign(&seat.name)
-            .and_then(|archetype| ai::CALIBRATED.get(archetype))
-            .is_some_and(|(callsign, _, _)| *callsign == ai::ANCHOR);
-        if seat.bot && (seat.name == ai::ANCHOR || anchor_replica) {
+        if seat.bot && seat.name == ai::ANCHOR {
             self.rating.set_anchor(&seat.rid, ai::ANCHOR_RATING);
         }
         let rid = seat.rid.clone();
@@ -1928,20 +1775,6 @@ impl Room {
                 presence,
             },
         );
-        // A room that was bots only until now. A mode whose contest is the
-        // arriving person's own starts it over for them and says so; Melee
-        // keeps playing what it was playing, which is the fight they pressed
-        // deploy on.
-        //
-        // A mode that did start over leaves a result behind. A retained first
-        // room may still hold the previous match's share artifact, join sync
-        // sends the match state before the new rival arrives, and a nonplaying
-        // match with an artifact is a podium to the client: clear it on the
-        // new-run edge so a newcomer sees the waiting state rather than
-        // somebody else's result and replay.
-        if !bot && self.humans() == 1 && self.mode.first_human() {
-            self.artifact_id = None;
-        }
         if member.is_some() {
             self.watchers.remove(&id);
         }
@@ -2009,9 +1842,7 @@ impl Room {
         ceiling
     }
 
-    /// Apply an in-seat hull change without letting a Ladder rival leave its
-    /// authored hull. Human, stand-in and ordinary-room changes keep the
-    /// core's rules.
+    /// Apply an in-seat hull change, under the core's own rules.
     pub(crate) fn set_ship_class(&mut self, ship: u8, class: u8) -> bool {
         self.world.set_ship_class(ship, class)
     }
@@ -2350,11 +2181,6 @@ impl Room {
     /// Whether this ship may enter this side: it has to exist, have room, and
     /// either be the zone's own or have invited them.
     pub(crate) fn may_join(&self, ship: u8, team: u8, bot: bool) -> bool {
-        // A duel's two sides are the fight. Changing yours would put both
-        // pilots on one and leave nobody to shoot.
-        if self.is_duel() && self.public_teams >= 2 {
-            return self.world.state.ships[ship as usize].team == team;
-        }
         let Some(t) = self.teams.get(&team) else {
             return false;
         };
@@ -2380,29 +2206,7 @@ impl Room {
     /// away and only a full side can refuse it. A free-for-all has no such
     /// list, so an arrival founds their own side of one.
     pub(crate) fn seat_team(&mut self, joining: u8, seat: &Seat) -> u8 {
-        // Ladder's score is [climber, rival], in the same order as its two
-        // named public sides. General team balancing counts humans and bots
-        // apart, which would put the first of each on side zero and turn the
-        // duel friendly, and it would put the stand-in on the rival's own side
-        // where neither can shoot the other. Pin the roles here so combat, the
-        // scoreboard, and match settlement all describe the same two
-        // opponents.
         let bot = seat.bot;
-        if self.is_duel() && self.public_teams >= 2 {
-            // Whichever side is emptier, counting everybody: a duel is two
-            // ships facing each other, and the general rule below counts
-            // humans and bots apart, which would put the first of each on side
-            // zero and leave them unable to shoot.
-            let side = (0..self.public_teams)
-                .filter(|t| self.team_has_room(*t, bot, Some(joining)))
-                .min_by_key(|t| {
-                    let (humans, bots) = self.team_census(*t, Some(joining));
-                    (humans + bots, *t)
-                });
-            if let Some(t) = side {
-                return t;
-            }
-        }
         let mut best: Option<(u8, u16)> = None;
         for t in 0..self.public_teams {
             if !self.team_has_room(t, bot, Some(joining)) {
@@ -2861,13 +2665,7 @@ impl Room {
             // A restart is the process leaving, not the pilot: settling it
             // as a quit would charge everyone who happened to be mid-fight
             // when a deploy landed with a death they did not choose.
-            // A bot leaving a live duel is another interruption rather than a
-            // result. The mode voids that fight below while the room still
-            // holds its mutex, so rating a damaged bot's socket loss here would
-            // pay a win the fight rejects.
-            let invalidates_duel =
-                p.bot && self.mode.duel_state(None).is_some_and(|duel| duel.playing);
-            let losing = why != pilot::why::RESTART && !invalidates_duel && {
+            let losing = why != pilot::why::RESTART && {
                 let sh = &self.world.state.ships[p.ship as usize];
                 let ceiling = self.world.eff_max_energy(p.ship as usize).max(1);
                 sh.alive != 0 && (sh.energy as f64) < QUIT_ENERGY * ceiling as f64
@@ -2943,42 +2741,6 @@ impl Room {
                         "quit_loss": rated.is_some(),
                     }),
                 );
-            }
-            // Every seat, not the ready ones: the mode is being told about a
-            // departure and needs the room as it stands, including the seat
-            // that is leaving.
-            let seats: Vec<u8> = self.names.keys().copied().collect();
-            let seat_names: Vec<(u8, &str)> = self
-                .names
-                .iter()
-                .map(|(ship, seat)| (*ship, seat.name.as_str()))
-                .collect();
-            let team_names = self.public_team_names();
-            let mut ctx = modes::ModeCtx {
-                world: &mut self.world,
-                seats: &seats,
-                seat_names: &seat_names,
-                team_names: &team_names,
-                banner: std::mem::take(&mut self.banner),
-                finished: false,
-                open_match: false,
-                close_match: false,
-                abort_match: false,
-            };
-            self.mode.on_departure(&mut ctx, p.ship, p.bot);
-            self.banner = std::mem::take(&mut ctx.banner);
-            let abort_match = ctx.abort_match;
-            drop(ctx);
-            if abort_match {
-                // Every pending damage ledger belongs to the invalid life.
-                // Clearing only the departed pilot would leave their credit
-                // inside the survivor's ledger and pay it on a later replay.
-                let participants: Vec<rating::Id> =
-                    self.names.values().map(|seat| seat.rid.clone()).collect();
-                for participant in participants {
-                    self.rating.forget(&participant);
-                }
-                self.abort_match();
             }
             let sh = &mut self.world.state.ships[p.ship as usize];
             sh.active = 0;
@@ -3266,10 +3028,6 @@ impl Room {
         // client is refusing every frame this room sends.
         self.retry_owed_maps();
         let mut player_count_changed = false;
-        // A duel that has just started waiting wants a bot it did not want a
-        // tick ago. Treat that as a status edge too, or the director learns
-        // about it only on a later heartbeat.
-        let duel_waiting_before = self.mode.duel_state(None).map(|duel| duel.waiting);
         let mut inputs: Vec<sim::sim_input> = Vec::with_capacity(32);
         // The tick this room is about to run, which is the tick a scheduled
         // input has to name to be applied here. `world.tick()` is the last one
@@ -3339,32 +3097,18 @@ impl Room {
         self.score_events();
         player_count_changed |= self.sweep_safe();
 
-        let seats = self.ready_mode_seats();
-        let seat_names: Vec<(u8, &str)> = self
-            .names
-            .iter()
-            .map(|(ship, seat)| (*ship, seat.name.as_str()))
-            .collect();
         let names = self.public_team_names();
         let mut ctx = modes::ModeCtx {
             world: &mut self.world,
-            seats: &seats,
-            seat_names: &seat_names,
             team_names: &names,
             banner: std::mem::take(&mut self.banner),
             finished: false,
             open_match: false,
             close_match: false,
-            abort_match: false,
         };
         self.mode.tick(&mut ctx);
         self.banner = std::mem::take(&mut ctx.banner);
-        let (finished, closed, aborted, opened) = (
-            ctx.finished,
-            ctx.close_match,
-            ctx.abort_match,
-            ctx.open_match,
-        );
+        let (finished, closed, opened) = (ctx.finished, ctx.close_match, ctx.open_match);
         // The context holds the world, so it has to go before the room can act
         // on what the mode asked for.
         drop(ctx);
@@ -3374,16 +3118,13 @@ impl Room {
         if closed {
             self.close_match();
         }
-        if aborted {
-            self.abort_match();
-        }
         if opened {
             self.open_match();
         }
         // The room's own half is the change signal. A pilot's card only ever
         // moves when a fight is filed, and filing one flips `playing`, which
         // is in here.
-        let now_match = self.match_msg(None);
+        let now_match = self.match_msg();
         if now_match != self.last_match {
             self.broadcast_match();
             self.last_match = now_match;
@@ -3400,16 +3141,6 @@ impl Room {
                 player_count_changed |= self.leave(id, pilot::why::KICKED);
                 metrics::LAG_ACTIONS.inc();
             }
-        }
-        let duel_waiting_after = self.mode.duel_state(None).map(|duel| duel.waiting);
-        player_count_changed |= duel_waiting_before != duel_waiting_after;
-        // How long this room has been one pilot waiting on an empty seat. The
-        // arena holds the seat open for a person for a while before it asks
-        // for a bot, and this is the clock it reads.
-        if self.is_duel() && self.humans() == 1 && self.names.len() == 1 {
-            self.duel_alone = self.duel_alone.saturating_add(1);
-        } else {
-            self.duel_alone = 0;
         }
         player_count_changed
     }
@@ -3429,21 +3160,9 @@ impl Room {
     /// that: it benches everybody instead. A ship with no respawn scheduled
     /// stays down until something puts it back, and `open_match` is what does.
     pub(crate) fn close_match(&mut self) {
-        self.end_match(true);
-    }
-
-    /// Reset a life that stopped being a fair contest. No artifact, rating
-    /// result, completion reward, or map rotation comes from an interruption.
-    fn abort_match(&mut self) {
-        self.end_match(false);
-    }
-
-    fn end_match(&mut self, record_result: bool) {
-        if record_result {
-            self.note_match_results();
-            self.file_match();
-        }
-        if record_result && self.maps.len() > 1 {
+        self.note_match_results();
+        self.file_match();
+        if self.maps.len() > 1 {
             self.map_at = (self.map_at + 1) % self.maps.len();
             // Which ground, since a zone's rotation is something an operator
             // can change from the panel now and "did that land" is otherwise
@@ -3515,7 +3234,6 @@ impl Room {
         // pilot moved afterward kept the old pocket for the opening life.
         self.rebalance();
         self.world.restart();
-        self.place_duel_starts();
         face_public_teams(&mut self.world);
         // A whistle is where a hull and its kit are unlocked, so anything
         // asked for during the last match lands here. After `restart`, which
@@ -3533,44 +3251,6 @@ impl Room {
         }
         self.broadcast_roster();
         self.broadcast_match();
-    }
-
-    /// Put both duel pilots on the same start and facing distribution used by
-    /// the calibration fixture. Other modes keep the core's ordinary team
-    /// lineup policy.
-    fn place_duel_starts(&mut self) {
-        if !self.is_duel() {
-            return;
-        }
-        let (_, starts_per_team) = self.world.map.spawns();
-        let scenario_seed = u64::from(self.number)
-            .wrapping_mul(0x9e37_79b9_7f4a_7c15)
-            .wrapping_add(u64::from(self.match_no));
-        let Some(indices) = pilots::ladder_start_pair(
-            pilots::LADDER_START_NAMESPACE,
-            scenario_seed,
-            starts_per_team,
-        ) else {
-            return;
-        };
-        let seats: Vec<(u8, u8, u8)> = self
-            .names
-            .keys()
-            .filter_map(|ship| {
-                let row = self.world.state.ships[*ship as usize];
-                (row.active != 0 && row.team < 2).then_some((*ship, row.team, row.cls))
-            })
-            .collect();
-        for (ship, team, class) in seats {
-            let (x, y) = self.world.spawn_point(team, class, indices[team as usize]);
-            let row = &mut self.world.state.ships[ship as usize];
-            row.x = x;
-            row.y = y;
-            row.spawn_x = x;
-            row.spawn_y = y;
-            row.vx = 0;
-            row.vy = 0;
-        }
     }
 
     fn file_match(&mut self) {
@@ -3647,26 +3327,13 @@ impl Room {
             let played = match_age.min(now.wrapping_sub(player.joined));
             let completed = played >= MIN_PLAY_TICKS;
             let ship = &self.world.state.ships[player.ship as usize];
-            let mut detail = serde_json::json!({
+            let detail = serde_json::json!({
                 "match": self.match_no,
                 "completed": completed,
                 "won": completed && winner == Some(ship.team),
                 "assists": if completed { ship.assists.min(5) } else { 0 },
                 "played_ticks": played,
             });
-            if !seat.bot {
-                if let Some(duel) = self.mode.duel_state(Some(player.ship)) {
-                    // The pilot log's own copy of the card, so an evening can
-                    // be read back after the room it happened in is gone.
-                    // Nothing durable is projected out of it: a duel's only
-                    // lasting number is the rating, which has its own path.
-                    detail["duel"] = serde_json::json!({
-                        "streak": duel.run.streak,
-                        "best_streak": duel.run.best_streak,
-                        "fights": duel.run.legs,
-                    });
-                }
-            }
             self.note(pilot::MATCH, seat, detail);
         }
     }
@@ -3806,40 +3473,23 @@ impl Room {
 
     /// The clock and the score, for a room that has them.
     ///
-    /// The flags, optional result artifact, and optional Ladder state share one
-    /// packet. A client therefore observes one transition even when its output
-    /// queue has room for only one message. See `protocol::S2C_MATCH` for the
-    /// byte layout.
-    /// `viewer` is the seat reading it. A duel's body carries that pilot's own
-    /// card, so this is the one message in the protocol whose bytes differ per
-    /// recipient; `None` is the watcher's view, which is the room without
-    /// anybody's card in it.
-    pub(crate) fn match_msg(&self, viewer: Option<u8>) -> Option<Vec<u8>> {
+    /// The flags, the clock, the score and the optional result artifact share
+    /// one packet. A client therefore observes one transition even when its
+    /// output queue has room for only one message. See `protocol::S2C_MATCH`
+    /// for the byte layout.
+    pub(crate) fn match_msg(&self) -> Option<Vec<u8>> {
         let m = self.mode.match_state()?;
-        Some(match_message(
-            m,
-            self.artifact_id.map(|id| id as u64),
-            self.mode.duel_state(viewer),
-            self.duel_hold_left(),
-        ))
+        Some(match_message(m, self.artifact_id.map(|id| id as u64)))
     }
 
     pub(crate) fn broadcast_match(&mut self) {
-        if self.mode.match_state().is_none() {
-            return;
-        }
-        // Built per pilot rather than once, because a duel hands each of them
-        // their own evening. Every other mode answers the same bytes to
-        // everybody, and the cost of asking again is a small message.
-        for p in self.players.values() {
-            if let Some(m) = self.match_msg(Some(p.ship)) {
-                let _ = p.tx.try_send(Message::Binary(m));
-            }
-        }
-        // The clock belongs to the picture it is over. See `Channel`.
-        let Some(m) = self.match_msg(None) else {
+        let Some(m) = self.match_msg() else {
             return;
         };
+        for p in self.players.values() {
+            let _ = p.tx.try_send(Message::Binary(m.clone()));
+        }
+        // The clock belongs to the picture it is over. See `Channel`.
         self.tell_watchers(m);
     }
 
@@ -3945,26 +3595,16 @@ impl Room {
         let deaths = ingest_damage(&self.world, &mut self.rating, &name_of);
         let mut mode_finished = false;
         let mut close_match = false;
-        let mut abort_match = false;
         let mut open_match = false;
         if !deaths.is_empty() {
-            let seats = self.ready_mode_seats();
-            let seat_names: Vec<(u8, &str)> = self
-                .names
-                .iter()
-                .map(|(ship, seat)| (*ship, seat.name.as_str()))
-                .collect();
             let names = self.public_team_names();
             let mut ctx = modes::ModeCtx {
                 world: &mut self.world,
-                seats: &seats,
-                seat_names: &seat_names,
                 team_names: &names,
                 banner: std::mem::take(&mut self.banner),
                 finished: false,
                 open_match: false,
                 close_match: false,
-                abort_match: false,
             };
             for &(victim, killer, _) in &deaths {
                 self.mode.on_death(&mut ctx, victim, killer);
@@ -3972,7 +3612,6 @@ impl Room {
             self.banner = std::mem::take(&mut ctx.banner);
             mode_finished |= ctx.finished;
             close_match |= ctx.close_match;
-            abort_match |= ctx.abort_match;
             open_match |= ctx.open_match;
         }
         for (victim, killer, paid) in deaths {
@@ -4060,9 +3699,6 @@ impl Room {
         }
         if close_match {
             self.close_match();
-        }
-        if abort_match {
-            self.abort_match();
         }
         if open_match {
             self.open_match();
@@ -4283,7 +3919,7 @@ impl Room {
             live.push(n);
         }
         live.push(self.settings_msg());
-        if let Some(m) = self.match_msg(None) {
+        if let Some(m) = self.match_msg() {
             live.push(m);
         }
         live.push(self.banner_msg());
@@ -4721,12 +4357,8 @@ impl Room {
 }
 
 #[cfg(test)]
-mod duel_wire_tests {
+mod wire_tests {
     use super::*;
-
-    fn u32_at(message: &[u8], at: usize) -> u32 {
-        u32::from_le_bytes(message[at..at + 4].try_into().unwrap())
-    }
 
     #[test]
     fn match_headings_point_at_all_four_cardinal_targets() {
@@ -4737,8 +4369,11 @@ mod duel_wire_tests {
         assert_eq!(heading_toward(from, (0, 100)), 49152);
     }
 
+    /// The clock, the score and the result artifact ride in one packet, so a
+    /// client that can hold only one message never reads a score from one
+    /// state under a result from another.
     #[test]
-    fn a_duel_match_has_the_documented_atomic_layout() {
+    fn a_match_has_the_documented_atomic_layout() {
         let message = match_message(
             modes::MatchState {
                 playing: false,
@@ -4746,25 +4381,11 @@ mod duel_wire_tests {
                 score: vec![1, 0],
             },
             Some(0x7172_7374_7576_7778),
-            Some(modes::DuelState {
-                playing: false,
-                waiting: true,
-                run: modes::DuelRun {
-                    streak: 0x1112_1314,
-                    best_streak: 0x2223_2425,
-                    legs: 0x7182_7384,
-                    log: two_legs(),
-                    logged: 2,
-                },
-            }),
-            7,
         );
 
-        // Header, scores, artifact, status byte, the hold, three readings, the
-        // window size, then a leg for each call sign in the window.
-        assert_eq!(message.len(), 16 + 2 + 3 * 4 + 1 + (4 + 12) + (4 + 10));
+        assert_eq!(message.len(), 16, "header, two scores, the artifact");
         assert_eq!(message[0], S2C_MATCH);
-        assert_eq!(message[1], 6, "artifact and duel are present");
+        assert_eq!(message[1], MATCH_HAS_ARTIFACT, "a result is carried");
         assert_eq!(message[2], 0x50);
         assert_eq!(message[3], 2);
         assert_eq!(u16::from_le_bytes(message[4..6].try_into().unwrap()), 1);
@@ -4773,28 +4394,12 @@ mod duel_wire_tests {
             u64::from_le_bytes(message[8..16].try_into().unwrap()),
             0x7172_7374_7576_7778
         );
-        assert_eq!(message[16], 1, "waiting is the only status bit left");
-        assert_eq!(message[17], 7, "seconds the second seat is still held for");
-        assert_eq!(u32_at(&message, 18), 0x1112_1314, "the streak");
-        assert_eq!(u32_at(&message, 22), 0x2223_2425, "the best of it");
-        assert_eq!(u32_at(&message, 26), 0x7182_7384, "fights finished here");
-        assert_eq!(message[30], 2, "fights the window still holds");
-        // A leg is a result, a duration, and the call sign it was fought
-        // against, which is as long as its owner made it.
-        assert_eq!(message[31], modes::LegResult::Cleared.to_byte());
-        assert_eq!(u16::from_le_bytes(message[32..34].try_into().unwrap()), 41);
-        assert_eq!(message[34], 12);
-        assert_eq!(&message[35..47], b"Vantage 0001");
-        assert_eq!(message[47], modes::LegResult::Lost.to_byte());
-        assert_eq!(u16::from_le_bytes(message[48..50].try_into().unwrap()), 7);
-        assert_eq!(message[50], 10);
-        assert_eq!(&message[51..61], b"Sable 0001");
     }
 
-    /// A body with no fights behind it still says so, rather than leaving the
-    /// reader to guess whether the card was omitted or empty.
+    /// A match still being played carries no artifact, and the flag says so
+    /// rather than the reader having to measure the packet.
     #[test]
-    fn a_card_with_no_finished_fight_sends_an_empty_log() {
+    fn a_live_match_carries_no_result() {
         let message = match_message(
             modes::MatchState {
                 playing: true,
@@ -4802,85 +4407,8 @@ mod duel_wire_tests {
                 score: vec![0, 0],
             },
             None,
-            Some(a_state()),
-            0,
         );
-        assert_eq!(message.len(), 8 + 15, "the body with no legs on it");
-        assert_eq!(u32_at(&message, 18), 0, "no fight has finished");
-        assert_eq!(message[22], 0, "and none is carried");
-    }
-
-    /// Only the legs the window holds are written. A card claiming more than
-    /// it carries is clamped to it, and `legs` is what says how many there
-    /// really were.
-    #[test]
-    fn the_log_never_writes_past_what_it_holds() {
-        let mut state = a_state();
-        state.run.log = two_legs();
-        state.run.logged = modes::DUEL_LOG_LEGS as u8 + 9;
-        state.run.legs = 300;
-        let message = match_message(
-            modes::MatchState {
-                playing: true,
-                seconds_left: 180,
-                score: vec![0, 0],
-            },
-            None,
-            Some(state),
-            0,
-        );
-        // Two named legs and the rest of the window at its default, which is
-        // a result, a duration and an empty call sign.
-        assert_eq!(
-            message.len(),
-            8 + 15 + 2 * 4 + 12 + 10 + (modes::DUEL_LOG_LEGS - 2) * 4,
-            "a claim past the window is clamped to it"
-        );
-        assert_eq!(message[22], modes::DUEL_LOG_LEGS as u8);
-        assert_eq!(u32_at(&message, 18), 300, "and the real count still rides");
-    }
-
-    /// Two pilots in one room read two different bodies. This is the only
-    /// message in the protocol where that is true.
-    #[test]
-    fn each_pilot_reads_their_own_card() {
-        let mut mine = a_state();
-        mine.run.streak = 4;
-        let theirs = a_state();
-        let clock = modes::MatchState {
-            playing: true,
-            seconds_left: 90,
-            score: vec![0, 0],
-        };
-        let a = match_message(clock.clone(), None, Some(mine), 0);
-        let b = match_message(clock, None, Some(theirs), 0);
-        assert_ne!(a, b, "the same room, two cards");
-        assert_eq!(u32_at(&a, 10), 4);
-        assert_eq!(u32_at(&b, 10), 0);
-    }
-
-    fn a_state() -> modes::DuelState {
-        modes::DuelState {
-            playing: true,
-            waiting: false,
-            run: modes::DuelRun::default(),
-        }
-    }
-
-    /// One opponent taken and the next one lost, which is the shape of every
-    /// evening.
-    fn two_legs() -> [modes::DuelLeg; modes::DUEL_LOG_LEGS] {
-        let mut log = [modes::DuelLeg::default(); modes::DUEL_LOG_LEGS];
-        log[0] = modes::DuelLeg {
-            rival: modes::CallSign::new("Vantage 0001"),
-            result: modes::LegResult::Cleared,
-            seconds: 41,
-        };
-        log[1] = modes::DuelLeg {
-            rival: modes::CallSign::new("Sable 0001"),
-            result: modes::LegResult::Lost,
-            seconds: 7,
-        };
-        log
+        assert_eq!(message.len(), 8, "header and two scores");
+        assert_eq!(message[1], MATCH_PLAYING);
     }
 }

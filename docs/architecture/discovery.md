@@ -235,7 +235,7 @@ this is a signpost, not a service.
        {"address": "wss://a7.eu-west.example:9010", "region": "eu-west",
         "players": 19, "bots": 2, "full": false}
      ]},
-    {"name": "duel", "label": "Duel", "players": 4, "bots": 0,
+    {"name": "alpha", "label": "Alpha", "players": 4, "bots": 0,
      "instances": [...]}
   ]
 }

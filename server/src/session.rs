@@ -15,19 +15,11 @@ mod commands;
 /// seconds, so this leaves one half-interval of scheduling slack.
 pub(crate) const SESSION_QUIET: std::time::Duration = std::time::Duration::from_secs(45);
 
-fn duel_bot_release_allowed(certified: bool, declared: &str, current: &str) -> bool {
-    !certified
-        || (!declared.is_empty()
-            && declared != "unknown"
-            && current != "unknown"
-            && declared == current)
-}
-
 fn complete_join_payload(data: &[u8]) -> bool {
     if data.len() < C2S_JOIN_HEADER {
         return false;
     }
-    let payload = data[4] as usize + data[5] as usize + data[7] as usize;
+    let payload = data[4] as usize + data[5] as usize;
     data.len() >= C2S_JOIN_HEADER + payload
 }
 
@@ -184,7 +176,6 @@ pub(crate) async fn serve_client(
                 let is_bot = flags & JOIN_BOT != 0;
                 let zlen = data.get(4).copied().unwrap_or(0) as usize;
                 let nlen = data.get(5).copied().unwrap_or(0) as usize;
-                let blen = data.get(7).copied().unwrap_or(0) as usize;
                 // Which room, or zero for "whichever the ladder picks", which
                 // is what every arrival that has not been shown a list says.
                 let want_room = data.get(6).copied().unwrap_or(0) as u32;
@@ -194,13 +185,8 @@ pub(crate) async fn serve_client(
                 let claimed_name = sanitize_name(&String::from_utf8_lossy(
                     data.get(h + zlen..h + zlen + nlen).unwrap_or_default(),
                 ));
-                let declared_release = String::from_utf8_lossy(
-                    data.get(h + zlen + nlen..h + zlen + nlen + blen)
-                        .unwrap_or_default(),
-                )
-                .to_string();
                 let presented =
-                    String::from_utf8_lossy(data.get(h + zlen + nlen + blen..).unwrap_or_default())
+                    String::from_utf8_lossy(data.get(h + zlen + nlen..).unwrap_or_default())
                         .to_string();
                 let mut z = zone.lock().await;
 
@@ -325,42 +311,6 @@ pub(crate) async fn serve_client(
                     let _ = tx.try_send(Message::Binary(deny(
                         DENY_BANNED,
                         "this zone is for claimed pilots; keep your pilot in the menu first",
-                        Some(&seat_of),
-                    )));
-                    break;
-                }
-                if is_bot && !z.accepts_bot_seat(&seat_of) {
-                    let _ = tx.try_send(Message::Binary(deny(
-                        DENY_BANNED,
-                        "duel opponent seats are reserved for the house director",
-                        Some(&seat_of),
-                    )));
-                    break;
-                }
-                let certified_duel = z.rooms.iter().any(|room| room.is_duel())
-                    && crate::arena::certified_pilot_attestation().is_some();
-                if is_bot
-                    && !duel_bot_release_allowed(
-                        certified_duel,
-                        &declared_release,
-                        &crate::arena::house_bot_release_claim(),
-                    )
-                {
-                    let _ = tx.try_send(Message::Binary(deny(
-                        DENY_VERSION,
-                        "this certified duel zone requires the current verified house bot release",
-                        Some(&seat_of),
-                    )));
-                    break;
-                }
-                // A house opponent has one job in a duel: take the exact room
-                // the director named. Entering as a watcher used to skip that
-                // room-bound check and later turn C2S_SHIP into a seat nobody
-                // asked for.
-                if is_bot && flags & JOIN_WATCH != 0 && z.rooms.iter().any(|room| room.is_duel()) {
-                    let _ = tx.try_send(Message::Binary(deny(
-                        DENY_BANNED,
-                        "duel opponents cannot enter as spectators",
                         Some(&seat_of),
                     )));
                     break;
@@ -509,8 +459,8 @@ pub(crate) async fn serve_client(
                             // frame from five seconds ago, and a screen set
                             // up from the live room would spend those five
                             // seconds disagreeing with its own picture. One
-                            // match packet owns the clock, the result and any
-                            // Ladder progress, so join sync cannot split them.
+                            // match packet owns the clock and the result, so
+                            // join sync cannot split them.
                             for m in a.channel_sync() {
                                 let _ = tx.try_send(Message::Binary(m));
                             }
@@ -544,7 +494,7 @@ pub(crate) async fn serve_client(
                 let room = if is_bot {
                     z.room_for_bot_request(want_room, &seat_of)
                 } else {
-                    z.room_wanted(want_room, &seat_of)
+                    z.room_wanted(want_room)
                 };
                 // The fill ladder: fullest room below cap, else a new room
                 // here if the zone allows one, else this instance is out
@@ -594,7 +544,7 @@ pub(crate) async fn serve_client(
                             p.owes_map = true;
                         }
                     }
-                    if let Some(m) = a.match_msg(Some(ship)) {
+                    if let Some(m) = a.match_msg() {
                         let _ = tx.try_send(Message::Binary(m));
                     }
                     let mut w = vec![S2C_WELCOME, ship];
@@ -805,9 +755,8 @@ pub(crate) async fn serve_client(
             C2S_KIT => {
                 let before = presence.current().flying();
                 commands::kit(&zone, &presence, &data).await;
-                // The room removes a Ladder rival that supplied the wrong
-                // calibrated build. The command helper owns the mutation, but
-                // the connection still owns the fleet-visible departure edge.
+                // The command helper owns the mutation, but the connection
+                // still owns the fleet-visible departure edge.
                 if let Some((room, _)) = before {
                     if presence.current() == Presence::Unjoined {
                         let mut z = zone.lock().await;
@@ -895,34 +844,12 @@ pub(crate) async fn serve_client(
 
 #[cfg(test)]
 mod tests {
-    use super::{complete_join_payload, duel_bot_release_allowed};
-
-    #[test]
-    fn a_certified_ladder_refuses_unknown_or_mixed_house_bot_releases() {
-        assert!(duel_bot_release_allowed(
-            true,
-            "v1:abc:signed-a",
-            "v1:abc:signed-a"
-        ));
-        assert!(!duel_bot_release_allowed(true, "abc", "v1:abc:signed-a"));
-        assert!(!duel_bot_release_allowed(
-            true,
-            "v1:abc:signed-b",
-            "v1:abc:signed-a"
-        ));
-        assert!(!duel_bot_release_allowed(true, "", "new"));
-        assert!(!duel_bot_release_allowed(true, "unknown", "unknown"));
-        assert!(duel_bot_release_allowed(false, "old", "new"));
-    }
+    use super::complete_join_payload;
 
     #[test]
     fn a_join_must_contain_every_declared_payload_byte() {
-        assert!(complete_join_payload(&[
-            1, 0, 0, 0, 1, 1, 0, 1, b'z', b'n', b'b'
-        ]));
-        assert!(!complete_join_payload(&[
-            1, 0, 0, 0, 1, 1, 0, 1, b'z', b'n'
-        ]));
-        assert!(!complete_join_payload(&[1, 0, 0, 0, 0, 0, 0]));
+        assert!(complete_join_payload(&[1, 0, 0, 0, 1, 1, 0, b'z', b'n']));
+        assert!(!complete_join_payload(&[1, 0, 0, 0, 1, 1, 0, b'z']));
+        assert!(!complete_join_payload(&[1, 0, 0, 0, 0, 0]));
     }
 }

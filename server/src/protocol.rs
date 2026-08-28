@@ -1,8 +1,8 @@
 use crate::directory;
 
 // Client to server
-/// `[C2S_JOIN, class, protocol, flags, zone_len, name_len, room, build_len]
-/// zone name build token`
+/// `[C2S_JOIN, class, protocol, flags, zone_len, name_len, room]
+/// zone name token`
 ///
 /// `room` is which room of the zone to land in, by the number the server gave
 /// it, and zero for "whichever the fill ladder picks", which is what every
@@ -13,12 +13,6 @@ use crate::directory;
 /// player leaves, so a client can arrive at an address that no longer serves the
 /// game it chose. Empty means "whatever you are running", which is what somebody
 /// typing an address directly means.
-///
-/// `build` is empty for people. A house bot reports its release claim: the
-/// immutable build alone for a provisional Ladder, or that build plus the
-/// verified pilot-attestation signature for a certified one. The latter binds
-/// the seat to the exact signed controller artifact, not only to a source
-/// revision that could have been built several ways.
 ///
 /// The token is a session token from the meta-layer, and it runs to the end of
 /// the message because it is the only variable-length field left without a
@@ -38,7 +32,7 @@ pub(crate) const MAX_ROOM_NUMBER: u32 = u8::MAX as u32;
 /// its name was read a byte late, ran off the end of a message carrying no
 /// session token, came back empty, and an empty name is the one thing
 /// `sanitize_name` answers with that word.
-pub(crate) const C2S_JOIN_HEADER: usize = 8;
+pub(crate) const C2S_JOIN_HEADER: usize = 7;
 /// `[C2S_INPUT, count, lifecycle, snapshot ack, snapshot mask,
 /// (tick, buttons)...]`.
 /// Records name their own ticks, so a packet can repair a hole without spending
@@ -215,16 +209,13 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// legal byte vector that resolves to a different ship, so they must reload
 /// before joining or saving a kit under the new row.
 ///
-/// 28 is the duel. The Ladder body carried a rung, a best rung, two opponent
-/// slots and a first-to that no client ever drew; what is left is the card of
-/// whoever is reading it, which now differs per pilot because both seats hold
-/// one. An older tab would read a shorter body from the wrong offset and draw
-/// somebody else's evening.
-///
-/// 29 puts the hold on the wire: one byte after the duel's status saying how
-/// many seconds the room will go on keeping the second seat open for a person.
-/// A client built for 28 reads it as the low byte of the streak.
-pub(crate) const CLIENT_PROTOCOL: u8 = 29;
+/// 30 takes duels out. `S2C_MATCH` loses its per-pilot card, so the clock, the
+/// score and the result artifact are the whole of that message again, and
+/// `C2S_JOIN` loses the build-claim field a certified duel zone used to check
+/// its house opponents against. A client built for 29 would go looking for a
+/// card behind a flag bit nothing sets, and would write a join header one byte
+/// long for this door.
+pub(crate) const CLIENT_PROTOCOL: u8 = 30;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
@@ -300,39 +291,20 @@ pub(crate) const S2C_TEAMS: u8 = 12;
 /// they are told.
 pub(crate) const S2C_ONAIR: u8 = 13;
 /// `[S2C_MATCH, flags, seconds left, sides, score per side as u16,
-/// optional artifact id as u64, optional duel body]`.
+/// optional artifact id as u64]`.
 ///
-/// Flag bit 0 says the match is playing, bit 1 says an artifact follows the
-/// scores, and bit 2 says the duel body follows that. The duel body is
-/// `[status, hold, streak, best streak, legs, logged, log[logged]]`, where
-/// status bit 0 says the room is waiting for a second pilot rather than
-/// counting down, and the three readings are u32.
+/// Flag bit 0 says the match is playing and bit 1 says an artifact follows the
+/// scores.
 ///
-/// `hold` is how many seconds that room will go on keeping the second seat
-/// open for a person before it settles for a house pilot, and zero once it is
-/// holding nothing. It rides here rather than being timed by the client,
-/// which knows when it noticed the wait and not when the room began it.
-///
-/// `legs` is a u32 count of every fight this pilot has finished here and
-/// `logged` is a byte saying how many of them the window still holds, oldest
-/// first. A leg is `[result, seconds as u16, call sign length, call sign]`,
-/// where result is 0 lost, 1 won, 2 drawn, so it is four bytes plus a name as
-/// long as its owner made it. The body is 15 bytes before the first of them.
-///
-/// The duel body is the one part of any message that differs per recipient: a
-/// duel has two pilots in it and the card belongs to whoever is reading it.
-/// See `Room::broadcast_match`.
-///
-/// One packet owns the clock, result artifact, Ladder transition, and the run
-/// log. Queue pressure can delay the newest answer, but it cannot combine
-/// halves from two different states.
+/// One packet owns the clock, the score and the result artifact. Queue
+/// pressure can delay the newest answer, but it cannot combine halves from two
+/// different states.
 ///
 /// Sent at a join, at every whistle, and whenever either number moves, so a
 /// three minute match costs about two hundred of these.
 pub(crate) const S2C_MATCH: u8 = 14;
 pub(crate) const MATCH_PLAYING: u8 = 1 << 0;
 pub(crate) const MATCH_HAS_ARTIFACT: u8 = 1 << 1;
-pub(crate) const MATCH_HAS_DUEL: u8 = 1 << 2;
 /// `[S2C_CHARGE, ship, slot, x, y, tick]`, a public action without the private
 /// inventory count. Sent only to views whose fixed fairness circle contains
 /// the firing ship; x and y are signed Q8 positions.

@@ -903,7 +903,7 @@ mod tests {
         let d = tmp("zones");
         let mut s = spool_in(&d);
         s.push(ev(1, 1));
-        s.aim("http://127.0.0.1:1", "tok", "war", "duel", "i1");
+        s.aim("http://127.0.0.1:1", "tok", "war", "warzone", "i1");
         s.push(ev(2, 2));
 
         let first = s.batch().unwrap();
@@ -913,7 +913,7 @@ mod tests {
         s.confirm(1).unwrap();
         let second = s.batch().unwrap();
         assert_eq!(second.zone, "war");
-        assert_eq!(second.class, "duel");
+        assert_eq!(second.class, "warzone");
         assert_eq!(second.events.len(), 1);
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -924,7 +924,7 @@ mod tests {
         let mut s = spool_in(&d);
         s.push(ev(1, 11));
 
-        s.aim("http://127.0.0.1:1", "tok", "war", "duel", "i2");
+        s.aim("http://127.0.0.1:1", "tok", "war", "warzone", "i2");
         let mut killer = ev(2, 22);
         killer.killer = Some(11);
         killer.credits[0].account = 11;

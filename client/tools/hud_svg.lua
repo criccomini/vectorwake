@@ -2,15 +2,12 @@
 --
 --     lua5.1 client/tools/hud_svg.lua <out.svg> [scenario] [root] [w] [h]
 --
--- Scenarios: after (an evening with fights behind it), fresh (its first), deep
--- (far enough to have a floor), rival (a duel counting down the hold on its
--- second seat),
--- before (with the banner the server used to
--- send), ending and duel-ending (a room at the whistle), landing (the front end,
--- watched from the stands; landing-zones and landing-ships open a stop's
--- list), waiting (what the loader hands off to before a
--- room answers), loadout (a loaded hull with charges in hand, for the corner
--- stack). Rasterize with any browser:
+-- Scenarios: after (a match part way through), before (with the banner the
+-- server used to send), ending (a room at the whistle), landing (the front
+-- end, watched from the stands; landing-zones and landing-ships open a stop's
+-- list), waiting (what the loader hands off to before a room answers),
+-- loadout (a loaded hull with charges in hand, for the corner stack).
+-- Rasterize with any browser:
 --
 --     chromium --headless --screenshot=out.png --window-size=1280,800 out.svg
 --
@@ -22,9 +19,9 @@
 -- drawing is this file's, so the shapes are approximations of the mesh (a
 -- skirt is a falloff here, not a gradient) and there is no arena behind them.
 --
--- Worth having because a collision is invisible to a test that reads strings.
--- The duel readout grew past the ratings beside the clock once an evening earned
--- a floor, which no assertion had thought to make and one look found.
+-- Worth having because a collision is invisible to a test that reads strings:
+-- two readouts can overlap with every string in the right order, which no
+-- assertion had thought to make and one look found.
 
 local out_path = assert(arg[1], "an output path")
 local scenario = arg[2] or "after"
@@ -194,59 +191,8 @@ local state = package.loaded["arena.state"]
 local W = tonumber(arg[4]) or 1280
 H = tonumber(arg[5]) or 800
 
-local function leg(rival, result, seconds)
-    return {rival = rival, result = result, seconds = seconds}
-end
-
--- An evening of eight fights: six taken, one lost, one drawn.
-local RUN = {
-    leg("Kestrel 0001", "cleared", 33),
-    leg("Cirrus 0001", "cleared", 58),
-    leg("Halcyon 0001", "drawn", 12),
-    leg("Ozone 0001", "cleared", 71),
-    leg("Vantage 0001", "lost", 9),
-    leg("Tessellate 0001", "cleared", 25),
-    leg("Ridgeline 0001", "cleared", 44),
-    leg("Sable 0001", "cleared", 39),
-}
-
-local duel = {
-    streak = 4, best_streak = 6, waiting = false,
-    legs = 8, log = RUN,
-}
-
--- The frame from the screenshot: rung 5, streak 4, 2:46 on the clock, nobody
--- dead yet.
-local match = {playing = true, left = 166, score = {[0] = 0, [1] = 0},
-               duel = duel}
-
--- The first life of a run, which is what every run opens on. Nothing behind
--- it: no streak, no record, no legs to look back at.
-if scenario == "fresh" then
-    duel.streak, duel.best_streak = 0, 0
-    duel.legs, duel.log = 0, {}
-    match.left = 180
-end
-
--- An evening with a real stretch of fights behind it.
-if scenario == "deep" then
-    duel.streak, duel.best_streak = 2, 7
-    duel.legs = 23
-    match.left = 91
-    match.score = {[0] = 0, [1] = 0}
-end
-
--- The ten seconds before a fight: one pilot in the room and the seat across
--- from them still open. Both seats are benched until it fills, so this is the
--- frame where a hull that has never flown reads as a hull that has been shot,
--- and the only thing that says otherwise is what is written in the middle of
--- the screen.
-if scenario == "rival" then
-    room.count, room.alive[0] = 1, false
-    match = {playing = false, left = 180, score = {[0] = 0, [1] = 0},
-             duel = {streak = 0, best_streak = 0, waiting = true,
-                     hold = 7, legs = 0, log = {}}}
-end
+-- A match part way through: 2:46 on the clock, nobody dead yet.
+local match = {playing = true, left = 166, score = {[0] = 0, [1] = 0}}
 
 -- What the old build put across the middle of the screen every second of
 -- every life. The server sends it; the client draws whatever arrives.
@@ -263,14 +209,8 @@ end
 -- The whistle: a full melee room with the result up. This is the frame the
 -- ending was redesigned against, and the one worth a picture, since it is the
 -- board drawn in a column of its own with a head and a foot around it.
-local ending = scenario == "ending" or scenario == "duel-ending"
-if scenario == "duel-ending" then
-    -- The same whistle in the mode that keeps a run: two rows and the fights
-    -- behind them, which is the section the board adds for this zone.
-    match = {playing = false, left = 8, artifact = 1,
-             score = {[0] = 1, [1] = 0}, duel = duel}
-end
-if scenario == "ending" then
+local ending = scenario == "ending"
+if ending then
     room.count = 8
     room.teams = {[0] = 0, 0, 0, 0, 1, 1, 1, 1}
     room.kills = {[0] = 0, 8, 6, 3, 6, 5, 5, 4}
@@ -299,7 +239,6 @@ local land = landing and {
     zones = {
         {label = "Team Battle", zone = "melee", live = true,
          format = "4v4 · 3:00", here = true},
-        {label = "Duel", zone = "duel", live = true, format = "1v1"},
     },
     ships = {
         {label = "Gunner", value = 1, here = true},
@@ -372,7 +311,7 @@ ui.hud({
     banner = banner,
     lag_notice = "",
     rtt = 22,
-    zone = (landing or scenario == "ending") and "melee" or "duel",
+    zone = "melee",
     room = 1,
     fps = 60, frame_ms = 16.7, rx_rate = 31000, tx_rate = 700,
 })

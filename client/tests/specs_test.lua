@@ -29,7 +29,7 @@ local ui, state = harness.install()
 
 local function rows()
     return {
-        {label = "Duel",
+        {label = "Chaos",
          specs = {{"teams", "1 v 1"}, {"time", "one life"},
                   {"scoring", "streak"}},
          index = 1, pick = true},
@@ -82,13 +82,13 @@ check("stacks keep their order inside a row",
 -- Under the name, and under that name rather than the other one: `state.text`
 -- counts up from the foot, so a lower line on the screen is the smaller y.
 -- The row is the name and the stacks now, and nothing between them.
-local duel, battle = find(words, "Duel"), find(words, "Team Battle")
+local chaos, battle = find(words, "Chaos"), find(words, "Team Battle")
 check("the stacks stand under the name they are about",
-      duel and teams1 and battle and teams2
-      and teams1.y < duel.y and teams1.y > battle.y
+      chaos and teams1 and battle and teams2
+      and teams1.y < chaos.y and teams1.y > battle.y
       and teams2.y < battle.y,
-      string.format("Duel at %s over %s, Team Battle at %s over %s",
-                    tostring(duel and duel.y), tostring(teams1 and teams1.y),
+      string.format("Chaos at %s over %s, Team Battle at %s over %s",
+                    tostring(chaos and chaos.y), tostring(teams1 and teams1.y),
                     tostring(battle and battle.y),
                     tostring(teams2 and teams2.y)))
 local expected = {}
@@ -112,7 +112,7 @@ draw(390, 260)
 local squeezed = drawn()
 check("a squeezed list drops the strip rather than stacking it",
       find(squeezed, "TEAMS") == nil and find(squeezed, "4 v 4") == nil)
-check("but keeps the names", find(squeezed, "Duel") ~= nil)
+check("but keeps the names", find(squeezed, "Chaos") ~= nil)
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

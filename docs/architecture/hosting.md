@@ -67,7 +67,7 @@ a zone says how much of that wall it wants.
 And a room is cheap enough that **one process should be able to hold many of
 them**, which [decision 23](decisions.md) did not allow for. See the amendment
 there: `max_rooms` is a property of the zone, because a 64-player War room wants
-its own blast radius while a two-player duel wants to share.
+its own blast radius while a small room wants to share.
 
 ## What a room full of bots costs
 
@@ -341,8 +341,8 @@ thing in the picture is a managed database somebody else backs up.
 
 The bandwidth figure that drives every number here is 30 KB/s per client,
 measured in a busy 64-ship room. Interest management means a client only receives
-the ships near it, so a duel should be far below that, and if it lands near
-5 KB/s then a thousand concurrent duels is 10 MB/s and fits on one instance's
-uplink with room to spare. That measurement is worth taking before sizing
-anything for duels, and it is the one number in this document most likely to
-change the arithmetic.
+the ships near it, so a small room should be far below that, and if it lands
+near 5 KB/s then a thousand concurrent small rooms is 10 MB/s and fits on one
+instance's uplink with room to spare. That measurement is worth taking before
+sizing anything for them, and it is the one number in this document most likely
+to change the arithmetic.

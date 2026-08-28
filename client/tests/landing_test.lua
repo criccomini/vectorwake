@@ -121,7 +121,7 @@ local LAND = {
     zones = {
         {label = "Team Battle", zone = "melee", live = true,
          format = "4v4", here = true},
-        {label = "Duel", zone = "duel", live = true, format = "1v1"},
+        {label = "Chaos", zone = "chaos", live = true, format = "1v1"},
     },
     ships = {
         {label = "Gunner", value = 1, here = true},
@@ -472,13 +472,13 @@ do
     frame(1440, 810, {land_open = "zone"})
     local pick
     for _, r in ipairs(ui.hits) do
-        if r.action == "land_pick_zone" and r.value == "duel" then
+        if r.action == "land_pick_zone" and r.value == "chaos" then
             pick = r
         end
     end
     check("the zone list offers the other game", pick ~= nil,
           "no row for the second zone")
-    check("and says its name", word("Duel") ~= nil)
+    check("and says its name", word("Chaos") ~= nil)
     -- The format is the interface describing the game rather than naming it,
     -- so it is set the way the rest of the HUD is set.
     check("and its format beside it", word("1V1") ~= nil)
@@ -577,13 +577,13 @@ do
     -- carries: two rows publish the same action and only one of them is under
     -- the pointer.
     frame(1440, 810, {land_open = "zone", sel = "land_pick_zone",
-                      sel_value = "duel"})
+                      sel_value = "chaos"})
     local rows = {}
     for _, r in ipairs(ui.hits) do
         if r.action == "land_pick_zone" then rows[r.value] = r end
     end
     check("a row of an open list lights under the pointer",
-          lit(rows.duel, CURSOR), "the second game did not light")
+          lit(rows.chaos, CURSOR), "the second game did not light")
     check("and the row above it does not",
           not lit(rows.melee, CURSOR))
 
@@ -654,7 +654,7 @@ do
         ships = LAND.ships,
         zones = {
             {label = "Team Battle", zone = "melee", live = true, here = true},
-            {label = "Duel", zone = "duel", live = true},
+            {label = "Chaos", zone = "chaos", live = true},
             {label = "Gauntlet", zone = "gauntlet", live = false},
         }}})
     check("a dark game is not walked onto",
@@ -673,10 +673,10 @@ do
           ui.land_sel == "land_pick_zone" and ui.land_sel_value == "melee",
           tostring(ui.land_sel) .. " " .. tostring(ui.land_sel_value))
     step(1)
-    check("and along it", ui.land_sel_value == "duel")
+    check("and along it", ui.land_sel_value == "chaos")
     local act, value = ui.land_go()
     check("enter on a row picks that game",
-          act == "land_pick_zone" and value == "duel",
+          act == "land_pick_zone" and value == "chaos",
           tostring(act) .. " " .. tostring(value))
     step(-1, 2)
     check("and up off the first row is the stop again",

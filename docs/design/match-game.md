@@ -79,8 +79,7 @@ grow enough to need herding, rotation is a directory feature and can return
 then.
 
 **You join a room, not a match.** A room is long lived and plays match after
-match with the intermission between them, which is the arrangement
-[duel-mode.md](duel-mode.md) already describes: the server stays alive between
+match with the intermission between them: the server stays alive between
 matches rather than being built for each one. The match is only what the room
 is doing right now. So a join never waits for anything to finish. If a match
 is running you spawn into it with your own kit at bounty 1 and the score
@@ -125,8 +124,8 @@ arrive there too, so three paths produce one state rather than three.
 [spectating.md](spectating.md) has the gallery, including what happens to a
 seat that frees while people are watching.
 
-**The hull is locked for the match**, the way a duel already locks it. Kit
-and hull change in the hangar between matches. This is not ceremony: charges
+**The hull is locked for the match.** Kit and hull change in the hangar
+between matches. This is not ceremony: charges
 are match-scoped below, and a mid-match hull change would have to answer what
 happens to a half-spent charge ledger across two different charge rows. The
 honest answer is to not let the question exist.
@@ -193,10 +192,10 @@ knife fight in a phone booth. A side that gets wiped re-arrives together,
 which produces waves and regroups without a respawn-wave rule written
 anywhere.
 
-**No safe zones in a home pocket.** The duel design's no-hiding rule applies
-to anything played against a clock: a safe pocket is where a leading team
-goes to stall. Respawn invulnerability stays as duels specify it, long enough
-to orient and short enough to be useless offensively. Camping a spawn is
+**No safe zones in a home pocket.** Nowhere to hide, in anything played
+against a clock: a safe pocket is where a leading team goes to stall. Respawn
+invulnerability stays long enough to orient and short enough to be useless
+offensively. Camping a spawn is
 already close to worthless, because a pilot who has just died is worth one.
 
 ## Spray is one ladder
@@ -595,7 +594,7 @@ The seat is what persists, so there is no reconnect timer to tune: come back
 any time before the final whistle and you take your ship back from the bot.
 Come back after it and you land on the podium with whatever you banked.
 
-Forfeiting is right for a duel, where your absence only hurts you, and wrong
+Forfeiting is right for a game where your absence only hurts you, and wrong
 here, where it would punish three teammates for a fourth person's wifi.
 Substitution punishes nobody.
 
@@ -790,8 +789,7 @@ configuration rather than as an excavation.
 a session-based 4v4 match game that happens to be built on an MMO's
 simulation. The fleet architecture stays exactly as it is and finally gets
 the workload it was designed for, since rooms-on-demand in a long-lived
-process is precisely what a three minute match game needs, and it is the
-model `duel-mode.md` already describes.
+process is precisely what a three minute match game needs.
 
 The word is the owner's to change, and the copy on the public site is
 downstream of it. It is listed here so the decision is made deliberately
@@ -822,9 +820,9 @@ Turrets and gunners are gone, along with the open arena and mode rotation.
 
 ## Open questions
 
-Whether a three minute match rates per kill, as today, or per match, as
-`duel-mode.md` argues for a result that is stronger than the correlated
-outcomes inside it. Probably both, and probably worth measuring.
+Whether a three minute match rates per kill, as today, or per match, since a
+match result is a stronger signal than the correlated outcomes inside it.
+Probably both, and probably worth measuring.
 
 Whether the kit budget starts at thirty or climbs to it over a first few
 matches. Climbing gives a new account something to feel; starting flat is

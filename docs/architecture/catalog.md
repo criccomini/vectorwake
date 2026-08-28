@@ -132,7 +132,7 @@ The zone fields are:
 | Field | Meaning |
 |---|---|
 | `label` | What players read the game as, where it differs from the zone's key. The key is what a join names and what a rating is filed under, so renaming the game a player sees cannot move either. |
-| `mode` | `arena`, `warzone`, `melee`, or `duel`. `duel` is currently accepted but uses free-for-all rules while its dedicated design remains deferred. |
+| `mode` | `arena`, `warzone`, or `melee`. |
 | `maps` | One or more `.vwmap` files relative to the zone directory, in rotation order. |
 | `max_ships` | Total seats in one room, bots included. A ship index is one byte, so 255 is the parse ceiling. |
 | `max_players` | Human seats in one room. |

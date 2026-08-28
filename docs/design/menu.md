@@ -118,8 +118,8 @@
 >
 > **A row is a name and its format.** Under the name, three small stacks in
 > the room band's label-over-value grammar: TEAMS, TIME and SCORING, with a
-> thin rule between them, so Team Battle reads 4 v 4, 3:00, kills and Duel
-> reads 1 v 1, one life, streak. The words ride the directory reply beside the
+> thin rule between them, so Team Battle reads 4 v 4, 3:00, kills. The words
+> ride the directory reply beside the
 > label, derived by the catalog from what each zone declares
 > (`ZoneDef::format`), so a tuning edit that moves the clock moves the strip
 > and the client never knows a format. Each game carried a sentence between

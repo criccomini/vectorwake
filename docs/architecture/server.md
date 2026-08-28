@@ -123,8 +123,7 @@ A new valid input clears the objective restriction immediately.
 Modes are Rust implementations selected by `zone.toml`: `arena`, `warzone`,
 and `melee`. A mode receives a narrow room context, reacts to simulation events,
 and owns scoring or match flow. It does not replace movement or combat rules in
-the core. The catalog recognizes `duel`, but it currently runs the free-for-all
-arena mode while the dedicated duel design remains deferred.
+the core.
 
 Sandboxed WebAssembly and Lua zone modules were proposals and are not in the
 runtime. A zone author can currently change the broad settings and weapon
