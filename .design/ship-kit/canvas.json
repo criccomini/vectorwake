@@ -1,0 +1,19 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 390, "h": 844,
+      "title": "Roster" },
+    { "file": "Tune.dc.html", "x": 480, "y": 0, "w": 390, "h": 844,
+      "title": "Tune, the default" },
+    { "file": "TuneStates.dc.html", "x": 960, "y": 0, "w": 390, "h": 844,
+      "title": "Tune, mid-edit" },
+    { "file": "FlightOption.dc.html", "x": 1560, "y": 0, "w": 390, "h": 844,
+      "title": "Flight spendable (not recommended)" }
+  ],
+  "annotations": [
+    { "id": "proposal", "x": 0, "y": -170, "w": 420,
+      "text": "The thirty point kit back, with nothing to buy.\nEvery hull's shipped profile is its default spend, so picking a ship and flying needs no editor at all. TUNE on the ship you fly opens the stepper page; one remembered build a hull; RESET is the whole build manager. Prices here are stand-ins that make Apex's default sum to 30." },
+    { "id": "fork", "x": 1560, "y": -140, "w": 390,
+      "text": "The open fork: whether flight is spendable too. This board sketches that side. The recommendation is no, so ships stay ships; the points live in gun, bomb and rack." }
+  ],
+  "launch": { "view": "canvas" }
+}
