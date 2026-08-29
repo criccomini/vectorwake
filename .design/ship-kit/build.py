@@ -529,7 +529,7 @@ def option_chips_board():
         + chips_row("bounce", "off", 3, zero=True)
         + chips_row("freeze", "off", 3, zero=True)
         + '</div>'
-        + sect("bomb", mt=8)
+        + sect("bomb")
         + '<div style="margin-top:2px">'
         + chips_row("fuse", "contact", 2, zero=True)
         + chips_row("shrapnel", "none", 3, zero=True)
@@ -845,11 +845,24 @@ def flat_tray(free, total=7):
                          'transform:rotate(45deg)"></span>')
     return ('<div class="row" style="height:40px;gap:14px;'
             'border-bottom:1px solid rgba(63,88,120,.45);'
-            'margin:0 -14px;padding:0 14px">'
+            'margin:0 -14px;padding:0 20px">'
             '<span class="lbl" style="color:#ffd166;opacity:.8;flex:none">'
             'build credits</span>'
             '<div class="row" style="gap:7px">' + "".join(cells)
             + '</div></div>')
+
+
+FLAT_RULE = ('<div style="border-top:1px solid rgba(63,88,120,.45)"></div>')
+
+
+def band_sect(label, top=True, mt=10):
+    """A section head is a full-width band: a rule, the label, a rule. The
+    gun section passes top=False because the credits tray's own closing
+    rule is its upper bar."""
+    return (f'<div style="margin:{0 if not top else mt}px -14px 0">'
+            + (FLAT_RULE if top else "")
+            + f'<div class="lbl" style="padding:7px 20px 7px">{label}</div>'
+            + FLAT_RULE + '</div>')
 
 
 def flat_note(note):
@@ -877,7 +890,7 @@ def flat_row(label, value, minus=True, plus=True, state=None, zero=False,
         + f'<span class="mono" style="font-size:12.5px;color:{vcol};'
         f'min-width:96px;text-align:center;padding:0 6px">{value}</span>'
         + tri(1, on=plus) + '</div>'
-        + flat_note(note if hot else None), state=state)
+        + flat_note(note if hot else None), state=state, pad="0 20px")
 
 
 def flat_toggle_row(label, on, can_raise=True, state=None, note=None):
@@ -890,14 +903,14 @@ def flat_toggle_row(label, on, can_raise=True, state=None, note=None):
         f'<span style="font-size:14px;color:rgba(223,233,245,'
         f'{1 if hot else .85})">{label}</span>'
         '<div style="flex:1"></div>' + t + '</div>'
-        + flat_note(note if hot else None), state=state)
+        + flat_note(note if hot else None), state=state, pad="0 20px")
 
 
 def flat_reset():
-    return (sect("", mt=8)
+    return ('<div style="margin:8px -14px 0">' + FLAT_RULE + '</div>'
             + bleed('<div class="row" style="height:44px">'
                     '<span style="font-size:14px;color:#dfe9f5">Reset</span>'
-                    '</div>'))
+                    '</div>', pad="0 20px"))
 
 
 # The Apex default: spray 2, repel 2, burst 1 is four picks of seven, so a
@@ -906,20 +919,20 @@ def flat_reset():
 def flat_body(cursor=True):
     return (
         flat_tray(3)
-        + sect("gun", mt=10)
+        + band_sect("gun", top=False)
         + '<div style="margin-top:2px">'
         + flat_row("Spray", "2", state="cursor" if cursor else None,
                    note="How many rounds one pull of the trigger throws.")
         + flat_toggle_row("Bounce", False)
         + flat_toggle_row("Freeze", False)
         + '</div>'
-        + sect("bomb", mt=8)
+        + band_sect("bomb", mt=8)
         + '<div style="margin-top:2px">'
         + flat_toggle_row("Proximity detonation", False)
         + flat_row("Shrapnel", "0", minus=False, zero=True)
         + flat_toggle_row("Bounce", False)
         + '</div>'
-        + sect("rack", mt=8)
+        + band_sect("rack", mt=8)
         + '<div style="margin-top:2px">'
         + flat_row("Repel", "2")
         + flat_row("Burst", "1")
@@ -937,13 +950,13 @@ def flat_board():
 def flat_spent_board():
     body = (
         flat_tray(0)
-        + sect("gun", mt=10)
+        + band_sect("gun", top=False)
         + '<div style="margin-top:2px">'
         + flat_row("Spray", "3", plus=False)
         + flat_toggle_row("Bounce", False, can_raise=False)
         + flat_toggle_row("Freeze", True)
         + '</div>'
-        + sect("bomb", mt=8)
+        + band_sect("bomb", mt=8)
         + '<div style="margin-top:2px">'
         + flat_toggle_row("Proximity detonation", True)
         + flat_row("Shrapnel", "0", minus=False, plus=False, zero=True,
@@ -952,7 +965,7 @@ def flat_spent_board():
                         "gun&#39;s damage.")
         + flat_toggle_row("Bounce", False, can_raise=False)
         + '</div>'
-        + sect("rack", mt=8)
+        + band_sect("rack", mt=8)
         + '<div style="margin-top:2px">'
         + flat_row("Repel", "2")
         + flat_row("Burst", "1", plus=False)
@@ -1237,10 +1250,10 @@ def land_pager_wide_board():
 
     def col(head_word, rows):
         return ('<div style="flex:1;min-width:0">'
-                '<div style="border-top:1px solid rgba(63,88,120,.45)">'
-                '</div>'
-                f'<div class="lbl" style="margin-top:7px">{head_word}</div>'
-                '<div style="margin-top:2px">' + "".join(rows)
+                + FLAT_RULE
+                + f'<div class="lbl" style="padding:7px 0 7px">{head_word}'
+                '</div>' + FLAT_RULE
+                + '<div style="margin-top:2px">' + "".join(rows)
                 + '</div></div>')
 
     tray = ('<div class="row" style="gap:12px;flex:none">'
