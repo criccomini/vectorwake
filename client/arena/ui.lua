@@ -4265,6 +4265,243 @@ local function land_list(kx, kw, bottom, list, drh)
     end
 end
 
+-- The five rows a hull's flight is read on, in the order the panel and the
+-- roster both draw them.
+local FLIGHT_ROWS = {"speed", "thrust", "turn", "energy", "recharge"}
+
+-- How far the ship panel has been scrolled, in points. Kept here rather than
+-- with the drawer's own scroll because the two are different surfaces and a
+-- position carried between them would open one where the other was left.
+M.land_scroll = 0
+
+-- One row of the ship panel: a section band, a slot, or the way back to the
+-- hull's own row.
+--
+-- A section head is a band the full width of the panel with a rule above and
+-- below it, so the page reads as bands of instruments stacked in one frame
+-- rather than as a list with words dropped into it. The first band's upper
+-- rule is the one the credit tray closes on, which is why the tray does not
+-- draw one of its own.
+--
+-- A slot is a stepper or a switch, and which is not a decision made here: a
+-- slot that only goes to one is on and off and gets a switch, and anything
+-- you can have more of gets the arrows. The arrows are the wake row's, and
+-- one that would do nothing is drawn dim rather than left out, so a row does
+-- not change shape as a pilot spends.
+local function land_row(kx, kw, y, h, r)
+    local pad = 12 * F.scale
+    local px = (M.compact and 12 or 13) * F.scale
+    if r.kind == "sect" then
+        hrule(kx, y, kw, 0.45)
+        lbl(r.label, kx + pad, y + h / 2, pal.MUTE)
+        hrule(kx, y + h, kw, 0.45)
+        return
+    end
+    if r.kind == "reset" then
+        local col = r.on and pal.INK or pal.a(pal.DIM, 0.55)
+        txt(r.label, kx + pad, y + h / 2, px, col, nil, nil, true)
+        if r.on then
+            hit(kx, y, kw, h, "land_kit_reset", nil, nil, 1)
+        end
+        return
+    end
+    -- Lit where a hand on the arrows is standing, the way every row in the
+    -- drawer is. The row is also the anchor that walk stands on: the arrows
+    -- are published over it, so a pointer aiming at one lands on it and a
+    -- pad walking the panel lands on the row.
+    local on = M.land_sel == "land_kit_row" and M.land_sel_value == r.slot
+    if on then rect(kx, y, kw, h, pal.a(pal.FRIEND, LIT.CURSOR)) end
+    hit(kx, y, kw, h, "land_kit_row", r.slot, nil, 0)
+    txt(r.label, kx + pad, y + h / 2, px,
+        pal.a(pal.INK, on and 1 or 0.85), nil, nil, true)
+    if r.toggle then
+        -- A switch, drawn as the box it is: lit and to the right for on.
+        local sw = 34 * F.scale
+        local sh = 18 * F.scale
+        local sx = kx + kw - pad - sw
+        local sy = y + (h - sh) / 2
+        local lit = r.value > 0
+        rect(sx, sy, sw, sh, pal.a(pal.FRIEND, lit and 0.18 or 0))
+        F.layer:frame(sx, ry(sy, sh), sw, sh, 1.0 * F.scale,
+                      pal.a(lit and pal.FRIEND or pal.RADAR_TILE, 0.75))
+        local k = sh - 4 * F.scale
+        rect(lit and (sx + sw - k - 2 * F.scale) or (sx + 2 * F.scale),
+             sy + 2 * F.scale, k, k,
+             pal.a(lit and pal.FRIEND or pal.DIM, lit and 0.95 or 0.6))
+        if lit or r.can_up then
+            hit(sx - 8 * F.scale, y, sw + 16 * F.scale, h, "land_kit_step",
+                {slot = r.slot, dir = lit and -1 or 1}, nil, 1)
+        end
+        return
+    end
+    -- A count, between the two arrows that move it.
+    local vx = kx + kw - pad - 26 * F.scale
+    local mid = y + h / 2
+    txt(tostring(r.value), vx - 24 * F.scale, mid, px,
+        r.value > 0 and pal.FRIEND or pal.a(pal.DIM, 0.9), "center")
+    for _, d in ipairs({{-1, vx - 54 * F.scale, r.can_down},
+                        {1, vx, r.can_up}}) do
+        local dir, ax, live = d[1], d[2], d[3]
+        F.layer:tri(ax + dir * 4.5 * F.scale, ry(mid),
+                    ax - dir * 4 * F.scale, ry(mid - 5.5 * F.scale),
+                    ax - dir * 4 * F.scale, ry(mid + 5.5 * F.scale),
+                    pal.a(pal.FRIEND, live and 0.9 or 0.25))
+        if live then
+            hit(ax - 14 * F.scale, y, 28 * F.scale, h, "land_kit_step",
+                {slot = r.slot, dir = dir}, nil, 1)
+        end
+    end
+end
+
+-- The ship stop's panel: one hull, what it flies like, and the credits its
+-- pilot has spent on it.
+--
+-- The other two stops open lists, and this one did too until it was the only
+-- roster there is. Seven hulls with five bars and a build apiece is a page in
+-- a list's clothes, and the thing a player is doing here is looking at one
+-- ship. So it pages: left and right walk the roster and everything below the
+-- name is about the ship in front of you. See decision 100.
+--
+-- Drawn identically at every window shape, and scrolled where the window is
+-- too short to hold it. A landscape phone had a version of its own for a
+-- while, three sections side by side, which is two layouts to learn and two
+-- to keep working for one panel that already fits a scroll.
+local function land_panel(kx, kw, bottom, top, panel, drh)
+    local pad = 12 * F.scale
+    local rowh = drh
+    local headh = 44 * F.scale
+    local barh = panel.bars and 34 * F.scale or 0
+    local trayh = panel.rows and 30 * F.scale or 0
+    -- What the panel would like to be, before the window has its say.
+    local want = headh + barh + trayh
+    if panel.rows then
+        for _, r in ipairs(panel.rows) do
+            want = want + (r.kind == "sect" and 24 * F.scale or rowh)
+        end
+    else
+        want = want + rowh
+    end
+    want = want + 10 * F.scale
+    local room = bottom - top
+    local h = math.min(want, room)
+    local py = bottom - h
+    rect(kx, py, kw, h, pal.a(pal.BG, 0.96))
+    F.layer:frame(kx, ry(py, h), kw, h, 1.1 * F.scale,
+                  pal.a(pal.RADAR_TILE, 0.85))
+
+    -- The head, which is the pager: an arrow either side of the ship's name.
+    -- The arrows are the wake row's own, which is the control this menu
+    -- already uses for stepping through a short list of answers.
+    local hy = py + headh / 2
+    local npx = (M.compact and 15 or 17) * F.scale
+    local col = panel.mine and pal.FRIEND or pal.INK
+    txt(panel.label, kx + kw / 2, hy, npx, col, "center", nil,
+        not panel.watching)
+    for _, d in ipairs({{-1, kx + pad + 10 * F.scale},
+                        {1, kx + kw - pad - 10 * F.scale}}) do
+        local dir, ax = d[1], d[2]
+        F.layer:tri(ax + dir * 6 * F.scale, ry(hy),
+                    ax - dir * 5 * F.scale, ry(hy - 7 * F.scale),
+                    ax - dir * 5 * F.scale, ry(hy + 7 * F.scale),
+                    pal.a(pal.FRIEND, 0.9))
+        hit(ax - 18 * F.scale, py, 36 * F.scale, headh, "land_page_ship", dir,
+            nil, 1)
+    end
+    hrule(kx, py + headh, kw, 0.6)
+    -- The name itself is the press that flies this one, so a pilot who has
+    -- paged to a ship is one press from arriving in it.
+    hit(kx + 36 * F.scale, py, kw - 72 * F.scale, headh, "land_pick_ship",
+        panel.watching and "spectate" or panel.class, nil, 1)
+
+    local y = py + headh
+    -- The flight row, as five bars against the rest of the roster. A share
+    -- rather than a figure: the question is "faster than what".
+    if panel.bars then
+        local n = #panel.bars
+        local gap = 6 * F.scale
+        local bx = kx + pad
+        local bw = kw - 2 * pad
+        local cw = (bw - gap * (n - 1)) / n
+        for i = 1, n do
+            local px = bx + (i - 1) * (cw + gap)
+            local share = math.max(0, math.min(1, panel.bars[i] or 0))
+            rect(px, y + 12 * F.scale, cw, 3 * F.scale, pal.a(pal.DIM, 0.22))
+            rect(px, y + 12 * F.scale, cw * share, 3 * F.scale,
+                 pal.a(col, 0.85))
+            lbl(FLIGHT_ROWS[i], px, y + 23 * F.scale, pal.MUTE, nil,
+                8.5 * F.scale)
+        end
+        y = y + barh
+        hrule(kx, y, kw, 0.45)
+    end
+
+    -- The purse: every credit this pilot has, spent ones hollow. A count
+    -- drawn rather than written, because the whole reason a step costs one is
+    -- that nobody should have to read a number to know what they can afford.
+    if panel.rows then
+        local cy = y + trayh / 2
+        lbl("build credits", kx + pad, cy, pal.a(pal.CHARGE_COL, 0.8))
+        local side = 9 * F.scale
+        local gap = 6 * F.scale
+        local total = panel.credits or 0
+        local run = total * side + math.max(0, total - 1) * gap
+        local sx = kx + kw - pad - run
+        for i = 1, total do
+            local x = sx + (i - 1) * (side + gap)
+            local on = i <= (panel.free or 0)
+            F.layer:quad(x + side / 2, ry(cy - side / 2),
+                         x + side, ry(cy),
+                         x + side / 2, ry(cy + side / 2),
+                         x, ry(cy),
+                         pal.a(pal.CHARGE_COL, on and 0.95 or 0.18))
+        end
+        y = y + trayh
+    end
+
+    -- The rows, scrolled where the window is too short for them.
+    --
+    -- Whole rows only, which is the same rule the drawer's pages follow and
+    -- for the same reason: the scissor in the renderer cuts against a
+    -- vertical edge, so a row half off the bottom would draw through the
+    -- frame rather than be cut by it. So the scroll is clamped to a row
+    -- boundary and a row that does not fit is not drawn at all.
+    local ry0, ry1 = y, py + h - 4 * F.scale
+    local content = 0
+    if panel.rows then
+        for _, r in ipairs(panel.rows) do
+            content = content + (r.kind == "sect" and 24 * F.scale or rowh)
+        end
+    end
+    local over = math.max(0, content - (ry1 - ry0))
+    M.land_scroll = math.max(0, math.min(M.land_scroll, over))
+    local cy = ry0 - M.land_scroll
+    if panel.rows then
+        for _, r in ipairs(panel.rows) do
+            local rh = r.kind == "sect" and 24 * F.scale or rowh
+            if cy >= ry0 - 0.5 and cy + rh <= ry1 + 0.5 then
+                land_row(kx, kw, cy, rh, r)
+            end
+            cy = cy + rh
+        end
+        -- That there is more, said as a thumb against the panel's own edge
+        -- rather than as a word. Only where there is: a rail on a panel that
+        -- fits is an instrument reporting on nothing.
+        if over > 0 then
+            local run = ry1 - ry0
+            local thumb = math.max(20 * F.scale, run * run / content)
+            local at = ry0 + (run - thumb) * (M.land_scroll / over)
+            rect(kx + kw - 3 * F.scale, ry0, 2 * F.scale, run,
+                 pal.a(pal.DIM, 0.2))
+            rect(kx + kw - 3 * F.scale, at, 2 * F.scale, thumb,
+                 pal.a(pal.DIM, 0.7))
+        end
+    elseif panel.note then
+        txt(panel.note, kx + pad, cy + rowh / 2,
+            (M.compact and 11 or 12) * F.scale, pal.READ)
+    end
+    return py
+end
+
 -- The landing: the game's name and the column of stops over the one key the
 -- screen exists for.
 --
@@ -4324,7 +4561,7 @@ local function landing(land)
         -- covers has to stand down: glyphs come from the gui and the gui
         -- draws over every mesh, so a stop drawn under the panel would read
         -- through it. Same rule the clock band follows under the drawer.
-        local open, list, from = M.land_open, nil, nil
+        local open, list, from, panel = M.land_open, nil, nil, nil
         local drh = g.narrow and 40 * F.scale or 30 * F.scale
         if open == "account" and land.account then
             list, from = {}, acct_box
@@ -4354,16 +4591,12 @@ local function landing(land)
                                    dim = not z.live, note = z.format,
                                    raw = true}
             end
-        elseif open == "ship" and land.ships then
-            list, from = {}, ship_box
-            for _, s in ipairs(land.ships) do
-                -- Sitting out is the list's last answer, held apart from the
-                -- builds by a rule: it is a different kind of thing to be.
-                if s.value == "spectate" then list[#list + 1] = {rule = true} end
-                list[#list + 1] = {label = s.label, value = s.value,
-                                   action = "land_pick_ship", here = s.here,
-                                   raw = s.value ~= "spectate"}
-            end
+        elseif open == "ship" and land.panel then
+            -- The ship stop opens a panel rather than a list, and it is the
+            -- one stop that does: what it holds is one hull at a time with
+            -- its flight and its credits under it, which is not a row and
+            -- cannot be made into one. See `land_panel`.
+            panel, from = land.panel, ship_box
         else
             open = nil
         end
@@ -4372,7 +4605,19 @@ local function landing(land)
         -- own cell's on the rail, held to a measure a row can be read at and
         -- kept inside the window.
         local ptop, lx, lw, bottom = nil, g.kx, g.kw, nil
-        if list then
+        if panel then
+            -- The panel takes the stop's own width and climbs from the stop
+            -- to the top of the window, taking as much of that as it needs
+            -- and scrolling inside whatever it gets. On the rail it stands
+            -- over the fight like a list does.
+            if g.rail then
+                lw = math.max(from.w, (M.compact and 240 or 260) * F.scale)
+                lx = math.min(from.x, F.w - F.safe_r - 14 * F.scale - lw)
+                lx = math.max(lx, F.safe_l + 14 * F.scale)
+            end
+            bottom = from.y - 6 * F.scale
+            ptop = F.safe_t + 14 * F.scale
+        elseif list then
             local h = 10 * F.scale
             for _, r in ipairs(list) do
                 h = h + (r.rule and 9 * F.scale or drh)
@@ -4411,10 +4656,17 @@ local function landing(land)
         -- The list itself, its rows published above the stops (`pri` 1) and
         -- a screen-wide backdrop behind everything (`pri` -1), so a press
         -- outside it puts it away instead of pulling a trigger.
+        if panel then
+            hit(0, 0, F.w, F.h, "land_shut", nil, nil, -1)
+            ptop = land_panel(lx, lw, bottom, ptop, panel, drh)
+        end
         if list then
             hit(0, 0, F.w, F.h, "land_shut", nil, nil, -1)
             land_list(lx, lw, bottom, list, drh)
             -- And the name stands down when the panel climbs into it.
+            mark_down = ptop < g.mark_y + g.size
+        end
+        if panel and ptop then
             mark_down = ptop < g.mark_y + g.size
         end
     end
@@ -4439,8 +4691,22 @@ local LAND_WALK = {"land_account", "land_zone", "land_ship", "play_now"}
 -- are drawn, which is the order they were published in.
 function M.land_walk()
     local out = {}
-    if M.land_open == "account" or M.land_open == "zone"
-       or M.land_open == "ship" then
+    if M.land_open == "ship" then
+        -- The panel walks as the stop, the ship it is on, one stop a row,
+        -- and the way back to the hull's own build. The arrows either side
+        -- of a value are not stops of their own: a hand standing on a row
+        -- steps it with left and right, which is the rule the drawer's own
+        -- rows follow. See `M.land_side`.
+        for _, r in ipairs(M.hits) do
+            if r.action == "land_ship" or r.action == "land_pick_ship"
+               or r.action == "land_kit_row" or r.action == "land_kit_reset"
+            then
+                out[#out + 1] = r
+            end
+        end
+        return out
+    end
+    if M.land_open == "account" or M.land_open == "zone" then
         local stop = "land_" .. M.land_open
         local pick = "land_pick_" .. M.land_open
         for _, r in ipairs(M.hits) do
@@ -4457,6 +4723,25 @@ function M.land_walk()
         end
     end
     return out
+end
+
+-- What left or right does where the cursor is standing, as an action and a
+-- value for `land_act` to run, or nil where the two arrows mean nothing.
+--
+-- Only the ship panel answers. It is the one thing out here with rows that
+-- hold a value rather than rows that are a choice: a build is spent with the
+-- same two keys the drawer's own value rows are set with, and the roster is
+-- paged with them from the ship's own row. Everywhere else left and right
+-- are unread, which is why this returns nil rather than guessing.
+function M.land_side(dir)
+    if M.land_open ~= "ship" then return nil end
+    if M.land_sel == "land_pick_ship" then
+        return "land_page_ship", dir
+    end
+    if M.land_sel == "land_kit_row" then
+        return "land_kit_step", {slot = M.land_sel_value, dir = dir}
+    end
+    return nil
 end
 
 -- Where the cursor is standing in that walk, or nil for nowhere. Nowhere is
@@ -4896,7 +5181,6 @@ end
 -- it carries in the words the corner stack uses in flight. Nothing here is a
 -- control except the row itself: there is no arrow that adds a point, because
 -- there are no points. See docs/design/ships.md.
-local FLIGHT_ROWS = {"speed", "thrust", "turn", "energy", "recharge"}
 
 function pages.ships(v, x, y, w, h, focused)
     local ships, flair = {}, {}

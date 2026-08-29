@@ -313,6 +313,21 @@ do
     end
     check("the core exports a registration table", next(exported) ~= nil)
 
+    -- The ship panel's own dependencies, named rather than swept.
+    --
+    -- The sweep below finds `sim.name`, and the menu reaches the core through
+    -- a local alias instead, so nothing there would notice one of these
+    -- going. Every one is load bearing for the panel that spends a pilot's
+    -- credits: without the ceilings it draws steppers the arena refuses,
+    -- without the budget it lets a pilot spend forever, and without the
+    -- flight steps it offers rows that buy nothing.
+    for _, name in ipairs({"class_kit", "class_flight", "class_up_step",
+                           "slot_cap", "ship_kit", "KIT_CREDITS",
+                           "SLOT_COUNT", "SLOT_MOD0", "SLOT_CHARGE0",
+                           "SLOT_LEVEL0", "MOD_COUNT", "MAX_CHARGES"}) do
+        check("the core still exports " .. name, exported[name] == true)
+    end
+
     -- Set by the client rather than the core: `world.lua` hangs its own
     -- helpers off the same table, so a name it defines is a name that exists.
     local client_side = {}

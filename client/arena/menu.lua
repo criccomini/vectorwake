@@ -292,6 +292,10 @@ function M.save_identity()
         -- Which charge the first key throws, which is a preference about a
         -- keyboard and belongs beside the bindings.
         charge_flip = M.charge_flip,
+        -- One build a hull, written as slot and count pairs so a save that
+        -- outlives a change to the slot space carries nothing it cannot
+        -- read back. A hull the pilot has never edited is simply absent.
+        builds = M.builds,
         -- Only the keys that have been moved, so a stock keyboard writes
         -- nothing here at all and a control this build stops carrying does
         -- not leave a line behind it. See arena/binds.lua.
@@ -325,6 +329,32 @@ function M.load_identity()
         M.spectate = d.spectate == true
         M.help_prompt_seen = d.help_prompt_seen == true
         M.charge_flip = d.charge_flip == true
+        -- The builds, read back a slot at a time and refused where a number
+        -- does not belong. A save is a file on somebody's disk, and the slot
+        -- space it was written against may not be this build's: anything out
+        -- of range is dropped rather than trusted, and the arena fits what
+        -- survives to its own ceilings anyway.
+        M.builds = {}
+        if type(d.builds) == "table" then
+            -- Read straight rather than through `simn`, which this file
+            -- declares below here and which would be a nil global at this
+            -- point in it.
+            local core = _G.sim
+            local slots = (core and tonumber(core.SLOT_COUNT)) or 23
+            for cls, mine in pairs(d.builds) do
+                if type(cls) == "number" and HULLS[cls + 1]
+                   and type(mine) == "table" then
+                    local kept = {}
+                    for slot, n in pairs(mine) do
+                        if type(slot) == "number" and type(n) == "number"
+                           and slot >= 0 and slot < slots and n > 0 then
+                            kept[math.floor(slot)] = math.floor(n)
+                        end
+                    end
+                    M.builds[math.floor(cls)] = kept
+                end
+            end
+        end
         -- Whatever survives being read against this build's key list. A
         -- missing table is a stock keyboard, which is what `load` does with
         -- nothing.
@@ -463,25 +493,273 @@ end
 
 -- --- the roster ------------------------------------------------------------
 --
--- A ship is preconstructed: its flight row, its gun and bomb, and the profile
--- it wears all belong to the hull and are set by the zone. So the page that
--- used to build one is a page that picks one.
+-- A hull owns its flight row, its gun and its bomb; a pilot owns what those
+-- carry, bought with seven credits at one credit a step. So the page is both
+-- a picker and an editor, and the two are the same page because the thing
+-- being edited is the ship being picked.
 --
--- What stood here was the kit: twenty-three slots over a flat slot space, a
--- thirty point budget, an arena ceiling and an account's entitlements to
--- check them against, a shelf to buy the rungs from, a wallet to buy them
--- with, and named builds to save the result under. All of it is gone. What a
--- pilot chooses is a hull, and the hull is the ship.
---
--- The slot space itself stays, because that is still how the core writes down
--- what a ship carries. It is read here rather than written: the numbers
--- belong to the class now, and this file turns them into words.
+-- What stood here before this was thirty points against an arena ceiling and
+-- an account's entitlements, a shelf to buy rungs from, a wallet to buy them
+-- with, and named builds to save the result under. None of that comes back.
+-- There is nothing to own, nothing to buy, nothing to name and nothing to
+-- price: everything is reachable by everybody, and a step costs the same as
+-- every other step. See decision 100.
 
 -- What a hull flies with, over the flat slot space, or nil before the core
 -- has a settings table to read it from.
 local function class_kit(cls)
     local core = _G.sim
     return core and core.class_kit and core.class_kit(cls) or nil
+end
+
+-- How high one slot goes for a hull, which is where a stepper stops. The
+-- core's own answer, so a key that looks pressable is one the arena will act
+-- on. Zero before the core has settings, which reads as a row that cannot be
+-- stepped rather than one that steps into nothing.
+local function slot_cap(cls, slot)
+    local core = _G.sim
+    return core and core.slot_cap and core.slot_cap(cls, slot) or 0
+end
+
+-- What a pilot has to spend. One number, and the only one on this page.
+local function credits()
+    return simn("KIT_CREDITS", 7)
+end
+
+-- --- builds ----------------------------------------------------------------
+--
+-- One remembered build a hull, on this device, beside the wake and the key
+-- bindings rather than in an account.
+--
+-- That is the whole of the storage, and it is deliberate. A build is seven
+-- ones over a dozen slots: it is worth remembering so a pilot does not spend
+-- it twice, and it is not worth a table, a route, a migration and a login to
+-- carry it between machines. Nothing is owned, so there is nothing an
+-- account could be protecting.
+--
+-- Keyed by class, each a sparse map of slot to count. Absent means this hull
+-- has never been edited, which is not the same as an empty build: absent
+-- flies the hull's own profile and empty flies a stripped hull, and a pilot
+-- can ask for either.
+M.builds = {}
+
+-- What this hull flies, as the vector the wire wants: the pilot's build if
+-- they have one, otherwise the hull's own profile.
+function M.build_of(cls)
+    local out = {}
+    local n = simn("SLOT_COUNT", 23)
+    local mine = M.builds[cls]
+    local row = class_kit(cls)
+    for slot = 0, n - 1 do
+        if mine then
+            out[slot] = mine[slot] or 0
+        else
+            out[slot] = row and row[slot + 1] or 0
+        end
+    end
+    return out
+end
+
+-- What that build costs, which is the sum of it.
+function M.build_cost(cls)
+    local total = 0
+    for _, n in pairs(M.build_of(cls)) do total = total + n end
+    return total
+end
+
+-- Credits still in hand for this hull.
+function M.build_free(cls)
+    return math.max(0, credits() - M.build_cost(cls))
+end
+
+-- Whether this hull is flying something other than its own profile, which is
+-- the one thing the roster says about a build without opening it.
+function M.build_edited(cls)
+    return M.builds[cls] ~= nil
+end
+
+-- Step one slot, by one credit, in the direction asked.
+--
+-- Refused rather than clamped where it cannot happen: up with nothing left
+-- to spend, up at the slot's own ceiling, down at nothing. A refusal is what
+-- lets the drawing dim an arrow that would do nothing, since both ask this
+-- same question.
+--
+-- The first edit copies the hull's profile into a build, so a pilot who
+-- steps one slot keeps everything else the ship came with.
+function M.build_step(cls, slot, dir)
+    local have = M.build_of(cls)
+    local at = have[slot] or 0
+    local want = at + dir
+    if want < 0 then return false end
+    if dir > 0 then
+        if want > slot_cap(cls, slot) then return false end
+        if M.build_free(cls) < 1 then return false end
+    end
+    local mine = M.builds[cls]
+    if not mine then
+        mine = {}
+        for k, n in pairs(have) do
+            if n > 0 then mine[k] = n end
+        end
+        M.builds[cls] = mine
+    end
+    mine[slot] = want > 0 and want or nil
+    M.save_identity()
+    M.send_build(cls)
+    return true
+end
+
+-- Back to the hull's own profile, which is the whole of the build manager.
+function M.build_reset(cls)
+    if not M.builds[cls] then return false end
+    M.builds[cls] = nil
+    M.save_identity()
+    M.send_build(cls)
+    return true
+end
+
+-- Tell the arena what this pilot is flying.
+--
+-- Sent whenever a build moves and again with every hull pick, because the
+-- arena reads a build naming a hull you are not in as the hull change
+-- carrying it: one message says both, so a pilot never flies one tick of the
+-- wrong ship. Silent where there is no room to tell.
+function M.send_build(cls)
+    if not net.set_kit then return false end
+    return net.set_kit(cls, M.build_of(cls)) and true or false
+end
+
+-- What one step of each flight stat is worth to a hull, or nil. Zero means a
+-- row that would take a credit and change nothing.
+local function class_up_step(cls)
+    local core = _G.sim
+    return core and core.class_up_step and core.class_up_step(cls) or nil
+end
+
+-- What each slot does, in one sentence, for the row a pilot is standing on.
+--
+-- About the slot rather than about its current setting, so the sentence is
+-- true at every count and the page never has to rewrite it as a number
+-- moves. Kept beside the roster because it is the same kind of writing: what
+-- a thing is, said once, in the words a player would use.
+local SLOT_NOTES = {
+    spray = "How many rounds one pull of the trigger throws.",
+    gun_bounce = "Rounds come off walls instead of ending on them.",
+    gun_freeze = "What a round hits stops recharging for a moment.",
+    gun_prox = "Rounds go off near a hull rather than only on one.",
+    gun_shrapnel = "Each round ends by throwing fragments of its own.",
+    gun_push = "Rounds shove what they hit.",
+    bomb_bounce = "The bomb comes off walls instead of ending on them.",
+    bomb_freeze = "The blast stops whoever it catches recharging.",
+    bomb_prox = "A fuse, so a near miss counts.",
+    bomb_shrapnel = "Fragments thrown by the blast, each carrying the "
+        .. "gun's damage.",
+    bomb_push = "The blast shoves what it catches.",
+    bomb_spray = "How many bombs one throw puts in the air.",
+    repel = "A push that answers rounds already on their way to you.",
+    burst = "A ring of rounds thrown out around you.",
+    energy = "How deep the bar is that flying and firing spend.",
+    recharge = "How fast that bar fills again.",
+    speed = "How fast this hull will run.",
+    thrust = "How hard it accelerates.",
+    rotation = "How quickly it comes round.",
+    gun_level = "Which gun off this hull's own ladder it fires.",
+    bomb_level = "Which bomb off this hull's own ladder it throws.",
+}
+
+local UP_NAMES = {"energy", "recharge", "speed", "thrust", "rotation"}
+
+-- The rows the tuning panel draws for a hull: a section head, then a row per
+-- slot that hull can actually spend on, then the way back to its own row.
+--
+-- Which rows exist is the core's answer rather than a list written here. A
+-- slot whose ceiling is zero is a slot this hull cannot reach, so a hull with
+-- no bomb rack has no bomb section at all and nobody has to remember to hide
+-- one; a stat whose step is zero would take a credit and change nothing, so
+-- it is not offered either. That is what keeps this page honest for a zone
+-- nobody has written yet.
+--
+-- A row is a toggle where its ceiling is one and a stepper otherwise, which
+-- is the same rule said in the interface: on and off is a switch, and
+-- anything you can have more of counts.
+function M.tune_rows(cls)
+    local rows = {}
+    local mine = M.build_of(cls)
+    local trig = simn("TRIG_COUNT", 2)
+    local mods = simn("MOD_COUNT", 6)
+    local mod0 = simn("SLOT_MOD0", 7)
+    local ch0 = simn("SLOT_CHARGE0", 19)
+    local lvl0 = simn("SLOT_LEVEL0", 5)
+
+    -- One section's worth of rows, added under its own head only if it has
+    -- any. A hull with no bomb rack has no bomb rows, and what it must not
+    -- have is the word BOMB standing over nothing.
+    local function section(label, slots)
+        local made = {}
+        for _, it in ipairs(slots) do
+            local slot, label2, note = it[1], it[2], it[3]
+            local cap = slot_cap(cls, slot)
+            if cap >= 1 then
+                local at = mine[slot] or 0
+                made[#made + 1] = {
+                    kind = "slot", slot = slot, label = label2, note = note,
+                    value = at, cap = cap, toggle = cap == 1,
+                    -- What the arrows may do, asked the same way the act
+                    -- asks it, so an arrow drawn live is one that works.
+                    can_up = at < cap and M.build_free(cls) >= 1,
+                    can_down = at > 0,
+                }
+            end
+        end
+        if #made == 0 then return end
+        rows[#rows + 1] = {kind = "sect", label = label}
+        for _, r in ipairs(made) do rows[#rows + 1] = r end
+    end
+
+    local step = class_up_step(cls)
+    local flight = {}
+    for u = 1, #UP_NAMES do
+        if step and (step[u] or 0) ~= 0 then
+            flight[#flight + 1] = {u - 1, M.titled(UP_NAMES[u]),
+                                   SLOT_NOTES[UP_NAMES[u]]}
+        end
+    end
+    section("flight", flight)
+
+    for t = 0, trig - 1 do
+        local word = t == 0 and "gun" or "bomb"
+        -- The rung first: which weapon off the hull's own ladder, before
+        -- what that weapon carries.
+        local slots = {{lvl0 + t, "Rung", SLOT_NOTES[word .. "_level"]}}
+        for m = 0, mods - 1 do
+            local mod = pal.MODS[m + 1]
+            local name = mod and (mod.title or mod.name)
+                or ("add-on " .. m)
+            slots[#slots + 1] = {mod0 + t * mods + m, M.titled(name),
+                                 SLOT_NOTES[word .. "_"
+                                            .. (mod and mod.name or m)]}
+        end
+        section(word, slots)
+    end
+
+    local rack = {}
+    for k = 0, simn("MAX_CHARGES", 4) - 1 do
+        local c = pal.CHARGES[k + 1]
+        rack[#rack + 1] = {ch0 + k, M.titled(c and c.name or ("charge " .. k)),
+                           SLOT_NOTES[c and c.name or ""]}
+    end
+    section("rack", rack)
+
+    rows[#rows + 1] = {kind = "reset", label = "Reset",
+                       on = M.build_edited(cls)}
+    return rows
+end
+
+-- A slot's name as the page says it: the roster's own word, capitalized,
+-- because these are the names of weapons rather than sentences about them.
+function M.titled(word)
+    return (word:gsub("^%l", string.upper))
 end
 
 -- A hull's flight, in the core's own units, as five numbers.
@@ -521,56 +799,6 @@ local function flight_bars(cls)
         out[i] = span > 0 and ((mine[i] - lo[i]) / span) or 1
     end
     return out
-end
-
--- What a hull carries, as short words, in the order a reader meets them:
--- the gun's add-ons, then the bomb's, then the rack.
---
--- Only what it actually holds. A list naming every slot with a zero beside
--- it is the old shelf again, and there is no shelf.
-local function carried(cls)
-    local kit = class_kit(cls)
-    if not kit then return {} end
-    local up = simn("UP_COUNT", 5)
-    local trig = simn("TRIG_COUNT", 2)
-    local mods = simn("MOD_COUNT", 6)
-    local mod0 = simn("SLOT_MOD0", up + trig)
-    local ch0 = simn("SLOT_CHARGE0", up + trig + trig * mods)
-    local out = {}
-    for t = 0, trig - 1 do
-        for m = 0, mods - 1 do
-            local n = kit[mod0 + t * mods + m + 1] or 0
-            if n > 0 then
-                local mod = pal.MODS[m + 1]
-                local word = (t == 0 and "gun " or "bomb ")
-                    .. (mod and mod.name or ("add-on " .. m))
-                -- Spray is a count of rounds and reads as one. Everything
-                -- else is a rung of something and reads as a depth.
-                if m == simn("MOD_MULTI", 0) then
-                    word = word .. " " .. (n + 1)
-                elseif n > 1 then
-                    word = word .. " " .. n
-                end
-                out[#out + 1] = word
-            end
-        end
-    end
-    for k = 0, simn("MAX_CHARGES", 4) - 1 do
-        local n = kit[ch0 + k + 1] or 0
-        if n > 0 then
-            local c = pal.CHARGES[k + 1]
-            out[#out + 1] = (c and c.name or ("charge " .. k)) .. " " .. n
-        end
-    end
-    return out
-end
-
--- Whether this hull has a bomb rack at all. One in the roster does not, and a
--- page that said nothing about it would read as a page that forgot.
-local function has_rack(cls)
-    local core = _G.sim
-    if not (core and core.has_trigger) then return true end
-    return core.has_trigger(cls, simn("TRIG_BOMB", 1)) ~= false
 end
 
 -- Which key a carried charge lands on: the first kind a kit holds is on the
@@ -615,76 +843,25 @@ end
 
 
 
--- The roster, one row a hull, and the row is the ship.
+-- What a ship looks like and which key throws which charge: the two things
+-- a pilot decides that are not about how a ship fights.
 --
--- Every hull the game has, in the core's own order, with the one being flown
--- lit. Pressing a row picks that ship, which is the whole of what this page
--- does: a hull carries its own flight row, its own gun and bomb and its own
--- profile, so choosing it is choosing all of them at once.
---
--- The row is also the reading. Its flight sits under its name as five bars
--- against the rest of the roster, and what it carries is spelled out beside
--- them, so seven ships are one page rather than seven pages. See
--- docs/design/ships.md.
-local function ship_rows()
+-- They stood under the roster on the drawer's ship page while there was one.
+-- The roster is the landing's ship stop now, and these did not go with it:
+-- the wake is cosmetic and the charge order is a preference about a keyboard,
+-- and a panel a player opens to spend credits is not where either belongs.
+-- Settings is what a preference has always been for.
+local function flair_rows()
     local rows = {}
-    for i, h in ipairs(HULLS) do
-        local cls = i - 1
-        rows[#rows + 1] = {
-            label = h[1], verbatim = true, group = "ships", sect = "ships",
-            -- The silhouette in a word, and the shape it presents in a
-            -- sentence under it. Both are about the one thing a player can
-            -- see from the cockpit.
-            detail = h[2], note = h[3],
-            act = "hull", value = cls,
-            -- Lit where it is the ship you fly, the way one field lights a
-            -- row everywhere else in this menu.
-            choice = function()
-                return (not M.spectating() and M.class == cls) and 1 or 0, 1
-            end,
-            -- What the drawing needs: the hull to draw, where it sits on the
-            -- five flight rows, and what it carries.
-            ship = true, hull = cls,
-            bars = flight_bars(cls), carries = carried(cls),
-            rack = has_rack(cls),
-        }
-    end
-    -- Sitting out is the eighth thing you can be flying, so it is the eighth
-    -- row rather than a control somewhere else. Picking a hull is already how
-    -- a pilot says what they want to be, and "nothing, I am watching" is an
-    -- answer to that question.
-    --
-    -- On the home screen too, where this page is what you will arrive as
-    -- rather than what you are. Arriving to watch is a thing the wire has
-    -- always been able to say, so picking it here carries into the join
-    -- rather than waiting for a game to exist.
     rows[#rows + 1] = {
-        label = "spectate", verbatim = true, group = "ships", sect = "ships",
-        detail = "no hull", note = "watch the room from nobody's cockpit",
-        act = "hull",
-        choice = function() return M.spectating() and 1 or 0, 1 end,
-        -- The helmet rather than a ship: the row is about the pilot rather
-        -- than about anything they are flying.
-        ship = true, figure = "pilot",
-    }
-    -- Flair: what the ship looks like, apart from what it does. A wake is the
-    -- one thing on this page that is still a pilot's own choice, which is why
-    -- it keeps a section of its own under the roster.
-    rows[#rows + 1] = {
-        label = "wake", verbatim = true, group = "flair", sect = "flair",
+        label = "wake", sect = "ship",
+        help = "The trail this ship leaves, as your client draws it.",
         detail = M.WAKES[M.wake + 1],
         act = "wake",
         choice = function() return M.wake + 1, #M.WAKES end,
     }
-    -- And which of the two charge keys throws which kind, where the ship you
-    -- fly carries two. A preference about a keyboard rather than a fact about
-    -- a ship, so it sits with the wake rather than with the roster, and it is
-    -- absent on a hull that carries one kind or none, where there is nothing
-    -- to trade.
-    --
-    -- It was a box on the charge's own row while the page was a kit being
-    -- built. There are no charge rows now, and this is the one thing that
-    -- page carried which is still a pilot's to decide.
+    -- Absent on a hull carrying one kind of charge or none, where there is
+    -- nothing to trade.
     local order = charge_order()
     if #order > 1 then
         local names = {}
@@ -697,8 +874,9 @@ local function ship_rows()
             names[#names + 1] = c and c.name or ("charge " .. k)
         end
         rows[#rows + 1] = {
-            label = "charge keys", verbatim = true, group = "flair",
-            sect = "flair", detail = names[1] .. " first",
+            label = "charge keys", sect = "ship",
+            help = "Which of the two keys throws which kind.",
+            detail = names[1] .. " first",
             act = "swap_charges",
             choice = function() return M.charge_flip and 2 or 1, 2 end,
         }
@@ -716,6 +894,59 @@ function M.landing_ship()
     if M.spectating() then return "spectate" end
     local h = HULLS[(M.class or 0) + 1]
     return h and h[1] or "ship"
+end
+
+-- Everything the ship stop's panel draws, for one hull.
+--
+-- One hull at a time rather than the seven as a list. A list of seven with
+-- five bars and a build apiece is a page wearing a list's clothes, and the
+-- thing a player is actually doing here is looking at one ship and deciding
+-- whether to fly it. Left and right walk the roster; what they walk is a
+-- ship, its flight against the rest of the roster, the credits it has spent,
+-- and the rows that spend them. See decision 100.
+--
+-- Sitting out is the last page, past the roster, and it carries no bars and
+-- no rows because there is no ship to say anything about.
+function M.ship_panel(at)
+    local n = #HULLS
+    at = at or (M.spectating() and n or (M.class or 0))
+    if at < 0 then at = n end
+    if at > n then at = 0 end
+    if at >= n then
+        return {at = at, pages = n + 1, watching = true, label = "spectate",
+                note = "watch the room from nobody's cockpit"}
+    end
+    local h = HULLS[at + 1]
+    return {
+        at = at, pages = n + 1, watching = false, class = at,
+        label = h[1], detail = h[2],
+        bars = flight_bars(at),
+        -- The purse, as two numbers the drawing turns into chips.
+        free = M.build_free(at), credits = credits(),
+        rows = M.tune_rows(at),
+        -- Whether this is the ship you are flying, which the panel says by
+        -- lighting its name rather than with a word.
+        mine = not M.spectating() and M.class == at,
+    }
+end
+
+-- Which page the panel opens on: the ship you are flying, or sitting out
+-- where that is what you have chosen. The one place that default is written
+-- down, so the drawing and the walking agree about where a fresh panel is.
+function M.panel_home()
+    if M.spectating() then return #HULLS end
+    return M.class or 0
+end
+
+-- Step the panel one ship, wrapping at either end, and answer where it
+-- landed. Nothing is chosen by walking: a pilot looking at an Anvil has not
+-- climbed into one until they press.
+function M.ship_page(at, dir)
+    local n = #HULLS
+    local to = (at or 0) + dir
+    if to < 0 then to = n end
+    if to > n then to = 0 end
+    return to
 end
 
 -- The rows that stop opens: every ship in the roster, and sitting out as the
@@ -790,6 +1021,12 @@ function M.pick_profile(at)
     M.spectate = false
     M.pending = at
     M.save_identity()
+    -- And what to fly it with, in the same breath. The arena reads a build
+    -- naming a hull you are not in as the hull change carrying it, so this
+    -- one message is the whole of picking a ship: without it a pilot would
+    -- arrive on the hull's own profile and be moved onto their own build a
+    -- tick later, which is a flicker on every pick.
+    M.send_build(at)
     return "ship"
 end
 
@@ -869,24 +1106,11 @@ local NODES = {
                                    return net.my_team_name()
                                end, go = "teams"}
         end
-        -- One choice made in one place. It used to be two, a hull and then
-        -- the points spent inside it; a hull is the whole ship now, so there
-        -- is one thing to pick and one page to pick it on.
-        --
-        -- Off the row while a match is being flown. Between matches the hull
-        -- is not locked, and that is the one window a pilot has to change it
-        -- without leaving the room; it is gone again the moment the next
-        -- whistle goes, which is the rule rather than a hurry we invented: a
-        -- ship is settled before a match, never during one.
-        if not M.flying() or M.between() then
-            rows[#rows + 1] = {label = "ship", icon = "ship",
-                               detail = function()
-                                   if M.spectating() then
-                                       return "spectating"
-                                   end
-                                   return HULLS[M.class + 1][1]
-                               end, go = "hangar"}
-        end
+        -- No ship row. Picking a ship and spending its credits are the
+        -- landing's ship stop, which is the only roster there is now: a tab
+        -- and a stop offering the same seven hulls was the drawer saying a
+        -- second time what the screen in front of it already said. See
+        -- decision 100.
         -- The way back out of a room. At home there is nothing to leave, and
         -- nothing stands in this slot: the account used to, and the landing's
         -- account stop is where that lives now. See decision 99.
@@ -929,14 +1153,6 @@ local NODES = {
     end},
 
     -- The roster: one row a hull, and the row is the ship.
-    --
-    -- Four pages stood behind this one and all four were about a kit. The
-    -- shelf that sold rungs, the library of saved builds, the field that
-    -- named a new one, and the reading that explained what thirty points
-    -- were. None of them survived: a hull is a whole ship, so the row says
-    -- the whole of it and there is nothing left to stand behind the page.
-    hangar = {rows = ship_rows},
-
     teams = {rows = team_rows},
 
     -- Settings carry a `choice`, where a value sits along its range, as well
@@ -1006,6 +1222,11 @@ local NODES = {
         rows[#rows + 1] = {label = "about", detail = "this build",
                            go = "about",
                            help = "Build, connection, and device details."}
+        -- And the two preferences that used to sit under the roster: the
+        -- wake and which key throws which charge. Both are about a look and
+        -- a keyboard rather than about how a ship fights, so neither went to
+        -- the panel that replaced the ship page. See decision 100.
+        for _, r in ipairs(flair_rows()) do rows[#rows + 1] = r end
         return rows
     end},
 
@@ -1891,10 +2112,9 @@ function M.tick(dt)
     -- the state is let go rather than in each of the four ways out.
     if M.arming and (M.at() ~= "controls" or M.ask) then M.arming = nil end
     -- A page the tab row no longer carries is a page you are no longer in.
-    -- The hangar is the one that comes and goes: it opens for the twenty five
-    -- seconds between matches, and a pilot still standing in it when the
-    -- whistle goes would be picking a hull for a match already running, which
-    -- is exactly what locking the hull for a match means not doing.
+    -- Nothing comes and goes on it now that the ship page is gone: the
+    -- roster and its credits are the landing's, where a whistle cannot
+    -- arrive underneath somebody.
     if #M.stack > 1 then
         local nd2 = NODES[M.stack[2]]
         local top = rows_of(NODES.root)
@@ -1996,8 +2216,8 @@ function M.view()
                  note = M.note, closable = true,
                  -- Which page this is, by name. The drawing keeps a scroll
                  -- position and has to know when it is looking at something
-                 -- else: carried across, opening the hangar from the bottom
-                 -- of the ship page would open it halfway down.
+                 -- else: carried across, one page would open halfway down
+                 -- because another had been scrolled there.
                  at = M.at(),
                  -- Whether there is a game behind the panel, which is what
                  -- decides where the block sits: clear of the corner stack
@@ -2031,12 +2251,6 @@ function M.view()
     -- ship, with its flight against the rest of the roster and what it
     -- carries drawn under its name, so there is nothing behind it to open.
     --
-    -- `M.showing()` rather than `M.at()`, which is the fix for a page that
-    -- looked like two different pages depending on how you got to it: at the
-    -- root the stage is a preview of the tab under the cursor, and this reads
-    -- the page you are standing in, so resting on Ship showed a column of
-    -- names and entering it showed the roster. A preview is the page.
-    if M.showing() == "hangar" then out.ships = true end
     -- No roster under the games. The room the menu stands over used to draw
     -- itself here, first as a column beside the list and then under it, on the
     -- argument that a player choosing where to go wants to know who is where.
@@ -2091,11 +2305,6 @@ function M.view()
             for i, r in ipairs(rows_of(nd2)) do
                 out.rows[i] = view_row(r, i)
             end
-            -- A preview of a page is that page, not a different drawing of
-            -- the same rows: the ship stop previews as the roster itself,
-            -- because what the tab under the cursor leads to is the thing
-            -- worth showing.
-            if go == "hangar" then out.ships_preview = true end
             -- Nothing in the preview is selected, because the cursor is on
             -- the rail. `sel` at this level counts rail stops, and left where
             -- it was it lit whichever stage row happened to share that

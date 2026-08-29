@@ -441,6 +441,27 @@ int ShipKit(lua_State* L) {
     return 1;
 }
 
+// What one step of each flight stat is worth to this hull.
+//
+// Asked because a step of zero buys nothing, and a row offering a credit for
+// nothing is a lie the page would tell every time it drew. The shipped roster
+// steps none of them: a hull's flight is its own row, floor equal to ceiling.
+// A zone that writes a climbing hull gets the rows back without anybody
+// editing this.
+int ClassUpStep(lua_State* L) {
+    int cls = (int)luaL_checkinteger(L, 1);
+    if (cls < 0 || cls >= g_cfg.class_count) { lua_pushnil(L); return 1; }
+    const sim_ship_class* c = &g_cfg.classes[cls];
+    lua_createtable(L, SIM_UP_COUNT, 0);
+    const int32_t step[SIM_UP_COUNT] = {c->up_energy, c->up_recharge,
+                                        c->up_speed, c->up_thrust, c->up_rot};
+    for (int k = 0; k < SIM_UP_COUNT; k++) {
+        lua_pushnumber(L, step[k]);
+        lua_rawseti(L, -2, k + 1);
+    }
+    return 1;
+}
+
 // How high one slot goes for a hull, which is where a stepper stops.
 //
 // The core's own answer rather than one worked out here: a ceiling drawn from
@@ -1238,6 +1259,7 @@ const luaL_reg kFunctions[] = {
     {"ship_up", ShipUp},
     {"ship_kit", ShipKit},
     {"slot_cap", SlotCap},
+    {"class_up_step", ClassUpStep},
     {"class_kit", ClassKit},
     {"class_flight", ClassFlight},
     {"hull_extent", HullExtent},

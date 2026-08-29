@@ -176,7 +176,12 @@ M.MODS = {
     -- what the difference bought.
     {name = "spray",    short = "SPRAY"},
     {name = "bounce",   short = "BOUNCE"},
-    {name = "prox",     short = "PROX", long = "proximity detonation"},
+    -- `title` is the name a page sets over a control, where `name` is the
+    -- word a sentence uses and `long` explains. Only this one differs: a row
+    -- reading PROX is a row a player has to be taught, and one reading
+    -- PROXIMITY DETONATION teaches itself.
+    {name = "prox",     short = "PROX", title = "proximity detonation",
+     long = "proximity detonation"},
     {name = "shrapnel", short = "SHRAPNEL"},
     {name = "freeze",   short = "FREEZE"},
     -- Push, not repel. The core calls this one `SIM_MOD_PUSH` and the

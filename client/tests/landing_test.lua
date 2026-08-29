@@ -129,10 +129,21 @@ local LAND = {
          format = "4v4", here = true},
         {label = "Chaos", zone = "chaos", live = true, format = "1v1"},
     },
-    ships = {
-        {label = "Gunner", value = 1, here = true},
-        {label = "Bomber", value = 2},
-        {label = "spectate", value = "spectate"},
+    -- One hull at a time, as `menu.ship_panel` builds it: the ship, where it
+    -- sits on the five flight rows, the credits spent on it, and the rows
+    -- that spend them.
+    panel = {
+        at = 1, pages = 8, class = 1, label = "Wedge", mine = true,
+        bars = {0.2, 0.14, 0.09, 0.71, 0.0},
+        free = 2, credits = 7,
+        rows = {
+            {kind = "sect", label = "gun"},
+            {kind = "slot", slot = 7, label = "Spray", value = 2, cap = 5,
+             can_up = true, can_down = true},
+            {kind = "slot", slot = 8, label = "Bounce", value = 0, cap = 1,
+             toggle = true, can_up = true, can_down = false},
+            {kind = "reset", label = "Reset", on = true},
+        },
     },
     -- A guest's account list, as `menu.account_rows` builds it: the offer
     -- with what it buys, the reroll, a rule, and the way onto an account
@@ -514,27 +525,58 @@ do
     end
 
     frame(1440, 810, {land_open = "ship"})
-    check("the ship list is the builds by name", word("Bomber") ~= nil)
-    -- Sitting out is the one row that is not a name: it is a thing to be,
-    -- said in the interface's own voice, so it wears the interface's case.
-    check("with sitting out as an answer", word("SPECTATE") ~= nil)
-    local spec
+    -- The panel names the ship it is showing, and the rows that spend its
+    -- credits, rather than seven names in a column.
+    check("the ship panel names the hull it is on", word("Wedge") ~= nil)
+    check("and the rows that spend its credits",
+          word("Spray") ~= nil and word("Reset") ~= nil)
+    check("under the section they belong to", word("GUN") ~= nil)
+    -- Both arrows publish a press, so a hand on a pointer and a hand on a
+    -- pad walk the roster the same way.
+    local left, right = nil, nil
     for _, r in ipairs(ui.hits) do
-        if r.action == "land_pick_ship" and r.value == "spectate" then
-            spec = r
+        if r.action == "land_page_ship" then
+            if r.value == -1 then left = r elseif r.value == 1 then right = r end
         end
     end
-    check("and sitting out can be pressed", spec ~= nil)
-    -- No hull is named anywhere in it: which hull a build rides is the
-    -- hangar's business.
-    check("and no hull is named in it",
-          word("APEX") == nil and word("WEDGE") == nil)
+    check("the pager walks either way", left ~= nil and right ~= nil)
+    -- A step publishes the slot and the direction, which is the whole of
+    -- what spending a credit is.
+    local step
+    for _, r in ipairs(ui.hits) do
+        if r.action == "land_kit_step" and type(r.value) == "table"
+           and r.value.slot == 7 and r.value.dir == 1 then
+            step = r
+        end
+    end
+    check("and a credit can be spent on a row", step ~= nil)
+    -- A step that cannot happen has no press behind it, so an arrow drawn
+    -- dim is one nothing lands on.
+    local down_off
+    for _, r in ipairs(ui.hits) do
+        if r.action == "land_kit_step" and type(r.value) == "table"
+           and r.value.slot == 8 and r.value.dir == -1 then
+            down_off = r
+        end
+    end
+    check("and a switch that is already off cannot be turned off",
+          down_off == nil)
+    -- The hull's name is the press that flies it, so a pilot who has paged
+    -- to a ship is one press from arriving in it.
+    local flyable
+    for _, r in ipairs(ui.hits) do
+        if r.action == "land_pick_ship" then flyable = r end
+    end
+    check("and the ship it is on can be flown", flyable ~= nil)
 
-    -- The stop follows its list: a pilot who is sitting out reads SPECTATE
-    -- rather than a lowercase word left over from the row it came off.
+    -- Sitting out is the page past the roster, and carries no rows because
+    -- there is no ship to say anything about.
     frame(1440, 810, {land = {name = LAND.name, zone = LAND.zone,
                               ship = "spectate", watching = true,
-                              zones = LAND.zones, ships = LAND.ships}})
+                              zones = LAND.zones,
+                              panel = {at = 7, pages = 8, watching = true,
+                                       label = "spectate",
+                                       note = "watch the room"}}})
     check("the ship stop says sitting out in the interface's own case",
           word("SPECTATE") ~= nil and word("spectate") == nil)
 end
@@ -840,19 +882,35 @@ do
     check("enter in an open list never reaches the key",
           ui.land_go() == nil, tostring(ui.land_go()))
 
-    -- The ship list walks the same way, sitting out included: it is a row
-    -- like the rest, held apart by a rule that is not one.
+    -- The ship panel walks its stop, the ship it is on, one stop a row, and
+    -- the way back to the hull's own build. The arrows either side of a
+    -- value are not stops of their own.
     frame(1440, 810, {land_open = "ship"})
-    check("the ship list walks its builds and sitting out",
+    check("the ship panel walks its ship and its rows",
           walk_of()
-          == "land_ship land_pick_ship land_pick_ship land_pick_ship",
+          == "land_ship land_pick_ship land_kit_row land_kit_row"
+             .. " land_kit_reset",
           walk_of())
-    ui.land_sel, ui.land_sel_value = "land_ship", nil
-    step(1, 3)
-    local sact, svalue = ui.land_go()
-    check("and enter on the last row sits out",
-          sact == "land_pick_ship" and svalue == "spectate",
-          tostring(sact) .. " " .. tostring(svalue))
+    ui.land_sel, ui.land_sel_value = "land_pick_ship", 1
+    -- Left and right page the roster from the ship's own row.
+    local pact, pvalue = ui.land_side(1)
+    check("right off the ship pages the roster",
+          pact == "land_page_ship" and pvalue == 1,
+          tostring(pact) .. " " .. tostring(pvalue))
+    -- And spend a credit from any other row, which is the same two keys
+    -- doing the same kind of work one row down.
+    ui.land_sel, ui.land_sel_value = "land_kit_row", 7
+    local kact, kvalue = ui.land_side(1)
+    check("and right on a row spends a credit on it",
+          kact == "land_kit_step" and type(kvalue) == "table"
+          and kvalue.slot == 7 and kvalue.dir == 1)
+    check("while enter on a row does nothing on its own",
+          select(1, ui.land_go()) == "land_kit_row")
+    -- Nothing answers left and right anywhere else out here.
+    ui.land_open = "zone"
+    check("and the other stops leave both arrows unread",
+          ui.land_side(1) == nil)
+    ui.land_open = "ship"
 end
 
 -- --- and both hands arrive at the same place --------------------------------
@@ -894,42 +952,49 @@ do
           #missing == 0, "no branch for " .. table.concat(missing, ", "))
 end
 
--- --- and a rail's list opens from its own cell ------------------------------
+-- --- and a rail's panel opens from its own cell ----------------------------
 --
--- Lying down changes where a list hangs from. Down the column it drops out of
--- a stop the key's own width and covers the stops above it; along the rail it
--- opens over the fight from a cell 120 points wide, held to a measure a build
--- name can be read at, and there is nothing above the open cell to cover.
+-- Lying down changes where the panel hangs from and how much room it has.
+-- Down the column it drops out of a stop the key's own width; along the rail
+-- it opens over the fight from a cell, climbing to the top of the window and
+-- scrolling inside whatever that gives it.
+--
+-- The same panel either way, which is the point: a landscape phone had a
+-- version of its own for a while, three sections side by side, and that is
+-- two layouts to learn and two to keep working for one panel that fits a
+-- scroll.
 do
     frame(844, 390, {land_open = "ship"})
     local cell, key = box("land_ship"), box("play_now")
+    local pick = box("land_pick_ship")
+    check("a rail's panel carries the ship it is on", pick ~= nil)
+    if cell and pick then
+        check("the panel hangs off the cell it belongs to",
+              pick.x >= cell.x - 1.5,
+              string.format("panel at %.0f, cell at %.0f", pick.x, cell.x))
+        check("and opens upward, clear of the band",
+              pick.y + pick.h <= cell.y,
+              string.format("panel ends %.0f, cell top %.0f",
+                            pick.y + pick.h, cell.y))
+        check("and stays inside the window",
+              pick.x + pick.w <= 844)
+    end
+    -- A short window cannot hold the whole panel, so what it does instead is
+    -- scroll: every row it draws is a whole one, drawn inside the frame.
     local rows = {}
     for _, r in ipairs(ui.hits) do
-        if r.action == "land_pick_ship" then rows[#rows + 1] = r end
+        if r.action == "land_kit_row" then rows[#rows + 1] = r end
     end
-    check("a rail's list has the builds in it", #rows >= 3,
+    check("and draws the rows it has room for", #rows >= 1,
           #rows .. " rows")
-    if cell and #rows > 0 then
-        local top, foot = rows[1], rows[#rows]
-        check("the list hangs off the cell it belongs to",
-              math.abs(top.x - cell.x) < 1.5,
-              string.format("list at %.0f, cell at %.0f", top.x, cell.x))
-        check("and opens upward, clear of the band",
-              foot.y + foot.h <= cell.y,
-              string.format("list ends %.0f, cell top %.0f",
-                            foot.y + foot.h, cell.y))
-        check("and is wider than the cell, a name being the thing to read",
-              top.w > cell.w and top.x + top.w <= 844,
-              string.format("%.0f wide at %.0f of 844", top.w, top.x))
-        check("and every row is pressable where it is drawn",
-              press(top.x + 5, top.y + top.h / 2) == "land_pick_ship")
-    end
     check("the stops beside it stay on the rail",
           box("land_account") ~= nil and box("land_zone") ~= nil,
           "a stop stood down with nothing over it")
     check("and the key still answers through it",
           key and press(key.x + key.w / 2, key.y + key.h / 2) == "play_now")
-    check("and open sky still puts it away", press(400, 100) == "land_shut")
+    -- Open sky is whatever the panel does not cover, which on a rail is the
+    -- fight to either side of it.
+    check("and open sky still puts it away", press(60, 100) == "land_shut")
 end
 
 -- --- a phone's top row -----------------------------------------------------

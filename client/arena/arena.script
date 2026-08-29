@@ -1630,12 +1630,19 @@ function update(self, dt)
         -- moves and enter presses what it is on, which with nothing lit is
         -- still the key. See `ui.land_step` and `ui.land_go`.
         --
-        -- Left and right are not read. There is no tab row out here and no
-        -- row with a value to set, which is the work those two do inside the
-        -- panel.
+        -- Left and right are read only inside the ship panel, which is the
+        -- one thing out here with rows that hold a value: they page the
+        -- roster from the ship's own row and spend a credit from any other.
+        -- `ui.land_side` is what knows which, so this stays one branch.
         local dir = (tapped[hash("k_down")] and 1)
             or (tapped[hash("k_up")] and -1) or 0
         if dir ~= 0 and ui.land_step(dir) then sfx.ui("ui_move") end
+        local side = (tapped[hash("k_right")] and 1)
+            or (tapped[hash("k_left")] and -1) or 0
+        if side ~= 0 then
+            local action, value = ui.land_side(side)
+            if action then land_act(self, action, value) end
+        end
         if tapped[hash("select")] then
             local action, value = ui.land_go()
             if action then land_act(self, action, value) end
@@ -2200,7 +2207,12 @@ function update(self, dt)
                     -- that is the interface's own word rather than a name,
                     -- and a name is quoted rather than set. See `land_stop`.
                     watching = menu.spectating(),
-                    zones = zones, ships = menu.landing_ships(),
+                    zones = zones,
+                    -- What the ship stop opens: one hull with its flight and
+                    -- its credits, paged left and right. `land_ship_at` is
+                    -- which page is up, which is the hull being flown until
+                    -- somebody walks off it.
+                    panel = menu.ship_panel(self.land_ship_at),
                     -- What the account stop opens, and the dot it wears
                     -- while this guest has a rated game a lost account would
                     -- cost them. The drawer says the same thing in words on
@@ -2971,6 +2983,13 @@ function land_act(self, action, value)
             land_shut()
         else
             ui.land_open = which
+            -- A stop opens where the pilot is, not where they last read to:
+            -- the ship panel starts on the ship being flown and at the top
+            -- of its rows.
+            if which == "ship" then
+                self.land_ship_at = menu.panel_home()
+                ui.land_scroll = 0
+            end
         end
         sfx.ui("ui_move")
         return true
@@ -2996,9 +3015,44 @@ function land_act(self, action, value)
         sfx.ui("ui_go")
         return true
     end
-    -- A build picked from the ship stop's list, or sitting out. Both run the
-    -- acts the drawer's own rows run, so the choice reaches the account and
-    -- the join exactly as it would from there.
+    -- Walking the ship stop's panel: one hull along the roster, wrapping at
+    -- either end. Nothing is chosen by walking, so a pilot reading through
+    -- the seven is not changing what they will fly until they press.
+    if action == "land_page_ship" then
+        self.land_ship_at = menu.ship_page(
+            self.land_ship_at or menu.panel_home(), value or 1)
+        -- A different ship is a different set of rows, so the panel opens at
+        -- the top of them rather than wherever the last one was read to.
+        ui.land_scroll = 0
+        sfx.ui("ui_move")
+        return true
+    end
+    -- Standing on a row is not doing anything to it: the row is where a hand
+    -- on a pad stands so that left and right can spend, and enter on it does
+    -- nothing rather than guessing which of the two was meant.
+    if action == "land_kit_row" then return true end
+    -- Spending a credit, or handing one back. The menu holds the build and
+    -- tells the arena about it; a step that cannot happen was drawn dim and
+    -- has no hit box, so this does not have to check.
+    if action == "land_kit_step" then
+        local at = self.land_ship_at or menu.panel_home()
+        if type(value) == "table" and menu.build_step(at, value.slot,
+                                                      value.dir) then
+            sfx.ui("ui_go")
+        end
+        return true
+    end
+    -- And back to the hull's own row, which is the whole of the build
+    -- manager: there is nothing to name and nothing to save.
+    if action == "land_kit_reset" then
+        if menu.build_reset(self.land_ship_at or menu.panel_home()) then
+            sfx.ui("ui_go")
+        end
+        return true
+    end
+    -- A ship picked from that panel, or sitting out. Both run the acts the
+    -- drawer's own rows ran, so the choice reaches the account and the join
+    -- exactly as it would have from there.
     if action == "land_pick_ship" then
         land_shut()
         if value == "spectate" then
