@@ -5083,6 +5083,40 @@ static void test_kits_and_matches(const sim_settings *base) {
               "and arrives carrying what they spent on it");
     }
 
+    /* The ceilings are the balance lever, so what they hold has to be
+     * written down: a step cannot be made dearer, and a slot left open to
+     * the budget alone is a slot every pilot spends everything on.
+     *
+     * `calibrate builds` found both of these by flying them. Seven of one
+     * charge beat every hull's own row on every hull, and an add-on that
+     * belongs on a bomb wins outright on a gun. */
+    {
+        sim_settings kc = *base;
+        CHECK(sim_slot_cap(&kc, 0, SIM_SLOT_CHARGE(SIM_CHARGE_REPEL))
+                  < SIM_KIT_CREDITS,
+              "a rack is capped below the budget rather than by it");
+        CHECK(sim_slot_cap(&kc, 0, SIM_SLOT_CHARGE(SIM_CHARGE_BURST))
+                  < SIM_KIT_CREDITS,
+              "both kinds of it");
+        CHECK(sim_slot_cap(&kc, 0, SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_PROX))
+                  == 0,
+              "a gun carries no proximity fuse");
+        CHECK(sim_slot_cap(&kc, 0,
+                           SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_SHRAPNEL)) == 0,
+              "and no shrapnel");
+        CHECK(sim_slot_cap(&kc, 0, SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_PROX))
+                  > 0,
+              "while a bomb carries both");
+        /* And a ceiling is a ceiling however it is asked for: spending past
+         * one is fitted down rather than refused. */
+        uint8_t over[SIM_SLOT_COUNT];
+        memset(over, 0, sizeof over);
+        over[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_PROX)] = 3;
+        sim_kit_fit(&kc, 0, over);
+        CHECK(sim_kit_cost(over) == 0,
+              "a build spending on a shut slot spends nothing");
+    }
+
     /* Every hull the game ships is affordable on the budget, which is the
      * claim the roster makes and the one thing that would quietly stop being
      * true if somebody wrote a richer profile. */
@@ -5097,6 +5131,13 @@ static void test_kits_and_matches(const sim_settings *base) {
             sim_kit_default(&kc, c, fitted);
             CHECK(memcmp(row, fitted, sizeof row) == 0,
                   "so fitting one changes nothing about it");
+            /* Which also says the ceilings are not below the roster: a cap
+             * that cut a shipped hull's own row would be a hull nobody can
+             * fly as designed. */
+            for (int k = 0; k < SIM_SLOT_COUNT; k++) {
+                CHECK(row[k] <= sim_slot_cap(&kc, c, (uint8_t)k),
+                      "and no hull ships above a ceiling");
+            }
         }
     }
 

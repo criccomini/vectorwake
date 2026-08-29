@@ -617,6 +617,23 @@ typedef struct {
      * right now, so it is a step rather than a slope: the room is told once,
      * the hull wears it, and it goes when they do. */
     uint16_t streak_kills;
+    /* How high a pilot may take each slot in this zone.
+     *
+     * The zone's own answer, and the reason balance can survive a price list
+     * where every step costs one credit. A slot that turns out too strong
+     * cannot be made dearer, so it is made shallower here, and a slot no
+     * hull in the roster carries can be shut off entirely by writing zero.
+     *
+     * `sim_slot_cap` reads this and is the only thing that does, so the
+     * ceiling a pilot spends against, the one a profile is dealt through and
+     * the one a client draws a stepper's end from are the same number. It
+     * travels with the settings, so a client cannot draw a key the arena
+     * would refuse.
+     *
+     * A level is the exception it has always been: this caps it, and the
+     * hull's own ladder caps it again, whichever is lower. A rung the hull
+     * does not carry is not a rung a zone can grant. */
+    uint8_t slot_cap[SIM_SLOT_COUNT];
     /* What one rung of each add-on is worth. Units are the field it changes:
      * extra projectiles, walls, Q8 px of fuse, ticks of stall, Q16 push. */
     int32_t mod_step[SIM_MOD_COUNT];

@@ -263,11 +263,56 @@ static void fill_profile(sim_ship_class *c, const hull_profile *p) {
     c->kit[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = p->burst;
 }
 
+/* How high a pilot may take each slot, which is the shipped roster's design
+ * space written down.
+ *
+ * A slot's ceiling is the whole of the balance lever now. Every step costs one
+ * credit, so a slot that turns out too strong cannot be made dearer and has to
+ * be made shallower; `calibrate builds` is what finds them, by flying every
+ * runaway shape against the hull it was spent on.
+ *
+ * Two things it found, and both are written down here. Seven of one charge
+ * beat every hull's own row on every hull: a rack is capped by the budget
+ * alone otherwise, and seven bursts is not a build, it is an artillery piece.
+ * And an add-on that belongs on a bomb wins outright on a gun: rounds with a
+ * proximity fuse do not need to hit, and rounds that bounce fill a room the
+ * way the Lattice's did before its gun stopped bouncing. So the gun carries
+ * what the roster gives it and nothing else.
+ *
+ * Where a ceiling is zero the slot is not a slot: the client draws no row for
+ * it and a profile naming it is fitted down. A zone that wants one raises it.
+ * The stat rows keep their full ladder rather than being shut off, because
+ * their step is zero in this roster and a zone that writes a climbing hull
+ * would otherwise have to remember to raise two numbers instead of one. */
+static void fill_slot_caps(sim_settings *cfg) {
+    for (int u = 0; u < SIM_UP_COUNT; u++) {
+        cfg->slot_cap[SIM_SLOT_STAT(u)] = SIM_UP_STEPS;
+    }
+    for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+        /* The hull's own ladder caps this again, whichever is lower. */
+        cfg->slot_cap[SIM_SLOT_LEVEL(t)] = SIM_MAX_RUNGS - 1;
+    }
+    /*                                  spray  bounce  prox  shrap  freeze  push */
+    static const uint8_t gun[SIM_MOD_COUNT]  = {5, 1, 0, 0, 1, 0};
+    static const uint8_t bomb[SIM_MOD_COUNT] = {0, 1, 1, 3, 1, 0};
+    for (int m = 0; m < SIM_MOD_COUNT; m++) {
+        cfg->slot_cap[SIM_SLOT_MOD(SIM_TRIG_GUN, m)] = gun[m];
+        cfg->slot_cap[SIM_SLOT_MOD(SIM_TRIG_BOMB, m)] = bomb[m];
+    }
+    /* A rack deep enough that the Lattice is still the deepest one. */
+    cfg->slot_cap[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 3;
+    cfg->slot_cap[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = 2;
+    for (int k = 2; k < SIM_MAX_CHARGES; k++) {
+        cfg->slot_cap[SIM_SLOT_CHARGE(k)] = SIM_CHARGE_MAX;
+    }
+}
+
 const char *const sim_class_names[SIM_MAX_CLASSES] = {
     "Apex", "Wedge", "Chord", "Anvil", "Cipher", "Facet", "Lattice"};
 
 void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->class_count = SIM_MAX_CLASSES;
+    fill_slot_caps(cfg);
     cfg->spec_count = 0;
     cfg->pattern_count = 0;
     /* Every death is real, which is the server's answer and the safe one:

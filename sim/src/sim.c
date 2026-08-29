@@ -1573,7 +1573,13 @@ static void lock_trigger(sim_ship *sh, int trig, uint16_t ticks) {
 uint8_t sim_slot_cap(const sim_settings *cfg, uint8_t cls, uint8_t slot) {
     if (slot >= SIM_SLOT_COUNT || cls >= cfg->class_count) return 0;
     const sim_ship_class *c = &cfg->classes[cls];
-    if (slot < SIM_UP_COUNT) return SIM_UP_STEPS;
+    /* The zone's ceiling first, then whatever else that slot cannot pass:
+     * the bits an add-on is packed into, the ladder a level indexes, and
+     * whether the zone fills a charge kind with a weapon at all. Written as
+     * a floor over the zone's number rather than instead of it, so a zone
+     * cannot raise a slot past what the wire can carry. */
+    uint8_t cap = cfg->slot_cap[slot];
+    if (slot < SIM_UP_COUNT) return cap < SIM_UP_STEPS ? cap : SIM_UP_STEPS;
     slot = (uint8_t)(slot - SIM_UP_COUNT);
     if (slot < SIM_TRIG_COUNT) {
         uint8_t rungs = 0;
@@ -1581,20 +1587,23 @@ uint8_t sim_slot_cap(const sim_settings *cfg, uint8_t cls, uint8_t slot) {
                && c->trigger[slot][rungs + 1] != SIM_NO_PATTERN) {
             rungs++;
         }
-        return rungs;
+        return cap < rungs ? cap : rungs;
     }
     slot = (uint8_t)(slot - SIM_TRIG_COUNT);
     if (slot < SIM_TRIG_COUNT * SIM_MOD_COUNT) {
         /* Spray is a count of rounds and takes three bits; everything else is
          * a rung of something and takes two. */
-        return slot % SIM_MOD_COUNT == SIM_MOD_MULTI ? SIM_MOD_MULTI_MAX
-                                                     : SIM_MOD_MAX;
+        uint8_t bits = slot % SIM_MOD_COUNT == SIM_MOD_MULTI
+                           ? SIM_MOD_MULTI_MAX
+                           : SIM_MOD_MAX;
+        return cap < bits ? cap : bits;
     }
     {
         /* A slot the zone fills with no weapon holds no ammunition, which is
          * what keeps an unused charge kind out of every hull. */
         int k = slot - SIM_TRIG_COUNT * SIM_MOD_COUNT;
-        return cfg->charge[k] == SIM_NO_PATTERN ? 0 : SIM_CHARGE_MAX;
+        if (cfg->charge[k] == SIM_NO_PATTERN) return 0;
+        return cap < SIM_CHARGE_MAX ? cap : SIM_CHARGE_MAX;
     }
 }
 

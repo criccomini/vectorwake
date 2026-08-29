@@ -620,6 +620,10 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
 
     for (int k = 0; k < SIM_MAX_CHARGES; k++) w8(&w, cfg->charge[k]);
     w16(&w, cfg->streak_kills);
+    /* The ceilings, which a client needs as much as the arena does: a
+     * stepper drawn to a different end than the one the arena enforces is a
+     * key that looks pressable and does nothing. */
+    for (int k = 0; k < SIM_SLOT_COUNT; k++) w8(&w, cfg->slot_cap[k]);
     for (int m = 0; m < SIM_MOD_COUNT; m++) w32(&w, (uint32_t)cfg->mod_step[m]);
     w16(&w, cfg->mod_spread);
     w16(&w, cfg->mod_pair_spread);
@@ -728,6 +732,7 @@ int sim_settings_unpack(sim_settings *out, const uint8_t *in, int len) {
 
     for (int k = 0; k < SIM_MAX_CHARGES; k++) cfg->charge[k] = (uint8_t)r8(&r);
     cfg->streak_kills = (uint16_t)r16(&r);
+    for (int k = 0; k < SIM_SLOT_COUNT; k++) cfg->slot_cap[k] = (uint8_t)r8(&r);
     for (int m = 0; m < SIM_MOD_COUNT; m++) cfg->mod_step[m] = (int32_t)r32(&r);
     cfg->mod_spread = (uint16_t)r16(&r);
     cfg->mod_pair_spread = (uint16_t)r16(&r);

@@ -5043,7 +5043,18 @@ it is the version that fits on a phone.
 What flat pricing costs is the balance lever. A slot that is too strong used
 to be made expensive; it now has to be made weaker or given a lower ceiling,
 and `sim_slot_cap` is the one place a ceiling is written down, asked by the
-pilot spending, by the deal, and by the client drawing a stepper. What flat
+pilot spending, by the deal, and by the client drawing a stepper. The
+ceilings are the zone's, they travel with the settings, and the shipped ones
+are in `sim/src/baseline.c` and tabled in [ships.md](../design/ships.md).
+
+Two of them were set by the sweep rather than by argument, which is the whole
+case for having built it. Seven of one charge beat every hull's own row on
+every hull, because a rack answered to the budget and nothing else; and an
+add-on that belongs on a bomb wins outright on a gun, since a round with a
+proximity fuse does not have to hit and rounds that bounce fill a room the way
+the Lattice's did before its gun stopped bouncing. Under thirty points and
+variable prices both would have been answered by charging more, and neither
+would have been found in the first place. What flat
 pricing buys back is that the build space becomes small enough to sweep:
 `calibrate builds` flies every runaway shape against the hull it was spent on,
 which is a question the hull tournament cannot ask and nobody could have

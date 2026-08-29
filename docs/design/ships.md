@@ -292,6 +292,36 @@ of the two balance questions, and with a pilot's credits back it is no longer
 the only one: a roster balanced hull against hull can still have one slot
 everybody dumps into.
 
+### The ceilings
+
+What a pilot may take of each slot, which is the roster's design space written
+down and the only balance lever a flat price list leaves.
+
+| Slot | Gun | Bomb |
+|---|---:|---:|
+| spray | 5 | 0 |
+| bounce | 1 | 1 |
+| proximity | 0 | 1 |
+| shrapnel | 0 | 3 |
+| freeze | 1 | 1 |
+| push | 0 | 0 |
+
+The rack: three repels, two bursts, which keeps the Lattice the deepest rack
+in the game. Flight keeps its full ladder, since its step is zero across the
+shipped roster and a stat slot buys nothing anyway.
+
+Two of those zeroes were measured rather than assumed. Seven of one charge
+beat every hull's own row on every hull, because a rack answered to the budget
+and nothing else; and an add-on that belongs on a bomb wins outright on a gun,
+since rounds with a proximity fuse do not have to hit and rounds that bounce
+fill a room the way the Lattice's did before its gun stopped bouncing. A step
+cannot be made dearer, so the answer to both is a shallower slot.
+
+Where a ceiling is zero the slot is not a slot: no row is drawn for it and a
+profile naming it is fitted down. A zone that wants one raises it, and the
+ceiling travels with the settings, so a client never draws a key the arena
+would refuse.
+
 `calibrate builds` asks the second. It flies every runaway shape, every credit
 in one slot and the hull's own row with one credit moved, against the hull it
 was spent on, in a mirror so the only difference in the room is how the

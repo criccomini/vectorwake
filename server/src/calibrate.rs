@@ -366,9 +366,16 @@ pub fn hull_bout_with(
     // The builds go on after seating, because a seat is dealt its hull's own
     // row on the way in and this is a pilot spending afterwards, which is
     // the same order the arena does it in.
+    //
+    // Then dealt again with ammunition, because a bout is a match start
+    // rather than a pilot editing mid-match. Spending in place deliberately
+    // does not refill a rack, so without this a build that buys a third
+    // repel flies with whatever its hull's own row happened to deal and the
+    // sweep would report the rack slots as worthless.
     for (k, kit) in builds.iter().enumerate() {
         if let Some(kit) = kit {
             world.set_ship_kit(ships[k], kit);
+            world.deal_kit(ships[k] as usize, true);
         }
     }
 

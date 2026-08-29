@@ -312,6 +312,11 @@ pub struct sim_settings {
     pub charge: [u8; MAX_CHARGES],
     /// How many kills without dying make a streak. Zero turns it off.
     pub streak_kills: u16,
+    /// How high a pilot may take each slot in this zone, which is the whole
+    /// of the balance lever now that every step costs one credit. Read only
+    /// through `sim_slot_cap`, which floors it against the bits an add-on is
+    /// packed into and the ladder a level indexes.
+    pub slot_cap: [u8; SLOT_COUNT],
     /// What one rung of each add-on is worth, in the units of the field it
     /// moves.
     pub mod_step: [i32; MOD_COUNT],
@@ -683,7 +688,7 @@ pub const PACK_MAX: usize = 64 * 1024;
 /// is worked out: every seat carrying its owner-only tail. Grows whenever that
 /// tail does, and `a_full_private_snapshot_uses_the_state_bound` below is what
 /// notices when this copy has not kept up.
-pub const STATE_PACK_MAX: usize = 60_843;
+pub const STATE_PACK_MAX: usize = 62_883;
 pub const PACK_PRIVATE_ALL: u8 = 0x01;
 pub const SETTINGS_PACK_MAX: usize = 8192;
 pub const UP_COUNT: usize = 5;
@@ -1482,6 +1487,12 @@ mod layout {
             ship.team = (index % 2) as u8;
             ship.energy = 1;
             ship.x = index as i32 * 256;
+            // The dearest build to send is not the dearest build to fly: a
+            // spent slot costs a byte whatever it holds, so seven credits in
+            // seven different slots is the widest a pilot can make this.
+            for slot in ship.kit.iter_mut().take(KIT_CREDITS as usize) {
+                *slot = 1;
+            }
         }
         world.state.weapon_count = MAX_WEAPONS as u16;
         for (index, weapon) in world.state.weapons.iter_mut().enumerate() {
@@ -1496,12 +1507,12 @@ mod layout {
 
         let mut packed = vec![0u8; STATE_PACK_MAX];
         let len = world.pack_around(&mut packed, 0, 0, -1, 0, PACK_PRIVATE_ALL);
-        // The whole-state bound used to be the larger of the two, because a
-        // ship carried its kit and the whole-state shape carried everybody's.
-        // The profile belongs to the class now, so it travels once with the
-        // settings and both shapes fell under 64 KiB. The bound is still its
-        // own number, because it is the exact size of the largest whole-state
-        // snapshot and this is what notices when that copy goes stale.
+        // The bound moved when a ship carried a build again. What it carries
+        // is the slots that were spent, one byte each, which seven credits
+        // caps at eight: the twenty-three byte vector this used to be would
+        // not have fitted the buffer at all. It is still its own number,
+        // because it is the exact size of the largest whole-state snapshot
+        // and this is what notices when that copy goes stale.
         assert!(
             len == STATE_PACK_MAX as i32,
             "a full whole-state snapshot exactly fills its bound, and reads {len}"
