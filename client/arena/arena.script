@@ -595,6 +595,12 @@ end
 TUNE.PANEL_HANDLERS = {
     menu = function()
         if menu.open then return false end
+        -- A card standing over the landing is the innermost panel of all, and
+        -- it answers escape itself: `menu.step` gives the last of its keys,
+        -- the one that changes nothing. Handled where the rest of that card's
+        -- keys are handled rather than here, so there is one way out of a
+        -- card and not two.
+        if menu.ask then return false end
         -- Escape dismisses the innermost open panel before opening the menu.
         if ui.room_ask then
             ui.room_ask = nil
@@ -671,7 +677,6 @@ local function hovering(stage, rail)
 end
 
 local function hover_menu(x, y, vh)
-    menu.pilot_hot = false
     -- Nothing outside the menu lights under a pointer any more. The phrase
     -- chips were the one thing that did, and the match ending stopped drawing
     -- them: everything else on screen with the menu down is an instrument.
@@ -686,7 +691,6 @@ local function hover_menu(x, y, vh)
     do
         local r = ui.pick(x, vh - y, false)
         if r then
-            menu.pilot_hot = r.action == "pilot_page"
             return hovering(
                 r.action == "stage" and r.value or nil,
                 r.action == "rail" and r.value or nil)
@@ -1601,6 +1605,24 @@ function update(self, dt)
         })
         if moved then sfx.ui(act and "ui_go" or "ui_move") end
         if act then apply_menu(self, act) end
+    elseif self.attract and menu.ask then
+        -- A card raised from the landing owns the keys while it is up, the
+        -- same way it does inside the drawer: the stops behind it cannot be
+        -- walked and the key behind it cannot be pressed. `menu.step` reads
+        -- its own block for this and needs no panel to be open.
+        --
+        -- The space bar is not a send here for the reason it is not one in
+        -- the drawer: a call sign has a space in it, so the trigger goes into
+        -- the line rather than answering the card partway through a name.
+        local act, moved = menu.step({
+            left = tapped[hash("k_left")], right = tapped[hash("k_right")],
+            up = tapped[hash("k_up")], down = tapped[hash("k_down")],
+            go = tapped[hash("select")],
+            back = tapped[TUNE.CONTROL.panel.menu],
+            rub = tapped[hash("backspace")],
+        })
+        if moved then sfx.ui(act and "ui_go" or "ui_move") end
+        if act then apply_menu(self, act) end
     elseif self.attract then
         -- The landing walks under the same inputs the menu does, because out
         -- here the stops and the key are the menu: they are everything a
@@ -2178,7 +2200,13 @@ function update(self, dt)
                     -- that is the interface's own word rather than a name,
                     -- and a name is quoted rather than set. See `land_stop`.
                     watching = menu.spectating(),
-                    zones = zones, ships = menu.landing_ships()}
+                    zones = zones, ships = menu.landing_ships(),
+                    -- What the account stop opens, and the dot it wears
+                    -- while this guest has a rated game a lost account would
+                    -- cost them. The drawer says the same thing in words on
+                    -- a band; out here the stop is the whole account.
+                    account = menu.account_rows(),
+                    warn = menu.guest_stakes()}
         end
         ui.hud({
             me = hud_me,
@@ -2338,6 +2366,12 @@ function update(self, dt)
         self.menu_view.link_bars = self.link_bars
         ui.menu(self.menu_view)
     end
+    -- The menu's own card, where the drawer it belongs to is not on screen to
+    -- draw it. That is the landing: the account acts stand out there now, so
+    -- signing up from the account stop raises this over the stands with no
+    -- panel behind it. `ui.menu` draws the same card whenever the drawer is
+    -- up or sliding, and the two must never both draw it.
+    if not (menu.open or ui.drawer_up()) then ui.land_card(menu.ask) end
     -- The question about moving room, last of everything that publishes a hit
     -- box. `ask_card` drops the ones already published, which is what makes a
     -- card the only thing on screen that can be pressed, and it can only do
@@ -2920,22 +2954,19 @@ function land_act(self, action, value)
         session.deploy(self)
         return true
     end
-    -- The landing's stops. Account is a door rather than a list: the drawer
-    -- already has the page that answers who you are, so the press opens it
-    -- there.
-    if action == "land_account" then
-        ui.land_open = nil
-        menu.show("pilot")
-        shut_panels()
-        sfx.ui("ui_go")
-        return true
-    end
-    -- Zone and ship open their lists in place, and the same press again puts
-    -- one away, like every other toggle here. That is also how a hand on the
-    -- arrows gets out of a list it has opened: enter on the stop it hangs off
-    -- shuts it, and so does escape.
-    if action == "land_zone" or action == "land_ship" then
-        local which = action == "land_zone" and "zone" or "ship"
+    -- The landing's stops. All three open their lists in place, and the same
+    -- press again puts one away, like every other toggle here. That is also
+    -- how a hand on the arrows gets out of a list it has opened: enter on the
+    -- stop it hangs off shuts it, and so does escape.
+    --
+    -- Account was a door until decision 99, opening the drawer on a pilot
+    -- page. There is no such page: what it held is `menu.account_rows`, and
+    -- this stop is where an account is edited from.
+    if action == "land_account" or action == "land_zone"
+       or action == "land_ship" then
+        local which = "account"
+        if action == "land_zone" then which = "zone"
+        elseif action == "land_ship" then which = "ship" end
         if ui.land_open == which then
             land_shut()
         else
@@ -2976,6 +3007,32 @@ function land_act(self, action, value)
             local act = menu.pick_profile(value)
             if act then apply_menu(self, act) end
         end
+        sfx.ui("ui_go")
+        return true
+    end
+    -- An account act from that stop's list, by its place in the list the
+    -- frame drew. The acts are the menu's own, the same ones the pilot page's
+    -- rows ran: it settles what it can settle and hands anything else back
+    -- for the arena to apply, exactly as a row of the drawer does.
+    --
+    -- The list is asked for again here rather than remembered from the draw.
+    -- Nothing about it can have changed between the two, since the account
+    -- state it is built from only moves on a reply this client has to be told
+    -- about, and re-asking is a shorter path than a copy kept in step.
+    if action == "land_pick_account" then
+        local row = menu.account_rows()[value or 0]
+        land_shut()
+        if row and row.act then
+            local act = menu.activate_act(row.act)
+            if act then apply_menu(self, act) end
+            sfx.ui("ui_go")
+        end
+        return true
+    end
+    -- The guest band inside the drawer, which raises the same card the SIGN
+    -- UP row out here does rather than walking anywhere to find it.
+    if action == "guest_signup" then
+        menu.ask_password()
         sfx.ui("ui_go")
         return true
     end
@@ -3160,7 +3217,13 @@ function on_input(self, action_id, action)
             -- is a control, and a press that fell through a solid panel would
             -- fire into a wall.
             if r.action == "scores" or r.action == "run_log" then return true end
-            if not menu.open then return false end
+            -- A card raised from the landing stands with the drawer shut, and
+            -- it is the only thing on screen that can be pressed while it is
+            -- up: `ask_card` drops every box published before it. So the
+            -- handlers below answer for it too, and the two the card
+            -- publishes, `answer` and `field`, are the only ones they can be
+            -- reached by.
+            if not menu.open and not menu.ask then return false end
             -- Written out rather than as an and/or chain: that form
             -- keeps only the first return, so `moved` came back nil and
             -- every click was silent. The sounds are half of what makes
@@ -3175,11 +3238,6 @@ function on_input(self, action_id, action)
                 -- The box beside a charge's pips. The two charges trade
                 -- keys; nothing about the ship changes.
                 act, moved = menu.swap_charges()
-            elseif r.action == "pilot_page" then
-                -- The call sign at the far end of the tab row. The rail
-                -- carries a pilot stop to the same page; the name is the
-                -- second door, kept because it says who you are signed in as.
-                act, moved = menu.click_pilot()
             elseif r.action == "rail" then
                 act, moved = menu.click_rail(r.value)
             elseif r.action == "close" then

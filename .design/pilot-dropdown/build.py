@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 """Assemble the four .dc.html artboards for the account dropdown mocks.
 
-The proposal: the landing's account stop stops being a door. Today a press
-on it opens the drawer on the pilot page (arena.script land_act); zone and
-ship open lists in place. This draws account opening in place too, as the
-same upward list the other two stops get, holding only the account acts:
-claim account, sign up, log in for a guest; set password and log off once
-the account is claimed. No career, no stats, nothing the pilot page keeps.
+Shipped as decision 99: the landing's account stop stopped being a door.
+It opened the drawer on the pilot page; zone and ship opened lists in
+place. Account opens the same upward list now, holding only the account
+acts, and the pilot page is gone.
+
+These boards were the proposal and have been brought back to what shipped.
+Two things changed on the way in. Signing up and claiming this account are
+one row rather than two: the server has one endpoint for it, `/v1/claim`,
+and what it does is put a password on the account this client already
+holds, so there is no second act that makes a fresh account and signs it
+up. And the offer wears the caution color rather than a green, because
+that is the color of the guest band it repeats and of the dot on the stop.
 
 Four boards: the stop closed, the guest's list open, the claimed pilot's
 list open, and the guest's list on a phone held upright.
 
-Drawings of a proposal, not a plan of record. The design system is lifted
-from ../start-flow/build.py, which lifted it from the real client:
+The design system is lifted from ../start-flow/build.py, which lifted it from the real client:
 client/arena/palette.lua for hues, client/arena/ui.lua for the landing's
 column and land_list, docs/design/ships.md for hull extents, the lockup
 verbatim from docs/banner.svg, sides from the melee zone's catalog. Since
@@ -59,7 +64,7 @@ CSS = """
 :root{
   --bg:#05070c; --ink:#dfe9f5; --dim:#6c7a90;
   --friend:#4fd6ff; --enemy:#ffa552;
-  --rule:#3f5878; --prize:#8dffb0; --bounty:#ffe08a;
+  --rule:#3f5878; --bounty:#ffe08a;
   --wall:#080d16; --wall-edge:#22344f; --wall-lit:#5b82b8;
   --mono:"DejaVu Sans Mono","Noto Sans Mono",ui-monospace,monospace;
   --menu:"Chakra Petch","Segoe UI",system-ui,sans-serif;
@@ -410,12 +415,17 @@ NAME, ZONE, SHIP = "Vesper 412", "Team Battle", "Wedge"
 WASH_CURSOR = "background:rgba(79,214,255,.18);color:var(--ink)"
 
 
-def stop_row(label, value, w, h, px=12, lit=False, style=""):
+def stop_row(label, value, w, h, px=12, lit=False, style="", warn=False):
     """A closed stop: label at the left edge, the answer and a caret at the
-    right, in one .field rectangle. `lit` is the stop whose list is open."""
+    right, in one .field rectangle. `lit` is the stop whose list is open,
+    and `warn` is the dot a guest with something to lose gets: the same
+    warning the drawer's band spells out in words."""
     edge = "border-color:rgba(79,214,255,.85);" if lit else ""
+    dot = ('<span style="width:5px;height:5px;border-radius:50%;'
+           'background:var(--bounty);flex:none;margin-right:7px"></span>'
+           ) if warn else ""
     return (f'<div class="field" style="width:{w}px;height:{h}px;{edge}{style}">'
-            f'<span class="lbl">{label}</span>'
+            f'<span class="row">{dot}<span class="lbl">{label}</span></span>'
             f'<span class="row" style="gap:9px;font-size:{px}px;'
             f'text-transform:none">{value}{caret()}</span></div>')
 
@@ -437,12 +447,11 @@ def drop_rows(rows, w, row_h, px, style):
 
 
 def account_rows(claimed, px=12):
-    """The account acts and nothing else. Acts on the account you are
-    stand above a rule; ways of being somebody else stand below it. A
-    guest's list leads with the one act that keeps what they are carrying,
-    in the offer green the invite band uses (decision 80). A claimed
-    pilot's upper pair is what the pilot page keeps at its foot today plus
-    the reroll, which the pilot page calls NEW NAME."""
+    """The account acts and nothing else. Acts on the account you are stand
+    above a rule; ways of being somebody else stand below it. A guest's
+    list leads with the offer, since it is the only row that keeps what
+    they are carrying, and it wears the caution color the guest band and
+    the stop's own dot are already written in."""
     note = ('<span class="dim" style="margin-left:auto;'
             f'font-size:{px - 2}px">')
     if claimed:
@@ -453,11 +462,10 @@ def account_rows(claimed, px=12):
             ("<span>LOG OFF</span>", None),
         ]
     return [
-        ('<span style="color:var(--prize)">CLAIM ACCOUNT</span>'
+        ('<span style="color:var(--bounty)">SIGN UP</span>'
          f'{note}KEEP YOUR POINTS</span>', "cursor"),
         ("<span>NEW NAME</span>", None),
         ("", "rule"),
-        (f"<span>SIGN UP</span>{note}START FRESH</span>", None),
         ("<span>LOG IN</span>", None),
     ]
 
@@ -511,7 +519,9 @@ def landing(form, open_account=None):
         if label == "ACCOUNT":
             acct_bottom = y
         body.append(stop_row(label, value, kw, rh, lit=lit,
-                             style=center(y, kw)))
+                             style=center(y, kw),
+                             warn=(label == "ACCOUNT"
+                                   and open_account != "claimed")))
         y += rh + gap
     if open_account:
         body.append(drop_rows(account_rows(open_account == "claimed"),

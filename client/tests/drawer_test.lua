@@ -131,18 +131,20 @@ do
           boxes("rail") .. " of " .. #RAIL)
     check("and a way out", boxes("close") > 0, "no close")
 
-    -- The guest banner: a band on the rail whose whole surface is a way to
-    -- the pilot page, beside the one the call sign pill always publishes.
-    -- Drawn only when the view says so.
-    check("no banner box without the flag", boxes("pilot_page") == 1,
-          boxes("pilot_page") .. " boxes")
+    -- The guest banner: a band on the rail whose whole surface raises the
+    -- sign-up card. Drawn only when the view says so. It used to be a way to
+    -- the pilot page and to publish beside the call sign's own press; the
+    -- page went with decision 99 and the call sign is a label, so the band is
+    -- the only box of its kind on the panel.
+    check("no banner box without the flag", boxes("guest_signup") == 0,
+          boxes("guest_signup") .. " boxes")
     ui.begin(harness.layer(), 1440, 810, 1, false, 4.00)
     local banded = view(true)
     banded.banner = true
     ui.menu(banded)
     ui.finish()
-    check("the banner publishes its press", boxes("pilot_page") == 2,
-          boxes("pilot_page") .. " boxes")
+    check("the banner publishes its press", boxes("guest_signup") == 1,
+          boxes("guest_signup") .. " boxes")
     frame(4.04, false)
     check("a closing drawer publishes no stops", boxes("rail") == 0,
           boxes("rail") .. " left")

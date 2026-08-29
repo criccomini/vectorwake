@@ -3146,6 +3146,9 @@ answer rather than the shared one.
 
 ## 69. The account page is a stop on the rail
 
+**Status:** superseded by
+[decision 99](#99-the-account-is-a-dropdown-and-the-pilot-page-is-gone)
+
 **Decision:** the home tab row carries a fifth stop, `pilot`, at its far end:
 the account page, wearing the helmet mark the interface already uses for a
 person. The call sign pill at the end of the top line stays and opens the
@@ -3196,6 +3199,9 @@ or the name in the corner turns out to be pressed so rarely that it is worth
 keeping only as text.
 
 ## 70. Sign up, and the pilot page is the career
+
+**Status:** the vocabulary stands; the page is superseded by
+[decision 99](#99-the-account-is-a-dropdown-and-the-pilot-page-is-gone)
 
 **Decision:** the account's player-facing words are sign up and log in, and
 the pilot page is rebuilt around what the account holds rather than around
@@ -4923,3 +4929,73 @@ what is lost is the stacked layout rather than the facts.
 **Reconsider if:** a second way into a game turns out to be wanted from inside
 one, which is the case this makes worse. The answer then is a stop that opens
 the landing rather than a page that lists games a second time.
+
+## 99. The account is a dropdown, and the pilot page is gone
+
+**Status:** accepted, superseding
+[decision 70](#70-sign-up-and-the-pilot-page-is-the-career) and the
+call sign half of
+[decision 69](#69-the-account-page-is-a-stop-on-the-rail)
+
+**Decision:** the landing's account stop opens a list in place, the way zone
+and ship already do, and that list is the whole of the account interface: for
+a guest SIGN UP, NEW NAME, a rule, LOG IN; signed in, SET PASSWORD, NEW NAME,
+the rule, LOG OFF. The pilot page, its tab on the home row, and the call sign
+in the drawer's head as a door onto it are all removed.
+
+**Why:** Chris asked for it, and decision 89 had already made the account stop
+the odd one out. Three stops went onto the landing because the drawer went
+undiscovered; two of them answer their own question in place and the third was
+a door that opened a panel over the screen you were standing on, to show a
+page whose acts are four short lines. Two presses and a panel to reach four
+lines, on the one screen an account is worth editing on.
+
+What the page had that a list cannot hold is the career, and the career had
+already stopped being the client's to show: it is bare totals on `/v1/career`
+and the site draws the same figures at `/pilots`. What is left after it is the
+acts, and the acts are a list.
+
+Signing up and claiming this account are one row, not two. The mocks in
+`.design/pilot-dropdown` drew them as two, an offer above a rule and a fresh
+start below it, and the account model says otherwise: there is one endpoint,
+`/v1/claim`, and what it does is put a password on the account this client was
+handed on its first run. There is no second act that makes a fresh account and
+signs it up, because a fresh account is what a guest already has. So it is one
+row, in the player's word for it rather than the endpoint's, which is the
+vocabulary decision 70 settled on and this keeps.
+
+The rule between the rows is what the page's foot was saying by position: above
+it, what you can do to the account you are; below it, how to be a different
+one.
+
+Two things the page carried had to land somewhere else. The reroll asks first,
+which is the guard decision 70 put there after a curious player pressed their
+own call sign and lost it, and that guard lived in the row-press path rather
+than in the act: a list that ran the act directly would have rolled on the
+press with nothing said. It is one function now and both ways in pass through
+it. The guest banner pointed at the page; it raises the sign-up card itself
+now, from wherever it is standing, and the dot that rode the pilot tab rides
+the landing's account stop, which is what the band now points at.
+
+The call sign in the drawer's head stays exactly where it is and stops being a
+button. It was the second door onto the page, kept because a name saying who
+you are signed in as is worth pressing; with no page behind it, what is left is
+the sentence it was always also saying.
+
+**Cost:** the career is no longer anywhere in the client. A player who wants
+their rating, record or games reads them on the site, and the client says
+nothing about how they have flown. The account acts are also home only, since
+the landing is only up in the stands: mid-match there is no way to set a
+password, where the pilot tab was equally home only but the call sign in the
+head was not. Nothing that raises a card from out here can be reached with the
+drawer open, so the card learned to stand on the landing with no panel behind
+it, which is a second place the same card is drawn from.
+
+A type rung went with the page. PAGE, the size a page called itself, had the
+pilot page's call sign as its last live user and a card's device code as its
+last reference, and that code had no caller: the ladder is four rungs now.
+
+**Reconsider if:** the client wants to show a career again, at which point the
+question is whether it belongs on a page of its own or on the site it is
+already on. The list itself does not care: it is the acts, and a career is not
+one.

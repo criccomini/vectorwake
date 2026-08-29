@@ -152,20 +152,19 @@ check("and not as a row of whatever page is showing", as_rows == 0,
       as_rows .. " rail stops published as rows")
 check("the rail names its stops", has(st, "zones") and has(st, "about"))
 
--- --- the call sign in the corner takes a press ----------------------------
+-- --- the call sign in the corner says who is reading ----------------------
 --
--- It is the only way to the pilot page: there is no stop for it on the tab
--- row. The box under it went out as "pilot", which the scoreboard's own rows
--- already publish for the card about one of them, and the press dispatch
--- reads that one first: the name lit under the pointer and answered nothing.
+-- It was the only way to the pilot page, since no stop on the tab row led
+-- there. There is no page (decision 99): the account is a stop on the
+-- landing, and the head keeps the name as a label. What must not survive is
+-- a box under it, which would be a control leading nowhere.
 local corner = draw({depth = 1, sel = 0, rail = RAIL, rail_sel = 1,
                      focus = "rail", home = true, closable = false,
                      rows = rows,
                      pilot = {name = "Tiller 963"}})
 check("the corner says who is reading", has(corner, "Tiller 963"))
-local named, clashed = nil, false
+local named = nil
 for _, h in ipairs(ui.hits) do
-    if h.action == "pilot" then clashed = true end
     -- Small, on the column's head line, at the right-hand end of it. Of the
     -- column rather than of the window: the menu is one column docked to the
     -- left edge, so the far end of the head is a few hundred points in and
@@ -174,9 +173,10 @@ for _, h in ipairs(ui.hits) do
         named = h.action
     end
 end
-check("and publishes a box under it", named ~= nil, tostring(named))
-check("under an action the arena does not already spend on something else",
-      not clashed, "the menu published a hit as \"pilot\"")
+-- The line meter stands to the left of it and keeps its own press, so what
+-- this says is that the meter is the only control on that end of the head.
+check("and the only box up there is the meter's", named == "debug",
+      tostring(named))
 check("the stage shows what the rail points at", has(st, "zone1"))
 
 -- The mark renderer is a separate drawing family. Run every supported mark
@@ -615,23 +615,6 @@ for _, h in ipairs(ui.hits) do
 end
 check("only the answers can be pressed", answers == 2 and others == 0,
       answers .. " answers, " .. others .. " other boxes")
-
--- A question may be about a string rather than a choice. A device code is
--- read off this screen and typed into another machine, so it is drawn as
--- itself: big, lit, and in the case it was given.
-local st4 = draw({depth = 2, sel = 1, rail = RAIL, rail_sel = 1,
-                  focus = "stage", home = true, closable = false,
-                  rows = rows,
-                  ask = {head = "Type this on the other device", sel = 1,
-                         code = "408317", keys = {{label = "done"}}}})
-local code_t
-for i = 1, st4.n do
-    if st4.text[i].s == "408317" then code_t = st4.text[i] end
-end
-check("a question can carry a code, drawn as given", code_t ~= nil,
-      table.concat(texts(st4), " "))
-check("and drawn larger than what it is about",
-      code_t and code_t.px > 20, code_t and tostring(code_t.px))
 
 -- A question can also be lines to fill in. On a keyboard the client draws
 -- them, since the keys are already under the player's hands. On a

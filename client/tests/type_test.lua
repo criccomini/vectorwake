@@ -101,8 +101,7 @@ end
 -- --- the pages ------------------------------------------------------------
 
 local RAIL = {}
-for i, e in ipairs({{"ship", "ship"}, {"pilot", "pilot"},
-                    {"settings", "settings"}}) do
+for i, e in ipairs({{"ship", "ship"}, {"settings", "settings"}}) do
     RAIL[i] = {label = e[1], icon = e[2], index = i}
 end
 
@@ -124,13 +123,7 @@ local PAGES = {
         {label = "Bomb prox", index = 2, detail = "300"},
         {label = "Bomb freeze", index = 3, detail = "900", mark = true},
     }}},
-    {"pilot", {at = "pilot", rail_sel = 2, depth = 2,
-     pilot_card = {name = "Krait 4", claimed = true, online = true,
-                   rivets = 310,
-                   career = {kills = 3, deaths = 4, games = 7}},
-     rows = {{label = "new name", index = 1, pick = true},
-             {label = "log out", index = 2, pick = true}}}},
-    {"settings", {at = "settings", rail_sel = 3, rows = {
+    {"settings", {at = "settings", rail_sel = 2, rows = {
         {sect = "flight", label = "Invert thrust", index = 1, choice = 1,
          choices = 2, note = "which way the stick points"},
         {label = "Deadzone", index = 2, choice = 3, choices = 5},

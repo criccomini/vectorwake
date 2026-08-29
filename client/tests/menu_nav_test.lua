@@ -130,21 +130,18 @@ menu.sel = {}
 
 local ship_at = top_index("ship")
 local settings_at = top_index("settings")
-local pilot_at = top_index("pilot")
 local tabs = {}
 for _, r in ipairs(menu.view().rail) do tabs[#tabs + 1] = r.label end
-check("the tab row is ship, pilot, settings",
-      table.concat(tabs, "/") == "ship/pilot/settings",
+-- Two stops at home since decision 99. A pilot stop stood between them,
+-- opening an account page that is now the landing's account stop: what the
+-- drawer has left at home is the ship and the machine.
+check("the tab row is ship, settings",
+      table.concat(tabs, "/") == "ship/settings",
       table.concat(tabs, "/"))
-check("the rail carries the destinations", ship_at and settings_at and pilot_at,
-      "ship " .. tostring(ship_at) .. ", settings " .. tostring(settings_at)
-      .. ", pilot " .. tostring(pilot_at))
-
--- The pilot stop is the account page: the same page the corner call sign
--- opens, one press from the rail. Two doors onto one page, on purpose.
-menu.click_rail(pilot_at)
-check("a rail tap on pilot opens the account page", menu.stack[2] == "pilot",
-      table.concat(menu.stack, "/"))
+check("the rail carries the destinations", ship_at and settings_at,
+      "ship " .. tostring(ship_at) .. ", settings " .. tostring(settings_at))
+check("and no pilot stop", top_index("pilot") == nil,
+      table.concat(tabs, "/"))
 menu.stack = {"root"}
 menu.sel = {}
 
@@ -251,25 +248,23 @@ do
           tostring(menu.sel.root))
 
     -- Up off the first row of a page is the way onto that line, and it lands
-    -- on the call sign: it is the far end of the row and the control somebody
-    -- pressing up at the top of a page is reaching for.
+    -- on the x, which is the whole of that row since decision 99. The call
+    -- sign at the far end of it was the other stop, a second door onto the
+    -- pilot page; it is a label now, and a label is not walked to.
     menu.stack = {"root", "hangar"}
     menu.sel = {hangar = 1}
     menu.head_sel = nil
     menu.step({up = true})
-    check("up off the first row of a page lands on the call sign",
-          menu.view().head_sel == "pilot",
+    check("up off the first row of a page lands on the x",
+          menu.view().head_sel == "close",
           tostring(menu.view().head_sel))
+    -- One stop, so the two directions that walk this row have nowhere else
+    -- to land and leave the cursor where it is.
     menu.step({left = true})
-    check("left of it is the x", menu.view().head_sel == "close",
-          tostring(menu.view().head_sel))
-    menu.step({left = true})
-    check("and left again loops back round to the call sign",
-          menu.view().head_sel == "pilot",
+    check("left of it is itself", menu.view().head_sel == "close",
           tostring(menu.view().head_sel))
     menu.step({right = true})
-    check("right off the call sign wraps to the x the same way",
-          menu.view().head_sel == "close",
+    check("and so is right of it", menu.view().head_sel == "close",
           tostring(menu.view().head_sel))
     -- Nothing is over this line, so up on it does nothing rather than
     -- inventing a place to go.
@@ -286,47 +281,16 @@ do
           menu.head_sel == nil and menu.sel.hangar == 1,
           tostring(menu.head_sel) .. "/" .. tostring(menu.sel.hangar))
 
-    -- Enter on the call sign opens the page a press on it opens, which is the
-    -- page the pilot tab leads to. Two doors onto one page, on purpose.
-    menu.stack = {"root", "hangar"}
-    menu.sel = {hangar = 1}
-    menu.head_sel = nil
-    menu.step({up = true})
-    menu.step({go = true})
-    check("enter on the call sign opens the account page",
-          menu.at() == "pilot", table.concat(menu.stack, "/"))
-    check("and the cursor comes off the head with it",
-          menu.head_sel == nil, tostring(menu.head_sel))
-
     -- And the x shuts the panel, which is what a cross means everywhere.
     menu.open = true
     menu.stack = {"root", "hangar"}
     menu.sel = {hangar = 1}
     menu.head_sel = nil
     menu.step({up = true})
-    menu.step({left = true})
     menu.step({go = true})
     check("enter on the x shuts the panel", not menu.open,
           tostring(menu.open))
     menu.open = true
-
-    -- Reachable is not the same as lit for the page: the rail's own stop is
-    -- the one mark saying where you are.
-    menu.stack = {"root", "pilot"}
-    menu.head_sel = nil
-    local on_pilot = menu.view()
-    check("the rail lights the pilot stop while its page is up",
-          on_pilot.rail_sel == pilot_at, tostring(on_pilot.rail_sel))
-    check("and the call sign does not light with it",
-          on_pilot.head_sel == nil, tostring(on_pilot.head_sel))
-
-    -- A pointer still opens it, which is the whole of what the name is for
-    -- besides saying who you are.
-    menu.stack = {"root"}
-    menu.sel = {}
-    menu.click_pilot()
-    check("and a press on the name still opens the page",
-          menu.at() == "pilot", table.concat(menu.stack, "/"))
 
     -- Away from home the account is not a thing to edit, so the name is a
     -- label and the x is the whole of that row.
@@ -458,30 +422,22 @@ check("the lit stop at the root still goes in",
 menu.stack = {"root"}
 menu.sel = {}
 
--- --- the call sign in the corner is a way to the pilot page ----------------
+-- --- the call sign in the corner says who you are and nothing more ---------
 --
--- The rail carries a pilot stop at home now, and the name at the far end of
--- the top line opens the same page: two doors, because the name says who you
--- are and the stop looks like a button. The corner press has to survive the
--- guard that shuts a page the row has stopped carrying, which it does by the
--- row actually carrying it at home.
+-- It was a second door onto the pilot page, kept because the name says who
+-- you are signed in as and a stop looks like a button. There is no page: the
+-- account is a stop on the landing, and what the head keeps is the sentence
+-- the button was also saying. See decision 99.
 
 menu.home = true
 menu.stack = {"root"}
 menu.sel = {}
-menu.click_pilot()
-check("the call sign opens the pilot page", menu.at() == "pilot",
-      table.concat(menu.stack, "/"))
-menu.tick(0.1)
-check("and it is still open a frame later", menu.at() == "pilot",
-      table.concat(menu.stack, "/"))
-local rail_names = {}
-for _, r in ipairs(menu.view().rail) do rail_names[#rail_names + 1] = r.label end
-check("with the pilot stop on the row beside it",
-      table.concat(rail_names, "/"):find("pilot") ~= nil,
-      table.concat(rail_names, "/"))
-menu.stack = {"root"}
-menu.sel = {}
+local v_head = menu.view()
+check("the head still carries the call sign", v_head.pilot.name == menu.name,
+      tostring(v_head.pilot ~= nil and v_head.pilot.name))
+check("and the drawer has no page behind it",
+      menu.click_pilot == nil and menu.pilot_hot == nil,
+      "a way into the pilot page survives")
 
 -- --- a tap on a row is still a tap on a row -------------------------------
 
@@ -600,7 +556,7 @@ menu.sel = {}
 menu.head_sel = nil
 menu.step({up = true})
 check("up from the first row goes onto the head",
-      menu.stack[2] == "hangar" and menu.view().head_sel == "pilot",
+      menu.stack[2] == "hangar" and menu.view().head_sel == "close",
       table.concat(menu.stack, "/") .. "/" .. tostring(menu.view().head_sel))
 menu.head_sel = nil
 
@@ -873,30 +829,35 @@ menu.home = true
 menu.stack = {"root"}
 menu.sel = {}
 account.claimed = false
--- The call sign in the corner of the tab row, beside the stop that opens the
--- same page: the stop is the door a stranger finds, and the name is the one a
--- returning player knows.
-check("the tab row carries the pilot stop",
-      top_index("pilot") ~= nil,
-      table.concat(texts_of(menu.view()), ", "))
-menu.click_pilot()
-check("and pressing the name opens the page",
-      menu.at() == "pilot", table.concat(menu.stack, "/"))
-local v_guest = menu.view()
-check("a guest is offered the sign up and the login",
-      texts_of(v_guest)[2] == "sign up"
-          and texts_of(v_guest)[3] == "log in",
-      table.concat(texts_of(v_guest), ", "))
-check("with the reroll behind its own key rather than the name",
-      texts_of(v_guest)[1] == "new name",
-      table.concat(texts_of(v_guest), ", "))
-check("and the page travels as a card, not an aside",
-      v_guest.pilot_card ~= nil and v_guest.aside == nil
-          and v_guest.pilot_card.claimed == false,
-      tostring(v_guest.pilot_card))
+-- The acts stand on the landing's account stop rather than on a page of the
+-- drawer. What they do is unchanged: these are the same act names the pilot
+-- page's rows carried, run by the arena when a row of that list is pressed.
+local function account_labels()
+    local out = {}
+    for _, r in ipairs(menu.account_rows()) do
+        out[#out + 1] = r.rule and "--" or r.label
+    end
+    return table.concat(out, ", ")
+end
+local function account_act(label)
+    for _, r in ipairs(menu.account_rows()) do
+        if r.label == label then return menu.activate_act(r.act) end
+    end
+    return nil
+end
 
-menu.sel.pilot = 2
-menu.step({go = true})
+check("a guest is offered the sign up, the reroll and the login",
+      account_labels() == "sign up, new name, --, log in",
+      account_labels())
+-- Signing up and claiming this account are one act: the server has one
+-- endpoint for it and what it does is put a password on the account this
+-- client already holds. So one row, in the player's word for it.
+check("and the offer leads the list, with what it buys beside it",
+      menu.account_rows()[1].offer == true
+          and menu.account_rows()[1].note == "keep your points",
+      tostring(menu.account_rows()[1].note))
+
+account_act("sign up")
 check("signing up asks for a password, discs and all",
       menu.ask ~= nil and menu.ask.fields ~= nil
           and #menu.ask.fields == 1 and menu.ask.fields[1].mask == true,
@@ -943,9 +904,7 @@ menu.ask = nil
 
 menu.stack = {"root"}
 menu.sel = {}
-menu.click_pilot()
-menu.sel.pilot = 3
-menu.step({go = true})
+account_act("log in")
 check("logging in asks for a name in the clear and a password in discs",
       menu.ask ~= nil and menu.ask.fields ~= nil and #menu.ask.fields == 2
           and not menu.ask.fields[1].mask and menu.ask.fields[2].mask,
@@ -986,20 +945,16 @@ check("and escape still walks away", select(2, menu.step({back = true})) == true
           and menu.ask == nil, tostring(menu.ask))
 account.refuse = nil
 
--- --- signed in, the page changes shape ------------------------------------
+-- --- signed in, the list changes shape ------------------------------------
 
 account.claimed = true
 menu.stack = {"root"}
 menu.sel = {}
-menu.click_pilot()
-local v_in = menu.view()
-check("a claimed pilot is offered the password change and the way out",
-      texts_of(v_in)[2] == "change password"
-          and texts_of(v_in)[3] == "log out",
-      table.concat(texts_of(v_in), ", "))
-menu.sel.pilot = 3
-menu.step({go = true})
-check("logging out asks first", menu.ask ~= nil and menu.ask.fields == nil,
+check("a claimed pilot is offered the password, the reroll and the way out",
+      account_labels() == "set password, new name, --, log off",
+      account_labels())
+account_act("log off")
+check("logging off asks first", menu.ask ~= nil and menu.ask.fields == nil,
       tostring(menu.ask))
 menu.ask.sel = 1
 menu.step({go = true})
@@ -1007,7 +962,17 @@ check("and the answer that leaves actually leaves",
       account.claimed == false and menu.ask == nil,
       tostring(account.claimed))
 
--- --- and the one row on the pilot page that throws something away ---------
+-- Without a meta-layer there is nothing to sign up to, so the list is the
+-- one act that has an offline answer of its own.
+do
+    local kept = account.base
+    account.base = ""
+    check("with no account layer the list is the reroll alone",
+          account_labels() == "new name", account_labels())
+    account.base = kept
+end
+
+-- --- and the one act on that list that throws something away -------------
 --
 -- A call sign is the only name anybody here has, and it is the name on the
 -- scoreboard of every game this pilot has flown. The row showed it and
@@ -1018,9 +983,8 @@ menu.chosen = nil
 menu.ask = nil
 menu.stack = {"root"}
 menu.sel = {}
-menu.click_pilot()
 local was = menu.name
-local act8 = menu.step({go = true})
+local act8 = account_act("new name")
 check("rolling a call sign asks first",
       act8 == nil and menu.ask ~= nil and menu.name == was,
       tostring(act8) .. ", name " .. tostring(menu.name))
@@ -1030,7 +994,7 @@ check("and at home says nothing about respawning",
 menu.step({back = true})
 check("and escape keeps the one you have",
       menu.name == was and menu.ask == nil, tostring(menu.name))
-menu.step({go = true})
+account_act("new name")
 menu.ask.sel = 1
 local act9, moved9 = menu.step({go = true})
 check("rolling rolls, and the arena is never told",
@@ -1045,7 +1009,7 @@ check("rolling rolls, and the arena is never told",
 account.refuse = "that is plenty of rerolling. Try again later"
 local held = menu.name
 local rolls = account.renamed
-menu.step({go = true})
+account_act("new name")
 menu.ask.sel = 1
 menu.step({go = true})
 check("a refused roll keeps the card up wearing the reason",
@@ -1075,16 +1039,12 @@ menu.sel = {}
 -- place that can say so before it happens, and this is the row whose whole
 -- design is asking first.
 
--- Reached the way a player reaches it, which is the front end: the tab row in
--- a match carries only controls that remain useful in the fight. The card knows
--- the difference, because `home` is what it asks and a pilot can be connected
--- with the panel up.
+-- The card knows the difference, because `home` is what it asks and a pilot
+-- can be connected with the stands behind them.
 menu.stack = {"root"}
 menu.sel = {}
-menu.home = true
-menu.click_pilot()
 menu.home = false
-menu.step({go = true})
+account_act("new name")
 check("mid-game the card says a roll respawns your ship",
       menu.ask ~= nil and string.find(menu.ask.head, "respawns your ship") ~= nil,
       tostring(menu.ask and menu.ask.head))
@@ -1729,8 +1689,8 @@ do
 
     menu.home, menu.scenery, menu.watching = true, true, false
     menu.open, menu.stack, menu.sel = true, {"root"}, {}
-    check("the stands carry the ship, who you are, and settings",
-          labels() == "ship pilot settings",
+    check("the stands carry the ship and settings",
+          labels() == "ship settings",
           labels())
 
     -- Flying: the hangar goes, because a hull is locked for the match, and
@@ -1781,17 +1741,19 @@ do
     account.claimed = false
     account.career = nil
     check("a fresh guest gets no banner and no dot",
-          menu.view().banner ~= true and menu.view().guest_dot ~= true)
+          menu.view().banner ~= true and menu.guest_stakes() == false)
     account.career = {games = 1, kills = 0, deaths = 1}
     check("a rated game flown arms the banner",
-          menu.view().banner == true and menu.view().guest_dot == true)
-    menu.stack = {"root", "pilot"}
-    check("but not over the page it points at",
-          menu.view().banner ~= true and menu.view().guest_dot == true,
-          tostring(menu.view().banner))
+          menu.view().banner == true and menu.guest_stakes() == true)
+    -- It used to stand down on the page it pointed at. There is no such
+    -- page: the band raises the card itself, and the same warning rides the
+    -- landing's account stop as a dot. See decision 99.
+    menu.stack = {"root", "settings"}
+    check("and stands on every page the drawer has left",
+          menu.view().banner == true, tostring(menu.view().banner))
     menu.stack = {"root"}
     menu.home = false
-    check("and not away from home, where the page is not",
+    check("and not away from home, where an account is not edited",
           menu.view().banner ~= true)
     menu.home = true
     account.claimed = true

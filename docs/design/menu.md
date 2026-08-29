@@ -59,30 +59,28 @@
 > carries, and the settings page carries no "what this changes" section under
 > its rows. See [decision 75](../architecture/decisions.md).
 
-> **The pilot page is the career and the way to keep it.** The name leads
-> with the reroll behind a NEW NAME key, because a press on your own call
-> sign used to reroll it on the spot. Under a ship-page section rule, the
-> career as bare totals: the most-flown class's rating and tier, the record,
-> rated games, rivets, all served by the meta-layer's `/v1/career`. At the
-> foot, the one act each state has: a guest's lit SIGN UP under "Keep your
-> points and log in on other devices" and "Already have a pilot? log in", or
-> the password and log out as a pair. "Keep this pilot" and the reading
-> column that said everything twice are gone; sign up and log in are the
-> words everywhere, and the sign-up card carries the one explaining line. A
-> guest with something to lose gets a gold banner on every tab but this one:
-> "You are using a guest account. Press here to set your password." See
-> [decision 70](../architecture/decisions.md).
+> **The account is a list the landing opens, and the pilot page is gone.**
+> The page carried the career over four short acts, two presses and a panel
+> away from the one screen an account is worth editing on. The career is the
+> site's, so what is left is the acts, and they are a list the landing's
+> account stop drops in place exactly as zone and ship do: for a guest SIGN
+> UP in the caution color with "keep your points" beside it, NEW NAME, a
+> rule, and LOG IN; signed in, SET PASSWORD, NEW NAME, the rule, and LOG OFF.
+> Signing up and claiming this account are one act and one row, because the
+> server has one endpoint for it and what it does is put a password on the
+> account this client already holds. The tab, the page and the call sign's
+> press go with it: the name in the head stays as the label it was always
+> also being. A guest with something to lose still gets the gold band in the
+> drawer, "You are using a guest account. Press here to set your password.",
+> and the same warning rides the account stop as a dot. See
+> [decision 99](../architecture/decisions.md).
 
-> **The account page is a stop on the rail.** The home row was play, ship,
+> **The account page was a stop on the rail.** The home row was play, ship,
 > friends, settings and pilot: the account page as the fifth stop, wearing the
-> helmet mark the interface already uses for a person. The call sign pill at
-> the far end of the top line stays and opens the same page, because it is the
-> one thing on screen saying who you are signed in as; it used to be the only
-> way in, and a name in a pill does not look like a button. The stop stays
-> home, so the short row a match gets is unchanged. The name is a label with a
-> press on it rather than a stop the arrows walk, so it never lights for the
-> page: the rail stop is the one mark saying where you are. See
-> [decision 69](../architecture/decisions.md).
+> helmet mark the interface already uses for a person, with the call sign pill
+> at the far end of the top line as a second door onto it. Both are gone with
+> the page (decision 99), and what the drawer carries at home is the ship and
+> settings. See [decision 69](../architecture/decisions.md).
 
 > **A game row is one press, and leaving is a button on it.** Pressing a game
 > means be in that game, wherever this client happens to be: already there and
@@ -501,7 +499,11 @@ a first visit met PLAY NOW and a hamburger, deployed into whatever the stands
 were showing, and never learned there was another game or another ship to be. A
 column row is the question at its left edge and the current answer with a caret
 at its right; a rail cell sets the question over the answer, with the caret on
-the question's line. Account opens the drawer on the pilot page. Zone drops the
+the question's line. All three drop a list. Account drops the account acts,
+which is the whole of that interface since decision 99 took the pilot page:
+sign up or set a password, roll a new call sign, log in or log off, with a
+rule between what you can do to the account you are and how to be a different
+one, and a dot on the stop for a guest with something to lose. Zone drops the
 games list in place; picking one re-dials the stands to it, so the fight behind
 the glass becomes the one the key would join, and PLAY NOW stays the press that
 commits. Ship drops the roster by name with SPECTATE as the last row; picking

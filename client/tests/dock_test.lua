@@ -216,9 +216,10 @@ for _, s in ipairs(SHAPES) do
         seen[name] = {left = left, right = right, pitch = tabs[1].w}
     end
     -- And the head, which carries the name and the call sign whatever is
-    -- behind the panel.
+    -- behind the panel. The call sign is a label rather than a key since
+    -- decision 99, so it is the word that is looked for and not a box.
     check(name .. " carries the call sign in the head",
-          box("pilot_page") ~= nil, "no call sign")
+          word_at("Krait 4") ~= nil, "no call sign")
     local x = box("close")
     check(name .. " keeps a way out on the head's own line",
           x ~= nil and x.y < 80, x and string.format("%.1f", x.y) or "none")
@@ -257,12 +258,13 @@ check("the corner row is not drawn under the column",
 -- opens is not drawn while the menu is.
 check("nor the band's press across the top", box("details") == nil,
       "the band is still a control under the menu")
--- And a press on the head reaches the head.
-local sign = box("pilot_page")
+-- And the call sign takes no press. It was a second door onto the pilot page
+-- and there is no page: what a press near it must not do is reach something
+-- else, so the head's own ground answers instead of the fight behind it.
+local sign = word_at("Krait 4")
 if sign then
-    check("a press on the head's call sign reaches it",
-          press(sign.x + sign.w / 2, sign.y + sign.h / 2) == "pilot_page",
-          tostring(press(sign.x + sign.w / 2, sign.y + sign.h / 2)))
+    check("the head's call sign is a label rather than a key",
+          box("pilot_page") == nil, "the call sign still takes a press")
 end
 -- The fight beside the column is not the column. A press on a game means put
 -- me back in it, which is what escape does.
@@ -308,7 +310,7 @@ end
 for _, shape in ipairs(SHAPES) do
     local name, w, h = shape[1], shape[2], shape[3]
     page(w, h)
-    local switch, acct = box("debug"), box("pilot_page")
+    local switch, acct = box("debug"), word_at("Krait 4")
     check(name .. " publishes the meter's press in the head",
           switch ~= nil, "no box")
     if switch and acct then
@@ -316,9 +318,11 @@ for _, shape in ipairs(SHAPES) do
         check(name .. " draws four bars and no caption",
               #bars == 4 and word_at("LINK") == nil,
               #bars .. " bars, caption " .. tostring(word_at("LINK") ~= nil))
-        check(name .. " puts them to the left of the account button",
+        -- The call sign is a label now rather than a key, so what the bars
+        -- stand clear of is the type itself and not a box around it.
+        check(name .. " puts them to the left of the call sign",
               switch.x + switch.w <= acct.x + 0.01,
-              string.format("cluster ends %.1f, button starts %.1f",
+              string.format("cluster ends %.1f, name starts %.1f",
                             switch.x + switch.w, acct.x))
         -- Inside the column, which is docked to the left edge and is 390
         -- points wide wherever there is room for it.
@@ -350,11 +354,14 @@ for _, shape in ipairs(SHAPES) do
             check(name .. " draws them as a staircase on one foot", rising,
                   "the bars do not rise from a shared floor")
             local tall = bars[4]
-            check(name .. " centers the tallest on the button's line",
-                  math.abs((tall.top + tall.h / 2)
-                           - (acct.y + acct.h / 2)) < 1,
-                  string.format("bar mid %.1f, button mid %.1f",
-                                tall.top + tall.h / 2, acct.y + acct.h / 2))
+            -- The call sign's own line, flipped into the space the bars are
+            -- measured in: `txt` sets a string on the middle of its line, so
+            -- the recorded y is that middle and needs no half-height.
+            local sign_y = h - acct.y
+            check(name .. " centers the tallest on the call sign's line",
+                  math.abs((tall.top + tall.h / 2) - sign_y) < 1,
+                  string.format("bar mid %.1f, name mid %.1f",
+                                tall.top + tall.h / 2, sign_y))
         end
     end
 end
@@ -541,20 +548,19 @@ end
 -- was a panel that jumped the height of its own head the moment a hand walked
 -- into the ship page from the rail, and one page where the two controls at the
 -- top of the drawer were not where they are everywhere else. It is also the
--- line the arrows reach by pressing up off the first row of a page, so a page
--- without one is a page with no way to the account.
+-- line the arrows reach by pressing up off the first row of a page.
 
 do
     frame(1440, 810)
     local plain_x = box("close")
-    local plain_name = box("pilot_page")
+    local plain_name = word_at("Krait 4")
     frame(1440, 810, {at = "hangar", kit = true, kit_spent = 12,
                       kit_total = 30, profile = {name = "custom"},
                       rows = {{label = "custom", group = "band", index = 1},
                               {label = "points", group = "band", index = 2}}})
     local kit_x = box("close")
     check("the ship page keeps the call sign the other pages carry",
-          box("pilot_page") ~= nil and plain_name ~= nil,
+          word_at("Krait 4") ~= nil and plain_name ~= nil,
           "no call sign over the kit")
     check("and the x stays on the line it is on everywhere else",
           kit_x ~= nil and plain_x ~= nil
@@ -568,29 +574,24 @@ end
 --
 -- The account page's keys were under the old floor: NEW NAME at eight and a
 -- half points is eight and a half pixels on a monitor, and it was reported as
--- a key nobody could read. The floor is the bottom rung now, and it is
--- measured here in the page that broke it rather than only in the sweep, so
--- the reason this file exists stays attached to the check it produced.
+-- a key nobody could read. That page is gone and its acts are rows of the
+-- landing's account list; the floor it produced is still the floor, and
 -- client/tests/type_test.lua holds the whole menu to the same ladder.
 
 do
     local st = page(1440, 810,
-                     {at = "pilot", depth = 2, focus = "stage", sel = 1,
-                      pilot_card = {name = "Krait 4", claimed = true,
-                                    online = true, rivets = 310,
-                                    career = {kills = 3, deaths = 4,
-                                              games = 7}},
-                      rows = {{label = "new name", index = 1, pick = true},
-                              {label = "change password", index = 2,
-                               pick = true},
-                              {label = "log out", index = 3, pick = true}}})
+                     {at = "settings", depth = 2, focus = "stage", sel = 1,
+                      rows = {{label = "sound", index = 1, pick = true,
+                               detail = "loud"},
+                              {label = "music", index = 2, pick = true,
+                               detail = "off"}}})
     local floor = ui.TYPE.LABEL * ui.MENU_SCALE - 0.01
     local small = nil
     for i = 1, st.n do
         local t = st.text[i]
         if t.px < floor then small = t end
     end
-    check("the account page sets nothing under the ladder's bottom rung",
+    check("a page of the menu sets nothing under the ladder's bottom rung",
           small == nil,
           small and string.format("%s at %.1f", small.s, small.px) or "")
 end

@@ -7,9 +7,9 @@
 -- is the watcher's HUD rather than a panel describing a game. What is added
 -- to it is a lockup, three stops (account, zone, ship) and a PLAY NOW key,
 -- in that order up the screen, and what is taken away is the TAKE SEAT chip,
--- because PLAY NOW is that key. The zone and ship stops open lists in place;
--- account opens the drawer on the pilot page, so its press leaves this file
--- at the arena's door.
+-- because PLAY NOW is that key. All three stops open lists in place. Account
+-- was a door into the drawer's pilot page until decision 99, and that page is
+-- gone: what it held is a list like the other two.
 --
 -- These run the real `M.hud` against a stubbed engine on four windows. The
 -- questions are the ones a hand at a mouse would ask: can I press it, is it on
@@ -31,7 +31,7 @@ end
 
 local layer = {n = 0}
 local function noop(self) self.n = self.n + 1 end
-for _, name in ipairs({"arc", "disc", "flush", "outline", "quad", "reset",
+for _, name in ipairs({"arc", "flush", "outline", "quad", "reset",
                        "ring", "seg", "seg_fade", "seg_flat", "skirt", "tri",
                        "tri_fade", "fan", "seg_glow", "glow_band", "halo",
                        "ring_fade"}) do
@@ -39,8 +39,14 @@ for _, name in ipairs({"arc", "disc", "flush", "outline", "quad", "reset",
 end
 
 -- Frames and rects are kept, because the key is a stroked box over a wash and
--- the question is where the two of them landed.
-local boxes, rects = {}, {}
+-- the question is where the two of them landed. Discs too, for the one mark
+-- out here that is a mark rather than a box: the guest dot on the account
+-- stop.
+local boxes, rects, discs = {}, {}, {}
+layer.disc = function(self, x, y, r)
+    self.n = self.n + 1
+    discs[#discs + 1] = {x = x, y = y, r = r}
+end
 layer.frame = function(self, x, y, w, h)
     self.n = self.n + 1
     boxes[#boxes + 1] = {x = x, y = y, w = w, h = h}
@@ -128,6 +134,16 @@ local LAND = {
         {label = "Bomber", value = 2},
         {label = "spectate", value = "spectate"},
     },
+    -- A guest's account list, as `menu.account_rows` builds it: the offer
+    -- with what it buys, the reroll, a rule, and the way onto an account
+    -- that already exists.
+    account = {
+        {label = "sign up", act = "claim", offer = true,
+         note = "keep your points"},
+        {label = "new name", act = "reroll"},
+        {rule = true},
+        {label = "log in", act = "enter_login"},
+    },
 }
 
 -- One frame of the landing, or of an ordinary watch when `o.landing` is false:
@@ -135,7 +151,7 @@ local LAND = {
 local function frame(w, h, o)
     o = o or {}
     H = h
-    boxes, rects = {}, {}
+    boxes, rects, discs = {}, {}, {}
     frosted = {}
     state.n = 0
     -- The scoreboard is off unless a check asks for it, the way it is off
@@ -521,6 +537,141 @@ do
                               zones = LAND.zones, ships = LAND.ships}})
     check("the ship stop says sitting out in the interface's own case",
           word("SPECTATE") ~= nil and word("spectate") == nil)
+end
+
+-- --- the account stop opens the same kind of list ---------------------------
+--
+-- It was a door: a press opened the drawer on the pilot page, which carried
+-- the career over these acts. The career went to the site and the page went
+-- with it (decision 99), so the acts are a list this stop opens in place,
+-- exactly as zone and ship do. What is checked here is that it behaves like
+-- the other two and that the one row a guest most needs is the one that
+-- stands out.
+do
+    frame(1440, 810, {land_open = "account"})
+    local rows = {}
+    for _, r in ipairs(ui.hits) do
+        if r.action == "land_pick_account" then rows[#rows + 1] = r end
+    end
+    -- Four rows in the list and three of them pressable: the rule is drawn
+    -- rather than published, because it is not a thing to press.
+    check("the account list publishes a press for each act", #rows == 3,
+          #rows .. " rows")
+    check("and names them", word("SIGN UP") ~= nil and word("NEW NAME") ~= nil
+          and word("LOG IN") ~= nil)
+    -- The acts travel by their place in the list rather than by name: they
+    -- are the interface's own words, and what goes back is a row of the list
+    -- this frame drew.
+    check("a row carries its place in the list",
+          rows[1].value == 1 and rows[3].value == 4,
+          tostring(rows[1].value) .. ".." .. tostring(rows[3].value))
+    check("and what signing up buys is beside it",
+          word("KEEP YOUR POINTS") ~= nil)
+    local first = rows[1]
+    if first then
+        check("a press on the row is the pick",
+              press(first.x + 5, first.y + first.h / 2)
+                  == "land_pick_account")
+        local key = box("play_now")
+        check("the list stays clear of the key",
+              key and first.y + first.h <= key.y, "a row is over PLAY NOW")
+        check("open sky puts the list away", press(400, 300) == "land_shut",
+              "landed on " .. tostring(press(400, 300)))
+    end
+    -- The stop it hangs off is the top of the column, so its list covers no
+    -- other stop: both of the ones below it are still there to press.
+    check("and the stops below it are still on the screen",
+          box("land_zone") ~= nil and box("land_ship") ~= nil)
+
+    -- The guest warning: a dot on the stop wherever a lost account would
+    -- cost this guest a rated game. The drawer says the same thing in words
+    -- on a band; out here the stop is the whole account, so it is a mark.
+    local function dots_in_stop(warn)
+        local land = {}
+        for k, v in pairs(LAND) do land[k] = v end
+        land.warn = warn
+        frame(1440, 810, {land = land})
+        local stop = box("land_account")
+        if not stop then return nil end
+        local n = 0
+        for _, d in ipairs(discs) do
+            -- The layer counts up from the bottom and hit boxes count down
+            -- from the top, so the mark is flipped into the box's space.
+            local y = H - d.y
+            if d.r < 4 and d.x >= stop.x and d.x <= stop.x + stop.w
+               and y >= stop.y and y <= stop.y + stop.h then
+                n = n + 1
+            end
+        end
+        return n
+    end
+    check("a guest with something to lose gets a dot on the stop",
+          dots_in_stop(true) == 1, tostring(dots_in_stop(true)))
+    check("and a guest with nothing to lose gets none",
+          dots_in_stop(false) == 0, tostring(dots_in_stop(false)))
+    -- It stands inside the stop's own outline rather than a measure off the
+    -- label, which on the rail's narrower cell put it outside the box.
+    frame(844, 390, {land = (function()
+        local land = {}
+        for k, v in pairs(LAND) do land[k] = v end
+        land.warn = true
+        return land
+    end)()})
+    local rail_stop = box("land_account")
+    local inside = rail_stop ~= nil
+    for _, d in ipairs(discs) do
+        if d.r < 4 and rail_stop and math.abs(d.x - rail_stop.x) < 20
+           and d.x < rail_stop.x then
+            inside = false
+        end
+    end
+    check("and it stays inside the stop on a phone held sideways", inside,
+          "the dot fell outside the cell")
+end
+
+-- --- the card those acts raise stands on the landing ------------------------
+--
+-- The acts left the drawer with the pilot page, so the card they raise has to
+-- stand on a screen the drawer is not on. `ui.land_card` draws it there, and
+-- what makes a card a card is that nothing behind it can be pressed: it drops
+-- every box published before it and publishes its own. Out here the boxes it
+-- drops are the stops and PLAY NOW, which is exactly the trap: a press meant
+-- for an answer that fell through to the key would deploy.
+do
+    frame(1440, 810)
+    check("the landing publishes its key with no card up",
+          box("play_now") ~= nil)
+    ui.land_card({head = "Sign up.", sel = 1,
+                  note = "keep your points and log in on other devices",
+                  fields = {{label = "password", value = "", mask = true}},
+                  keys = {{label = "sign up", act = "do_claim"},
+                          {label = "cancel"}}})
+    ui.finish()
+    check("and none of it once a card is up",
+          box("play_now") == nil and box("land_account") == nil
+              and box("land_zone") == nil,
+          "the landing is still pressable under the card")
+    local answers = 0
+    for _, r in ipairs(ui.hits) do
+        if r.action == "answer" then answers = answers + 1 end
+    end
+    check("the card's own answers are what can be pressed", answers == 2,
+          answers .. " answers")
+    local said = nil
+    for _, t in ipairs(words()) do
+        if string.find(t.s, "SIGN UP") or string.find(t.s, "Sign up") then
+            said = t.s
+        end
+    end
+    check("and it says what it is for", said ~= nil,
+          "the card drew no heading")
+    -- A card with nothing in it is not a card: this is the guard that keeps
+    -- the landing drawing normally on every frame no card is up.
+    frame(1440, 810)
+    ui.land_card(nil)
+    ui.finish()
+    check("no card, no wash, and the key answers again",
+          box("play_now") ~= nil)
 end
 
 -- --- the pointer lights what it is resting on -------------------------------

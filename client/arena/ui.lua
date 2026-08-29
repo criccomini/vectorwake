@@ -51,16 +51,21 @@ local LINE = 18
 -- a page sitting at 13 or under. Nothing decided which of 11 and 11.5 a row
 -- got. Somebody did, once, for that row.
 --
--- Five, and each one has a job. LABEL is the upper case register that names a
+-- Four, and each one has a job. LABEL is the upper case register that names a
 -- group or a column of figures. BODY is everything small that is being read:
 -- a sentence, a detail, a price, a word in a button, a tab. ROW is a name in a
--- list, LEAD the same name where it heads a sentence or a strip of figures,
--- and PAGE is what a page calls itself.
+-- list, and LEAD the same name where it heads a sentence or a strip of
+-- figures.
+--
+-- A fifth stood over those, PAGE, for what a page called itself. The pilot
+-- page's call sign was the last thing set in it, and a card's code the last
+-- reference: both went with decision 99, and a rung nothing stands on is a
+-- rung to delete.
 --
 -- The gap from LABEL to BODY is smaller than the rest of the ladder on
 -- purpose. Upper case reads larger than lower at the same size, so a caps
 -- label set level with the body it names looks heavier than it.
-local TYPE = {LABEL = 12, BODY = 14, ROW = 17, LEAD = 21, PAGE = 26}
+local TYPE = {LABEL = 12, BODY = 14, ROW = 17, LEAD = 21}
 
 -- What the menu multiplies its whole scale by on a window with room.
 --
@@ -141,10 +146,12 @@ M.room_scroll = 0
 -- here is derived from holdings. One stray click in a corner should not empty
 -- a hold.
 M.room_ask = nil
--- Which of the landing's stops has its list open: "zone", "ship", or nil for
--- neither. The account stop opens the drawer instead of a list, so it never
--- lands here. Owned by this module the way `rooms_open` is: the arena flips
--- it on a press and everything that leaves the landing clears it.
+-- Which of the landing's stops has its list open: "account", "zone", "ship",
+-- or nil for none of them. All three open lists in place. Account used to be
+-- the exception, a door into the drawer's pilot page, and that page is gone:
+-- what it held is a list like the other two. Owned by this module the way
+-- `rooms_open` is: the arena flips it on a press and everything that leaves
+-- the landing clears it.
 M.land_open = nil
 -- Where a press would land on the landing: the action a box publishes, and
 -- the value that box carries so one row of an open list is told from the next.
@@ -4156,7 +4163,8 @@ end
 -- name and a build's name all stand in the case they were given, where the
 -- HUD would otherwise shout them. Sitting out is the one answer that is the
 -- interface's own word and takes the interface's own case. See `txt`.
-local function land_stop(x, y, w, h, label, value, action, lit, stacked, raw)
+local function land_stop(x, y, w, h, label, value, action, lit, stacked, raw,
+                         warn)
     -- Where a press would land, at the weight every row of the menu is lit
     -- at. Under the outline rather than over it: the edge is the brighter
     -- half of the same signal, and a wash laid over it would mute it.
@@ -4188,6 +4196,20 @@ local function land_stop(x, y, w, h, label, value, action, lit, stacked, raw)
         land_caret(cx, y + h / 2, pal.a(pal.INK, 0.75))
         txt(value or "", cx - 11 * F.scale, y + h / 2, px,
             pal.a(pal.INK, 0.95), "right", nil, raw)
+    end
+    -- The guest warning, where a guest has something a lost account would
+    -- cost them: one dot in the caution color on the stop that answers it.
+    -- The drawer says it in words on a band, which it has the width for; out
+    -- here the stop is the whole of the account and a dot on it is the mark
+    -- that band used to put on the pilot tab.
+    if warn then
+        -- In the margin the outline leaves, rather than a measure off the
+        -- label: the label starts at eight points on a rail cell and twelve
+        -- down the column, and a dot placed off that number leaves the box on
+        -- the narrower of the two.
+        F.layer:disc(x + 5.5 * F.scale,
+                     ry(stacked and y + h * 0.33 or y + h / 2),
+                     2.5 * F.scale, 8, pal.a(pal.CHARGE_COL, 0.95))
     end
     hit(x, y, w, h, action)
 end
@@ -4222,7 +4244,12 @@ local function land_list(kx, kw, bottom, list, drh)
             elseif r.here then
                 rect(kx, y, kw, drh, pal.a(pal.FRIEND, 0.07))
             end
+            -- The one row that is an offer rather than a choice wears the
+            -- caution color, which is the color the guest band in the drawer
+            -- is already written in and the color of the dot on the stop
+            -- this list hangs off: one warning, said three times in one hue.
             local col = r.dim and pal.a(pal.DIM, 0.8)
+                or (r.offer and pal.a(pal.CHARGE_COL, hov and 1 or 0.95))
                 or (r.here and pal.a(pal.FRIEND, 0.95))
                 or pal.a(pal.INK, hov and 1 or 0.8)
             txt(r.label, kx + pad, y + drh / 2, dpx, col, nil, nil, r.raw)
@@ -4249,11 +4276,17 @@ end
 --
 -- The stops exist because the drawer went undiscovered: a first visit met
 -- PLAY NOW and a hamburger, deployed into whatever the stands were showing,
--- and never learned there was another game or another ship to be. Account
--- opens the drawer on the pilot page; zone and ship open lists in place, and
--- SPECTATE is the ship list's last row, exactly as the ship page has it.
--- Mocked in .design/start-flow, where the column won over a rail along the
--- foot and a line of pressable words.
+-- and never learned there was another game or another ship to be. All three
+-- open lists in place, and SPECTATE is the ship list's last row, exactly as
+-- the ship page has it. Mocked in .design/start-flow, where the column won
+-- over a rail along the foot and a line of pressable words.
+--
+-- Account was the odd one until decision 99: a door that opened the drawer on
+-- a pilot page carrying the career over the account acts. The career went to
+-- the site, and what was left was four short acts standing on a page of their
+-- own, two presses and a panel away from the screen an account is worth
+-- editing on. They are the list this stop opens now, and the pilot page and
+-- its tab are gone. Mocked in .design/pilot-dropdown.
 --
 -- Nothing else is added. The HUD a watcher already gets, corner keys and
 -- clock and score and radar and feed, is the rest of this screen. See
@@ -4293,7 +4326,25 @@ local function landing(land)
         -- through it. Same rule the clock band follows under the drawer.
         local open, list, from = M.land_open, nil, nil
         local drh = g.narrow and 40 * F.scale or 30 * F.scale
-        if open == "zone" and land.zones then
+        if open == "account" and land.account then
+            list, from = {}, acct_box
+            for i, a in ipairs(land.account) do
+                -- The rule between what you can do to this account and how to
+                -- be a different one. It arrives as a row of its own from the
+                -- menu, which owns the order; the ship list writes its own
+                -- because sitting out is known there by its value.
+                if a.rule then
+                    list[#list + 1] = {rule = true}
+                else
+                    -- Indexed rather than named on the wire back: these are
+                    -- the interface's own words, and the value that returns
+                    -- is a row of a list this frame drew.
+                    list[#list + 1] = {label = a.label, value = i,
+                                       action = "land_pick_account",
+                                       offer = a.offer, note = a.note}
+                end
+            end
+        elseif open == "zone" and land.zones then
             list, from = {}, zone_box
             for _, z in ipairs(land.zones) do
                 -- Every game is named rather than described, so every row
@@ -4339,10 +4390,15 @@ local function landing(land)
         -- upward from its own stop, so the stops above the open one are the
         -- covered ones; along the rail it opens over the fight and covers no
         -- stop at all, the three of them standing side by side.
+        --
+        -- Account is the top stop, so its own list covers no stop at all:
+        -- what it climbs into is the lockup, which stands down for it the
+        -- same way. It is still the stop the other two lists cover, which is
+        -- what this guard is for and why the open one is drawn regardless.
         if g.rail or (open ~= "zone" and open ~= "ship") then
             land_stop(acct_box.x, acct_box.y, acct_box.w, acct_box.h,
-                      "account", land.name, "land_account", false, g.rail,
-                      true)
+                      "account", land.name, "land_account",
+                      open == "account", g.rail, true, land.warn)
         end
         if g.rail or open ~= "ship" then
             land_stop(zone_box.x, zone_box.y, zone_box.w, zone_box.h,
@@ -4383,7 +4439,8 @@ local LAND_WALK = {"land_account", "land_zone", "land_ship", "play_now"}
 -- are drawn, which is the order they were published in.
 function M.land_walk()
     local out = {}
-    if M.land_open == "zone" or M.land_open == "ship" then
+    if M.land_open == "account" or M.land_open == "zone"
+       or M.land_open == "ship" then
         local stop = "land_" .. M.land_open
         local pick = "land_pick_" .. M.land_open
         for _, r in ipairs(M.hits) do
@@ -5153,132 +5210,6 @@ function sweep_dial(cx, cy, r)
     F.layer:disc(cx, ry(cy), math.max(1.2 * F.scale, r * 0.05), 10, pal.a(pal.DIM, 0.9))
 end
 
--- The door: one page about the room the game points at.
---
--- The pilot page: who you are, what you have flown, and the way to keep it.
--- The name leads with NEW NAME as a key beside it, the career sits under a
--- ship-page section rule as bare totals, and the account acts stand at the
--- foot the way DEPLOY and SAVE do: a guest gets one lit SIGN UP under two
--- centered lines, a signed-in pilot gets the password and the way out as a
--- pair. The node's rows are the arrows' side of these controls, in the order
--- they are met walking down: the name key, the lit act, the line under it.
-function pages.pilot(v, x, y, w, h, focused)
-    local c = v.pilot_card or {}
-    local sel = focused and (v.sel or 0) or 0
-    local at = y + 10 * F.scale
-
-    -- The name in its owner's case. A press on it does nothing any more; it
-    -- used to reroll it, which cost a curious pilot their call sign.
-    local kh = 26 * F.scale
-    txt(c.name or "", x, at + kh / 2, TYPE.PAGE * F.scale, pal.INK,
-        nil, MENU_FONT, true)
-    -- The size every other key in this menu is set at. It was eight and a half
-    -- points, which is under the ten this interface holds authored type to and
-    -- is eight and a half pixels on a monitor that is not a phone: a key
-    -- nobody with a desktop could read. See `lbl`.
-    local KEY_PX = TYPE.BODY * F.scale
-    local kw = text_w("new name", KEY_PX, MENU_FONT) + 22 * F.scale
-    local hot = sel == 1
-    key_box(x + w - kw, at, kw, kh,
-            pal.rgb(0x0a0f18, hot and 0.95 or 0.7),
-            pal.a(hot and pal.FRIEND or pal.RADAR_TILE, hot and 0.95 or 0.7))
-    txt("new name", x + w - kw / 2, at + kh / 2, KEY_PX,
-        hot and pal.FRIEND or pal.INK, "center",
-        MENU_FONT)
-    hit(x + w - kw, at, kw, kh, "stage", 1)
-    at = at + kh + 16 * F.scale
-
-    -- The career, in the ship page's section grammar: a rule edge to edge of
-    -- the page and the label under it, then the totals. Bare totals with no
-    -- clock on them, because there is no season and the week belongs to the
-    -- site's ladder. The rating names the class it was earned in and is
-    -- withheld while provisional, the way /pilots withholds it.
-    hrule(x, at, w)
-    at = at + 13 * F.scale
-    lbl("career", x, at)
-    at = at + 24 * F.scale
-    local function fact(label, value)
-        txt(label, x, at, TYPE.ROW * F.scale, pal.INK)
-        txt(value, x + w, at, TYPE.BODY * F.scale, pal.READ,
-            "right", nil, true)
-        at = at + 26 * F.scale
-    end
-    local career = c.career
-    if career and career.class then
-        local val = "provisional"
-        if career.rating then
-            val = string.format("%d, %s", math.floor(career.rating + 0.5),
-                                string.lower(career.tier or ""))
-        end
-        fact("Arena rating", val)
-    end
-    if career then
-        fact("Record", career.kills .. " kills, " .. career.deaths
-             .. " deaths")
-        fact("Games", tostring(career.games))
-    end
-    -- The foot. Signing up is the one big act a guest has here, so it gets
-    -- the DEPLOY treatment: full width, lit, under the line saying what it
-    -- buys and the line for the pilot who already has one. Signed in, the
-    -- same room holds the password and the way out as a pair, and nothing
-    -- has to say which state the account is in: the keys are the state.
-    local fh = 36 * F.scale
-    -- Off the rail by the gutter the column keeps at its sides, which is the
-    -- one margin this drawer has. It was six points off a floor that stopped
-    -- forty short of the rule, so the pair stood in a strip of ground half
-    -- again as tall as the keys themselves: a foot that had come away from
-    -- the bottom of the panel it belongs to.
-    local ky = y + h - fh - 14 * F.scale
-    if c.online and not c.claimed then
-        local mid = x + w / 2
-        local l2 = ky - 16 * F.scale
-        local l1 = l2 - 19 * F.scale
-        txt("Keep your points and log in on other devices", mid, l1,
-            TYPE.BODY * F.scale, pal.READ, "center", MENU_FONT)
-        local ask = "Already have a pilot? "
-        local act = "log in"
-        local px2 = TYPE.BODY * F.scale
-        local aw = text_w(ask, px2, MENU_FONT)
-        local vw = text_w(act, px2, MENU_FONT)
-        local sx2 = mid - (aw + vw) / 2
-        -- The cursor says where a press lands, the way it does on every other
-        -- row of every other page. It used to be said by setting the word
-        -- itself a shade brighter, which is a thing type in this menu no
-        -- longer does: state is a color here, and cyan has nothing above it.
-        if sel == 3 then
-            LIT.field(l2 - 10 * F.scale, 20 * F.scale, LIT.CURSOR)
-        end
-        txt(ask, sx2, l2, px2, pal.READ, nil, MENU_FONT)
-        txt(act, sx2 + aw, l2, px2,
-            pal.FRIEND, nil, MENU_FONT, true)
-        hit(x, l2 - 10 * F.scale, w, 20 * F.scale, "stage", 3)
-        local hot2 = sel == 2
-        key_box(x, ky, w, fh, pal.a(pal.FRIEND, hot2 and 0.18 or 0.10),
-                pal.a(pal.FRIEND, hot2 and 1 or 0.85))
-        txt("sign up", mid, ky + fh / 2, TYPE.BODY * F.scale,
-            pal.INK, "center", MENU_FONT)
-        hit(x, ky, w, fh, "stage", 2)
-    elseif c.online then
-        local half = (w - 10 * F.scale) / 2
-        for i, word in ipairs({"change password", "log out"}) do
-            local bx = x + (i - 1) * (half + 10 * F.scale)
-            local on = sel == i + 1
-            key_box(bx, ky, half, fh,
-                    pal.rgb(0x0a0f18, on and 0.95 or 0.7),
-                    pal.a(on and pal.FRIEND or pal.RADAR_TILE,
-                          on and 0.95 or 0.7))
-            txt(word, bx + half / 2, ky + fh / 2, KEY_PX,
-                on and pal.FRIEND or pal.INK,
-                "center", MENU_FONT)
-            hit(bx, ky, half, fh, "stage", i + 1)
-        end
-    end
-    -- Head and foot are pinned, the career fits between them on any window
-    -- this drawer runs at, so the page never scrolls.
-    M.page_extent = h
-    M.page_room = h
-end
-
 -- How tall a line of a row's sentence is, and how that sentence breaks.
 --
 -- The sentence used to be drawn as one line from the column's left edge with
@@ -5643,9 +5574,8 @@ local function ask_card(x, y, w, h, a)
     -- only the client knows whether there is a page under it.
     local dom = a.fields and M.page_fields and true or false
     local cw = math.min((a.fields and 380 or 340) * F.scale, w - 24 * F.scale)
-    -- A card with a code in it is taller by the line the code takes, and one
-    -- with lines to fill in is taller by each of them.
-    local ch = (a.code and 152 or 110) * F.scale
+    -- A card with lines to fill in is taller by each of them.
+    local ch = 110 * F.scale
     if a.fields then ch = (84 + 48 * #a.fields + 46) * F.scale end
     -- A line under the head needs its own room. The keys are laid out from
     -- the bottom edge up, so without this they come back to meet it.
@@ -5663,13 +5593,6 @@ local function ask_card(x, y, w, h, a)
     if a.note then
         txt(a.note, mid, cy + 60 * F.scale, TYPE.BODY * F.scale,
             pal.READ, "center")
-    end
-    -- What the question is about, when it is about a string rather than a
-    -- choice: big enough to read off one machine and type into another,
-    -- quoted rather than said, and lit, because it is the one thing on the
-    -- card anybody has to get right.
-    if a.code then
-        txt(a.code, mid, cy + 72 * F.scale, TYPE.PAGE * F.scale, pal.FRIEND, "center", nil, true)
     end
     if a.fields then
         local fx = cx + 26 * F.scale
@@ -5708,6 +5631,23 @@ local function ask_card(x, y, w, h, a)
         hit(kx, ky, ws[i], KEY_H * F.scale, a.action or "answer", i)
         kx = kx + ws[i] + KEY_GAP * F.scale
     end
+end
+
+-- The same card with nothing behind it but the landing.
+--
+-- The account acts left the drawer with the pilot page, so the card they
+-- raise has to stand on a screen the drawer is not on: press SIGN UP on the
+-- landing and the password card comes up over the stands, drawn by this
+-- rather than by `M.menu`. Same card, same keys, same lines handed to the
+-- page; what changes is the rectangle it centers itself in, which out here
+-- is the window.
+--
+-- The caller decides when: while the drawer is up or sliding, `M.menu` draws
+-- the card and this must not, or the wash goes down twice and the second
+-- copy takes the hits.
+function M.land_card(a)
+    if not a then return end
+    ask_card(0, 0, F.w, F.h, a)
 end
 
 -- The question a pressed room raises, over the whole screen.
@@ -5939,8 +5879,6 @@ pages.HEAD_KEY = 30
 -- onto a table, since a table is one name however much it holds. See
 -- client/tests/upvalues_test.lua.
 function pages.corner(v, right, cy)
-    local bh = pages.HEAD_KEY * F.scale
-    local by = cy - bh / 2
     local rt = right
     if not (v.pilot and v.pilot.name and v.pilot.name ~= "") then
         return rt
@@ -5948,32 +5886,28 @@ function pages.corner(v, right, cy)
     -- A name is quoted rather than said: it keeps the case its owner gave it,
     -- where every other word on this row is in the interface's.
     --
-    -- Lit by the arrows standing on it, wherever the panel is: that is a
-    -- cursor, and a cursor you cannot see is a cursor nobody can use. A
-    -- pointer resting on it lights it too, but not while its own page is up:
-    -- the rail already carries the "you are here" mark for that page, and a
-    -- mouse crossing the name is not a claim about where you are.
-    local on = v.head_sel == "pilot"
-        or (v.pilot_hot and v.at ~= "pilot")
+    -- A label rather than a key since decision 99. It was the second door
+    -- onto the pilot page, kept because a name that says who you are signed
+    -- in as is worth pressing; there is no page behind it now, and the
+    -- account is a stop on the landing. What is left is the sentence the
+    -- button was always also saying, so the box and the lit states go and the
+    -- name stays exactly where it was.
+    --
     -- LABEL rather than BODY, which is the one place on the ladder a name
     -- steps down a rung. The head is a strip of fixed height sharing its
     -- width with the way out at one end and the line meter at the other,
-    -- and this button grows with whatever is written on it: at BODY the
+    -- and this name grows with whatever is written on it: at BODY the
     -- longest call sign anybody can register leaves a phone 54 points for a
     -- readout that needs 80, so the meter stands down on a column that can
     -- plainly afford it. A chip in a dense bar is what this rung is for.
     local px = TYPE.LABEL * F.scale
     local bw = text_w(v.pilot.name, px, MENU_FONT, true) + 30 * F.scale
     local bx = rt - bw
-    key_box(bx, by, bw, bh, pal.rgb(0x0a0f18, on and 0.95 or 0.7),
-            pal.a(on and pal.FRIEND or pal.RADAR_TILE, on and 0.95 or 0.7))
-    -- The weight a tab wears, because it is one more stop on that row. It was
-    -- set brighter than the tabs it sits beside, and read as the thing the
-    -- head was about.
-    txt(v.pilot.name, bx + 15 * F.scale, cy, px,
-        on and pal.FRIEND or pal.INK, nil,
+    -- The weight a tab wears, because it stands on that row. It was set
+    -- brighter than the tabs it sits beside, and read as the thing the head
+    -- was about.
+    txt(v.pilot.name, bx + 15 * F.scale, cy, px, pal.INK, nil,
         MENU_FONT, true)
-    hit(bx, by, bw, bh, "pilot_page")
     return bx
 end
 
@@ -6472,7 +6406,12 @@ function M.menu(v)
         txt("Press here to set your password.", dx + MENU_PAD * F.scale,
             by + 33 * F.scale, TYPE.BODY * F.scale, pal.READ, nil,
             MENU_FONT)
-        hit(dx, by, dock, bh, "pilot_page")
+        -- The band raises the card itself rather than walking somewhere that
+        -- has one. It used to open the pilot page, which is where the act
+        -- stood; the act stands on the landing now, and a warning inside the
+        -- drawer that answered itself by shutting the drawer would be a
+        -- longer way round to the same card.
+        hit(dx, by, dock, bh, "guest_signup")
     end
     -- A rule under the head, so the x and the call sign read as a bar over the
     -- page rather than as the page's own first line. Edge to edge, since it is
@@ -6611,12 +6550,10 @@ function M.menu(v)
                  tab_h, pal.a(pal.FRIEND, rail_focus and 0.22 or 0.06))
         end
         draw_mark(e.icon, cx, cy, r, col, v.class or 0)
-        -- The quiet half of the guest warning: a spark on the stop the
-        -- banner points at, carried wherever the banner itself is not.
-        if v.guest_dot and e.label == "pilot" then
-            F.layer:disc(cx + 11 * F.scale, ry(cy - 9 * F.scale),
-                         2.4 * F.scale, 10, pal.CHARGE_COL)
-        end
+        -- A spark rode this rail beside the pilot stop, the quiet half of the
+        -- guest warning. There is no pilot stop, and no stop on this row is
+        -- about the account: the spark sits on the landing's account stop
+        -- now, which is what the band points at. See `land_stop`.
         txt(e.label, cx, cy + 24 * F.scale, label_px,
             (sel or hot) and pal.FRIEND or pal.MUTE,
             "center", MENU_FONT)
@@ -6832,9 +6769,6 @@ function M.menu(v)
         -- quarter inch of difference nobody can name and everybody can see
         -- when they walk the tab row.
         pages.ships(v, panel_x, top, panel_w, room, focused)
-    elseif v.pilot_card then
-        -- Who you are and the way to keep it, drawn rather than listed.
-        pages.pilot(v, panel_x, top, panel_w, room, focused)
     else
         -- Two lines of room where the rows have two lines in them, held to
         -- one height either way so nothing shifts as the cursor walks down.

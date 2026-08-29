@@ -4,9 +4,10 @@
 --
 -- Scenarios: after (a match part way through), before (with the banner the
 -- server used to send), ending (a room at the whistle), landing (the front
--- end, watched from the stands; landing-zones and landing-ships open a stop's
--- list), waiting (what the loader hands off to before a room answers),
--- loadout (a loaded hull with charges in hand, for the corner stack).
+-- end, watched from the stands; landing-zones, landing-ships and
+-- landing-account open a stop's list), waiting (what the loader hands off to
+-- before a room answers), loadout (a loaded hull with charges in hand, for
+-- the corner stack).
 -- Rasterize with any browser:
 --
 --     chromium --headless --screenshot=out.png --window-size=1280,800 out.svg
@@ -221,17 +222,18 @@ if ending then
              score = {[0] = 17, [1] = 20}}
 end
 
--- Three frames of the front end: the stops closed, the zone list down, the
--- ship list down.
+-- Four frames of the front end: the stops closed, and each of the three
+-- lists down.
 local landing = scenario == "landing" or scenario == "landing-zones"
-    or scenario == "landing-ships"
+    or scenario == "landing-ships" or scenario == "landing-account"
 if landing then
     room.count = 8
     room.teams = {[0] = 0, 0, 0, 0, 1, 1, 1, 1}
     match = {playing = true, left = 107, score = {[0] = 3, [1] = 5}}
 end
--- The landing's stops, as the arena builds them: the pilot, the games with
--- their one-line formats, and the builds with sitting out as the last row.
+-- The landing's stops, as the arena builds them: the call sign and what its
+-- list holds, the games with their one-line formats, and the ships with
+-- sitting out as the last row.
 local land = landing and {
     name = "Kestrel 8",
     zone = "Team Battle",
@@ -245,9 +247,20 @@ local land = landing and {
         {label = "Bomber", value = 2},
         {label = "spectate", value = "spectate"},
     },
+    -- A guest with a game behind them: the offer, the reroll, and the way
+    -- onto an account that already exists. See `menu.account_rows`.
+    account = {
+        {label = "sign up", act = "claim", offer = true,
+         note = "keep your points"},
+        {label = "new name", act = "reroll"},
+        {rule = true},
+        {label = "log in", act = "enter_login"},
+    },
+    warn = true,
 } or nil
 ui.land_open = (scenario == "landing-zones" and "zone")
-    or (scenario == "landing-ships" and "ship") or nil
+    or (scenario == "landing-ships" and "ship")
+    or (scenario == "landing-account" and "account") or nil
 
 ui.details = true
 state.n = 0

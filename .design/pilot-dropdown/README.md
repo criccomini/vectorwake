@@ -1,13 +1,13 @@
 # The account stop as a dropdown
 
-Today the landing's ACCOUNT stop is a door: a press opens the drawer on the
-pilot page (arena.script's land_act says so in as many words). Zone and ship
-open lists in place. These boards draw account opening in place too, as the
-same upward panel the other two stops get, holding only the account acts and
-none of the career: claim account, sign up and log in for a guest; set
-password and log off once the account is claimed.
+Shipped as [decision 99](../../docs/architecture/decisions.md). The landing's
+ACCOUNT stop used to be a door: a press opened the drawer on the pilot page,
+where zone and ship opened lists in place. It opens the same kind of list now,
+holding only the account acts and none of the career, and the pilot page, its
+tab and the call sign's press are gone.
 
-Four boards, built by `build.py` and seeded with the design skill's helper:
+These boards were the proposal and have been brought back to what shipped.
+Four of them, built by `build.py` and seeded with the design skill's helper:
 
     python3 build.py
     node seed-canvas.mjs --template payload.template.html \
@@ -18,32 +18,37 @@ Four boards, built by `build.py` and seeded with the design skill's helper:
 
 What the boards say:
 
-- Acts on the account you are stand above a rule; ways of being somebody
-  else stand below it. The guest's list leads with CLAIM ACCOUNT in the
-  offer green the invite band uses (decision 80), with KEEP YOUR POINTS as
-  its note, then NEW NAME, the reroll the pilot page keeps behind a key of
-  that name; under the rule, SIGN UP with START FRESH beside it, and LOG IN.
-- The claimed pilot's list is SET PASSWORD and NEW NAME over the rule, and
-  LOG OFF under it.
+- Acts on the account you are stand above a rule; ways of being somebody else
+  stand below it. A guest reads SIGN UP with "keep your points" beside it and
+  NEW NAME, then LOG IN under the rule. A claimed pilot reads SET PASSWORD and
+  NEW NAME over the rule, LOG OFF under it.
+- The stop wears a dot for a guest with something a lost account would cost
+  them, which is the warning the drawer spells out in words on its band.
 - Rows wear the menu's states from decision 72, and the panel is the nearly
-  opaque ground land_list already draws, since two rows over a live fight
+  opaque ground `land_list` already draws, since two rows over a live fight
   have to be read rather than read through.
-- The list opens upward from its own stop like the other two, so it covers
-  the lockup, which stands down the way the shipped mark already does when
-  a panel climbs into it.
+- The list opens upward from its own stop like the other two, so it covers the
+  lockup, which stands down the way the shipped mark already does when a panel
+  climbs into it.
 
-Open before anything is built:
+Two things changed between the proposal and what shipped:
 
-- For a guest, SIGN UP and CLAIM ACCOUNT are nearly one act in the account
-  model: claiming is setting a password on the account the client was
-  already handed, and the shipped pilot page calls that act SIGN UP. If
-  they collapse, one row survives and the rule goes.
-- What a row press opens is not drawn. LOG IN and both password acts need
-  fields, either in the drawer's existing cards or inline over the glass.
-- Whether the pilot page keeps its foot keys once the dropdown carries the
-  same acts, or slims to the career alone.
+- The proposal drew CLAIM ACCOUNT and SIGN UP as two rows, an offer above the
+  rule and a fresh start below it. They are one act: the server has one
+  endpoint, `/v1/claim`, and what it does is put a password on the account
+  this client was handed on its first run. There is no second act that makes a
+  fresh account and signs it up, because a fresh account is what a guest
+  already has. One row, in the player's word for it.
+- The offer wears the caution color rather than a green. The green belonged to
+  an invite band that went with friends (decision 95); the color the warning
+  is written in everywhere else is the guest band's, and the dot on the stop
+  is the same hue.
+
+Still open: what a row press opens is drawn nowhere here. LOG IN and both
+password acts raise the account cards, which stand over the landing with no
+panel behind them.
 
 The design system is lifted from `../start-flow/build.py`, which lifted it
-from the real client. Two things have moved since that canvas: the stops
-grew frost, so the fight blurs behind them here too, and ship building went
-(the roster is one row a ship), so the ship stop holds a hull's name.
+from the real client. Two things had moved since that canvas: the stops grew
+frost, so the fight blurs behind them here too, and ship building went (the
+roster is one row a ship), so the ship stop holds a hull's name.

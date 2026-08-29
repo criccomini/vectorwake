@@ -110,9 +110,6 @@ M.ask = nil             -- {head, keys = {{label, act}}, sel, fields, field}
 -- typeable because it is never shown or spoken, only hashed.
 local NAME_MAX = 24
 local PASSWORD_MAX = 64
--- The page the last tick was on, so the two that fetch their own contents can
--- ask on the way in rather than on every frame they are up.
-local was_at = nil
 -- How often a guest with nothing recorded yet re-asks for their career, which
 -- is the figure the guest warning arms on. Slow, because what it is watching
 -- for happens once in an account's life.
@@ -734,6 +731,51 @@ function M.landing_ships()
     return rows
 end
 
+-- The rows the landing's account stop opens: everything this client can do
+-- about who it is, and nothing about how it has flown.
+--
+-- This list is the whole of the account interface now. It was a page in the
+-- drawer, reached by a tab and by the call sign in the head, carrying the
+-- career over these same acts; the career went with it to the site's own
+-- /pilots, and what is left is short enough to be a list you open from the
+-- one screen an account is worth editing on. See decision 99.
+--
+-- Two groups with a rule between them: what you can do to the account you
+-- are, then how to be a different one. A guest's first row is the offer,
+-- since it is the only one that keeps what they are carrying, and it wears
+-- the same green the invite band does.
+--
+-- Signing up and claiming this account are one act, not two. The server has
+-- one endpoint for it, `/v1/claim`, and what it does is put a password on
+-- the account this client already holds: there is no second act that makes a
+-- fresh account and signs it up, because a fresh account is what a guest
+-- already has. So it is one row, and the word on it is the player's, "sign
+-- up", rather than the endpoint's.
+--
+-- Nothing at all without a meta-layer to talk to, except the reroll, which
+-- has an offline answer of its own: no account layer means no account to
+-- sign up to, and rows that cannot work are worse than a short list.
+function M.account_rows()
+    local rows = {}
+    if account.base == "" then
+        rows[#rows + 1] = {label = "new name", act = "reroll"}
+        return rows
+    end
+    if account.claimed then
+        rows[#rows + 1] = {label = "set password", act = "claim"}
+        rows[#rows + 1] = {label = "new name", act = "reroll"}
+        rows[#rows + 1] = {rule = true}
+        rows[#rows + 1] = {label = "log off", act = "logout"}
+        return rows
+    end
+    rows[#rows + 1] = {label = "sign up", act = "claim", offer = true,
+                       note = "keep your points"}
+    rows[#rows + 1] = {label = "new name", act = "reroll"}
+    rows[#rows + 1] = {rule = true}
+    rows[#rows + 1] = {label = "log in", act = "enter_login"}
+    return rows
+end
+
 -- A press on a ship in that list: arrive as it. The same path the roster's
 -- own row takes, so the choice reaches the arena through the "ship" act the
 -- caller runs; picking a ship also means arriving in one, so a remembered
@@ -845,20 +887,9 @@ local NODES = {
                                    return HULLS[M.class + 1][1]
                                end, go = "hangar"}
         end
-        -- The slot that answers where you are standing rather than what you
-        -- came to do. At home that is who you are; in a room it is the way
-        -- back out.
-        --
-        -- The call sign at the far end of the top line opens the same pilot
-        -- page and stays there, because it is the one thing on screen saying
-        -- who you are signed in as; what it never looked like was a button,
-        -- and the claim flow behind it is the thing a new player most needs
-        -- to find. Two doors onto one page, on purpose. For a long time the
-        -- name was the only way in, on the argument that a tab repeating it
-        -- said it twice; what that bought was an account nobody knew they
-        -- had. Only at home, which is the guard the corner press already
-        -- wears: an account is not a thing to edit from inside a room. See
-        -- `M.click_pilot`.
+        -- The way back out of a room. At home there is nothing to leave, and
+        -- nothing stands in this slot: the account used to, and the landing's
+        -- account stop is where that lives now. See decision 99.
         --
         -- Leaving goes one step, and which step is whichever one you are
         -- standing on. Flying, it hands the seat back and leaves you watching
@@ -872,15 +903,15 @@ local NODES = {
         -- the way to the sound settings. That argument was about a games list
         -- to hang it on, and there is none: the way out of a room belongs on
         -- the row that is what the drawer has left.
-        if M.home then
-            rows[#rows + 1] = {label = "pilot", icon = "pilot", go = "pilot"}
-        elseif M.flying() then
-            rows[#rows + 1] = {label = "leave", icon = "leave",
-                               detail = "stop flying, keep watching",
-                               act = "leave_seat"}
-        else
-            rows[#rows + 1] = {label = "leave", icon = "leave",
-                               detail = "back to the stands", act = "leave"}
+        if not M.home then
+            if M.flying() then
+                rows[#rows + 1] = {label = "leave", icon = "leave",
+                                   detail = "stop flying, keep watching",
+                                   act = "leave_seat"}
+            else
+                rows[#rows + 1] = {label = "leave", icon = "leave",
+                                   detail = "back to the stands", act = "leave"}
+            end
         end
         -- Everything about the machine rather than about a match, in one
         -- column: audio, video, the bindings, and about. Help folded into it
@@ -907,38 +938,6 @@ local NODES = {
     hangar = {rows = ship_rows},
 
     teams = {rows = team_rows},
-
-    -- The last stop on the home row, and also where the call sign in the
-    -- corner lands: two doors onto one page, because the name says who you
-    -- are and the stop looks like a button. Away from home the row stops
-    -- carrying it, and the sweep in `M.tick` puts a pilot back out of it
-    -- then, the same as the hangar when the whistle goes.
-    -- Drawn by `pages.pilot` rather than as a list: the name large with a
-    -- NEW NAME key beside it, the career under a ship-page section rule, and
-    -- the account acts at the foot. These rows are the arrows' side of that
-    -- drawing, in the order the controls are met walking down.
-    --
-    -- The reroll is a key rather than a press on the name. It used to be the
-    -- row itself, and a curious player pressing their own call sign to see
-    -- what it did lost it on the spot.
-    pilot = {rows = function()
-        local rows = {
-            {label = "new name", act = "reroll"},
-        }
-        -- A password is offered rather than demanded, and it is the whole
-        -- account model: sign up and this name is yours anywhere, skip it
-        -- and the pilot lives on this device until a quiet week reclaims
-        -- it. No account rows at all without a meta-layer, because then
-        -- there is nothing behind them to talk to.
-        if account.base ~= "" and not account.claimed then
-            rows[#rows + 1] = {label = "sign up", act = "claim"}
-            rows[#rows + 1] = {label = "log in", act = "enter_login"}
-        elseif account.claimed then
-            rows[#rows + 1] = {label = "change password", act = "claim"}
-            rows[#rows + 1] = {label = "log out", act = "logout"}
-        end
-        return rows
-    end},
 
     -- Settings carry a `choice`, where a value sits along its range, as well
     -- as the word for it. The interface draws the range as steps and lights
@@ -1255,16 +1254,15 @@ end
 -- page, so they are a head over the page here as well, and up off the first
 -- row of a page is how a hand reaches them.
 --
--- The call sign is a stop only where pressing it does something. An account is
--- not a thing to edit from inside a room, so away from home the name is a
--- label saying who you are and the x is the whole of this row. See
--- `M.click_pilot`.
+-- The x is the whole of this row now. The call sign at the other end of it
+-- was a stop as well, the second door onto a pilot page that no longer
+-- exists; it stays as a label, because it is still the one thing on screen
+-- saying who you are signed in as, and a label is not a stop.
 --
 -- The list is here rather than in the drawing because the arrows walk it, and
 -- a row a hand can walk has to be a list somewhere. ui.lua draws the x at one
 -- end of that line and the name at the other; both read this.
 local function head_stops()
-    if M.home and (M.name or "") ~= "" then return {"close", "pilot"} end
     return {"close"}
 end
 
@@ -1505,8 +1503,8 @@ local function settle(act, asked, by)
     elseif act == "do_login" then
         M.send_login(asked)
     elseif act == "logout" then
-        M.confirm("Log out of " .. M.name .. "?",
-                  {{label = "log out", act = "do_logout"}, {label = "stay"}})
+        M.confirm("Log off " .. M.name .. "?",
+                  {{label = "log off", act = "do_logout"}, {label = "stay"}})
     elseif act == "do_logout" then
         account.logout()
         -- The fresh guest's name arrives on the account layer's schedule;
@@ -1532,14 +1530,50 @@ local function settle(act, asked, by)
     return nil
 end
 
+-- The one act on the account list that throws something away, and the card
+-- that stands in front of it.
+--
+-- A call sign is the only name anybody has here, it is the name on the
+-- scoreboard of every game this pilot has flown, and the control that showed
+-- it used to replace it on the press with nothing said. Mid-game the roll is
+-- also a respawn, because a new name is a new pilot and the seat is rejoined
+-- to wear it. Said on the card rather than discovered.
+--
+-- Both ways in pass through here: a row of the drawer and a row of the
+-- landing's list. "reroll" therefore means "ask" from a control and "roll"
+-- from the card's own answer, which is what `settle` does with it.
+local function ask_reroll()
+    local head = "your call sign is " .. M.name
+    if not M.home then
+        head = head .. ". A new one respawns your ship"
+    end
+    M.confirm(head, {{label = "roll", act = "reroll"}, {label = "keep"}})
+end
+
+-- One of those acts, run by name, for a caller with no row to press.
+--
+-- The landing's account list is that caller: its rows are `M.account_rows`
+-- and they carry the same act names the pilot page's rows carried, so
+-- pressing one has to land exactly where pressing a row did, guard and all.
+--
+-- Answers what the caller must apply, the same as a row press: nil when the
+-- act settled here, which every account act but none of the arena's does.
+function M.activate_act(act)
+    if act == "reroll" then
+        ask_reroll()
+        return nil
+    end
+    return settle(act)
+end
+
 -- Raise a question. `keys` is the answers in the order they are drawn, each a
 -- label and the action answering it returns, and the last of them is the one
 -- that changes nothing: it is what escape gives, so a question can always be
 -- got out of by the key that gets out of anything. On a plain question the
 -- cursor starts there too; a card with fields starts on its first key, since
 -- the whole point of raising one is to fill it in and send it.
-function M.confirm(head, keys, code)
-    M.ask = {head = head, keys = keys, sel = #keys, code = code}
+function M.confirm(head, keys)
+    M.ask = {head = head, keys = keys, sel = #keys}
 end
 
 -- The card that claims this pilot, and the one that changes the password
@@ -1829,6 +1863,13 @@ local function guest_stakes()
     return ((account.career or {}).games or 0) > 0
 end
 
+-- And the same question from outside, for the landing's account stop: the
+-- warning the drawer draws as a band is a dot out there, on the stop the
+-- band would be pointing at.
+function M.guest_stakes()
+    return guest_stakes()
+end
+
 -- Put the cursor on the game you were in last, once the directory has
 -- answered. Called by the arena rather than worked out during a draw, because
 -- the list arrives on its own schedule and moving a selection out from under a
@@ -1870,29 +1911,18 @@ function M.tick(dt)
         end
     end
     if M.at() ~= "controls" then M.foot = nil end
-    -- The career, re-asked when its page comes up. Asked on the edge rather
-    -- than every frame: a page nobody is on should cost the fleet nothing.
-    --
-    -- "On screen" rather than "entered", because at the root the stage
-    -- previews the tab under the cursor, so a page can be read in full
-    -- without the stack ever naming it. The ship page used to ask here too,
-    -- for a catalog of what the account owned and what the next rung cost.
-    -- Nothing on it is bought now, so it asks for nothing.
-    local at = M.showing()
-    local arrived = at ~= was_at
-    if arrived then
-        if at == "pilot" then account.refresh_career() end
-        was_at = at
-    end
     -- The career, while a guest still has nothing a sweep would cost
-    -- them. One request per session was enough while the pilot page was the
-    -- only reader, since that page asks again on arrival; the guest warning
-    -- reads the same figure from every tab, and a guest's first rated game is
-    -- filed long after the session woke. So the copy this client held said no
-    -- games for the whole of the session the first game was flown in, and the
-    -- warning that is supposed to arrive the moment there is something to
-    -- lose arrived a session late, which for a player who never comes back is
-    -- never.
+    -- them. It was also re-asked whenever the pilot page came up, and that
+    -- page is gone: the warning below is the only reader left, and it reads
+    -- from every tab rather than from a page you have to visit.
+    --
+    -- One request per session was enough while the pilot page was the only
+    -- reader, since that page asked again on arrival; a guest's first rated
+    -- game is filed long after the session woke. So the copy this client held
+    -- said no games for the whole of the session the first game was flown in,
+    -- and the warning that is supposed to arrive the moment there is
+    -- something to lose arrived a session late, which for a player who never
+    -- comes back is never.
     --
     -- It stops as soon as it has an answer, and it never starts for a claimed
     -- pilot or for a guest who has already bought a rung.
@@ -1915,11 +1945,9 @@ local function head_lit()
 end
 
 -- One of them, pressed. The x shuts the panel, which is what a cross means
--- everywhere; the call sign goes where a pointer on it goes, which is the
--- page the pilot stop leads to: two doors onto one page, on purpose.
+-- everywhere, and it is the only thing on this row that takes a press.
 local function press_head(which)
     if which == "close" then return M.click_close() end
-    if which == "pilot" then return M.click_pilot() end
     return nil, false
 end
 
@@ -1949,7 +1977,6 @@ function M.view()
                  -- carried a wallet beside the name until there was nothing
                  -- anywhere in the game to spend.
                  pilot = {name = M.name},
-                 pilot_hot = M.pilot_hot,
                  -- Which of the head's controls the arrows are standing on,
                  -- by name rather than by number: the drawing puts the x at
                  -- one end of that line and the name at the other, and a
@@ -2010,20 +2037,6 @@ function M.view()
     -- the page you are standing in, so resting on Ship showed a column of
     -- names and entering it showed the roster. A preview is the page.
     if M.showing() == "hangar" then out.ships = true end
-    -- What the stage previews at the root: the tab the cursor is on.
-    local previewing = ((#M.stack == 1) and rows_of(NODES.root)[sel]
-                        and rows_of(NODES.root)[sel].go) or nil
-    if M.at() == "pilot" or previewing == "pilot" then
-        -- Everything the drawing needs, and no aside: the reading column
-        -- that used to stand here said the call sign a third time and the
-        -- password sentence a second, over an empty gap.
-        out.pilot_card = {
-            name = M.name,
-            claimed = account.claimed,
-            online = account.base ~= "",
-            career = account.career,
-        }
-    end
     -- No roster under the games. The room the menu stands over used to draw
     -- itself here, first as a column beside the list and then under it, on the
     -- argument that a player choosing where to go wants to know who is where.
@@ -2039,11 +2052,12 @@ function M.view()
     -- the root it is the cursor and says nothing new; one level in it is the
     -- only thing on screen that says what a click would land on, which is the
     -- job it does for the stage on the home screen.
-    -- The guest warning: a dot on the pilot stop whenever there is
-    -- something to lose, and a band over the rail on every page but the one
-    -- the band points at. Home only, which is where the pilot page is.
-    out.guest_dot = guest_stakes()
-    out.banner = out.guest_dot and M.home and M.showing() ~= "pilot"
+    -- The guest warning: a band over the rail for a guest with something to
+    -- lose, wherever the drawer is standing at home. It used to carry a dot
+    -- on the pilot stop as well and to stand down on the page it pointed at;
+    -- the page is gone, so the band is the whole warning here and the dot
+    -- rides the landing's account stop, which is what it now points at.
+    out.banner = guest_stakes() and M.home
     out.rail_hover = M.rail_hover
     local top = rows_of(NODES.root)
     out.rail = {}
@@ -2260,18 +2274,7 @@ local function activate(by)
                   {{label = "ok", act = "ok"}})
         return nil
     elseif r.act == "reroll" then
-        -- The one row on the pilot page that throws something away. A call
-        -- sign is the only name anybody has here, it is the name on the
-        -- scoreboard of every game this pilot has flown, and the row that
-        -- shows it used to replace it on the press with nothing said.
-        -- Mid-game the roll is also a respawn, because a new name is a new
-        -- pilot and the seat is rejoined to wear it. Said on the card rather
-        -- than discovered: the one thing this row does is ask first.
-        local head = "your call sign is " .. M.name
-        if not M.home then
-            head = head .. ". A new one respawns your ship"
-        end
-        M.confirm(head, {{label = "roll", act = "reroll"}, {label = "keep"}})
+        ask_reroll()
         return nil
     elseif r.act == "leave_seat" then
         -- The seat handed back, the room kept. Nothing else about this
@@ -2289,7 +2292,12 @@ end
 -- Returns an action name or nil, and whether anything moved, so the caller
 -- can make a noise about it.
 function M.step(keys)
-    if not M.open then return nil, false end
+    -- A card can be raised from the landing with the drawer shut, and it owns
+    -- the keys wherever it stands: the account acts are out there now, so a
+    -- password typed on the front page is walked and sent by this same path.
+    -- Everything below the card's own block needs the panel, and the block
+    -- returns on every branch, so there is nothing under a card to fall into.
+    if not M.open and not M.ask then return nil, false end
 
     -- A question owns the keys while it is up, which is the whole of what
     -- makes it a question rather than a notice: the list underneath cannot be
@@ -2561,21 +2569,7 @@ function M.click_wake(dir)
     return nil, true
 end
 
--- The call sign at the far end of the head, pressed. It is a destination like
--- a rail stop, so it behaves like one: home first, then into the page. The
--- same page the rail's pilot stop opens; the name is the second door.
-function M.click_pilot()
-    if not M.home then return nil, false end
-    M.stack = {"root", "pilot"}
-    M.head_sel = nil
-    M.note = nil
-    return nil, true
-end
-
--- Whether the pointer is on that button, so it can light the way a lit tab
--- does. The arena sets it from the same hit list the press comes off.
-M.pilot_hot = false
--- And which of the head's controls the arrows are on, as an index into
+-- Which of the head's controls the arrows are on, as an index into
 -- `head_stops`. Nil is the usual answer: the cursor is on a tab or somewhere
 -- in a page, and the head is a line the arrows visit rather than pass
 -- through.
