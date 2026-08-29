@@ -161,7 +161,7 @@ check("the rail names its stops", has(st, "zones") and has(st, "about"))
 local corner = draw({depth = 1, sel = 0, rail = RAIL, rail_sel = 1,
                      focus = "rail", home = true, closable = false,
                      rows = rows,
-                     pilot = {name = "Tiller 963", rivets = 40}})
+                     pilot = {name = "Tiller 963"}})
 check("the corner says who is reading", has(corner, "Tiller 963"))
 local named, clashed = nil, false
 for _, h in ipairs(ui.hits) do
@@ -855,153 +855,71 @@ do
           drawn .. " of " .. #pad_rows)
 end
 
--- --- the ship page is a ship and its thirty points ------------------------
+-- --- the ship page is the roster, and a row is a whole ship ---------------
 --
--- Two columns stood to the left of the kit: every hull as a row, and a panel
--- carrying a role, a sentence and three footprint numbers. That is two thirds
--- of a page spent on a choice made once and on reference material, so it is a
--- drawing with arrows either side of it now.
+-- Four pages stood here: the kit, the shelf that sold rungs for it, the
+-- library of named builds, and the reading that explained one slot. A hull is
+-- a whole ship now, so the page is seven of them read side by side and one
+-- press.
 --
--- What is pinned is what a player uses: the head names the build, the ship is
--- named where it is chosen, and the numbers that belonged to a spec sheet are
--- gone.
---
--- The ship stood in that head once, with an arrow either side. It was the
--- second hull selector on one page, and the head of a page about thirty
--- points is where the build's own name belongs.
+-- Which puts the reading on the row. What is checked is that a row says the
+-- four things a pilot picks on: the ship's name, the shape it presents, where
+-- it stands on the five flight rows, and what it flies with.
 do
     local ROWS = {
-        {label = "Screen", group = "band", act = "builds", verbatim = true,
-         state = "edited", index = 1},
-        {label = "points", group = "band", act = "points", index = 2},
-        {label = "energy", group = "flight", sect = "flight", short = "en",
-         choice = 2, choices = 6, owned = 6, arena_max = 8, index = 3},
-        {label = "gun spray", group = "weapons", sect = "gun", trigger = 0,
-         mod = 0, ladder = true, choice = 1, choices = 2, owned = 2,
-         arena_max = 5, price = 40, afford = true, index = 4},
-        {label = "hull", group = "flair", sect = "flair", ship = true,
-         verbatim = true, detail = "Cipher", choice = 1, choices = 2,
-         index = 5},
-        {label = "save", group = "save", act = "save_kit", index = 6},
+        {label = "Cipher", verbatim = true, group = "ships", sect = "ships",
+         detail = "a needle", note = "fastest hull in the game",
+         ship = true, hull = 4, choice = 1, choices = 1, index = 1,
+         bars = {1.0, 0.6, 0.3, 0.0, 0.0}, carries = {"burst 2", "repel"},
+         rack = false, pick = true},
+        {label = "Anvil", verbatim = true, group = "ships", sect = "ships",
+         detail = "a wall", ship = true, hull = 3, choice = 0, choices = 1,
+         index = 2, bars = {0.1, 0.0, 0.1, 1.0, 1.0},
+         carries = {"repel 3", "burst"}, rack = true, pick = true},
+        {label = "spectate", verbatim = true, group = "ships", sect = "ships",
+         detail = "no hull", note = "watch the room from nobody's cockpit",
+         ship = true, figure = "pilot", choice = 0, choices = 1, index = 3,
+         pick = true},
+        {label = "wake", verbatim = true, group = "flair", sect = "flair",
+         detail = "ember", choice = 1, choices = 4, index = 4, pick = true},
     }
-    local hangar = draw({
-        depth = 2, sel = 3, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = true, page = "kit",
-        kit = true, profile = {name = "Screen", state = "edited"},
-        kit_spent = 28, kit_total = 30,
+    local ships = draw({
+        depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
+        home = true, closable = true, at = "hangar", ships = true,
         rows = ROWS,
     })
-    check("the band names the build", has(hangar, "screen"),
-          table.concat(texts(hangar), " "))
-    check("and says it has been tuned away from it", has(hangar, "edited"),
-          table.concat(texts(hangar), " "))
-    -- The figure a builder mid-edit is after is what is left, not a ratio to
-    -- subtract before it says anything.
-    check("the points are a meter and what is left of them",
-          says(hangar, "2 left") and has(hangar, "points"),
-          table.concat(texts(hangar), " "))
-    check("with no head over any of it, and no wordmark",
-          not has(hangar, "vectorwake"), table.concat(texts(hangar), " "))
-    check("the sections name themselves", has(hangar, "flight")
-          and has(hangar, "gun") and has(hangar, "flair"),
-          table.concat(texts(hangar), " "))
-    check("the page names the ship", has(hangar, "cipher"),
-          table.concat(texts(hangar), " "))
-    check("and says which of them it is", has(hangar, "1 of 2"),
-          table.concat(texts(hangar), " "))
-    -- The one price on the page, on the row it belongs to. It is the whole
-    -- of what the shelf's own tab used to be for.
-    check("a row with a rung left to sell carries its price",
-          says(hangar, "40"), table.concat(texts(hangar), " "))
-    check("and the key that keeps the build stands at the foot",
-          has(hangar, "save"), table.concat(texts(hangar), " "))
-    -- Pressing the name, or the part of the ladder nobody owns, is the same
-    -- question; the circles this account owns keep their own presses.
-    check("the name and the row past the ladder open the reading",
-          hit_named("read_row") ~= nil, "no reading")
-    check("and the circles it owns spend a point where they are pressed",
-          hit_named("kit_at") ~= nil, "no ladder")
-
-    -- The kit a build is exactly is a kit with nothing to keep, so no key.
-    local kept = draw({
-        depth = 2, sel = 3, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = true, page = "kit",
-        kit = true, profile = {name = "Screen"},
-        kit_spent = 30, kit_total = 30,
-        rows = {ROWS[1], ROWS[2], ROWS[3], ROWS[5]},
-    })
-    check("a build that is exactly its own name offers no save key",
-          not has(kept, "save"), table.concat(texts(kept), " "))
-    check("and says nothing about being edited",
-          not has(kept, "edited"), table.concat(texts(kept), " "))
-end
-
--- --- the library, behind the band's name ----------------------------------
---
--- Every build this pilot can fly, with two keys under it and nothing else.
--- Saving is at the foot of the ship page where the kit that earned it is,
--- and renaming went with it.
-do
-    local builds = draw({
-        depth = 3, sel = 2, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = true, page = "builds",
-        builds = true,
-        rows = {
-            {label = "Gunner", group = "builds", verbatim = true,
-             starter = true, choice = 0, choices = 1, index = 1},
-            {label = "Screen", group = "builds", verbatim = true,
-             choice = 1, choices = 1, index = 2},
-            {label = "new", group = "keys", act = "new_build", index = 3},
-            {label = "delete", group = "keys", act = "delete_profile",
-             index = 4},
-        },
-    })
-    check("the library carries every build", has(builds, "gunner")
-          and has(builds, "screen"), table.concat(texts(builds), " "))
-    check("with the three the game ships marked as its own",
-          has(builds, "starter"), table.concat(texts(builds), " "))
-    check("and two keys under them, and nothing that renames one",
-          has(builds, "new") and has(builds, "delete")
-          and not has(builds, "rename"),
-          table.concat(texts(builds), " "))
+    check("every ship in the roster is on the page",
+          has(ships, "cipher") and has(ships, "anvil"),
+          table.concat(texts(ships), " "))
+    check("with the shape each of them presents beside its name",
+          has(ships, "a needle") and has(ships, "a wall"),
+          table.concat(texts(ships), " "))
+    check("the five flight rows are named on every row",
+          has(ships, "speed") and has(ships, "thrust") and has(ships, "turn")
+          and has(ships, "energy") and has(ships, "recharge"),
+          table.concat(texts(ships), " "))
+    check("and what a ship carries is spelled out under them",
+          says(ships, "burst 2, repel") and says(ships, "repel 3, burst"),
+          table.concat(texts(ships), " "))
+    -- One hull in the roster has no rack. A page that left the line out would
+    -- read as a page that forgot.
+    check("a hull with no bomb rack says so",
+          says(ships, "no bomb rack"), table.concat(texts(ships), " "))
+    check("sitting out is the last thing you can be flying",
+          has(ships, "spectate"), table.concat(texts(ships), " "))
+    check("the wake keeps a section under the roster",
+          has(ships, "flair") and has(ships, "ember"),
+          table.concat(texts(ships), " "))
+    check("and says which of them it is", has(ships, "1 of 4"),
+          table.concat(texts(ships), " "))
     check("every row of it takes a press", hit_named("stage") ~= nil,
           "no rows")
-    check("and the way back is on the line the x is on",
-          hit_named("back") ~= nil, "no way back")
-end
-
--- --- naming a new build ---------------------------------------------------
-do
-    local naming = draw({
-        depth = 4, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = true, page = "newbuild",
-        newbuild = true, new = {name = "Screen 2", on = true}, rows = {},
-    })
-    check("the naming page says what it is for",
-          has(naming, "new build"), table.concat(texts(naming), " "))
-    check("with the name in a box that takes type",
-          says(naming, "Screen 2") and hit_named("new_field") ~= nil,
-          table.concat(texts(naming), " "))
-    check("and one key, which makes it", has(naming, "create")
-          and hit_named("create_build") ~= nil,
-          table.concat(texts(naming), " "))
-end
-
--- --- what the thirty points are -------------------------------------------
-do
-    local points = draw({
-        depth = 3, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = true, page = "points",
-        points = true, kit_spent = 28, kit_total = 30, rows = {},
-    })
-    check("the points page says what the thirty are",
-          has(points, "thirty points"), table.concat(texts(points), " "))
-    check("and spells the meter out", says(points, "28 spent"),
-          table.concat(texts(points), " "))
-    check("and teaches the circle a slot's ladder is drawn in",
-          says(points, "equipped") and says(points, "owned")
-          and says(points, "not yours yet"),
-          table.concat(texts(points), " "))
+    -- Nothing on the page spends anything. There is no ladder to step, no
+    -- price on any row and no key that buys one, because a hull carries what
+    -- it carries.
+    check("and nothing on it is bought",
+          hit_named("kit_at") == nil and hit_named("buy_go") == nil,
+          "something on the page is still for sale")
 end
 
 -- --- a page that overflows can be scrolled to the end of itself ------------
@@ -1031,7 +949,7 @@ do
         return {depth = 2, sel = 1, rail = RAIL, rail_sel = 1,
                 focus = "rail", home = true, closable = false,
                 at = "play", banner = true, guest_dot = true,
-                pilot = {name = "Vantage 7", rivets = 0},
+                pilot = {name = "Vantage 7"},
                 -- The band at the foot, which takes its room out of the
                 -- list's: a fixture without one measures a page shorter than
                 -- the one a guest is actually handed.
@@ -1121,7 +1039,7 @@ do
         -- which is the pair that has to be looked at.
         draw({depth = 1, sel = 0, rail = RAIL, rail_sel = 2, rail_hover = 1,
               focus = "rail", home = true, closable = false,
-              pilot = {name = "Vantage 7", rivets = 0}, rows = {}}, wide, 800)
+              pilot = {name = "Vantage 7"}, rows = {}}, wide, 800)
         local boxes = tab_boxes()
         local worst, at = 0, nil
         for i = 1, #boxes - 1 do

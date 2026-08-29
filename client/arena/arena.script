@@ -671,7 +671,6 @@ end
 
 local function hover_menu(x, y, vh)
     menu.pilot_hot = false
-    menu.carousel_hot = nil
     menu.row_hot = nil
     menu.row_hot_act = nil
     -- Nothing outside the menu lights under a pointer any more. The phrase
@@ -689,18 +688,14 @@ local function hover_menu(x, y, vh)
         local r = ui.pick(x, vh - y, false)
         if r then
             menu.pilot_hot = r.action == "pilot_page"
-            if r.action == "carousel" then menu.carousel_hot = r.value end
             if r.action == "row_act" then
                 menu.row_hot, menu.row_hot_act = r.value, r.level
             end
-            -- A pip lights the row it belongs to, so the cursor follows the
-            -- pointer across a ladder the way it does down a list. So does
-            -- the half of a slot row that opens its reading, which is the
-            -- name and everything past the circles.
+            -- A button hung off a row lights the row it belongs to, so
+            -- the cursor follows the pointer down a list the way the arrows
+            -- move it.
             return hovering(
-                ((r.action == "stage" or r.action == "kit_at"
-                  or r.action == "read_row" or r.action == "row_act")
-                 and r.value)
+                ((r.action == "stage" or r.action == "row_act") and r.value)
                     or nil,
                 r.action == "rail" and r.value or nil)
         end
@@ -863,7 +858,6 @@ local function leave_world()
     -- The next zone deals these seats to different pilots.
     for k in pairs(rolls) do rolls[k] = nil end
     fx.reset()
-    ui.clear_payouts()
     -- Leaving a zone re-derives the tables from the baseline, so what a spec
     -- id means changes on the way out of one as well as into it.
     world.forget_specs()
@@ -973,11 +967,10 @@ local function drain_kills()
         local vn = pilot_named(k.victim, true)
         -- Your own bomb counts as your kill in the ledger, which is correct
         -- and reads as nonsense in a feed line.
-        -- The payout is shown when there is one. A pilot who was carrying
-        -- nothing is worth nothing, and the line says so by staying quiet
-        -- rather than by printing a zero.
-        local paid = (k.paid > 0 and k.killer ~= 255 and k.killer ~= k.victim)
-            and (" (+" .. k.paid .. ")") or ""
+        --
+        -- No payout on the line. A kill used to print what it paid, and
+        -- nothing is paid: the feed says who took whom, which is the whole of
+        -- what a kill is now.
         -- Two lines out of every feed are about you, and they are the two
         -- worth finding without reading: green when you took somebody, red
         -- when somebody took you. Everything else stays the feed's own color,
@@ -1000,15 +993,6 @@ local function drain_kills()
         local col, mine = nil, false
         if not watching and k.killer == me and k.victim ~= me then
             col, mine = pal.PAID, true
-            -- And the same number again, off the wreck rather than in the
-            -- feed. A kill is read where it happened: a pilot who just took
-            -- somebody is looking at the explosion, not at the corner. The
-            -- feed keeps its line, because the two answer different
-            -- questions, and the payout is only worth floating when there
-            -- was one.
-            if k.paid > 0 then
-                ui.payout(sim.ship_x(k.victim), sim.ship_y(k.victim), k.paid)
-            end
         elseif not watching and k.victim == me then
             col, mine = pal.HURT, true
         elseif not watching and k.assist then
@@ -1016,7 +1000,7 @@ local function drain_kills()
         end
         local line = (k.victim == k.killer) and {vn, " killed by self"}
             or (k.killer == 255) and {vn, " flew into the wall"}
-            or {pilot_named(k.killer, true), " killed ", vn, paid}
+            or {pilot_named(k.killer, true), " killed ", vn}
         -- Said in words as well as in color, because your name is nowhere on
         -- this line: a kill of yours and a death of yours both name you, and
         -- a lit line about two other people with nothing on it to say why is
@@ -1324,10 +1308,7 @@ end
 local function typed(text)
     local moved = false
     for ch in string.gmatch(text, ".") do
-        if menu.type_field(ch) then moved = true
-        -- Nothing is asking, so a letter is for whatever page is up, which
-        -- is the naming page collecting a name for a build.
-        elseif menu.type_new(ch) then moved = true end
+        if menu.type_field(ch) then moved = true end
     end
     return moved
 end
@@ -1711,20 +1692,12 @@ function update(self, dt)
             menu.note = nil
             ui.help_prompt = menu.needs_help_prompt()
             self.joining = nil
-            -- And the kit this pilot built, to the room that has just seated
-            -- them. Nothing else sends it on arrival: the room deals a starter
-            -- kit to any seat wearing nothing, and the stored kit is the
-            -- account's rather than the arena's, so a pilot who had spent an
-            -- evening in the hangar flew the default until they next changed a
-            -- point. Found by buying a barrel, slotting it, and watching one
-            -- round leave the gun.
-            --
-            -- For the hull actually being flown, which is not necessarily the
-            -- one the hangar was last looking at.
-            if not net.watching then
-                menu.open_kit(menu.class)
-                net.set_kit(menu.kit)
-            end
+            -- Nothing goes out behind the join. A kit used to: the room dealt
+            -- a starter kit to any seat wearing nothing and the pilot's own
+            -- build lived in the account, so it had to be sent or an evening
+            -- in the hangar was lost. The hull carries its own profile now
+            -- and the room deals it, so the class byte in the join is the
+            -- whole of what this client has to say about the ship.
             end
         else
             self.joining = self.joining + dt
@@ -2598,102 +2571,7 @@ local function full_bar(what)
     return true
 end
 
--- The kit that hull is saved with, sent to the room behind the hull itself.
--- A seat wearing something is not re-dealt, so without this a hull change
--- carried the last hull's build onto the new one and the build the pilot
--- actually saved for it sat unread in the account.
-local function fly_kit(class)
-    menu.open_kit(class)
-    net.set_kit(menu.kit)
-end
-
 function apply_menu(self, act)
-    -- A point spent or taken back in the hangar. The kit reaches the room at
-    -- once, because the room is what decides whether it fits and the next
-    -- snapshot is the answer; it reaches the account too, so it comes back on
-    -- the next device. A meta-layer that is down costs a player their loadout
-    -- tomorrow and nothing tonight.
-    if act == "kit" then
-        local class = menu.kit_class or menu.class
-        local name = TUNE.CLASS_NAMES[class + 1]
-        if name then account.save_kit(name, menu.kit) end
-        -- To the room only where the hull being edited is the hull being
-        -- flown. The carousel turns without asking for a hull now, so a pilot
-        -- can spin to a Wedge mid-fight and spend a point on it; sending that
-        -- would have dressed the Apex they are sitting in with somebody
-        -- else's build. The account still keeps it, because it is their kit
-        -- for that hull whether or not they are in one.
-        -- Not to the backdrop: a watcher has no seat to dress, and the kit
-        -- travels with the deploy anyway.
-        if self.online and not self.attract and class == menu.class then
-            net.set_kit(menu.kit)
-        end
-        return
-    end
-    -- None of the three below makes a sound on the way in. The press that
-    -- started them already made one: this menu has two sounds, `ui_move` for
-    -- a cursor and `ui_go` for an act, and the act is the press rather than
-    -- the reply to it. A reply that agreed made a second `ui_go` a few
-    -- milliseconds later, which against a meta-layer on the same box is one
-    -- press heard twice. A refusal still speaks, because there the press's
-    -- own sound was a lie.
-    if act == "save_profile" then
-        account.save_profile(menu.pending_profile or "", menu.kit,
-            function(ok, why, profile)
-                if ok then
-                    menu.note = "saved " .. (profile.name or "profile")
-                    -- What is on screen is what that build now holds, so the
-                    -- save key has nothing left to offer until the next edit.
-                    menu.mark_saved()
-                    -- The saved build is now a profile the page can light,
-                    -- and the one the next save offers a name from.
-                    for i, item in ipairs(account.profiles or {}) do
-                        if item == profile then
-                            menu.profile_at, menu.profile_from = i, i
-                            break
-                        end
-                    end
-                else
-                    menu.note = why or "cannot save that profile"
-                    sfx.ui("ui_move")
-                end
-            end)
-        return
-    end
-    -- A saved build dropped. It answers with the whole list, so what the page
-    -- draws next is the meta-layer's own answer rather than this client's
-    -- guess at it.
-    --
-    -- The kit in hand is not touched. A delete takes a name away; what the
-    -- pilot is flying is the thirty points in the editor, which are the same
-    -- thirty points afterwards. What does move is which row of the list those
-    -- points match, so it re-reads it.
-    if act == "delete_profile" then
-        account.delete_profile(menu.pending_profile or "",
-            function(ok, why)
-                menu.note = ok and nil or (why or "cannot delete that build")
-                menu.reread_profile()
-                if not ok then sfx.ui("ui_move") end
-            end)
-        return
-    end
-    -- One step in one slot, bought. The meta-layer prices it, checks the
-    -- wallet and raises the ceiling; this asks and reports what came back, so
-    -- a purchase a player cannot afford is a line at the foot of the page
-    -- rather than a row that quietly did nothing.
-    if act == "buy" then
-        local slot = menu.pending
-        account.buy(slot, menu.zone, function(ok, why)
-            if ok then
-                menu.note = nil
-                account.refresh_upgrades(menu.zone)
-            else
-                menu.note = why or "cannot buy that"
-                sfx.ui("ui_move")
-            end
-        end)
-        return
-    end
     if act == "ship" then
         -- With no game on, this is simply the hull you will arrive in. The
         -- landing's backdrop counts as no game: you are configuring, and
@@ -2712,7 +2590,6 @@ function apply_menu(self, act)
         -- are, watching.
         if watching then
             net.set_class(menu.pending)
-            fly_kit(menu.pending)
             menu.spectate = false
             menu.save_identity()
             menu.close()
@@ -2730,7 +2607,6 @@ function apply_menu(self, act)
         -- answers. Nothing is predicted: a hull that flickered back would be
         -- worse than one that arrives a frame late.
         net.set_class(menu.pending)
-        fly_kit(menu.pending)
         menu.save_identity()
         menu.close()
         return
@@ -2813,10 +2689,7 @@ function apply_menu(self, act)
             self.attract = false
             self.attract_zone = nil
             menu.home = false
-            if not menu.spectate then
-                net.set_class(menu.class)
-                fly_kit(menu.class)
-            end
+            if not menu.spectate then net.set_class(menu.class) end
             menu.close()
             return
         end
@@ -3296,26 +3169,6 @@ function on_input(self, action_id, action)
             elseif r.action == "wake" then
                 -- The flair row's own triangles.
                 act, moved = menu.click_wake(r.value)
-            elseif r.action == "carousel" then
-                -- The arrow beside the ship. One ship along, wrapping.
-                act, moved = menu.click_carousel(r.value)
-            elseif r.action == "kit_at" then
-                -- One pip of a ladder. The row takes the cursor and the
-                -- slot goes to that step, which is what a press on the
-                -- fourth dot of a five-dot row means.
-                act, moved = menu.click_kit_at(r.value, r.level)
-            elseif r.action == "read_row" then
-                -- A row's name, or the part of its ladder this account does
-                -- not own. Both are the same question, and the reading is
-                -- the answer: it slides in over the page from the right.
-                act, moved = menu.click_read(r.value)
-            elseif r.action == "new_field" then
-                -- The box on the naming page.
-                act, moved = menu.click_new_field()
-            elseif r.action == "create_build" then
-                -- And its one key, which keeps the thirty points in hand
-                -- under the name in the box.
-                act, moved = menu.click_create()
             elseif r.action == "charge_swap" then
                 -- The box beside a charge's pips. The two charges trade
                 -- keys; nothing about the ship changes.
@@ -3325,11 +3178,6 @@ function on_input(self, action_id, action)
                 -- there is: leave the seat you are flying, on the row of the
                 -- room it is in.
                 act, moved = menu.click_row_act(r.value, r.level)
-            elseif r.action == "buy_go" then
-                -- The BUY beside the reading pane, or the one under the
-                -- item page. `value` is the row the pane is reading, and
-                -- nothing at all on the page about a single thing.
-                act, moved = menu.click_buy(r.value)
             elseif r.action == "pilot_page" then
                 -- The call sign at the far end of the tab row. The rail
                 -- carries a pilot stop to the same page; the name is the

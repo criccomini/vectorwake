@@ -325,13 +325,16 @@ check("snapshot sequences and world ticks cross rollover together",
 -- They wait for that authoritative tick, then become visible together.
 -- The last byte is the private one: 1 says this pilot helped with that kill,
 -- and the zone sets it on one copy of the message and zeroes every other.
-local remote_kill = string.char(4, 1, 0, 176, 4, 176, 4, 1, 5, 0)
+--
+-- victim, killer, victim rating(2), killer rating(2), contributors, tick(4),
+-- you helped. Nothing about a payout: a kill pays nothing.
+local remote_kill = string.char(4, 1, 0, 176, 4, 176, 4, 1)
     .. u32le(5010) .. string.char(0)
-local my_kill = string.char(4, 1, 3, 176, 4, 176, 4, 1, 5, 0)
+local my_kill = string.char(4, 1, 3, 176, 4, 176, 4, 1)
     .. u32le(5010) .. string.char(0)
-local my_death = string.char(4, 3, 0, 176, 4, 176, 4, 1, 5, 0)
+local my_death = string.char(4, 3, 0, 176, 4, 176, 4, 1)
     .. u32le(5010) .. string.char(0)
-local my_assist = string.char(4, 2, 0, 176, 4, 176, 4, 2, 5, 0)
+local my_assist = string.char(4, 2, 0, 176, 4, 176, 4, 2)
     .. u32le(5010) .. string.char(1)
 local charge = string.char(15, 1, 0)
     .. string.char(0, 1, 0, 0, 0, 2, 0, 0) .. u32le(5010)

@@ -25,7 +25,6 @@ local menu_face = require("arena.menu_face")
 local state = require("arena.state")
 local ui_frame = require("arena.ui_frame")
 local ui_menu_marks = require("arena.ui_menu_marks")
-local ui_payouts = require("arena.ui_payouts")
 local world = require("arena.world")
 
 local M = {}
@@ -1511,32 +1510,6 @@ end
 -- or on the label beside it, would eat the trigger at the exact moment a
 -- player is lined up on somebody. Asking who somebody is belongs to the
 -- scoreboard, where a click is a click and nothing else.
--- What a kill paid, rising off the wreck.
---
--- Only ever your own. The number is a reward, and a reward somebody else
--- collected is not news worth putting over the fight; the feed already says
--- who took whom. It is raised from the zone's kill message rather than from
--- the local simulation, for the reason the feed line is: prediction kills the
--- same pilot once per rollback, and the zone announces each death exactly
--- once with what it paid.
---
--- Anchored in the world, so it drifts off the spot the hull died on rather
--- than off a point on the screen, and a player who is still moving watches it
--- fall behind them the way the wreck does.
-local payouts = ui_payouts.new()
-
--- Raised by whoever drains the kills. World coordinates, because that is
--- where the wreck is.
-function M.payout(x, y, n)
-    payouts:add(F.now, x, y, n)
-end
-
--- A new arena is not the one the last number was earned in. Cheap to call and
--- it costs nothing when there is nothing to drop.
-function M.clear_payouts()
-    payouts:clear()
-end
-
 -- Where a world position lands on the glass. One formula, two callers: a
 -- pilot's nameplate and the bounty that drifts off their wreck are the same
 -- conversion, and they were the same two lines twice.
@@ -1574,10 +1547,6 @@ local function nameplates(o)
                 -- make when they have a moment to read one. Three hulls
                 -- converging is a different problem if they are one squad.
                 local col = team_col(sim.ship_team(i))
-                -- The bounty rides with the name, always. It is what killing
-                -- them pays, so it is the one number that says which of two
-                -- ships in front of you is worth the risk.
-                local bty = sim.ship_bounty(i)
                 do
                     -- A call sign is a name somebody was given, not a
                     -- word this interface is saying, so it keeps its own
@@ -1589,7 +1558,7 @@ local function nameplates(o)
                     -- deciding whether to chase it, and that decision is made
                     -- looking at the ship rather than at a panel. Dim and
                     -- after the name, so it reads as a note about the label
-                    -- and never competes with the bounty under it.
+                    -- and never competes with the name it follows.
                     if p then
                         -- A mark set four points off the last letter reads as
                         -- the end of the name rather than as a thing beside
@@ -1605,55 +1574,11 @@ local function nameplates(o)
                                        pal.a(col, 0.45), 10 * F.scale)
                         end
                     end
-                    -- Only where it is worth something. A zone opens every
-                    -- pilot at a bounty of one, so "1" under every name on
-                    -- screen was a column of ones saying nothing: what this
-                    -- number is for is the pilot who is worth more than the
-                    -- one beside them.
-                    if bty > 1 then
-                        -- In the side's color rather than the bounty gold,
-                        -- so the name and the number under it read as one
-                        -- label belonging to one squad. Gold said "this is a
-                        -- bounty", which the position under a name already
-                        -- says, and it said it identically for every pilot on
-                        -- screen: the one thing a color here can carry is
-                        -- whose they are.
-                        --
-                        -- Set as a price, with the rivet every other price in
-                        -- the game wears. Position alone said "bounty", and
-                        -- position is also what says kills, deaths and points
-                        -- everywhere those are drawn: a bare figure under a
-                        -- name is a number with no unit on it. This one is
-                        -- what the zone pays for the hull it is over, so it
-                        -- says so in the currency it pays in.
-                        pages.priced(bty, sx + 12 * F.scale,
-                                     sy + 25 * F.scale, 11 * F.scale,
-                                     pal.a(col, 0.85))
-                    end
                 end
             end
         end
     end
 
-    -- The payouts, drifting off the wrecks that paid them. Walked backwards
-    -- into itself so an expired one is dropped in the same pass that draws
-    -- the rest, and the list stays as short as the killing is fast.
-    payouts:each(F.now, function(p, f, a)
-            local px, py = on_glass(o, scale, p.x, p.y)
-            -- The payout's own size and offset, in the green the feed
-            -- already uses for a line about a kill of yours. Up is negative
-            -- here: the name sits at +13 and the payout at +25, under it.
-            txt("+" .. p.n, px + 12 * F.scale,
-                py + 13 * F.scale - ui_payouts.RISE * F.scale * f,
-                11 * F.scale, pal.a(pal.PAID, 0.95 * a), nil, nil, true)
-    end)
-
-    -- Not your own, for the same reason your name is not drawn: a bounty under
-    -- your hull is a number about you, in the one place on screen you are
-    -- already looking, and it rode along with every shot you lined up. The
-    -- corner stack carries it, where a glance finds it and nothing is in the
-    -- way of the fight. Everybody else keeps theirs, because theirs is what
-    -- says which of two ships in front of you is worth the risk.
 end
 
 -- --- panels ----------------------------------------------------------------
@@ -1663,11 +1588,11 @@ local rows = {}
 -- interface rather than to the game: nothing here changes what is true, only
 -- which part of it is on screen.
 --
--- `points` is the default because points are the score. Clicking a heading
--- picks that column, and clicking the one already picked does nothing: every
--- column here has an obvious direction, and a name that sorts Z to A or a
--- kill count that puts the worst first is a state somebody reaches by accident
--- and then has to work out how to leave.
+-- Clicking a heading picks that column, and clicking the one already picked
+-- does nothing: every column here has an obvious direction, and a name that
+-- sorts Z to A or a kill count that puts the worst first is a state somebody
+-- reaches by accident and then has to work out how to leave.
+--
 -- Which column the scoreboard is ordered by. Alphabetical to begin with: the
 -- question a player has of this list most often is "is that name in the
 -- room", and a name is found in a list sorted by name. The score columns are
@@ -1901,18 +1826,14 @@ local function by_column(a, b)
         if differ then return first end
     elseif sort_key == "kills" then
         if a.k ~= b.k then return a.k > b.k end
-    elseif sort_key == "bounty" then
-        if a.b ~= b.b then return a.b > b.b end
     elseif sort_key == "deaths" then
         -- Fewest first: on every other column the top of the list is the
         -- pilot doing best, and this is the one where that means less.
         if a.d ~= b.d then return a.d < b.d end
     elseif sort_key == "assists" then
         if a.a ~= b.a then return a.a > b.a end
-    else
-        if a.p ~= b.p then return a.p > b.p end
     end
-    if a.p ~= b.p then return a.p > b.p end
+    -- Kills break every tie, because kills are the score.
     if a.k ~= b.k then return a.k > b.k end
     return (ahead(a, b))
 end
@@ -2020,17 +1941,17 @@ local function seat_team(i, p)
     return seat_here(i) and sim.ship_team(i) or (p and p.team)
 end
 
--- Kills, deaths, assists, points and bounty, whichever way round they have to
--- be got.
+-- Kills, deaths and assists, whichever way round they have to be got.
+--
+-- There were five. Points and bounty came off with the two numbers a kill used
+-- to pay, so what is left is the three a player counts in their head.
 local function seat_score(i, p)
     if seat_here(i) then
         -- The simulation for a seat we can see, because it lands twenty times
         -- a second and your own kill should appear the moment it happens.
-        return sim.ship_kills(i), sim.ship_deaths(i), sim.ship_assists(i),
-               sim.ship_points(i), sim.ship_bounty(i)
+        return sim.ship_kills(i), sim.ship_deaths(i), sim.ship_assists(i)
     end
-    return (p and p.k) or 0, (p and p.d) or 0, (p and p.a) or 0,
-           (p and p.p) or 0, (p and p.b) or 0
+    return (p and p.k) or 0, (p and p.d) or 0, (p and p.a) or 0
 end
 
 local function refresh_players(pilots, watchers, side, viewer_name)
@@ -2051,7 +1972,7 @@ local function refresh_players(pilots, watchers, side, viewer_name)
             r.i = i
             -- Bounty is the one number on this row about the next thirty seconds
             -- rather than about the last hour.
-            r.k, r.d, r.a, r.p, r.b = seat_score(i, p)
+            r.k, r.d, r.a = seat_score(i, p)
             r.name = (p and p.name) or ("ship " .. i)
             r.lname = string.lower(r.name)
             -- The roster's own flag. This used to look for a local bot object,
@@ -2081,7 +2002,7 @@ local function refresh_players(pilots, watchers, side, viewer_name)
         local r = rows[n]
         if not r then r = {} rows[n] = r end
         r.i = nil
-        r.k, r.d, r.a, r.p, r.b = 0, 0, 0, 0, 0
+        r.k, r.d, r.a = 0, 0, 0
         r.name = w.name
         r.lname = string.lower(r.name)
         r.ai = w.label == "bot" or w.label == "bot?"
@@ -2174,17 +2095,15 @@ local function scores(me, pilots, watchers, viewer_name, always)
     rect(x, top, w, h, pal.a(pal.BG, 0.62))
     vrule(x, top, h, pal.a(pal.RADAR_TILE, 0.7))
 
-    -- Four columns, right aligned off the panel's own edge, in the order a
-    -- row is read: what you have done, then what you are worth. Bounty is
-    -- outermost because it is the one number here about the next thirty
-    -- seconds rather than about the last hour.
+    -- Three columns, right aligned off the panel's own edge, in the order a
+    -- row is read. There were five, and the outer two were points and bounty:
+    -- what a kill paid and what the next one would. Neither number exists.
     --
     -- Each is as wide as the widest thing actually in it, measured every
     -- frame against the heading as well as the numbers. Fixed offsets do not
-    -- survive four columns in 248 points: a pilot on twelve thousand points
-    -- needs five digits and nobody else needs any of them, so a column sized
-    -- for the worst case eats the names in every room where the worst case
-    -- has not happened.
+    -- survive several columns in 248 points, so a column sized for the worst
+    -- case eats the names in every room where the worst case has not
+    -- happened.
     local small = (FONT - 3) * F.scale
     local num = (FONT - 2) * F.scale
     local GAP = 7 * F.scale
@@ -2201,21 +2120,8 @@ local function scores(me, pilots, watchers, viewer_name, always)
         end
         return wide
     end
-    local pw, aw, dw, kw =
-        col_w("p", "PTS"), col_w("a", "A"), col_w("d", "D"), col_w("k", "K")
-    -- The ending has no bounty column: a bounty prices the next kill, and at
-    -- the whistle there is no next kill. Points take the outer edge instead,
-    -- and their head is the rivet mark rather than a word, because what that
-    -- column is saying then is what the match paid.
-    local bw, bx, px
-    if always then
-        px = x + w - 12 * F.scale
-    else
-        bw = col_w("b", "BTY")
-        bx = x + w - 12 * F.scale
-        px = bx - bw - GAP
-    end
-    local ax = px - pw - GAP
+    local aw, dw, kw = col_w("a", "A"), col_w("d", "D"), col_w("k", "K")
+    local ax = x + w - 12 * F.scale
     local dx = ax - aw - GAP
     local kx = dx - dw - GAP
     -- The marks sit in their own column left of the numbers rather than after
@@ -2241,17 +2147,6 @@ local function scores(me, pilots, watchers, viewer_name, always)
     -- in the box a row opens, because it is the same kind of fact as the two
     -- beside it and belongs where they are.
     head_col("assists", "A", ax, "right")
-    if always then
-        -- The mark stands where the word stood, lit the same way when its
-        -- column is the sort.
-        local r = small * 0.5
-        pages.rivet_mark(px - r, top + 14 * F.scale, r,
-                         M.sort == "points" and pal.a(pal.FRIEND, 0.95)
-                             or pal.a(pal.DIM, 0.7))
-    else
-        head_col("points", "PTS", px, "right")
-        head_col("bounty", "BTY", bx, "right")
-    end
     -- Hit boxes over the headings. Each takes its whole column and the gap to
     -- its left, so the four tile without overlapping and the labels, which
     -- are one or three characters wide, are not the target.
@@ -2259,10 +2154,6 @@ local function scores(me, pilots, watchers, viewer_name, always)
     hit(kx - kw - GAP, top + 4 * F.scale, kw + GAP, 18 * F.scale, "sort_kills")
     hit(dx - dw - GAP, top + 4 * F.scale, dw + GAP, 18 * F.scale, "sort_deaths")
     hit(ax - aw - GAP, top + 4 * F.scale, aw + GAP, 18 * F.scale, "sort_assists")
-    hit(px - pw - GAP, top + 4 * F.scale, pw + GAP, 18 * F.scale, "sort_points")
-    if not always then
-        hit(bx - bw - GAP, top + 4 * F.scale, bw + GAP, 18 * F.scale, "sort_bounty")
-    end
     ticks(x + 12 * F.scale, top + 20 * F.scale, w - 24 * F.scale,
           pal.a(pal.RADAR_TILE, 0.35), 14 * F.scale)
 
@@ -2366,14 +2257,13 @@ local function scores(me, pilots, watchers, viewer_name, always)
             -- watcher has not scored anything and three zeroes would say they
             -- had. One word instead, in the columns the numbers would have
             -- used, so the row is plainly a different kind of row.
-            txt("watching", always and px or bx, cy, small,
-                pal.a(pal.DIM, 0.7), "right")
+            txt("watching", ax, cy, small, pal.a(pal.DIM, 0.7), "right")
         else
             -- The one way to ask about a pilot. Published before the panel's
             -- own box below, which takes the wheel and would otherwise
             -- swallow the press: first box in wins.
             hit(x, y, w - 6 * F.scale, LINE * F.scale, "pilot", r.i)
-            -- Kills, deaths and points all in ink. Deaths read dimmer than
+            -- Kills, deaths and assists all in ink. Deaths read dimmer than
             -- the two beside them for a while, which was a judgement about
             -- the number rather than a fact about it: a column is either a
             -- score this board keeps or it is not on the board, and graying
@@ -2382,16 +2272,6 @@ local function scores(me, pilots, watchers, viewer_name, always)
             txt(tostring(r.k), kx, cy, num, pal.a(pal.INK, 0.85), "right")
             txt(tostring(r.d), dx, cy, num, pal.a(pal.INK, 0.85), "right")
             txt(tostring(r.a), ax, cy, num, pal.a(pal.INK, 0.85), "right")
-            -- The bounty in gold, which is the color it wears on a
-            -- nameplate, in the corner stack and in the box this row opens.
-            -- Points held the gold while it was the only score here; with
-            -- both on the row, one of them has to be the one that means
-            -- bounty everywhere else.
-            txt(tostring(r.p), px, cy, num, pal.a(pal.INK, 0.85), "right")
-            if not always then
-                txt(tostring(r.b), bx, cy, num, pal.a(pal.BOUNTY, 0.9),
-                    "right")
-            end
         end
         y = y + LINE * F.scale
     end
@@ -2631,51 +2511,6 @@ local function gl_rings(cx, cy, k, col)
 end
 local function gl_burst(cx, cy, k, col)
     marks.charge(1, cx, ry(cy), k, col)
-end
-
--- The rivet: what this game charges in.
---
--- A currency wants a mark rather than a word. Every one in use is a shape with
--- a stroke or two struck through it, and that convention is what makes a glyph
--- read as money rather than as decoration, so this follows it: the head of a
--- rivet seen face on, struck through twice.
---
--- Two bars rather than one, and overhanging on both sides. One bar through a
--- circle is a "no entry" sign, which is a poor thing to price a shelf in; two
--- is what the yen, the euro and the won all do, and the overhang is what keeps
--- the strokes visible where the circle is only a few pixels across.
-function pages.rivet_mark(cx, cy, r, col)
-    local line = pen(r * 1.5, 0.15)
-    -- The cap, the shank, and two strikes across it.
-    --
-    -- This started as a rivet head seen face on, a circle with the two bars
-    -- struck through it, and at the size a price is actually set the bars sat
-    -- inside the circle with nothing but a few pixels between them: they
-    -- filled in and the mark read as a barred circle, which is a "no entry"
-    -- sign. Seen from the side there is nothing enclosing the strikes, so the
-    -- gap between them is the page, and the silhouette is a fastener rather
-    -- than a symbol that could be anything.
-    F.layer:seg(cx - r * 0.95, ry(cy - r * 0.9),
-                cx + r * 0.95, ry(cy - r * 0.9), line, col)
-    F.layer:seg(cx, ry(cy - r * 0.9), cx, ry(cy + r), line, col)
-    for _, dy in ipairs({-0.05, 0.42}) do
-        F.layer:seg(cx - r * 0.62, ry(cy + r * dy),
-                    cx + r * 0.62, ry(cy + r * dy), line, col)
-    end
-end
-
--- A price, as the mark and the number: "40 rivets" was a word doing a glyph's
--- job, three times on every card.
-function pages.priced(n, x, y, px, col, align)
-    -- As tall as the figure beside it, near enough. A mark half the height of
-    -- its own number reads as a bullet point rather than as a unit.
-    local r = px * 0.46
-    local w = text_w(tostring(n), px)
-    local lead = r * 2.4
-    local left = align == "right" and (x - w - lead) or x
-    pages.rivet_mark(left + r, y + px * 0.02, r, col)
-    txt(tostring(n), left + lead, y, px, col)
-    return lead + w
 end
 
 -- A neutral fallback for a charge kind without its own mark.
@@ -3010,13 +2845,12 @@ local function inspect(o, top)
     -- the box on a pilot across the map answered zero to all of them while
     -- the row it was opened from, a finger's width behind it, showed what the
     -- roster says.
-    local k, d, pts, bty = seat_score(i, p)
+    local k, d, a = seat_score(i, p)
     row("KILLS", tostring(k))
     row("DEATHS", tostring(d))
-    row("POINTS", tostring(pts))
-    -- What killing them pays, which is the number that decides whether the
-    -- rest of this matters right now.
-    row("BOUNTY", tostring(bty), pal.a(pal.BOUNTY, 0.9))
+    -- Kills you were part of and did not finish, which is the third thing a
+    -- pilot counts and the one a two-column board used to lose.
+    row("ASSISTS", tostring(a))
 
     -- Drawn as a key, the way everything else in this interface that is a
     -- thing to press is drawn: the corner's MENU and PLAYERS, the answers on
@@ -4932,32 +4766,12 @@ end
 
 -- --- the hangar ------------------------------------------------------------
 
--- One diamond of a ladder. Filled where the kit spends there, outlined where
--- there is a step left to spend, and drawn back to almost nothing where the
--- hull would take one and the account does not own it yet.
+-- One circle, in the three states a count has.
 --
--- A diamond rather than a square because a row of squares is a progress bar,
--- and this is not progress: it is a number of things chosen out of a budget,
--- and every one of them cost the same one point.
-function pages.pip(cx, cy, k, lit, col)
-    local a = {cx, ry(cy - k), cx + k, ry(cy), cx, ry(cy + k), cx - k, ry(cy)}
-    if lit == "on" then
-        F.layer:quad(a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], col)
-    else
-        F.layer:outline({a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8]},
-                        0.9 * F.scale,
-                        pal.a(col, lit == "locked" and 0.14 or 0.34), true)
-    end
-end
-
--- One circle, in the three states a slot's ladder has.
---
--- Everything on this page is a circle and the fill says what it is: solid is
--- a point equipped, a ring in the slot's own color is a step this account
--- owns and has not spent a point on, and a dim grey ring is a rung the arena
--- has that the account does not. One mark with three fills is a grammar a
--- pilot learns once; the page used to carry pips, chips, squares and a
--- diamond, which is four marks for one idea. See .design/hangar.
+-- Solid is one in hand, a ring is a slot a spent one leaves, and a dim grey
+-- ring is a rung this ship does not reach. One mark with three fills is a
+-- grammar a pilot learns once; the ship page used to carry pips, chips,
+-- squares and a diamond, which was four marks for one idea.
 --
 -- The ring carries its own alpha over whatever the caller handed in, rather
 -- than replacing it: every page passes a solid color and gets 0.8 as before,
@@ -4976,122 +4790,34 @@ function pages.dot(cx, cy, r, kind, col)
     end
 end
 
--- A slot's ladder, at whatever size it is handed: filled to what is equipped,
--- ringed to what is owned, dim to where the arena's own ladder stops.
-function pages.ladder(r, x, cy, step, rad)
-    local held, owned = r.choice or 0, r.choices or 0
-    local top = math.max(r.arena_max or owned, owned)
-    local col = r.tint_col or pal.FRIEND
-    for k = 1, top do
-        local kind = (k <= held and "on") or (k <= owned and "ring") or "dim"
-        pages.dot(x + (k - 1) * step, cy, rad, kind, col)
-    end
-    return x + math.max(top, 1) * step
-end
+-- The ship page: the whole roster, one row a ship, and the row is the ship.
+--
+-- Four pages stood here. The kit spent thirty points over twenty-three slots,
+-- the shelf sold rungs for it, a library kept builds under names, and a
+-- reading explained one slot at a time. A hull is a whole ship now, so what a
+-- pilot does on this page is read seven of them and press one.
+--
+-- Which means the row has to say the whole ship. The name and the shape it
+-- presents, its flight as five bars against the rest of the roster, and what
+-- it carries in the words the corner stack uses in flight. Nothing here is a
+-- control except the row itself: there is no arrow that adds a point, because
+-- there are no points. See docs/design/ships.md.
+local FLIGHT_ROWS = {"speed", "thrust", "turn", "energy", "recharge"}
 
--- The ship page: every slot this arena has, and the thirty points on it.
---
--- One page, where there were two. The shelf was a tab of its own drawing the
--- same slots in the same order for the other question, and a pilot who could
--- not turn something on had to leave to find out why. The row says why: a
--- dim circle is a rung that is not yours, and where it is for sale the row
--- ends in its price. Pressing the name, or the dim part of the ladder, slides
--- the reading in over the page.
---
--- It carries no head. The wordmark and the call sign come off the top of the
--- column here, because this is the longest page in the menu and the band it
--- puts on that line, the build's name and the points, is what a builder needs
--- on screen. See .design/hangar and docs/design/match-game.md.
-function pages.kit(v, x, y, w, h, focused)
-    local band, slots, flair, save = {}, {}, {}, nil
+function pages.ships(v, x, y, w, h, focused)
+    local ships, flair = {}, {}
     for _, r in ipairs(v.rows or {}) do
-        if r.group == "band" then band[#band + 1] = r
-        elseif r.group == "save" then save = r
-        elseif r.group == "flair" then flair[#flair + 1] = r
-        else slots[#slots + 1] = r end
+        if r.group == "flair" then flair[#flair + 1] = r
+        else ships[#ships + 1] = r end
     end
-    local live = not v.kit_preview
+    local live = not v.ships_preview
     local function cursor(r) return live and r.index == v.sel end
 
-    -- --- the band
-    --
-    -- The build's name as a key, and the points as a meter. Both open a page
-    -- of their own, which is the one gesture this screen has: press a thing
-    -- to read about it.
-    local BAND = 48 * F.scale
-    local mid = y + BAND / 2
-    -- At the column's own edge. It used to start clear of the x, which this
-    -- page drew on the band's line while it carried no head of its own; the
-    -- head is on every page now and the x is up there with it.
-    local bx = x
-    if band[1] then
-        local r = band[1]
-        local px = TYPE.BODY * F.scale
-        local label = cased(r.label or "custom")
-        local kw = text_w(label, px, MENU_FONT) + 26 * F.scale
-        local kh = 26 * F.scale
-        local hot = cursor(r)
-        key_box(bx, mid - kh / 2, kw, kh,
-                hot and pal.a(pal.FRIEND, LIT.CURSOR) or nil,
-                pal.a(pal.FRIEND, hot and (focused and 1 or 0.55) or 0.5))
-        txt(label, bx + kw / 2, mid, px, pal.INK,
-            "center", MENU_FONT)
-        if live then hit(bx, mid - kh / 2, kw, kh, "stage", r.index) end
-        -- Whether the thirty points in hand are still what that name says.
-        -- Nothing at all while the two agree, which is the ordinary case and
-        -- needs no word for it.
-        if v.profile and v.profile.state then
-            lbl(v.profile.state, bx + kw + 10 * F.scale, mid,
-                pal.MUTE)
-        end
-    end
-    if band[2] and v.kit_spent then
-        local r = band[2]
-        local total = v.kit_total or 30
-        local left = math.max(0, total - v.kit_spent)
-        local hot = cursor(r)
-        local right = x + w
-        -- What is left, which is the figure a builder mid-edit is actually
-        -- after: "28 / 30" is a ratio to subtract before it says anything.
-        local fig = tostring(left) .. " left"
-        local fw = text_w(fig, 11 * F.scale)
-        local bw = 52 * F.scale
-        local by = mid + 5 * F.scale
-        txt(fig, right, by, TYPE.BODY * F.scale,
-            pal.INK, "right")
-        lbl("points", right, mid - 9 * F.scale, pal.MUTE,
-            "right")
-        local mx = right - fw - 8 * F.scale - bw
-        rect(mx, by - 2 * F.scale, bw, 4 * F.scale, pal.a(pal.DIM, 0.25))
-        rect(mx, by - 2 * F.scale, bw * (v.kit_spent / math.max(total, 1)),
-             4 * F.scale, pal.a(pal.FRIEND, 0.85))
-        -- The meter is furniture in the band rather than a row of the list, so
-        -- it lights its own shape; the weight is the one every cursor wears.
-        if hot then
-            wash(mx - 8 * F.scale, mid - 18 * F.scale,
-                 right - mx + 16 * F.scale, 34 * F.scale,
-                 pal.a(pal.FRIEND, LIT.CURSOR))
-        end
-        if live then
-            hit(mx - 8 * F.scale, y, right - mx + 12 * F.scale, BAND,
-                "stage", r.index)
-        end
-    end
-    hrule(x, y + BAND, w)
-
-    -- --- the ladders, under it
-    local kit_top = y + BAND + 6 * F.scale
-    -- The save key, where there is one, is furniture rather than a row of the
-    -- list: it stands over the stops and the ladders scroll under it.
-    local foot = save and 54 * F.scale or 0
-    local room = h - BAND - 6 * F.scale - foot
-    local cy = kit_top - M.page_scroll
-    local srow = 26 * F.scale
-    local function seen(a, b) return a >= kit_top and b <= kit_top + room end
+    local cy = y - M.page_scroll
+    local SHIP = 70 * F.scale
+    local FLAIR = 26 * F.scale
+    local function seen(a, b) return a >= y and b <= y + h end
     local cur_at = nil
-    local function note_cursor(r)
-        if cursor(r) then cur_at = cy - kit_top + M.page_scroll end
-    end
 
     local function rule(label)
         cy = cy + 6 * F.scale
@@ -5099,466 +4825,160 @@ function pages.kit(v, x, y, w, h, focused)
         cy = cy + 16 * F.scale
         if label then
             if seen(cy - 8 * F.scale, cy + 4 * F.scale) then lbl(label, x, cy) end
-            cy = cy + 24 * F.scale
+            cy = cy + 22 * F.scale
         end
     end
 
-    -- Where the circles begin, the same on every row of the page so the
-    -- ladders line up under each other whatever their names are worth.
-    local NAMEW = 112 * F.scale
-    local STEP = 13 * F.scale
-    local RAD = 4.4 * F.scale
+    -- The five flight rows, as a share of the roster's own range.
+    --
+    -- Bars rather than figures. The units are the core's, five different
+    -- scales none of which a player reads, and the question a roster answers
+    -- is "faster than what": a bar against the other ships says that and a
+    -- number in Q16 pixels a tick does not.
+    local function bars(r, bx, by, bw, col)
+        local n = #FLIGHT_ROWS
+        local gap = 6 * F.scale
+        local cw = (bw - gap * (n - 1)) / n
+        for i = 1, n do
+            local px = bx + (i - 1) * (cw + gap)
+            local share = math.max(0, math.min(1, (r.bars or {})[i] or 0))
+            rect(px, by, cw, 3 * F.scale, pal.a(pal.DIM, 0.22))
+            rect(px, by, cw * share, 3 * F.scale, pal.a(col, 0.85))
+            lbl(FLIGHT_ROWS[i], px, by + 11 * F.scale, pal.MUTE, nil,
+                9.5 * F.scale)
+        end
+    end
 
-    local function slot_row(r)
-        note_cursor(r)
-        if not seen(cy - srow / 2, cy + srow / 2) then
-            cy = cy + srow
+    local function ship_row(r)
+        if cursor(r) then cur_at = cy - y + M.page_scroll end
+        if not seen(cy, cy + SHIP) then
+            cy = cy + SHIP
             return
         end
         local hot = cursor(r)
-        if hot then LIT.field(cy - srow / 2, srow, LIT.CURSOR) end
-        txt(r.label, x, cy, TYPE.BODY * F.scale,
-            pal.INK, nil, MENU_FONT)
-        -- The ladder. Every circle this account owns takes a press of its
-        -- own, so a tap on the fourth asks for four; the one it is already on
-        -- takes the point back. The dim ones are not controls: a press there
-        -- is the same question the name asks, and it opens the reading.
-        local px = x + NAMEW
-        local held, owned = r.choice or 0, r.choices or 0
-        local col = r.tint_col or pal.FRIEND
-        local top = math.max(r.arena_max or owned, owned)
-        for k = 1, top do
-            local cx = px + (k - 1) * STEP
-            local kind = (k <= held and "on") or (k <= owned and "ring")
-                         or "dim"
-            pages.dot(cx, cy, RAD, kind, col)
-            if live and k <= owned then
-                hit(cx - STEP / 2, cy - srow / 2, STEP, srow,
-                    "kit_at", r.index, k)
-            end
+        local mine = (r.choice or 0) > 0
+        local col = mine and pal.FRIEND or pal.INK
+        -- The ship you fly keeps a field of its own, so a cursor moved off it
+        -- does not take the answer to "which one am I in" with it.
+        if mine then
+            wash(x, cy, w, SHIP - 4 * F.scale, pal.a(pal.FRIEND, LIT.HERE))
         end
-        px = px + math.max(top, 1) * STEP
-        -- What it is set to, where the count is a word rather than a number:
-        -- a rung reads L1, L2, L3, because that is what a level is called
-        -- everywhere else, and a spray of two is two rounds.
-        if r.group == "levels" then
-            txt("L" .. (held + 1), px + 10 * F.scale, cy, TYPE.BODY * F.scale,
-                pal.INK)
-        elseif r.ladder then
-            txt(tostring(held + 1), px + 10 * F.scale, cy, TYPE.BODY * F.scale,
-                pal.INK)
+        if hot then
+            wash(x, cy, w, SHIP - 4 * F.scale, pal.a(pal.FRIEND, LIT.CURSOR))
         end
-        -- Which of the two keys throws a carried charge, in a box beside it.
-        if r.charge_slot then
-            -- In a column of its own rather than after however many circles
-            -- this charge happens to hold, so two of them read as one control
-            -- at one indent, and never closer than a gap to a ladder a zone
-            -- has made longer than six.
-            local bx2 = math.max(px + 12 * F.scale,
-                                 x + NAMEW + 6 * STEP + 16 * F.scale)
-            local bh = 18 * F.scale
-            -- What is left before the price at the end of the row. The key it
-            -- is thrown with is the part that gives: which of the two slots
-            -- this is is the fact, and the key is how it is spent.
-            local box_room = x + w - (r.price and 52 * F.scale or 0) - bx2
-            local word = "charge " .. r.charge_slot
-                .. (r.on_key and (" (" .. r.on_key .. ")") or "")
-            if text_w(word, LBL_PX * F.scale) + 18 * F.scale > box_room then
-                word = "charge " .. r.charge_slot
-            end
-            local bw = text_w(word, LBL_PX * F.scale) + 18 * F.scale
-            key_box(bx2, cy - bh / 2, bw, bh,
-                    pal.a(pal.CHARGE_COL, hot and 0.16 or 0.07),
-                    pal.a(pal.CHARGE_COL, hot and 0.9 or 0.5))
-            lbl(word, bx2 + bw / 2, cy,
-                pal.CHARGE_COL, "center")
-            if live then hit(bx2, cy - bh / 2, bw, bh, "charge_swap") end
+        local mid = cy + 17 * F.scale
+        -- A row about a hull draws the hull. The one about not having one
+        -- draws the pilot instead, at the size the helmet reads at rather
+        -- than at the hull's: the two figures are built to different scales
+        -- and matching their boxes would shrink the helmet to a dot.
+        if r.figure == "pilot" then
+            pilot_mark(x + 17 * F.scale, mid, pal.a(col, mine and 1 or 0.8),
+                       15 * F.scale, HULL_PEN * F.scale)
+        else
+            thumb(x + 17 * F.scale, mid, r.hull or 0,
+                  pal.a(col, mine and 1 or 0.8), 34 * F.scale / 116,
+                  hot and F.now * 1.7 or nil)
         end
-        -- And what the next rung costs, on the end of the row. The only
-        -- commerce on this page: a price always wears the rivet mark and the
-        -- shop's gold, and the wallet it comes out of is on the reading.
-        if r.price then
-            local can = r.afford ~= false
-            pages.priced(r.price, x + w, cy, TYPE.BODY * F.scale,
-                         pal.a(can and pal.CHARGE_COL or pal.DIM,
-                               can and 0.95 or 0.55), "right")
+        local nx = x + 40 * F.scale
+        local name = r.label or ""
+        local size = TYPE.ROW * F.scale
+        txt(name, nx, mid, size,
+            pal.a(col, (mine and not hot) and LIT.breath() or 1),
+            nil, MENU_FONT)
+        if r.detail then
+            lbl(r.detail, nx + text_w(name, size, MENU_FONT) + 10 * F.scale,
+                mid, pal.MUTE)
         end
-        -- The name and everything past the ladder ask the same question,
-        -- and it is the one the row cannot answer itself. Published last, so
-        -- the circles this account owns keep the presses that land on them,
-        -- and across the whole field, so a press that landed where the row lit
-        -- up is a press that landed on the row.
+        -- Sitting out has no flight and carries nothing, so it says what it
+        -- is in a sentence instead of drawing five empty bars.
+        if r.bars then
+            bars(r, nx, cy + 30 * F.scale, w - (nx - x), col)
+        elseif r.note then
+            txt(r.note, nx, cy + 36 * F.scale, TYPE.BODY * F.scale,
+                pal.READ, nil, MENU_FONT)
+        end
+        -- What it flies with, in the corner stack's own words. A hull with no
+        -- rack says so: a page that left the line out would read as a page
+        -- that forgot.
+        if r.carries then
+            local words = {}
+            for _, word in ipairs(r.carries) do words[#words + 1] = word end
+            if r.rack == false then words[#words + 1] = "no bomb rack" end
+            local line = #words > 0 and table.concat(words, ", ") or "nothing"
+            local px = TYPE.BODY * F.scale
+            local lines = wrapped(line, px, w - (nx - x), MENU_FONT)
+            txt(lines[1] or "", nx, cy + 56 * F.scale, px, pal.READ, nil,
+                MENU_FONT)
+        end
         if live then
             local hx, _, hw = M.drawer_span()
-            hit(hx, cy - srow / 2, hw, srow, "read_row", r.index)
+            hit(hx, cy, hw, SHIP, "stage", r.index)
         end
-        cy = cy + srow
+        cy = cy + SHIP
     end
 
+    -- Flair: the wake, and which key throws which charge where the ship
+    -- carries two kinds. Both are rings stepped by the triangles either side
+    -- of the value, or by the arrows when the cursor is on the row.
     local function flair_row(r)
-        note_cursor(r)
-        if not seen(cy - srow / 2, cy + srow / 2) then
-            cy = cy + srow
+        if cursor(r) then cur_at = cy - y + M.page_scroll end
+        if not seen(cy, cy + FLAIR) then
+            cy = cy + FLAIR
             return
         end
         local hot = cursor(r)
-        if hot then LIT.field(cy - srow / 2, srow, LIT.CURSOR) end
-        txt(r.label, x, cy, TYPE.BODY * F.scale,
-            pal.INK, nil, MENU_FONT)
-        local vx = x + NAMEW + 14 * F.scale
+        local ry_mid = cy + FLAIR / 2
+        if hot then LIT.field(cy, FLAIR, LIT.CURSOR) end
+        txt(r.label, x, ry_mid, TYPE.BODY * F.scale, pal.INK, nil, MENU_FONT)
+        local vx = x + 112 * F.scale + 14 * F.scale
         local vw = text_w(r.detail or "", 12.5 * F.scale, MENU_FONT)
-        txt(r.detail or "", vx, cy, TYPE.BODY * F.scale,
-            pal.FRIEND, nil, MENU_FONT)
-        local dirs = {{-1, vx - 16 * F.scale}, {1, vx + vw + 14 * F.scale}}
-        local action = r.ship and "carousel" or "wake"
-        for _, d in ipairs(dirs) do
+        txt(r.detail or "", vx, ry_mid, TYPE.BODY * F.scale, pal.FRIEND, nil,
+            MENU_FONT)
+        for _, d in ipairs({{-1, vx - 16 * F.scale},
+                            {1, vx + vw + 14 * F.scale}}) do
             local dir, px2 = d[1], d[2]
-            local warm = hot or (r.ship and v.carousel_hot == dir)
-            F.layer:tri(px2 + dir * 4 * F.scale, ry(cy),
-                        px2 - dir * 3.5 * F.scale, ry(cy - 5 * F.scale),
-                        px2 - dir * 3.5 * F.scale, ry(cy + 5 * F.scale),
-                        pal.a(pal.FRIEND, warm and 0.9 or 0.55))
+            F.layer:tri(px2 + dir * 4 * F.scale, ry(ry_mid),
+                        px2 - dir * 3.5 * F.scale, ry(ry_mid - 5 * F.scale),
+                        px2 - dir * 3.5 * F.scale, ry(ry_mid + 5 * F.scale),
+                        pal.a(pal.FRIEND, hot and 0.9 or 0.55))
             if live then
-                hit(px2 - 11 * F.scale, cy - srow / 2, 22 * F.scale, srow,
-                    action, dir)
+                hit(px2 - 11 * F.scale, cy, 22 * F.scale, FLAIR,
+                    r.act == "swap_charges" and "charge_swap" or "wake", dir)
             end
         end
         if r.choices and r.choices > 1 then
-            lbl((r.choice or 1) .. " of " .. r.choices, x + w, cy,
+            lbl((r.choice or 1) .. " of " .. r.choices, x + w, ry_mid,
                 pal.MUTE, "right")
         end
         if live then
             local hx, _, hw = M.drawer_span()
-            hit(hx, cy - srow / 2, hw, srow, "stage", r.index)
+            hit(hx, cy, hw, FLAIR, "stage", r.index)
         end
-        cy = cy + srow
+        cy = cy + FLAIR
     end
 
-    -- The slots, in the sections the rows name: flight, then each trigger
-    -- with its own level at the head of it, then the charges. A section is
-    -- the whole story of one weapon, which is what put the levels in with the
-    -- add-ons that ride them.
-    local was = nil
-    for _, r in ipairs(slots) do
-        if r.sect ~= was then rule(r.sect) was = r.sect end
-        slot_row(r)
-    end
+    for _, r in ipairs(ships) do ship_row(r) end
     if #flair > 0 then
         rule("flair")
         for _, r in ipairs(flair) do flair_row(r) end
     end
 
     -- Follow the arrows. A frame late, since the offsets only exist once the
-    -- rows have walked; the page settles on the very next draw. A cursor in
-    -- the band is at the top of the column by definition: the band does not
-    -- scroll.
-    for _, r in ipairs(band) do
-        if cursor(r) then cur_at = 0 end
-    end
-    if save and cursor(save) then cur_at = nil end
+    -- rows have walked; the page settles on the very next draw.
     if live then
-        follow_cursor(cur_at and (cur_at - srow / 2) or nil,
-                      srow + 8 * F.scale, room, focused)
+        follow_cursor(cur_at, SHIP, h, focused)
     end
-    M.page_extent = (cy + M.page_scroll - kit_top) + BAND + 16 * F.scale
-    M.page_room = h - foot
-
-    -- --- the key at the foot
-    --
-    -- There only while the thirty points in hand differ from the build they
-    -- came from, which is what makes its presence the answer to "is there
-    -- anything to keep here".
-    if save then
-        local kh = 40 * F.scale
-        local ky = y + h - kh
-        local hot = cursor(save)
-        key_box(x, ky, w, kh,
-                pal.a(pal.FRIEND, hot and LIT.CURSOR or 0.10),
-                pal.a(pal.FRIEND, hot and (focused and 1 or 0.7) or 0.85))
-        txt("save", x + w / 2, ky + kh / 2, TYPE.BODY * F.scale,
-            pal.INK, "center", MENU_FONT)
-        if live then hit(x, ky, w, kh, "stage", save.index) end
-    end
+    M.page_extent = cy + M.page_scroll - y
+    M.page_room = h
 
     -- A thumb down the edge where there is more than fits.
-    if M.page_extent > h - foot then
-        local track = room
-        local bar = math.max(30 * F.scale, track * track / M.page_extent)
-        local at = (M.page_scroll / math.max(1, M.page_extent - (h - foot)))
-                   * (track - bar)
+    if M.page_extent > h then
+        local bar = math.max(30 * F.scale, h * h / M.page_extent)
+        local at = (M.page_scroll / math.max(1, M.page_extent - h)) * (h - bar)
         local sx2 = x + w - 3 * F.scale
-        rect(sx2, kit_top, 3 * F.scale, track, pal.a(pal.DIM, 0.12))
-        rect(sx2, kit_top + at, 3 * F.scale, bar, pal.a(pal.RADAR_TILE, 0.8))
+        rect(sx2, y, 3 * F.scale, h, pal.a(pal.DIM, 0.12))
+        rect(sx2, y + at, 3 * F.scale, bar, pal.a(pal.RADAR_TILE, 0.8))
     end
-end
-
--- The way back out of a page that slid in over another: a chevron and the
--- name of what is behind it, on the line the band stands on.
---
--- Under the x rather than beside it: the head is on every page, so the way
--- back out of a reading is the first thing on the page under it. A swipe
--- right does it too; see `M.drawer`.
-function pages.back_row(v, x, y, w, place)
-    local mid = y + 24 * F.scale
-    local bx = x
-    F.layer:tri(bx, ry(mid), bx + 7 * F.scale, ry(mid - 5.5 * F.scale),
-                bx + 7 * F.scale, ry(mid + 5.5 * F.scale),
-                pal.MUTE)
-    lbl(place, bx + 15 * F.scale, mid, pal.MUTE)
-    hit(bx - 10 * F.scale, y, 130 * F.scale, 48 * F.scale, "back")
-    hrule(x, y + 48 * F.scale, w)
-    return y + 48 * F.scale + 8 * F.scale
-end
-
--- One slot, read: what it is, what it does in a fight, how far its ladder
--- runs, and where a rung is still for sale, what it costs and what the wallet
--- holds.
---
--- This is the shelf's own reading pane, at page size, reached from the row
--- that raised the question instead of from a tab of its own. Everything a
--- pilot could not learn on the ship page is here, and nothing else in the
--- menu spends rivets.
-function pages.slot(v, x, y, w, h, focused)
-    local r = v.item
-    if not r then return end
-    local at = pages.back_row(v, x, y, w, "ship")
-    local kind
-    if r.group == "flight" then kind = "flight stat"
-    elseif r.group == "levels" then
-        kind = (r.trigger == 0 and "gun" or "bomb") .. " ladder"
-    elseif r.group == "weapons" then
-        kind = (r.trigger == 0 and "gun" or "bomb") .. " add-on"
-    else kind = "charge" end
-    lbl(kind, x, at + 16 * F.scale)
-    txt(r.label or r.sold or "", x, at + 44 * F.scale, TYPE.PAGE * F.scale,
-        pal.INK, nil, MENU_FONT)
-    -- The thing working, at toy scale. A page can name a fuse and price a
-    -- fuse, and neither tells a browsing pilot what a fuse is for.
-    local by = at + 64 * F.scale
-    local bh = 118 * F.scale
-    bracket(x, by, w, bh, pal.a(pal.RADAR_TILE, 0.8))
-    pages.range(r, x, by, w, bh)
-    local ly = by + bh + 26 * F.scale
-    -- What it does, in the client's own words.
-    if r.teach then
-        for _, line in ipairs(wrapped(r.teach, TYPE.BODY * F.scale, w,
-                                      MENU_FONT)) do
-            txt(line, x, ly, TYPE.BODY * F.scale, pal.READ,
-                nil, MENU_FONT, true)
-            ly = ly + pages.NOTE_LINE * F.scale
-        end
-        ly = ly + 12 * F.scale
-    end
-    -- The ladder again, at reading size, and what each part of it is.
-    local held, owned = r.choice or 0, r.choices or 0
-    local top = math.max(r.arena_max or owned, owned)
-    if top > 0 then
-        pages.ladder({choice = held, choices = owned, arena_max = top,
-                      tint_col = r.tint_col}, x + 6 * F.scale, ly,
-                     17 * F.scale, 5.5 * F.scale)
-        local said = {}
-        local base = r.base or 0
-        if base > 0 then said[#said + 1] = base .. " dealt to everybody" end
-        if owned > base then said[#said + 1] = (owned - base) .. " bought" end
-        if held > 0 then said[#said + 1] = held .. " equipped" end
-        if top > owned then said[#said + 1] = (top - owned) .. " to climb" end
-        lbl(table.concat(said, " \194\183 "), x, ly + 24 * F.scale,
-            pal.MUTE)
-        ly = ly + 48 * F.scale
-    end
-    -- The deal, and the wallet it comes out of. This is the one page in the
-    -- menu that names either.
-    if r.price then
-        local can = r.afford ~= false
-        local used = pages.priced(r.price, x, ly, 15 * F.scale,
-                                  pal.a(can and pal.CHARGE_COL or pal.DIM,
-                                        can and 0.95 or 0.55))
-        lbl("buys the next rung", x + used + 14 * F.scale, ly,
-            pal.MUTE)
-        -- The wallet at the far end of the same line, its word measured off
-        -- the figure rather than guessed at: a four-figure balance is wider
-        -- than a two-figure one and the label has to start clear of it.
-        local purse = pages.priced(v.wallet or 0, x + w, ly, 12 * F.scale,
-                                   pal.a(pal.CHARGE_COL, 0.9), "right")
-        lbl("wallet", x + w - purse - 8 * F.scale, ly, pal.MUTE,
-            "right")
-        ly = ly + 26 * F.scale
-    elseif top > 0 then
-        lbl(owned > (r.base or 0) and "yours, all the way up"
-            or "dealt to everybody", x, ly, pal.MUTE)
-        ly = ly + 26 * F.scale
-    end
-    M.page_extent = (ly - y) + 90 * F.scale
-    M.page_room = h
-    -- The keys: the buy where there is something to buy, and the charge
-    -- swap where there are two kinds to trade. Each is a row, so the arrows
-    -- reach them and the page's own enter presses the first.
-    local ky = y + h - 46 * F.scale
-    for i = #(v.rows or {}), 1, -1 do
-        local row = v.rows[i]
-        local kh = 44 * F.scale
-        local hot = focused and row.index == v.sel
-        local buy = row.act == "buy"
-        local can = (not buy) or (r.afford ~= false)
-        local col = buy and pal.CHARGE_COL or pal.FRIEND
-        key_box(x, ky, w, kh,
-                pal.a(col, (hot and 0.18) or (can and 0.10 or 0.04)),
-                pal.a(can and col or pal.DIM, hot and 1 or (can and 0.9 or 0.5)))
-        txt(buy and "buy" or (row.label or ""), x + w / 2, ky + kh / 2,
-            TYPE.BODY * F.scale, can and pal.INK or pal.MUTE, "center",
-            MENU_FONT)
-        hit(x, ky, w, kh, buy and "buy_go" or "stage",
-            buy and nil or row.index)
-        ky = ky - kh - 10 * F.scale
-    end
-end
-
--- The library, behind the name in the band: every build this pilot can fly,
--- with the one the kit in hand actually is lit, and the two things there are
--- to do to the list.
---
--- Two keys and no more. Saving is at the foot of the ship page, where the kit
--- that earned it is, and renaming went with it: a build is named when it is
--- made, and a name that wants changing is a new build and a delete.
-function pages.builds(v, x, y, w, h, focused)
-    local at = pages.back_row(v, x, y, w, "ship")
-    lbl("builds", x, at + 16 * F.scale)
-    local list, keys = {}, {}
-    for _, r in ipairs(v.rows or {}) do
-        if r.group == "keys" then keys[#keys + 1] = r else list[#list + 1] = r end
-    end
-    local ry0 = at + 34 * F.scale
-    local ROW = 30 * F.scale
-    for _, r in ipairs(list) do
-        local hot = focused and r.index == v.sel
-        -- The one the kit in hand actually is, in the color this menu uses
-        -- for yours. It is where you already are, so it wears the standing
-        -- field and breathes; the cursor outranks it.
-        local loaded = (r.choice or 0) > 0
-        if hot then
-            LIT.field(ry0, ROW, LIT.CURSOR)
-        elseif loaded then
-            LIT.field(ry0, ROW, LIT.HERE)
-        end
-        txt(r.label or "", x, ry0 + ROW / 2, TYPE.ROW * F.scale,
-            loaded and pal.a(pal.FRIEND, hot and 1 or LIT.breath())
-                or pal.INK,
-            nil, MENU_FONT, true)
-        if r.starter then
-            lbl("starter", x + w, ry0 + ROW / 2, pal.MUTE, "right")
-        end
-        local hx, _, hw = M.drawer_span()
-        hit(hx, ry0, hw, ROW, "stage", r.index)
-        ry0 = ry0 + ROW
-    end
-    -- The two keys, side by side under the last name.
-    local ky = ry0 + 16 * F.scale
-    local kh = 32 * F.scale
-    local kw = (w - 10 * F.scale) / 2
-    for i, r in ipairs(keys) do
-        local kx = x + (i - 1) * (kw + 10 * F.scale)
-        local hot = focused and r.index == v.sel
-        local dim = r.dim
-        key_box(kx, ky, kw, kh,
-                (not dim) and (hot and pal.a(pal.FRIEND, LIT.CURSOR)
-                               or (i == 1 and pal.a(pal.FRIEND, 0.08) or nil))
-                or nil,
-                pal.a(pal.FRIEND, dim and 0.2 or (hot and 1 or 0.55)))
-        txt(r.label or "", kx + kw / 2, ky + kh / 2, TYPE.BODY * F.scale,
-            dim and pal.MUTE or pal.INK, "center",
-            MENU_FONT)
-        hit(kx, ky, kw, kh, "stage", r.index)
-    end
-    M.page_extent = (ky + kh - y) + 20 * F.scale
-    M.page_room = h
-end
-
--- Naming one, a slide further right: the thirty points in hand under a name
--- of the pilot's own.
-function pages.newbuild(v, x, y, w, h, focused)
-    local at = pages.back_row(v, x, y, w, "builds")
-    local nb = v.new or {}
-    lbl("builds", x, at + 16 * F.scale)
-    txt("new build", x, at + 44 * F.scale, TYPE.PAGE * F.scale,
-        pal.INK, nil, MENU_FONT)
-    local ly = at + 64 * F.scale
-    for _, line in ipairs(wrapped(
-            "keeps the thirty points in hand under a name of yours.",
-            TYPE.BODY * F.scale, w, MENU_FONT)) do
-        txt(line, x, ly, TYPE.BODY * F.scale, pal.READ, nil, MENU_FONT,
-            true)
-        ly = ly + pages.NOTE_LINE * F.scale
-    end
-    ly = ly + 16 * F.scale
-    pages.field(x, ly, w, nb.name or "", "a name for this build", nb.on,
-                "new_field")
-    ly = ly + pages.FIELD_TALL * F.scale + 8 * F.scale
-    lbl("a name for this build", x, ly + 4 * F.scale)
-    -- The key, which is what a page for making one thing ends in.
-    local kh = 44 * F.scale
-    local ky = ly + 28 * F.scale
-    local can = (nb.name or "") ~= ""
-    local row = (v.rows or {})[1]
-    local hot = focused and row ~= nil and row.index == v.sel
-    key_box(x, ky, w, kh,
-            pal.a(pal.FRIEND, can and (hot and 0.18 or 0.10) or 0.04),
-            pal.a(can and pal.FRIEND or pal.DIM, can and 0.9 or 0.5))
-    txt("create", x + w / 2, ky + kh / 2, TYPE.BODY * F.scale,
-        can and pal.INK or pal.MUTE, "center", MENU_FONT)
-    hit(x, ky, w, kh, "create_build")
-    if hot then
-        key_box(x, ky, w, kh, nil, pal.a(pal.FRIEND, 1))
-    end
-    M.page_extent = (ky + kh - y) + 20 * F.scale
-    M.page_room = h
-end
-
--- What the thirty points are, behind the meter, and what a circle says.
---
--- The page teaches its own grammar where the grammar is asked about, which is
--- the same gesture every other reading here answers: press the thing, read
--- about the thing.
-function pages.points(v, x, y, w, h)
-    local at = pages.back_row(v, x, y, w, "ship")
-    lbl("points", x, at + 16 * F.scale)
-    txt("thirty points", x, at + 44 * F.scale, TYPE.PAGE * F.scale,
-        pal.INK, nil, MENU_FONT)
-    local ly = at + 64 * F.scale
-    for _, line in ipairs(wrapped(
-            "every ship is a spend of the same thirty points, whoever flies "
-            .. "it and whatever the account owns. press a circle to spend a "
-            .. "point there; press the one it is on to take the point back.",
-            TYPE.BODY * F.scale, w)) do
-        txt(line, x, ly, TYPE.BODY * F.scale, pal.READ, nil, nil,
-            true)
-        ly = ly + pages.NOTE_LINE * F.scale
-    end
-    ly = ly + 22 * F.scale
-    -- The meter again, at reading size, with both figures spelled out.
-    local total = v.kit_total or 30
-    local spent = v.kit_spent or 0
-    local fig = spent .. " spent \194\183 " .. math.max(0, total - spent)
-                .. " left"
-    local fw = text_w(fig, 12 * F.scale)
-    local bw = w - fw - 14 * F.scale
-    rect(x, ly - 3 * F.scale, bw, 6 * F.scale, pal.a(pal.DIM, 0.25))
-    rect(x, ly - 3 * F.scale, bw * (spent / math.max(total, 1)), 6 * F.scale,
-         pal.a(pal.FRIEND, 0.85))
-    txt(fig, x + w, ly, TYPE.BODY * F.scale, pal.INK, "right")
-    ly = ly + 30 * F.scale
-    lbl("what a circle says", x, ly)
-    ly = ly + 22 * F.scale
-    for _, s in ipairs({
-            {"on", pal.FRIEND, "equipped: one of your thirty"},
-            {"ring", pal.FRIEND, "owned, waiting for a point"},
-            {"dim", pal.DIM, "not yours yet: its price sits on the row"}}) do
-        pages.dot(x + 6 * F.scale, ly, 5.5 * F.scale, s[1], s[2])
-        txt(s[3], x + 24 * F.scale, ly, TYPE.BODY * F.scale,
-            pal.READ, nil, nil, true)
-        ly = ly + 26 * F.scale
-    end
-    M.page_extent = (ly - y) + 20 * F.scale
-    M.page_room = h
 end
 
 -- How tall a band pinned at the foot of the column stands. It hangs off
@@ -5567,253 +4987,6 @@ end
 -- page's own measurements belong to the page anyway.
 pages.BAND_H = 46
 
--- The firing range: the row under the cursor, drawn doing the thing it does.
--- A shelf can name a fuse and price a fuse, and neither tells a browsing
--- pilot what a fuse is for; thirty points of animation does. Everything in
--- here is the arena's own vocabulary at toy scale: rounds from marks.lua
--- wearing the rung and add-on actually on offer, hulls from the roster,
--- blasts as the rings they are. The loop is short and seamless because a
--- browser is not watching it, they are reading past it, and it only has to
--- be the right picture whenever the eye lands.
-function pages.range(r, bx, by, bw, bh)
-    local t = (F.now % 2.4) / 2.4
-    local cy = by + bh / 2
-    local sell = math.min((r.owned or 0) + 1, math.max(r.arena_max or 0, 1))
-    local gun = r.trigger == 0
-    -- A craft in motion, at a size where a hull would be a smudge: the
-    -- contact triangle, nose to the right.
-    local function dart(cx2, cy2, k, col)
-        F.layer:outline({cx2 + k, ry(cy2), cx2 - k * 0.7, ry(cy2 - k * 0.7),
-                         cx2 - k * 0.7, ry(cy2 + k * 0.7)},
-                        1.0 * F.scale, col, true)
-    end
-    local function blast(cx2, cy2, u, col, reach)
-        if u <= 0 or u >= 1 then return end
-        F.layer:ring(cx2, ry(cy2), 4 * F.scale + u * (reach or 26 * F.scale),
-                     1.2 * F.scale, 20, pal.a(col, 0.9 * (1 - u)))
-    end
-    -- A tank of energy: the one meter the whole game runs on, as a bar.
-    local function tank(x2, y2, w2, fill, col)
-        F.layer:frame(x2, ry(y2, 7 * F.scale), w2, 7 * F.scale,
-                      1.0 * F.scale, pal.a(pal.DIM, 0.5))
-        if fill > 0.01 then
-            rect(x2 + 1.5 * F.scale, y2 + 1.5 * F.scale,
-                 (w2 - 3 * F.scale) * math.min(fill, 1), 4 * F.scale,
-                 pal.a(col, 0.8))
-        end
-    end
-    if r.group == "flight" then
-        -- Every stat demo is the same sentence: the top line is the ship
-        -- you have, the bottom line is the ship one rung up, moving while
-        -- you watch. "Now" and "next" in the small voice, the next rung in
-        -- the stat's own color.
-        local lx = bx + 66 * F.scale
-        local lw2 = bw - 96 * F.scale
-        local y1, y2 = cy - 22 * F.scale, cy + 22 * F.scale
-        local col = pal.a(r.tint_col or pal.INK, 0.9)
-        if r.short ~= "ROT" then
-            lbl("now", bx + 12 * F.scale, y1, pal.MUTE)
-            lbl("next", bx + 12 * F.scale, y2,
-                pal.a(r.tint_col or pal.INK, 0.9))
-        end
-        if r.short == "NRG" then
-            -- The same three hits land on both tanks; the deeper one is
-            -- still flying after them.
-            local hits = math.floor(t * 4) * 0.3
-            tank(lx, y1 - 3 * F.scale, lw2 * 0.7, 1 - hits, pal.a(pal.DIM, 0.8))
-            tank(lx, y2 - 3 * F.scale, lw2 * 0.85, 1 - hits * 0.82, col)
-        elseif r.short == "RCH" then
-            tank(lx, y1 - 3 * F.scale, lw2 * 0.8, t, pal.a(pal.DIM, 0.8))
-            tank(lx, y2 - 3 * F.scale, lw2 * 0.8, math.min(1, t * 1.5), col)
-        elseif r.short == "SPD" then
-            dart(lx + (t % 1) * lw2, y1, 6 * F.scale, pal.a(pal.DIM, 0.8))
-            dart(lx + (t * 1.3 % 1) * lw2, y2, 6 * F.scale, col)
-        elseif r.short == "THR" then
-            -- From a standing start, which is where thrust lives.
-            dart(lx + t * t * lw2, y1, 6 * F.scale, pal.a(pal.DIM, 0.8))
-            dart(lx + math.min(1, t * t * 1.45) * lw2, y2, 6 * F.scale, col)
-        elseif r.short == "ROT" then
-            local function turn_dial(cx2, rate, col2)
-                local a = t * 6.2832 * rate
-                F.layer:ring(cx2, ry(cy), 16 * F.scale, 1.0 * F.scale, 20,
-                             pal.a(pal.DIM, 0.4))
-                F.layer:seg(cx2, ry(cy),
-                            cx2 + math.sin(a) * 15 * F.scale,
-                            ry(cy - math.cos(a) * 15 * F.scale),
-                            1.4 * F.scale, col2)
-            end
-            local d1 = lx + 40 * F.scale
-            local d2 = lx + lw2 - 40 * F.scale
-            local wy = cy + 28 * F.scale
-            turn_dial(d1, 1, pal.a(pal.DIM, 0.8))
-            turn_dial(d2, 1.4, col)
-            lbl("now", d1, wy, pal.MUTE, "center")
-            lbl("next", d2, wy,
-                pal.a(r.tint_col or pal.INK, 0.9), "center")
-        end
-    elseif r.group == "levels" then
-        -- The whole ladder, each rung as the round it fires, with the one
-        -- on sale ringed; over it the rung you would own next, flying. The
-        -- ramp does the teaching: hotter rungs wear the hotter color.
-        local top = math.max(r.arena_max or 1, 1)
-        local pitch = math.min(44 * F.scale, (bw - 40 * F.scale) / top)
-        local lx = bx + bw / 2 - (top - 1) * pitch / 2
-        local ly2 = by + bh - 30 * F.scale
-        for k = 1, top do
-            local cx2 = lx + (k - 1) * pitch
-            marks.round(cx2, ry(ly2), 8 * F.scale, gun, k)
-            if k == sell then
-                F.layer:ring(cx2 + (gun and 2 or 0), ry(ly2), 13 * F.scale,
-                             1.1 * F.scale, 20, pal.a(pal.CHARGE_COL, 0.85))
-            end
-        end
-        local fy = by + bh * 0.32
-        local fx = bx + 20 * F.scale + t * (bw - 60 * F.scale)
-        if t < 0.82 then
-            marks.round(fx, ry(fy), 8 * F.scale, gun, sell)
-        else
-            blast(bx + bw - 40 * F.scale, fy, (t - 0.82) / 0.18,
-                  pal.rung(sell), gun and 14 * F.scale or 30 * F.scale)
-        end
-    elseif r.group == "weapons" then
-        local m = r.mod or -1
-        local lvl = r.lvl or 0
-        local modn = {}
-        modn[m + 1] = sell
-        local x0 = bx + 20 * F.scale
-        if m == 0 then
-            -- Spray: the pull, thrown n wide.
-            local d = 14 * F.scale + t * (bw - 64 * F.scale)
-            for i = 1, sell + 1 do
-                local a = (i - (sell + 2) / 2) * 0.17
-                marks.round(x0 + d * math.cos(a),
-                            ry(cy + d * math.sin(a) * 0.9),
-                            6.5 * F.scale, gun, lvl)
-            end
-        elseif m == 1 then
-            -- Bounce: the wall keeps the round in play. The path it will
-            -- take is laid faintly under it, folds and all.
-            local x1, ph = x0, by + 16 * F.scale
-            local pb = by + bh - 16 * F.scale
-            local run = bw - 50 * F.scale
-            local folds = 1 + math.min(sell, 3)
-            local function at(u)
-                local v2 = u * folds
-                local fold = 2 * math.abs(v2 / 2 - math.floor(v2 / 2 + 0.5))
-                return x1 + u * run, ph + fold * (pb - ph)
-            end
-            local steps = 24
-            for i = 0, steps - 1 do
-                local ax, ay = at(i / steps)
-                local bx2, by2 = at((i + 1) / steps)
-                F.layer:seg(ax, ry(ay), bx2, ry(by2), 0.8 * F.scale,
-                            pal.a(pal.DIM, 0.22))
-            end
-            local px2, py2 = at(t)
-            marks.round(px2, ry(py2), 7 * F.scale, gun, lvl, modn)
-        elseif m == 2 then
-            -- Prox: the dodge that stopped working. The ring is the fuse.
-            local tx2 = bx + bw - 44 * F.scale
-            local reach = (18 + sell * 7) * F.scale
-            thumb(tx2, cy, 0, pal.a(pal.ENEMY, 0.9), 1.2)
-            F.layer:ring(tx2, ry(cy), reach, 1.0 * F.scale, 24,
-                         pal.a(pal.BOMB, 0.30 + 0.12 * math.sin(F.now * 3)))
-            local stop = tx2 - reach
-            if t < 0.7 then
-                marks.round(x0 + t / 0.7 * (stop - x0), ry(cy),
-                            7 * F.scale, gun, lvl, modn)
-            else
-                blast(stop, cy, (t - 0.7) / 0.3, pal.rung(lvl))
-            end
-        elseif m == 3 then
-            -- Shrapnel: the ending is an attack of its own. The splinters
-            -- are the gun rounds they really are, small.
-            local sx2 = bx + bw * 0.55
-            if t < 0.5 then
-                marks.round(x0 + t * 2 * (sx2 - x0), ry(cy), 7 * F.scale,
-                            gun, lvl, modn)
-            else
-                local d = (t - 0.5) * 110 * F.scale
-                for i = 0, 5 do
-                    local a = i * 1.0472 + 0.3
-                    marks.round(sx2 + math.cos(a) * d,
-                                ry(cy + math.sin(a) * d * 0.8),
-                                4.5 * F.scale, true, 1)
-                end
-                blast(sx2, cy, (t - 0.5) * 3, pal.rung(lvl))
-            end
-        elseif m == 4 then
-            -- Freeze: their tank stops refilling. The top bar is a ship
-            -- that was not hit; the bottom one took the round.
-            local tx2 = bx + bw - 44 * F.scale
-            thumb(tx2, cy - 6 * F.scale, 0,
-                  pal.a(pal.ENEMY, t > 0.45 and t < 0.85 and 0.5 or 0.9),
-                  1.2)
-            local fl
-            if t < 0.45 then fl = t
-            elseif t < 0.85 then fl = 0.45
-            else fl = 0.45 + (t - 0.85) * 2 end
-            lbl("their recharge", bx + 12 * F.scale, by + bh - 18 * F.scale,
-                pal.MUTE)
-            tank(bx + bw * 0.42, by + bh - 21 * F.scale, bw * 0.44, fl,
-                 pal.a(pal.ENEMY, 0.8))
-            if t < 0.45 then
-                marks.round(x0 + t / 0.45 * (tx2 - 26 * F.scale - x0),
-                            ry(cy - 6 * F.scale), 7 * F.scale, gun, lvl, modn)
-            else
-                blast(tx2 - 16 * F.scale, cy - 6 * F.scale,
-                      (t - 0.45) / 0.2, pal.a(pal.hot(pal.rung(lvl), 0.45), 1),
-                      12 * F.scale)
-            end
-        elseif m == 5 then
-            -- Push: whatever the blast reaches is thrown. The thrown thing
-            -- is a ship, so it is drawn as one.
-            local sx2 = bx + bw * 0.5
-            local ex = bx + bw - 50 * F.scale
-                       + (t > 0.5 and (t - 0.5) * 70 * F.scale or 0)
-            thumb(ex, cy, 0, pal.a(pal.ENEMY, 0.9), 1.2)
-            if t < 0.5 then
-                marks.round(x0 + t * 2 * (sx2 - x0), ry(cy), 7 * F.scale,
-                            gun, lvl, modn)
-            else
-                blast(sx2, cy, (t - 0.5) * 2, pal.rung(lvl), 44 * F.scale)
-            end
-        end
-    elseif r.group == "charges" then
-        local name = string.lower(r.label or "")
-        if string.find(name, "repel", 1, true) then
-            thumb(bx + bw / 2, cy, 0, pal.a(pal.FRIEND, 0.95), 1.3)
-            for i = 0, 5 do
-                local a = i * 1.0472 + 0.5
-                local d = t < 0.5 and (66 - t * 2 * 44) or (22 + (t - 0.5) * 2 * 80)
-                d = d * F.scale
-                marks.round(bx + bw / 2 + math.cos(a) * d,
-                            ry(cy + math.sin(a) * d * 0.7),
-                            5 * F.scale, true, 1)
-            end
-            if t > 0.5 then
-                blast(bx + bw / 2, cy, (t - 0.5) * 2, pal.CHARGE_COL,
-                      56 * F.scale)
-            end
-        elseif string.find(name, "burst", 1, true) then
-            -- A burst is many rounds at once, so the rosette is drawn as
-            -- the rounds it throws, not as an abstraction of them.
-            thumb(bx + bw / 2, cy, 0, pal.a(pal.FRIEND, 0.95), 1.3)
-            if t > 0.3 then
-                local d = (t - 0.3) * 110 * F.scale
-                for i = 0, 7 do
-                    local a = i * 0.7854
-                    marks.round(bx + bw / 2 + math.cos(a) * d,
-                                ry(cy + math.sin(a) * d * 0.7),
-                                5 * F.scale, true, 1)
-                end
-            end
-        else
-            marks.charge(2, bx + bw / 2, ry(cy), 16 * F.scale,
-                         pal.a(pal.CHARGE_COL, 0.9))
-        end
-    end
-end
 
 -- A rail of destinations and a stage showing what the one you are on holds.
 --
@@ -5889,7 +5062,6 @@ local draw_mark = ui_menu_marks.new({
     ry = ry,
     pilot_mark = pilot_mark,
     thumb = thumb,
-    rivet_mark = pages.rivet_mark,
 })
 
 -- --- the stage -------------------------------------------------------------
@@ -6008,11 +5180,6 @@ function pages.pilot(v, x, y, w, h, focused)
              .. " deaths")
         fact("Games", tostring(career.games))
     end
-    txt("Rivets", x, at, TYPE.ROW * F.scale, pal.INK)
-    pages.priced(c.rivets or 0, x + w, at, TYPE.BODY * F.scale,
-                 pal.a(pal.CHARGE_COL, 0.95), "right")
-    at = at + 26 * F.scale
-
     -- The foot. Signing up is the one big act a guest has here, so it gets
     -- the DEPLOY treatment: full width, lit, under the line saying what it
     -- buys and the line for the pilot who already has one. Signed in, the
@@ -6621,74 +5788,6 @@ function M.room_card(rooms)
     })
 end
 
--- The hulls, as hulls. A list of seven names is seven words about drawings the
--- game already owns, and picking a ship from a menu that shows you the ships is
--- the one page that does not need reading at all.
-local function ship_grid(x, y, w, h, v, focused)
-    local n = #v.rows
-    if n == 0 then return end
-    local cols = (w / F.scale >= 420) and 4 or 2
-    -- How wide the grid came out, for whoever has to move a cursor around it.
-    -- The arrows mean a column and a row, and only the drawing knows how many
-    -- columns a window of this width got.
-    M.stage_cols = cols
-    local rowsn = math.ceil(n / cols)
-    local cw = w / cols
-    local ch = math.min(h / rowsn, (M.compact and 92 or 104) * F.scale)
-    -- Centered in the room it was given rather than hung off the top, so a
-    -- tall phone does not draw eight cells in the top third of the screen.
-    y = y + math.max(0, (h - ch * rowsn) / 2)
-    for i, r in ipairs(v.rows) do
-        local c, rr = (i - 1) % cols, math.floor((i - 1) / cols)
-        local cx = x + c * cw + cw / 2
-        local cy = y + rr * ch + ch / 2
-        local hot = (focused and i == v.sel) or i == v.hover
-        local col = r.mark and pal.FRIEND or pal.INK
-        -- The hull you are flying keeps a field of its own, so a cursor moved
-        -- off it does not take the answer to "which one am I in" with it. A
-        -- cell is not a row, so it lights its own shape rather than the
-        -- drawer; the two weights are the list's.
-        if r.mark then
-            rect(x + c * cw + 4 * F.scale, y + rr * ch + 2 * F.scale, cw - 8 * F.scale,
-                 ch - 4 * F.scale, pal.a(pal.FRIEND, LIT.HERE))
-        end
-        if hot then
-            rect(x + c * cw + 4 * F.scale, y + rr * ch + 2 * F.scale, cw - 8 * F.scale,
-                 ch - 4 * F.scale, pal.a(pal.FRIEND, LIT.CURSOR))
-        end
-        -- The hull, its name and its trade, held clear of the bottom of the
-        -- lit cell. The role used to sit on that edge, its descenders over the
-        -- line, so a selected ship read as type in a box a size too small for
-        -- it.
-        -- The one under the cursor turns, and nothing else on the page does.
-        -- Seven hulls all revolving is a screensaver; one of them turning is
-        -- the one you are looking at, answering.
-        -- A cell about a hull draws the hull. The one that is about not having
-        -- one draws the pilot instead, at the size the helmet reads at rather
-        -- than at the hull's, since the two figures are built to different
-        -- scales and matching their boxes would shrink the helmet to a dot.
-        if r.figure == "pilot" then
-            pilot_mark(cx, cy - ch * 0.17,
-                       pal.a(col, (hot or r.mark) and 1 or 0.7), ch * 0.30,
-                       HULL_PEN * F.scale)
-        else
-            thumb(cx, cy - ch * 0.17, r.hull or 0,
-                  pal.a(col, (hot or r.mark) and 1 or 0.7), ch / 116,
-                  hot and F.now * 1.7 or nil)
-        end
-        -- The name of the hull you fly breathes the way every standing row
-        -- does, unless the cursor is on it, in which case the cursor has it.
-        txt(r.label or "", cx, cy + ch * 0.20, TYPE.ROW * F.scale,
-            pal.a(col, (r.mark and not hot) and LIT.breath() or 1),
-            "center", MENU_FONT)
-        if r.role then
-            txt(r.role, cx, cy + ch * 0.34, TYPE.LABEL * F.scale, pal.MUTE,
-                "center")
-        end
-        hit(x + c * cw, y + rr * ch, cw, ch, "stage", i)
-    end
-end
-
 -- The mark is a top-down ship built from an orange Lambda and a cyan W. The
 -- orange outside is one uninterrupted /\, while the shared five-point
 -- chevron gives both letters their inside edge. A black separator is derived
@@ -7276,8 +6375,7 @@ function M.menu(v)
     -- are the front end, so a menu opened there is a panel over a room like
     -- any other, and the wash that used to be lighter over a starfield has
     -- one weight because there is one thing it is ever drawn over.
-    local reading = v.item or v.points
-        or v.newbuild or v.settings or v.at == "controls" or v.at == "about"
+    local reading = v.settings or v.at == "controls" or v.at == "about"
         or v.at == "pilot"
     -- The ground under the column, and nothing outside it. The wash used to
     -- take the window, which is what a panel that is the window wants and the
@@ -7611,9 +6709,8 @@ function M.menu(v)
     -- at one edge and its value at the other, which is two columns nobody
     -- reads as one line.
     --
-    -- Lists only. The hull grid is a drawing, and it takes everything there is.
-    local listy = not v.kit
-        and not (v.rows and v.rows[1] and v.rows[1].hull)
+    -- Lists only. The roster is a drawing, and it takes everything there is.
+    local listy = not (v.ships or v.ships_preview)
     -- A page is a panel: a translucent ground hung off a lit rule down its left
     -- edge, with the light spilling across it. It is the shape every
     -- instrument in the arena already has, and the one thing the menu was
@@ -7724,7 +6821,7 @@ function M.menu(v)
     -- grid you picked it from: eight names is a list to read and eight
     -- outlines is a shape to recognise, and the page you land on should be
     -- wearing the one you just pressed.
-    if v.head and not v.kit then
+    if v.head then
         -- One line of it. Stacked, the name and the trade cost a row off the
         -- list below, and a kit page that has to scroll to reach the last
         -- charge is a page that cannot be read in one look.
@@ -7781,31 +6878,16 @@ function M.menu(v)
     -- one the map border is made of, introducing a list that needs no
     -- introducing: the rail says what the page is and the rows say what they
     -- are, and the rule was a third line of furniture between them.
-    if v.kit then
-        -- The ship page: every slot this arena has, and the thirty points on
-        -- it. The same left edge every other page has. It began at the
-        -- panel's own rule while the others began a gutter in from it, which
-        -- is a quarter inch of difference nobody can name and everybody can
-        -- see when they walk the tab row.
-        pages.kit(v, panel_x, top, panel_w, room, focused)
-    elseif v.builds then
-        -- The library, behind the band's name key.
-        pages.builds(v, panel_x, top, panel_w, room, focused)
-    elseif v.newbuild then
-        -- Naming one, a slide further right.
-        pages.newbuild(v, panel_x, top, panel_w, room,
-                       focused)
-    elseif v.points then
-        -- What the thirty are, behind the band's meter.
-        pages.points(v, panel_x, top, panel_w, room)
-    elseif v.item then
-        -- One slot, read: where a press on a row's name lands.
-        pages.slot(v, panel_x, top, panel_w, room, focused)
+    if v.ships or v.ships_preview then
+        -- The roster: every ship the game has, each row the whole of one.
+        -- The same left edge every other page has. It began at the panel's
+        -- own rule while the others began a gutter in from it, which is a
+        -- quarter inch of difference nobody can name and everybody can see
+        -- when they walk the tab row.
+        pages.ships(v, panel_x, top, panel_w, room, focused)
     elseif v.pilot_card then
         -- Who you are and the way to keep it, drawn rather than listed.
         pages.pilot(v, panel_x, top, panel_w, room, focused)
-    elseif v.rows and #v.rows > 0 and v.rows[1].hull then
-        ship_grid(tx, top, avail, room, v, focused)
     else
         -- Two lines of room where the rows have two lines in them, held to
         -- one height either way so nothing shifts as the cursor walks down.

@@ -29,7 +29,6 @@ local draw = menu_marks.new({
     ry = function(y, h) return 1000 - y - (h or 0) end,
     pilot_mark = function(...) record("pilot", ...) end,
     thumb = function(...) record("thumb", ...) end,
-    rivet_mark = function(...) record("rivet", ...) end,
 })
 
 local function signature(kind)
@@ -55,13 +54,12 @@ local expected = {
     controls = "rect/5,frame/6,rect/5,frame/6,rect/5,frame/6,rect/5,frame/6",
     about = "ring/6,disc/5,seg/7",
     leave = "outline/4,seg/7,tri/7",
-    upgrades = "rivet/4",
     ship = "thumb/5",
 }
 
 local failures = 0
 for _, kind in ipairs({"zones", "pilot", "team", "settings", "controls",
-                        "about", "leave", "upgrades", "ship"}) do
+                        "about", "leave", "ship"}) do
     local got = signature(kind)
     if got == expected[kind] then
         print("ok   " .. kind .. " mark")

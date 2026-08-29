@@ -1,19 +1,18 @@
--- The label over a hull: who they are, and what they are worth.
+-- The label over a hull: who they are, and nothing else.
 --
 --     lua5.1 client/tests/plate_test.lua
 --
--- The bounty under a name is the number that decides which of two ships in
--- front of you is worth the risk, and until now it was set as a bare figure.
--- Position was the only thing saying what it counted: kills, deaths, points
--- and bounty are all drawn as a number somewhere, and a reader who has not
--- learned this particular somewhere has no way to tell which one they are
--- looking at. It is a price, so it wears the rivet, the same mark every other
--- price in the game is set with.
+-- One line. A name, and after it the mark saying whether a person or a machine
+-- is flying, which is worth knowing while you are deciding whether to chase.
 --
--- Measured off a real M.hud frame rather than reasoned about, because both
--- halves of this are geometry: a mark half the height of its own number reads
--- as a bullet point rather than as a unit, and a mark that lands on top of
--- the figure reads as neither.
+-- There was a second line under it, and it was the price on their head. Bounty
+-- is gone with the shop it fed, so what this now guards is that nothing came
+-- back: a plate carrying a figure would be a column of numbers across the
+-- screen saying nothing, which is the failure the bounty line was trimmed
+-- twice to avoid.
+--
+-- Measured off a real M.hud frame rather than reasoned about, because a plate
+-- is geometry: a mark that lands on its own name reads as neither.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -123,78 +122,30 @@ end
 frame()
 
 local name = drawn("mark")
-local bty = drawn(tostring(BOUNTY))
 check("a hull that is not yours wears its pilot's name", name ~= nil)
-check("and the price on their head under it",
-      bty ~= nil and name ~= nil and bty.y < name.y,
-      bty and name and ("name at %.0f, bounty at %.0f"):format(name.y, bty.y)
-          or "one of them missing")
 
--- --- set as a price --------------------------------------------------------
+-- --- and one line only -----------------------------------------------------
 
-local mark = bty and near(bty.x - 8, bty.y, 12) or {}
-check("the figure is set with the rivet", #mark == 4,
-      ("%d strokes beside it"):format(#mark))
-
-if #mark == 4 then
-    local x0, x1, y0, y1 = math.huge, -math.huge, math.huge, -math.huge
-    local weight = 0
-    for _, s in ipairs(mark) do
-        x0 = math.min(x0, s.x0, s.x1)
-        x1 = math.max(x1, s.x0, s.x1)
-        y0 = math.min(y0, s.y0, s.y1)
-        y1 = math.max(y1, s.y0, s.y1)
-        weight = math.max(weight, s.w or 0)
-    end
-
-    -- Left of the figure and clear of it. A unit drawn over its own number is
-    -- worse than no unit at all.
-    check("standing to the left of the figure rather than over it",
-          x1 < bty.x, ("mark ends at %.1f, figure starts at %.1f")
-              :format(x1, bty.x))
-
-    -- And flush with the name above, so the two lines are one block hanging
-    -- off the hull rather than a name with something indented under it.
-    check("and beginning where the name above it begins",
-          math.abs(x0 - name.x) < 1.5,
-          ("mark at %.1f, name at %.1f"):format(x0, name.x))
-
-    -- The failure pages.priced was written against: a mark half the height of
-    -- its own number reads as a bullet point.
-    check("as tall as the figure it is a unit for",
-          y1 - y0 > bty.px * 0.75,
-          ("%.1f tall against %.0f point type"):format(y1 - y0, bty.px))
-
-    -- One label, one color. Gold would say "this is a bounty", which the
-    -- position already says; the side's color says whose hull it is over,
-    -- and the mark has to be part of the same label to say it.
-    check("and in the label's own color, not a color of its own",
-          math.abs(mark[1].col[1] - bty.col[1]) < 0.01
-          and math.abs(mark[1].col[2] - bty.col[2]) < 0.01
-          and math.abs(mark[1].col[3] - bty.col[3]) < 0.01,
-          "the mark and the figure disagree")
-
-    check("struck heavily enough to survive the size it is drawn at",
-          weight > 0.9, ("%.2f"):format(weight))
-end
-
--- --- and nothing at all where there is nothing to say ----------------------
-
--- A zone opens every pilot at a bounty of one, so a plate that said so would
--- put a column of ones across the screen saying only that the match had
--- started. The mark does not get to reintroduce that.
-BOUNTY = 1
-frame()
-local still = drawn("mark")
-local one = drawn("1")
--- The line under the name, found by asking where the name went rather than
--- by working the plate's offsets out here a second time.
-local under = still and near(still.x, still.y - 12, 20) or {}
-check("a pilot worth nothing extra says nothing",
-      one == nil or math.abs(one.y - (still.y - 12)) > 6,
-      one and ("a 1 at %.0f, name at %.0f"):format(one.y, still.y) or "none")
-check("and wears no mark either", #under == 0,
+-- Where a second line would land, found by asking where the name went rather
+-- than by working the plate's offsets out here a second time.
+local under = name and near(name.x, name.y - 12, 24) or {}
+check("nothing is drawn under it", #under == 0,
       ("%d strokes under the name"):format(#under))
+
+local figure = drawn(tostring(BOUNTY)) or drawn("1")
+check("and no figure hangs off the hull at all",
+      figure == nil or math.abs(figure.y - name.y) > 8,
+      figure and ("a figure at %.0f, name at %.0f"):format(figure.y, name.y)
+          or "none")
+
+-- The mark that says who is flying sits after the name on the same line, not
+-- under it: the plate is one row, and a reader scanning the fight reads it in
+-- one glance rather than in two.
+if name then
+    local beside = near(name.x + 40, name.y, 40)
+    check("the pilot mark stands beside the name rather than below it",
+          #beside > 0, ("%d strokes beside it"):format(#beside))
+end
 
 if fails > 0 then
     print(("\n%d check(s) failed"):format(fails))

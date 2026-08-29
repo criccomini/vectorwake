@@ -367,9 +367,9 @@ int ShipLevel(lua_State* L) {
 // A hull's footprint, in px: how far it reaches past the nose, behind
 // the tail, and to either side.
 //
-// The whole of what tells one hull from another, now that they fly alike and
-// hold alike. Worth drawing in the hangar for that reason: it is the only
-// number on that page a player cannot change.
+// One of the three things that tell one hull from another, beside its flight
+// row and its profile. Every rectangle spends the same 625 square pixels;
+// what a hull chooses is which way to spend them.
 int HullExtent(lua_State* L) {
     int cls = (int)luaL_checkinteger(L, 1);
     if (cls < 0 || cls >= g_cfg.class_count) { lua_pushnil(L); return 1; }
@@ -380,62 +380,46 @@ int HullExtent(lua_State* L) {
     return 3;
 }
 
-// What this arena lets a kit hold, over the flat slot space.
+// What a hull flies with, over the flat slot space.
 //
-// It takes no hull and no seat. It used to take a class, back when the roster
-// carried a tech tree and the hangar had to ask the question once per hull;
-// the answer is the same for all seven now, so the hangar asks once.
-int KitCeilings(lua_State* L) {
+// The profile: dealt at every spawn, owned by nobody, and the whole of what
+// tells one ship from another besides its flight row and its shape. The ship
+// page reads it to draw what a hull carries.
+//
+// Three functions stood here, and all three were about a kit a pilot spent
+// thirty points on: the arena's ceiling, the account's entitlements, and the
+// starter kit a seat flew before it had chosen. There is nothing to choose.
+// A hull's flight, in the core's own units: speed, thrust, rotation, energy
+// and recharge.
+//
+// Raw rather than converted back to the settings file's units, because the
+// ship page draws these as bars against the rest of the roster and a bar only
+// needs the order. A conversion back would be an inverse of five different
+// scales kept in step with the core by hand, to display a number nobody reads
+// off a bar anyway.
+int ClassFlight(lua_State* L) {
+    int cls = (int)luaL_checkinteger(L, 1);
+    if (cls < 0 || cls >= g_cfg.class_count) { lua_pushnil(L); return 1; }
+    const sim_ship_class* c = &g_cfg.classes[cls];
+    lua_pushnumber(L, c->max_speed);
+    lua_pushnumber(L, c->thrust);
+    lua_pushnumber(L, c->rot);
+    lua_pushnumber(L, c->max_energy);
+    lua_pushnumber(L, c->recharge);
+    return 5;
+}
+
+int ClassKit(lua_State* L) {
+    int cls = (int)luaL_checkinteger(L, 1);
+    if (cls < 0 || cls >= g_cfg.class_count) { lua_pushnil(L); return 1; }
     lua_createtable(L, SIM_SLOT_COUNT, 0);
     for (int k = 0; k < SIM_SLOT_COUNT; k++) {
-        lua_pushnumber(L, g_cfg.kit_ceiling[k]);
+        lua_pushnumber(L, g_cfg.classes[cls].kit[k]);
         lua_rawseti(L, -2, k + 1);
     }
     return 1;
 }
 
-// What an account owns before it has bought anything, over the same space,
-// with 255 for a slot the account never limits.
-//
-// The hangar needs it because a kit is checked against the arena's row and the
-// account's entitlements together, and a client with no meta-layer to ask has
-// to fall back to something. Falling back to "no limit" offered slots to
-// pilots who cannot take them, which the arena then refused: a page that
-// offers what the server will not take is worse than one that offers less.
-int BaseEntitlements(lua_State* L) {
-    uint8_t base[SIM_SLOT_COUNT];
-    sim_base_entitlements(base);
-    lua_createtable(L, SIM_SLOT_COUNT, 0);
-    for (int k = 0; k < SIM_SLOT_COUNT; k++) {
-        lua_pushnumber(L, base[k]);
-        lua_rawseti(L, -2, k + 1);
-    }
-    return 1;
-}
-
-// A whole budget spent inside a table of ceilings, which is what a seat with
-// no kit of its own flies. The hangar opens on it, so what a player sees
-// before they have chosen anything is the ship the arena would have dealt
-// them.
-int StarterKit(lua_State* L) {
-    uint8_t ceiling[SIM_SLOT_COUNT], kit[SIM_SLOT_COUNT];
-    luaL_checktype(L, 1, LUA_TTABLE);
-    for (int k = 0; k < SIM_SLOT_COUNT; k++) {
-        lua_rawgeti(L, 1, k + 1);
-        double v = lua_isnumber(L, -1) ? lua_tonumber(L, -1) : 0;
-        lua_pop(L, 1);
-        if (v < 0) v = 0;
-        if (v > 255) v = 255;
-        ceiling[k] = (uint8_t)v;
-    }
-    sim_starter_kit(ceiling, kit);
-    lua_createtable(L, SIM_SLOT_COUNT, 0);
-    for (int k = 0; k < SIM_SLOT_COUNT; k++) {
-        lua_pushnumber(L, kit[k]);
-        lua_rawseti(L, -2, k + 1);
-    }
-    return 1;
-}
 
 int ShipMod(lua_State* L) {
     int i = CheckShip(L);
@@ -595,38 +579,6 @@ int HasTrigger(lua_State* L) {
     if (t < 0 || t >= SIM_TRIG_COUNT) { lua_pushboolean(L, 0); return 1; }
     const sim_ship_class* c = &g_cfg.classes[g_cur->ships[i].cls];
     lua_pushboolean(L, c->trigger[t][0] != SIM_NO_PATTERN);
-    return 1;
-}
-
-// What this seat's kit holds at one slot of the flat space.
-//
-// The kit rides the snapshot, so this answers for anybody the client can see
-// and not only for the pilot at the keyboard. What reads it is the binding of
-// the charge keys: which kinds a pilot carries is a choice made on the ship
-// page, and the kit is the only thing that records it.
-int ShipKit(lua_State* L) {
-    int i = CheckShip(L);
-    int slot = (int)luaL_checkinteger(L, 2);
-    if (slot < 0 || slot >= SIM_SLOT_COUNT) { lua_pushnumber(L, 0); return 1; }
-    lua_pushnumber(L, g_cur->ships[i].kit[slot]);
-    return 1;
-}
-
-// What a pilot is worth, and what they have been paid.
-//
-// A bounty is the base plus the run, so the number over a ship is the length
-// of its current streak and says nothing about what the pilot owns. It costs
-// the wire nothing either way: the run is in the snapshot and the base is in
-// the settings, so the client has both halves already.
-int ShipBounty(lua_State* L) {
-    int i = CheckShip(L);
-    lua_pushnumber(L, sim_bounty(&g_cfg, &g_cur->ships[i]));
-    return 1;
-}
-
-int ShipPoints(lua_State* L) {
-    int i = CheckShip(L);
-    lua_pushnumber(L, (double)g_cur->ships[i].points);
     return 1;
 }
 
@@ -1247,20 +1199,16 @@ const luaL_reg kFunctions[] = {
     {"ship_vel", ShipVel},
     {"ship_repel", ShipRepel},
     {"ship_up", ShipUp},
-    {"kit_ceilings", KitCeilings},
+    {"class_kit", ClassKit},
+    {"class_flight", ClassFlight},
     {"hull_extent", HullExtent},
-    {"base_entitlements", BaseEntitlements},
-    {"starter_kit", StarterKit},
     {"ship_level", ShipLevel},
     {"ship_charge", ShipCharge},
     {"ship_charge_wait", ShipChargeWait},
     {"charge_delay", ChargeDelay},
-    {"ship_bounty", ShipBounty},
     {"ship_streak", ShipStreak},
     {"ship_on_streak", ShipOnStreak},
     {"streak_kills", StreakKills},
-    {"ship_points", ShipPoints},
-    {"ship_kit", ShipKit},
     {"has_trigger", HasTrigger},
     {"ship_mod", ShipMod},
     {"ship_multi_off", ShipMultiOff},
@@ -1356,7 +1304,6 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_SLOT_LEVEL(0)); lua_setfield(L, -2, "SLOT_LEVEL0");
     lua_pushnumber(L, SIM_SLOT_MOD(0, 0)); lua_setfield(L, -2, "SLOT_MOD0");
     lua_pushnumber(L, SIM_SLOT_CHARGE(0)); lua_setfield(L, -2, "SLOT_CHARGE0");
-    lua_pushnumber(L, SIM_KIT_BUDGET);   lua_setfield(L, -2, "KIT_BUDGET");
     lua_pushnumber(L, SIM_UP_STEPS);     lua_setfield(L, -2, "UP_STEPS");
     lua_pushnumber(L, SIM_MAX_CHARGES);  lua_setfield(L, -2, "MAX_CHARGES");
     lua_pushnumber(L, SIM_KIT_CHARGE_SLOTS);

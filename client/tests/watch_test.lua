@@ -169,12 +169,12 @@ deliver(string.char(13, 0))
 check("and tells them when the camera moves on", not net.on_air)
 
 -- The roster's second section: watchers, by name, after the ships.
--- ship 0, label 1, rating 712, games 3, team 2, then the four score fields
+-- ship 0, label 1, rating 712, games 3, team 2, then the three score fields
 -- the board reads for seats a filtered snapshot leaves out, then the name.
--- ship, label, rating(2), games, team, kills(2), deaths(2), assists(2),
--- points(4), earned(2), then the name.
+-- ship, label, rating(2), games, team, kills(2), deaths(2), assists(2), then
+-- the name.
 deliver(string.char(3, 1, 0, 1, 200, 2, 3, 2,
-                    4, 0, 1, 0, 2, 0, 9, 0, 0, 0, 6, 0, 5) .. "pilot"
+                    4, 0, 1, 0, 2, 0, 5) .. "pilot"
         .. string.char(1, 1, 7) .. "gallery")
 check("the ships section still parses", net.pilots[0] ~= nil
       and net.pilots[0].name == "pilot")

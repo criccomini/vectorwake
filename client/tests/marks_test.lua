@@ -608,12 +608,16 @@ end
 -- other.
 local ship_frame = frame(function()
     local rows = {}
-    for i = 1, 8 do
-        rows[i] = {label = "hull " .. i, hull = i - 1, role = "a trade"}
+    for i = 1, 3 do
+        rows[i] = {label = "hull " .. i, hull = i - 1, detail = "a trade",
+                   index = i, group = "ships", ship = true,
+                   bars = {0.5, 0.5, 0.5, 0.5, 0.5}, carries = {"gun spray 2"}}
     end
-    rows[9] = {label = "Spectate", role = "no hull", figure = "pilot"}
-    ui.menu({depth = 2, sel = 9, rail = RAIL, rail_sel = 2, focus = "stage",
-             home = false, closable = true, rows = rows})
+    rows[4] = {label = "spectate", detail = "no hull", figure = "pilot",
+               index = 4, group = "ships", ship = true,
+               note = "watch the room from nobody's cockpit"}
+    ui.menu({depth = 2, sel = 4, rail = RAIL, rail_sel = 2, focus = "stage",
+             home = false, closable = true, ships = true, rows = rows})
 end)
 
 -- Everything on the stage, which is to say everything under the tabs. The tab
@@ -634,9 +638,9 @@ end
 
 local stage = on_stage(ship_frame)
 local pairs_on_stage = wings(stage)
-check("the ship page draws the wings in its spectate cell",
+check("the ship page draws the wings on its spectate row",
       #pairs_on_stage == 1,
-      #pairs_on_stage .. " pairs on a page of seven hulls and one pilot")
+      #pairs_on_stage .. " pairs on a roster of hulls and one pilot")
 if pairs_on_stage[1] then
     -- The hulls are closed outlines, drawn out of a handful of points and
     -- wider than they are tall. The feathers are struck, so what is compared

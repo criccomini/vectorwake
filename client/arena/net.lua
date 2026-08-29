@@ -29,10 +29,6 @@ local transport = net_transport.new()
 local C2S_JOIN, C2S_INPUT = 1, 2
 local C2S_SHIP = 5
 local C2S_TEAM, C2S_FOUND, C2S_INVITE = 6, 7, 8
--- What this pilot wants to fly. It took the number the gunner's attach
--- request used to hold, because gunners are gone and a wire with a hole in it
--- is a wire somebody has to remember about.
-local C2S_KIT = 10
 -- Sit out: give up the hull and watch. One byte, because the room channel is
 -- the whole of what a watcher sees and there is nothing to name. Also the
 -- watcher's keepalive, since a client with no inputs to send has nothing else
@@ -75,7 +71,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 30
+local CLIENT_PROTOCOL = 31
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -529,17 +525,17 @@ local function on_roster(s)
     local o = 3
     local pilots, ratings = {}, {}
     for _ = 1, n do
-        local len = string.byte(s, o + 18)
-        -- Nineteen bytes of header, then the name. `string.byte` answers nil
+        local len = string.byte(s, o + 12)
+        -- Thirteen bytes of header, then the name. `string.byte` answers nil
         -- past the end and the arithmetic on it raises, and an error here
         -- surfaces inside a websocket callback where nobody is looking.
-        if not len or #s < o + 18 + len then return end
+        if not len or #s < o + 12 + len then return end
         local ship = string.byte(s, o)
         local label = string.byte(s, o + 1)
         local rating = i16(string.byte(s, o + 2), string.byte(s, o + 3))
         local games = string.byte(s, o + 4)
         pilots[ship] = {
-            name = string.sub(s, o + 19, o + 18 + len),
+            name = string.sub(s, o + 13, o + 12 + len),
             -- Kept, because everything that used to ask "is this AI" still
             -- wants that answer, and both bot labels are one.
             ai = label == 2 or label == 3,
@@ -558,12 +554,9 @@ local function on_roster(s)
             k = i16(string.byte(s, o + 6), string.byte(s, o + 7)),
             d = u16(string.byte(s, o + 8), string.byte(s, o + 9)),
             a = u16(string.byte(s, o + 10), string.byte(s, o + 11)),
-            p = u32(string.byte(s, o + 12), string.byte(s, o + 13),
-                    string.byte(s, o + 14), string.byte(s, o + 15)),
-            b = u16(string.byte(s, o + 16), string.byte(s, o + 17)),
         }
         ratings[ship] = rating
-        o = o + 19 + len
+        o = o + 13 + len
     end
     -- The watchers, after the ships: count, then label and name per row. No
     -- ship index and no rating, since a watcher is not fighting in this room.
@@ -675,11 +668,6 @@ end
 local function publish_kill(e)
     local victim, killer = e.victim, e.killer
     local vr, kr = e.vr, e.kr
-    -- Byte 8 is the contributor count, which nothing here reads yet, and the
-    -- payout follows it. Read like every other u16 on the wire rather than
-    -- padded with `or 0`: the padding was there for a deploy window against a
-    -- zone one image older, and a zone one image older cannot be reached at
-    -- all, because the protocol number is checked before a join is answered.
     -- Every kill in the room, not only the two you were in.
     --
     -- It was filtered to yours, on the argument that a feed where everything
@@ -693,7 +681,7 @@ local function publish_kill(e)
     -- here, because a watcher's sentinel ship is 255 and so is the killer on
     -- a wall death: asking "is this me" from a seat that has no hull makes
     -- every collision in the room look personal.
-    M.kills[#M.kills + 1] = {victim = victim, killer = killer, paid = e.paid,
+    M.kills[#M.kills + 1] = {victim = victim, killer = killer,
                              assist = e.assist}
     M.ratings[victim] = vr
     M.ratings[killer] = kr
@@ -758,19 +746,21 @@ local function publish_timed_events()
 end
 
 local function on_kill(s)
-    if #s < 15 then return end
+    if #s < 13 then return end
     local e = {
         victim = string.byte(s, 2), killer = string.byte(s, 3),
         vr = i16(string.byte(s, 4), string.byte(s, 5)),
         kr = i16(string.byte(s, 6), string.byte(s, 7)),
-        paid = u16(string.byte(s, 9), string.byte(s, 10)),
-        tick = u32(string.byte(s, 11, 14)),
+        -- Byte 8 is the contributor count. Nothing about a payout follows it
+        -- any more: a kill pays nothing, because bounty priced one and points
+        -- banked it and both went with the shop.
+        tick = u32(string.byte(s, 9, 12)),
         -- Whether this death handed *this* pilot an assist. The one byte on
         -- the message that is not the same for everybody in the room: the
         -- zone sets it on one copy and zeroes the rest, so there is nothing
         -- to work out here and nothing to check it against. See S2C_KILL in
         -- server/src/protocol.rs.
-        assist = string.byte(s, 15) ~= 0,
+        assist = string.byte(s, 13) ~= 0,
     }
     local key = e.tick .. ":" .. e.victim .. ":" .. e.killer
     if seen_kills[key] then return end
@@ -1697,22 +1687,6 @@ end
 
 function M.set_class(cls)
     return ask(string.char(C2S_SHIP, cls))
-end
-
--- What this pilot wants to fly, over the core's flat kit space, one byte a
--- slot. A request like every other: the room checks it against the hull's own
--- row and against what the account owns, and the next snapshot carries what
--- was dealt. A refusal leaves the old kit, which is the same answer either
--- way, so nothing comes back.
---
--- Applied at once at a join and between matches, and held to the next whistle
--- during one, because a hull is locked for a match and the kit with it.
-function M.set_kit(kit)
-    local out = {C2S_KIT}
-    for i = 1, sim.SLOT_COUNT do
-        out[i + 1] = math.max(0, math.min(255, math.floor(kit[i] or 0)))
-    end
-    return ask(string.char(unpack(out)))
 end
 
 function M.set_team(team)

@@ -13,7 +13,6 @@ function M.new(context)
     local ry = assert(context.ry)
     local pilot_mark = assert(context.pilot_mark)
     local thumb = assert(context.thumb)
-    local rivet_mark = assert(context.rivet_mark)
 
     local RAIL_PEN = 1.2
 
@@ -201,22 +200,9 @@ function M.new(context)
         thumb(cx, cy, cls or 0, col, r / 17)
     end
 
-    -- Upgrades, as the thing they charge in.
-    --
-    -- Not a cart, and not a bag of coins. Nothing in this game is bought with
-    -- money and nothing is carried out of a shop: what changes hands is which
-    -- slots a pilot may fill, and rivets are what pays for it.
-    --
-    -- So the mark is the rivet itself: a ring with a bar under it, the same
-    -- mark that stands in front of every price on the page it leads to.
-    local function mark_upgrades(cx, cy, r, col)
-        rivet_mark(cx, cy, r * 0.86, col)
-    end
-
     local MARKS = {zones = mark_zones, pilot = mark_pilot, team = mark_team,
                    settings = mark_settings, controls = mark_controls,
-                   about = mark_about, leave = mark_leave,
-                   upgrades = mark_upgrades}
+                   about = mark_about, leave = mark_leave}
 
     local function draw_mark(kind, cx, cy, r, col, cls)
         if kind == "ship" then return mark_ship(cx, cy, r, col, cls) end

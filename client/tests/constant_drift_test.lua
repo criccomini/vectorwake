@@ -131,17 +131,6 @@ local deliveryrs = read("server/src/delivery.rs")
 local aisrc = read("server/src/ai.rs")
 local arenasrc = read("client/arena/arena.script")
 
--- The kit reaches the room on arrival, not only when a point is spent.
---
--- The room deals a starter kit to any seat wearing nothing and never asks the
--- meta-layer for a stored one, so this send is the whole of how a built kit
--- gets flown. Without it a pilot who had spent an evening in the hangar flew
--- the default until the next time they moved a point, which is silent: the
--- ship looks right and fires the wrong number of rounds.
-check("the client sends its kit when a seat is taken",
-      arenasrc:match("menu%.open_kit%(menu%.class%)%s*\n%s*net%.set_kit") ~= nil,
-      "arena.script no longer sends a kit on arrival")
-
 local reach = tonumber(worldsrc:match("local RADAR_TILES = (%d+)"))
 check("world.lua names a radar reach", reach ~= nil)
 check("the dial spans the same reach",

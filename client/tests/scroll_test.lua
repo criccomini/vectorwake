@@ -31,26 +31,23 @@ local ui = harness.install()
 
 -- The ship page at a phone's measure, long enough to overflow it.
 local function rows()
-    local out = {
-        {label = "Screen", group = "band", act = "builds", verbatim = true,
-         index = 1, pick = true},
-        {label = "points", group = "band", act = "points", index = 2,
-         pick = true},
-    }
-    for i = 1, 34 do
-        out[#out + 1] = {label = "slot " .. i, group = "flight",
-                         sect = i == 1 and "flight" or nil, choice = 1,
-                         choices = 4, arena_max = 6, index = #out + 1,
-                         pick = true}
+    local out = {}
+    for i = 1, 14 do
+        out[#out + 1] = {label = "hull " .. i, group = "ships",
+                         sect = i == 1 and "ships" or nil,
+                         detail = "a trade", hull = 0, ship = true,
+                         bars = {0.2, 0.4, 0.6, 0.8, 1.0},
+                         carries = {"gun spray 2", "repel 2"},
+                         choice = i == 1 and 1 or 0, choices = 1,
+                         index = #out + 1, pick = true}
     end
     return out
 end
 
 local function view(sel)
     return {depth = 2, sel = sel, rail = {}, rail_sel = 1, focus = "stage",
-            home = true, closable = true, page = "kit", headless = true,
-            kit = true, at = "hangar", profile = {name = "Screen"},
-            kit_spent = 28, kit_total = 30, rows = rows()}
+            home = true, closable = true, at = "hangar", ships = true,
+            rows = rows()}
 end
 
 local function draw(sel)

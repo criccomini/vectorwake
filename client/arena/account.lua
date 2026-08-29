@@ -24,36 +24,11 @@ M.account = 0
 M.name = ""
 M.claimed = false
 M.note = ""
--- What this pilot has banked, and what their account may slot. Both come back
--- with a session and neither is asserted by this client: the arena checks a
--- kit against the entitlements the token carries, and a purchase debits the
--- wallet at the meta-layer. These two copies are what the ship page draws,
--- with the shelf, so a client that edited them would fool only its own
--- screen.
-M.rivets = 0
-M.entitlements = {}
 -- The career, as the meta-layer tells it: the most-flown class's rating and
 -- tier (absent while provisional), rated games across every class, and the
 -- durable kill and death totals. Nil until a session has one, which is also
 -- what the pilot page draws while the answer is on its way.
 M.career = nil
--- The kit this pilot has chosen, per hull, by the hull's own name. A hull with
--- no entry has never been taken to the ship page, and the arena deals it a
--- starter kit.
-M.kits = {}
--- Three built-in templates followed by the builds this pilot has named.
--- Templates are hull-independent; `kits` above is still the active build for
--- each hull.
-M.profiles = {}
--- The catalog, as the meta-layer lists it: one entry a slot the game has,
--- `{slot, label, owned, ceiling, base}`, with `price` and `note` on the ones
--- with a rung left to sell. Asked for when the page is opened rather than
--- carried by every session, because it is a page nobody is looking at most of
--- the time.
---
--- Nothing yet, which is not the same as a catalog with nothing in it: this is
--- the meta-layer's answer and a page that has not had one has to say so.
-M.catalog = nil
 -- Whether the meta-layer has ever answered. It separates "waiting" from
 -- "there is nothing there", which are the same empty token and very different
 -- sentences to show somebody.
@@ -179,10 +154,6 @@ local function session(done, force)
         M.account = r.account or 0
         M.name = r.name or M.name
         M.claimed = r.claimed == true
-        M.rivets = tonumber(r.rivets) or 0
-        M.entitlements = type(r.entitlements) == "table" and r.entitlements or {}
-        M.kits = type(r.kits) == "table" and r.kits or {}
-        M.profiles = type(r.profiles) == "table" and r.profiles or {}
         M.note = ""
         refreshed_at = now()
         publish_account()
@@ -319,127 +290,6 @@ end
 -- its password still opens it from anywhere; what is forgotten is this
 -- device's way in. The next thing this client needs is to be somebody, so it
 -- asks to be a fresh guest straight away.
--- A kit saved against a hull, so it comes back on the next device and the
--- next session.
---
--- The arena is told separately and does not wait for this: a kit takes effect
--- because the client sent it to the room, and this is what makes it survive
--- the tab closing. So a meta-layer that is down costs a player their loadout
--- tomorrow and nothing tonight, which is the same bargain every other durable
--- thing here makes.
-function M.save_kit(class, kit)
-    M.kits[class] = kit
-    if M.base == "" then return end
-    post("/v1/kit", {secret = secret, class = class, kit_schema = 2, kit = kit}, function(r, err)
-        if not r then M.note = err or "cannot save that kit" end
-    end)
-end
-
--- Keep the build in hand as a named template. The meta-layer returns the
--- canonical name, which matters when this updates an existing profile whose
--- capitalization differs from what was typed.
-function M.save_profile(name, kit, cb)
-    if M.base == "" then
-        if cb then cb(false, "no meta-layer") end
-        return
-    end
-    post("/v1/profile", {secret = secret, name = name, kit_schema = 2, kit = kit},
-         function(r, err)
-             local profile = r and r.profile
-             if type(profile) ~= "table" then
-                 if cb then cb(false, err or "cannot save that profile") end
-                 return
-             end
-             local replaced = false
-             for i, old in ipairs(M.profiles) do
-                 if type(old.name) == "string"
-                    and string.lower(old.name) == string.lower(profile.name or "") then
-                     M.profiles[i] = profile
-                     replaced = true
-                     break
-                 end
-             end
-             if not replaced then M.profiles[#M.profiles + 1] = profile end
-             if cb then cb(true, nil, profile) end
-         end)
-end
-
--- A saved build, dropped, and a saved build under a new name. Both answer
--- with the whole list, because what the page asking is showing is the list:
--- working out what to add and remove locally is the same list twice, one of
--- them a guess.
---
--- The three the game ships are not the pilot's to touch, and the meta-layer
--- says so rather than this: `kit_profile_name` refuses their names on the way
--- in, and a client that decided for itself would be a second copy of that
--- rule waiting to disagree.
-local function relist(r, cb, fallback)
-    if type(r) ~= "table" or type(r.profiles) ~= "table" then
-        if cb then cb(false, fallback) end
-        return
-    end
-    M.profiles = r.profiles
-    if cb then cb(true) end
-end
-
-function M.delete_profile(name, cb)
-    if M.base == "" then
-        if cb then cb(false, "no meta-layer") end
-        return
-    end
-    post("/v1/profile/delete", {secret = secret, name = name},
-         function(r, err) relist(r, cb, err or "cannot drop that build") end)
-end
-
--- One step in one slot, bought. The price and what is left to buy are the
--- meta-layer's to decide: this asks, and the reply says what the slot now
--- holds and what is left in the wallet.
-function M.buy(slot, zone, cb)
-    if type(zone) == "function" then cb, zone = zone, "" end
-    if M.base == "" then
-        if cb then cb(false, "no meta-layer") end
-        return
-    end
-    post("/v1/buy", {secret = secret, slot = slot, zone = zone or ""}, function(r, err)
-        if not r then
-            M.note = err or "cannot buy that"
-            if cb then cb(false, M.note) end
-            return
-        end
-        M.rivets = tonumber(r.rivets) or M.rivets
-        -- The shelf, so the hangar can slot it at once rather than after the
-        -- next session. This copy is what the screen draws.
-        M.entitlements[(tonumber(r.slot) or 0) + 1] = tonumber(r.n) or 0
-        M.note = ""
-        -- And a fresh token, because the arena reads its copy rather than this
-        -- one. Without this a purchase is invisible where it matters: the
-        -- hangar lets you spend a point on what you just bought, the room
-        -- checks a token minted before you bought it, and `sim_set_kit`
-        -- refuses the whole kit rather than the one slot it cannot hold. So a
-        -- pilot buys a barrel, slots it, flies, and is dealt the ship they had
-        -- an hour ago with nothing on screen to say why. Forced, because the
-        -- session in hand is valid and a refresh would otherwise be skipped.
-        session(nil, true)
-        if cb then cb(true) end
-    end)
-end
-
--- The catalog. A page somebody is looking at rather than a fact a session
--- needs, so it is asked for when the page opens and left alone otherwise.
-function M.refresh_upgrades(zone)
-    if M.base == "" then return end
-    post("/v1/upgrades", {secret = secret, zone = zone or ""}, function(r)
-        if type(r) ~= "table" then return end
-        if type(r.slots) == "table" then M.catalog = r.slots end
-        -- And the wallet, which rides the same reply and was being dropped.
-        -- Rivets are bounty taken, so a pilot earns them in a match rather
-        -- than on this page: the number in hand is from whenever the session
-        -- began, and the only thing that moved it was a purchase. An evening's
-        -- kills showed up on the next reload.
-        if tonumber(r.rivets) then M.rivets = tonumber(r.rivets) end
-    end)
-end
-
 -- The deterministic film attached to one public result. It needs no account:
 -- sharing a match means the person opening it can see it before they have ever
 -- flown here themselves.
@@ -471,12 +321,7 @@ function M.logout()
     M.account = 0
     M.claimed = false
     M.name = ""
-    M.rivets = 0
-    M.entitlements = {}
     M.career = nil
-    M.kits = {}
-    M.profiles = {}
-    M.catalog = nil
     save()
     if M.base ~= "" then make_guest() end
 end

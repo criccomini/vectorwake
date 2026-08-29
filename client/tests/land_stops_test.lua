@@ -22,20 +22,10 @@ local function check(name, ok, detail)
     end
 end
 
--- A kit is 23 slots. Two builds that differ in the first slot are two
--- different answers to `matching_profile`.
-local function kit(first)
-    local out = {}
-    for i = 1, 23 do out[i] = 0 end
-    out[1] = first
-    return out
-end
-
 local account = {
     name = "", token = nil, claimed = false, load = function() end,
-    base = "http://meta", kits = {}, profiles = {},
+    base = "http://meta",
 }
-account.save_kit = function(class, k) account.kits[class] = k end
 package.loaded["arena.account"] = account
 package.loaded["arena.net"] = {
     teams = {}, my_team = 0, may_found = false,
@@ -78,67 +68,48 @@ _G.hash = function(s) return s end
 
 local menu = require("arena.menu")
 
--- A pilot at home in the stands: an Apex whose saved kit is the Gunner
--- build, and one other build to pick.
+-- A pilot at home in the stands, flying an Apex.
 menu.home = true
 menu.spectate = false
 menu.class = 0
-account.profiles = {
-    {name = "Gunner", kit = kit(3)},
-    {name = "Bomber", kit = kit(5)},
-}
-account.kits = {Apex = kit(3)}
 
-check("the stop says the build the next deploy flies",
-      menu.landing_ship() == "Gunner",
+check("the stop says the ship the next deploy flies",
+      menu.landing_ship() == "Apex",
       "said " .. tostring(menu.landing_ship()))
 
 local rows = menu.landing_ships()
-check("the list is the builds and sitting out",
-      #rows == 3 and rows[1].label == "Gunner" and rows[2].label == "Bomber"
-      and rows[3].label == "spectate",
+check("the list is the roster and sitting out",
+      #rows == 8 and rows[1].label == "Apex" and rows[2].label == "Wedge"
+      and rows[8].label == "spectate",
       "got " .. #rows .. " rows")
-check("sitting out is the last row",
-      rows[3].value == "spectate")
-check("the build in hand wears the mark",
-      rows[1].here == true and not rows[2].here and not rows[3].here)
+check("sitting out is the last row", rows[8].value == "spectate")
+check("the ship being flown wears the mark",
+      rows[1].here == true and not rows[2].here and not rows[8].here)
 
--- A pick loads that build as the kit in hand and answers with the act the
--- ship page's own row answers with. The arena runs that act and it saves the
--- kit to the account at once, which this plays the arena's part of: the
--- label below reads the account, so the save is what makes the pick stick.
-local act = menu.pick_profile(2)
-check("picking a build is the ship page's own act", act == "kit")
-if act == "kit" then account.save_kit("Apex", menu.kit) end
-check("and the kit in hand is that build",
-      menu.kit and menu.kit[1] == 5,
-      "slot 1 holds " .. tostring(menu.kit and menu.kit[1]))
-check("and the stop now says so", menu.landing_ship() == "Bomber")
+-- A pick answers with the act the roster's own row answers with, and asks the
+-- arena for that hull. The arena is what actually moves `menu.class`, because
+-- a hull is the simulation's answer and it can refuse: this plays that part.
+local act = menu.pick_profile(1)
+check("picking a ship is the roster's own act", act == "ship")
+check("and it asks the arena for that hull", menu.pending == 1)
+menu.class = 1
+check("and the stop follows once the arena agrees",
+      menu.landing_ship() == "Wedge")
 
--- Sitting out is remembered; picking a build takes it back off, because
--- picking a build means arriving in one.
+-- Sitting out is remembered; picking a ship takes it back off, because
+-- picking a ship means arriving in one.
 menu.spectate = true
 check("a remembered spectate is the stop's answer",
       menu.landing_ship() == "spectate")
 check("and wears the mark in the list",
-      menu.landing_ships()[3].here == true)
-if menu.pick_profile(1) == "kit" then account.save_kit("Apex", menu.kit) end
-check("picking a build takes spectate off", menu.spectate == false)
-check("and the stop follows", menu.landing_ship() == "Gunner")
+      menu.landing_ships()[8].here == true)
+check("sitting out is a pick of its own",
+      menu.pick_profile("spectate") == "spectate" and menu.spectate == true)
+menu.pick_profile(0)
+check("picking a ship takes spectate off", menu.spectate == false)
 
--- The label follows the account without clobbering an edit. A build chosen
--- elsewhere lands in `account.kits` and the stop picks it up; a kit mid-tune
--- in the hangar does not get reloaded out from under the tuner.
-account.kits.Apex = kit(5)
-check("a build saved elsewhere reaches the stop",
-      menu.landing_ship() == "Bomber")
-menu.kit_step(0, 1)
-local edited = menu.kit[1]
-account.kits.Apex = kit(3)
-check("an edit in hand is not reloaded away",
-      menu.kit[1] == edited and menu.landing_ship() ~= nil,
-      "slot 1 holds " .. tostring(menu.kit[1]))
+-- A hull the roster does not have is refused rather than half applied.
+menu.pending = nil
+check("a hull off the end of the roster is not a pick",
+      menu.pick_profile(99) == nil and menu.pending == nil)
 
-print(fails == 0 and "all land stop checks passed"
-      or (fails .. " land stop checks failed"))
-os.exit(fails == 0 and 0 or 1)

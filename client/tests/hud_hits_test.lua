@@ -526,21 +526,18 @@ ui.details = false
 ui.details = true
 ui.sort = "name"
 room.teams = {[0] = 1, 1, 1, 1}
-local kills, deaths, assists, points, bounty =
-    sim.ship_kills, sim.ship_deaths, sim.ship_assists, sim.ship_points,
-    sim.ship_bounty
+local kills, deaths, assists =
+    sim.ship_kills, sim.ship_deaths, sim.ship_assists
 sim.ship_kills = function(i) return i == 1 and 137 or 1 end
 sim.ship_deaths = function(i) return i == 1 and 118 or 1 end
 sim.ship_assists = function(i) return i == 1 and 209 or 1 end
-sim.ship_points = function(i) return i == 1 and 12750 or 1 end
-sim.ship_bounty = function(i) return i == 1 and 812 or 1 end
 frame({pilots = {[0] = {name = "aaa", label = "human"},
                  [1] = {name = "Wintermute-99", label = "bot", ai = true},
                  [2] = {name = "ccc", label = "human"},
                  [3] = {name = "ddd", label = "human"}}})
 do
     local st = package.loaded["arena.state"]
-    -- The widest row, found by its points, and then everything sharing its
+    -- The widest row, found by its assists, and then everything sharing its
     -- baseline inside the panel. Bottom-up, so one y is one row.
     local row_y
     local col = box("scores")
@@ -549,7 +546,7 @@ do
     end
     for k = 1, st.n do
         local t = st.text[k]
-        if t.s == "12750" and in_col(t) then row_y = t.y end
+        if t.s == "209" and in_col(t) then row_y = t.y end
     end
     local span = {}
     for k = 1, st.n do
@@ -561,7 +558,7 @@ do
         end
     end
     table.sort(span, function(a, b) return a.x0 < b.x0 end)
-    check("the widest row draws a name and five numbers", #span == 6,
+    check("the widest row draws a name and three numbers", #span == 4,
           "drew " .. #span)
     for k = 2, #span do
         check(string.format("%s clears %s", span[k].s, span[k - 1].s),
@@ -572,14 +569,13 @@ do
     -- the marks line up down the list rather than trailing each name. It is
     -- drawn rather than written, so what is measurable here is the gap the
     -- name gives up for it: MARK_K plus the gap either side.
-    if #span == 6 then
+    if #span == 4 then
         check("the name leaves the mark its column",
               span[2].x0 - span[1].x1 >= 11 + 7,
               string.format("%.1f of gap", span[2].x0 - span[1].x1))
     end
 end
 sim.ship_kills, sim.ship_deaths, sim.ship_assists = kills, deaths, assists
-sim.ship_points, sim.ship_bounty = points, bounty
 ui.details = false
 
 -- --- the feed is bounded ---------------------------------------------------

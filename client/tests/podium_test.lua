@@ -686,14 +686,15 @@ for _, phrase in ipairs(SAYS) do
     check("nor the words of " .. phrase, said(phrase) == nil)
 end
 
--- --- four columns, not one string ------------------------------------------
+-- --- three columns, not one string -----------------------------------------
 --
 -- The roster is the board's, so its columns are the board's: at the ending,
--- four figures on a row, each with its own edge, the same edge on every row
--- and under its own head. Bounty is not among them: it prices the next kill,
--- and at the whistle there is no next kill. Points hold the outer edge under
--- the rivet mark, which is drawn rather than written, so the heads this can
--- read back are the three worded ones.
+-- three figures on a row, each with its own edge, the same edge on every row
+-- and under its own head.
+--
+-- There were five while a kill paid something. Points banked what bounty
+-- priced, and both went with the shop, so what is left is the three a pilot
+-- counts in their head.
 
 local kept_k, kept_d, kept_a = room.kills, room.deaths, room.assists
 room.kills = {[0] = 4, 14, 1, 0}
@@ -716,7 +717,7 @@ for i = 1, state.n do
 end
 local rows = {}
 for _, xs in pairs(lines) do
-    if #xs == 4 then
+    if #xs == 3 then
         table.sort(xs)
         rows[#rows + 1] = xs
     end
@@ -726,13 +727,13 @@ local function edges(xs, n)
     for i = 1, (n or #xs) do out[i] = xs[i] end
     return table.concat(out, ",")
 end
-check("every pilot draws a line of four figures", #rows == 4, tostring(#rows))
+check("every pilot draws a line of three figures", #rows == 4, tostring(#rows))
 local same = #rows == 4
 for i = 2, #rows do same = same and edges(rows[i]) == edges(rows[1]) end
-check("and every figure stands in one of four columns", same,
+check("and every figure stands in one of three columns", same,
       tostring(#rows))
--- And the worded heads stand over their columns, at the edge the figures
--- under them end at; the fourth column's head is the mark.
+-- And every head stands over its column, at the edge the figures under it
+-- end at.
 local heads = {}
 for i = 1, state.n do
     local t = state.text[i]
