@@ -1194,11 +1194,15 @@ def land_pager(tops):
             + thumb("Apex", "#4fd6ff")
             + '<span style="font-size:17px;color:#4fd6ff">Apex</span>'
             + big_tri(1) + '</div>')
-    bars = ('<div style="padding:12px 0 4px">'
-            + bars_strip((.76, .86, .48, .14, .57), "#4fd6ff") + '</div>')
+    # The bars close on their own rule before the credits open: without it
+    # ENERGY and BUILD CREDITS read as one block.
+    bars = ('<div style="padding:12px 0 14px">'
+            + bars_strip((.76, .86, .48, .14, .57), "#4fd6ff") + '</div>'
+            '<div style="border-top:1px solid rgba(63,88,120,.45);'
+            'margin:0 -14px"></div>')
     bottom = tops["SHIP"] + 36 + 6
     return (f'<div style="position:absolute;left:50%;'
-            f'transform:translateX(-50%);bottom:{bottom}px;width:390px;'
+            f'transform:translateX(-50%);bottom:{bottom}px;width:320px;'
             'background:#070b12;border:1px solid rgba(63,88,120,.85);'
             'padding:0 14px 8px;z-index:5">'
             + head + bars + flat_body(cursor=False) + '</div>')
@@ -1208,6 +1212,81 @@ def land_pager_board():
     write("LandPager.dc.html",
           '<style>' + PLAY_CSS + '</style>'
           + land_frame(1440, 810, land_pager))
+
+
+# The same pager on a phone held sideways: no height for a column, so the
+# panel is the window. The head carries the pager and the credits at
+# opposite ends, the bars get a slim band of their own, and the three
+# sections stand side by side. PLAY NOW keeps the foot.
+def land_pager_wide_board():
+    def lrow(label, value, minus=True, plus=True, zero=False):
+        vcol = "rgba(108,122,144,.9)" if zero else "#4fd6ff"
+        return ('<div class="row" style="height:40px;gap:0">'
+                f'<span style="font-size:13px;color:rgba(223,233,245,.85)">'
+                f'{label}</span><div style="flex:1"></div>'
+                + tri(-1, on=minus)
+                + f'<span class="mono" style="font-size:12px;color:{vcol};'
+                f'min-width:52px;text-align:center;padding:0 4px">{value}'
+                '</span>' + tri(1, on=plus) + '</div>')
+
+    def ltog(label, on):
+        return ('<div class="row" style="height:40px;gap:0">'
+                f'<span style="font-size:13px;color:rgba(223,233,245,.85)">'
+                f'{label}</span><div style="flex:1"></div>' + toggle(on)
+                + '</div>')
+
+    def col(head_word, rows):
+        return ('<div style="flex:1;min-width:0">'
+                '<div style="border-top:1px solid rgba(63,88,120,.45)">'
+                '</div>'
+                f'<div class="lbl" style="margin-top:7px">{head_word}</div>'
+                '<div style="margin-top:2px">' + "".join(rows)
+                + '</div></div>')
+
+    tray = ('<div class="row" style="gap:12px;flex:none">'
+            '<span class="lbl" style="color:#ffd166;opacity:.8">'
+            'build credits</span>'
+            '<div class="row" style="gap:6px">'
+            + "".join('<span style="width:10px;height:10px;flex:none;'
+                      + ('background:#ffd166'
+                         if i < 3 else
+                         'border:1.2px solid rgba(255,209,102,.3)')
+                      + ';transform:rotate(45deg)"></span>'
+                      for i in range(7))
+            + '</div></div>')
+    head = ('<div class="row" style="height:46px;gap:16px;padding:0 16px;'
+            'border-bottom:1px solid rgba(63,88,120,.45)">'
+            + X_KEY + '<div style="flex:1"></div>'
+            + big_tri(-1) + thumb("Apex", "#4fd6ff")
+            + '<span style="font-size:17px;color:#4fd6ff">Apex</span>'
+            + big_tri(1)
+            + '<div style="flex:1"></div>' + tray + '</div>')
+    bars = ('<div style="padding:10px 16px 8px;border-bottom:1px solid '
+            'rgba(63,88,120,.45)">'
+            + bars_strip((.76, .86, .48, .14, .57), "#4fd6ff") + '</div>')
+    cols = ('<div class="row" style="gap:24px;padding:14px 16px 0;'
+            'align-items:flex-start">'
+            + col("gun", [lrow("Spray", "2"), ltog("Bounce", False),
+                          ltog("Freeze", False)])
+            + col("bomb", [ltog("Proximity detonation", False),
+                           lrow("Shrapnel", "0", minus=False, zero=True),
+                           ltog("Bounce", False)])
+            + col("rack", [lrow("Repel", "2"), lrow("Burst", "1")])
+            + '</div>')
+    foot = ('<div class="row" style="position:absolute;left:16px;right:16px;'
+            'bottom:12px;gap:16px">'
+            '<span style="font-size:13px;color:#dfe9f5">Reset</span>'
+            '<div style="flex:1"></div>'
+            '<div class="play" style="width:220px;height:42px;'
+            'font-size:15px">PLAY NOW</div></div>')
+    panel = ('<div style="position:absolute;inset:0;'
+             'background:rgba(4,7,12,.94)">'
+             + head + bars + cols + foot + '</div>')
+    write("LandPagerWide.dc.html",
+          '<style>' + PLAY_CSS + '</style>'
+          '<div style="position:relative;width:844px;height:390px;'
+          f'overflow:hidden;{stars(844, 390)}">'
+          + land_scene(844, 390) + panel + '</div>')
 
 
 main_board()
@@ -1226,4 +1305,5 @@ flat_spent_board()
 land_board()
 land_tune_board()
 land_pager_board()
-print("sixteen boards written")
+land_pager_wide_board()
+print("seventeen boards written")
