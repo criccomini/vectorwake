@@ -1,53 +1,49 @@
 {
   "artboards": [
-    { "file": "Main.dc.html", "title": "Pause column", "x": 0, "y": 0, "w": 1440, "h": 810 },
-    { "file": "SettingsOpen.dc.html", "title": "Pause column, settings open", "x": 1560, "y": 0, "w": 1440, "h": 810 },
-    { "file": "CornerPanel.dc.html", "title": "Corner panel", "x": 0, "y": 1000, "w": 1440, "h": 810 },
-    { "file": "CenterCard.dc.html", "title": "Center card", "x": 1560, "y": 1000, "w": 1440, "h": 810 },
-    { "file": "Radial.dc.html", "title": "Radial", "x": 3120, "y": 1000, "w": 1440, "h": 810 }
+    { "file": "MenuKey.dc.html", "title": "Menu button, at rest", "x": 0, "y": 0, "w": 1440, "h": 810 },
+    { "file": "Main.dc.html", "title": "Pause column", "x": 1560, "y": 0, "w": 1440, "h": 810 },
+    { "file": "SettingsOpen.dc.html", "title": "Pause column, settings open", "x": 3120, "y": 0, "w": 1440, "h": 810 },
+    { "file": "Phone.dc.html", "title": "Phone, at rest", "x": 4680, "y": 0, "w": 390, "h": 844 },
+    { "file": "PhoneOpen.dc.html", "title": "Phone, column open", "x": 5190, "y": 0, "w": 390, "h": 844 },
+    { "file": "CornerPanel.dc.html", "title": "Corner panel", "x": 0, "y": 1010, "w": 1440, "h": 810 },
+    { "file": "CenterCard.dc.html", "title": "Center card", "x": 1560, "y": 1010, "w": 1440, "h": 810 },
+    { "file": "Radial.dc.html", "title": "Radial", "x": 3120, "y": 1010, "w": 1440, "h": 810 }
   ],
   "annotations": [
     {
       "id": "framing",
       "x": 0,
-      "y": -230,
-      "w": 470,
-      "text": "Settings lives in the match and nowhere else; the landing keeps saying only who, where and what. So the whole question is the in-game menu: leave, change sides, settings, one system for mouse, keyboard, controller and touch. One honest constraint under every board: nothing pauses in a shared arena, so a menu is something you open while the fight goes on."
+      "y": -240,
+      "w": 480,
+      "text": "The chosen direction: the landing column's grammar carried into the match. Nothing pauses; opening the column only takes the controls, and the ship stays live below it, so the wash is thin enough to watch trouble coming. It opens with Esc on a keyboard and the corner MENU key on glass, both of which already mean menu today."
     },
     {
-      "id": "pause-column",
+      "id": "menu-key",
       "x": 490,
       "y": -170,
-      "w": 380,
-      "text": "The landing column's grammar carried into the match: stops for LEAVE, SETTINGS and SIDE, RESUME breathing where PLAY NOW breathes at home. Same muscle memory everywhere, targets big enough for a thumb. The dim is deliberately thin so the fight stays half-visible behind it."
+      "w": 390,
+      "text": "The button, as the client already draws it: the key box every pressable thing wears, three bars for the mark, the word MENU beside them on a desktop because that corner is read. Dim until pressed, friend blue while the column stands. PLAYERS keeps it company in the row."
     },
     {
       "id": "settings-open",
-      "x": 1560,
+      "x": 3120,
       "y": -170,
       "w": 400,
-      "text": "The settings stop opens the way the ship stop opens at home: the panel climbs from its row. Since this is the only home settings has, the panel is the drawer's whole settings page, bands and all."
+      "text": "The settings stop opens the way the ship stop opens at home. This is the only home settings has: the landing keeps saying only who, where and what."
     },
     {
-      "id": "corner-panel",
-      "x": 0,
-      "y": 1860,
+      "id": "phones",
+      "x": 4680,
+      "y": -170,
       "w": 400,
-      "text": "The direction that most respects the no-pause truth: the corner key docks a panel and the fight stays live and undimmed beside it. Nothing is hidden while you fiddle. On a phone, though, the live fight is exactly what a stray thumb hits."
+      "text": "On a phone the word drops and the mark stands alone in a square of the same box; a thumb that has met this screen does not need the word. The column's 320 fits a 390 glass with margin, and RESUME lands where a thumb already lives."
     },
     {
-      "id": "center-card",
-      "x": 1560,
-      "y": 1860,
-      "w": 380,
-      "text": "The shape every console game has taught: four rows in the middle of a dimmed screen. Compact, but settings becomes a second page in place, one level deeper than the column version needs."
-    },
-    {
-      "id": "radial",
-      "x": 3120,
-      "y": 1860,
-      "w": 380,
-      "text": "Hold the key and four choices ring your own ship; flick toward one and let go. Fastest on a stick or a thumb and invisible until held, but it is the one direction that costs a new grammar to learn, and settings still needs a panel after the flick. Drawn to bound the space."
+      "id": "alternatives",
+      "x": 0,
+      "y": 1880,
+      "w": 460,
+      "text": "The roads not taken, kept for the record: the corner-docked panel that never dims the fight, the console center card with settings a page deeper, and the hold-and-flick radial that costs a new grammar."
     }
   ],
   "launch": { "view": "canvas" }

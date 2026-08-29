@@ -290,10 +290,43 @@ def settings_rows(cursor="sound"):
     )
 
 
-def corner_key(lit=False):
-    edge = "border-color:rgba(79,214,255,.85);" if lit else ""
-    return (f'<div class="key" style="position:absolute;left:14px;top:14px;'
-            f'height:26px;padding:0 9px;{edge}">' + mixer() + '</div>')
+# The menu button, verbatim from `burger_cap` in client/arena/ui.lua: a key
+# box holding three bars, the word MENU beside them on a desktop, the mark
+# alone on a phone. Dim at rest, friend blue while the panel it opens is
+# standing.
+def burger(col, k=13):
+    bars = "".join(
+        f'<span style="width:{k}px;height:1.8px;background:{col};'
+        'flex:none"></span>' for _ in range(3))
+    return ('<span style="display:inline-flex;flex-direction:column;'
+            'gap:2.6px;flex:none">' + bars + '</span>')
+
+
+def corner_key(lit=False, word=True, x=14, y=14):
+    if lit:
+        edge = ("border-color:rgba(79,214,255,.95);"
+                "background:rgba(79,214,255,.16);")
+        ink = "#4fd6ff"
+    else:
+        edge = ("border-color:rgba(108,122,144,.55);"
+                "background:rgba(108,122,144,.07);")
+        ink = "rgba(159,182,212,.85)"
+    label = (f'<span style="font-size:11px;color:{ink}">MENU</span>'
+             if word else "")
+    pad = "0 9px" if word else "0 6px"
+    return (f'<div class="key" style="position:absolute;left:{x}px;'
+            f'top:{y}px;height:26px;padding:{pad};{edge}">'
+            + burger(ink) + label + '</div>')
+
+
+def players_key(x=14, y=14):
+    """MENU's neighbor in the corner row, here so the button is seen in
+    its own company rather than alone."""
+    return (f'<div class="key" style="position:absolute;left:{x}px;'
+            f'top:{y}px;height:26px;padding:0 9px;font-size:11px;'
+            'border-color:rgba(108,122,144,.55);'
+            'background:rgba(108,122,144,.07);'
+            'color:rgba(159,182,212,.85)">PLAYERS</div>')
 
 
 def board(w, h, parts):
@@ -306,8 +339,10 @@ STOP_ROWS = [("SIDE", "PYLON"),
              ("SETTINGS", mixer("#8593a9", 13)),
              ("LEAVE", "TO THE STANDS")]
 
+# Thin on purpose: nothing pauses in a shared arena, the column only takes
+# the controls, so the fight underneath stays watchable while it stands.
 DIM = ('<div style="position:absolute;inset:0;'
-       'background:rgba(5,7,12,.7)"></div>')
+       'background:rgba(5,7,12,.42)"></div>')
 
 
 def hud():
@@ -460,9 +495,73 @@ def radial_board():
     write("Radial.dc.html", board(1440, 810, parts))
 
 
+# ================ MenuKey: the button at rest, desktop ================
+#
+# The key that summons the column, drawn as the client already draws it:
+# the box every pressable thing here wears, three bars for the mark, and
+# the word MENU beside them because a desktop corner is read while a
+# phone corner is worked. PLAYERS keeps it company, so the button is seen
+# in its row rather than alone. Dim at rest; the friend blue it wears
+# while the column stands is on every open board on this canvas.
+def menu_key_board():
+    parts = hud() + [
+        corner_key(),
+        players_key(x=96),
+    ]
+    write("MenuKey.dc.html", board(1440, 810, parts))
+
+
+def hud_phone():
+    """The score band said smaller still, for a 390 corner the clock band
+    has to share with two keys."""
+    return [
+        '<div style="position:absolute;top:52px;left:50%;'
+        'transform:translateX(-50%);display:flex;align-items:center;'
+        'gap:12px">'
+        '<span class="mono" style="font-size:9px;color:#4fd6ff">PYL</span>'
+        '<span class="mono" style="font-size:20px;color:#4fd6ff">3</span>'
+        '<span class="mono" style="font-size:23px">1:47</span>'
+        '<span class="mono" style="font-size:20px;color:#ffa552">5</span>'
+        '<span class="mono" style="font-size:9px;color:#ffa552">CAI</span>'
+        '</div>',
+        '<div style="position:absolute;right:12px;top:12px;width:96px;'
+        'height:96px;background:rgba(6,10,16,.55);border:1px solid '
+        'rgba(63,88,120,.5)"></div>',
+    ]
+
+
+# ================== Phone: the mark alone, at rest ==================
+#
+# On a phone the word drops and the mark stands alone in a square of the
+# same box: a thumb that has met this screen before does not need the
+# word, and the corner has no room for it anyway.
+def phone_board():
+    parts = hud_phone() + [
+        corner_key(word=False, x=12, y=12),
+    ]
+    write("Phone.dc.html", board(390, 844, parts))
+
+
+# ================ PhoneOpen: the column under a thumb ================
+#
+# The same press, the column standing. The 320 the stops have always been
+# fits a 390 glass with margin to spare, RESUME lands where a thumb
+# already lives, and the fight stays visible through the thin wash.
+def phone_open_board():
+    parts = hud_phone() + [
+        DIM,
+        corner_key(lit=True, word=False, x=12, y=12),
+        column(STOP_ROWS),
+    ]
+    write("PhoneOpen.dc.html", board(390, 844, parts))
+
+
 pause_board()
 settings_open_board()
 corner_panel_board()
 center_card_board()
 radial_board()
-print("five boards written")
+menu_key_board()
+phone_board()
+phone_open_board()
+print("eight boards written")
