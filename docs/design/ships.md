@@ -329,6 +329,26 @@ credits went. A build that beats its own hull's row well past even is one the
 roster would converge on, and since a step cannot be made expensive the answer
 is a lower ceiling or a weaker step. `sim_slot_cap` is where a ceiling lives.
 
+Where the ceilings above left it, at twenty bouts a build on the pit. The
+median column is the one to read: it is what an ordinary re-spend does against
+the hull's own row, so a hull near even is a hull whose credits are already
+well spent.
+
+| hull | ships | builds past 65% | median |
+|---|---:|---:|---:|
+| Anvil | 3/7 | 6 of 28 | 45% |
+| Cipher | 3/7 | 2 of 27 | 40% |
+| Apex | 4/7 | 10 of 28 | 55% |
+| Wedge | 5/7 | 5 of 27 | 48% |
+| Chord | 6/7 | 1 of 26 | 5% |
+| Facet | 7/7 | 12 of 26 | 55% |
+| Lattice | 7/7 | 4 of 24 | 43% |
+
+The hulls that ship with credits in hand are meant to sit high here: an Anvil
+holds four and spending them is supposed to be worth something. The Chord at
+5% is the other end, and it is the roster working: a hull spent to six credits
+on the things it wants has little left to gain by moving them.
+
 Run it on both rooms. The pit is one box a pilot can see across, which
 flatters everything that wants to be close and charges nothing for being slow;
 the arena has cover and somewhere to run to. A hull whose weakness is written
@@ -362,6 +382,16 @@ Whether seven distinct ships is more roster than we can keep balanced. It is a
 harder problem than seven silhouettes on one flight row, and the bet is that a
 game where the ships are actually different is worth the work. The tournament
 harness exists so the answer is measured rather than argued.
+
+Whether the Facet's five rounds are worth what they cost it. The sweep says
+its own row loses to re-spending its own credits more often than any other
+hull's, and every build that beats it drops the spray to three and puts the
+two credits somewhere else. The hull tournament had already put it second from
+bottom. So the measurement is not that a slot is broken, it is that this
+particular seven credits are badly spent, and the question is a design one:
+five rounds abreast is what a Facet is, and a Facet that fires three is a
+Chord that does not turn. Worth answering before the roster is called
+balanced, and not worth answering by quietly editing the profile.
 
 Whether the Lattice is a ship or a job. Three repels and three bursts on a hull
 that cannot kill anybody is a support role wearing a fighter's chassis, which
