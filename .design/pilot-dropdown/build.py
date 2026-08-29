@@ -437,21 +437,25 @@ def drop_rows(rows, w, row_h, px, style):
 
 
 def account_rows(claimed, px=12):
-    """The account acts and nothing else. A guest's list leads with the one
-    act that keeps what they are carrying, in the offer green the invite
-    band uses (decision 80), and holds the two ways of being somebody else
-    under a rule. A claimed pilot's list is the pair the pilot page keeps
-    at its foot today."""
+    """The account acts and nothing else. Acts on the account you are
+    stand above a rule; ways of being somebody else stand below it. A
+    guest's list leads with the one act that keeps what they are carrying,
+    in the offer green the invite band uses (decision 80). A claimed
+    pilot's upper pair is what the pilot page keeps at its foot today plus
+    the reroll, which the pilot page calls NEW NAME."""
     note = ('<span class="dim" style="margin-left:auto;'
             f'font-size:{px - 2}px">')
     if claimed:
         return [
             ("<span>SET PASSWORD</span>", "cursor"),
+            ("<span>NEW NAME</span>", None),
+            ("", "rule"),
             ("<span>LOG OFF</span>", None),
         ]
     return [
         ('<span style="color:var(--prize)">CLAIM ACCOUNT</span>'
          f'{note}KEEP YOUR POINTS</span>', "cursor"),
+        ("<span>NEW NAME</span>", None),
         ("", "rule"),
         (f"<span>SIGN UP</span>{note}START FRESH</span>", None),
         ("<span>LOG IN</span>", None),

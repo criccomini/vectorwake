@@ -18,12 +18,13 @@ Four boards, built by `build.py` and seeded with the design skill's helper:
 
 What the boards say:
 
-- The guest's list leads with CLAIM ACCOUNT in the offer green the invite
-  band uses (decision 80), with KEEP YOUR POINTS as its note, then a rule,
-  then the two ways of being somebody else: SIGN UP with START FRESH beside
-  it, and LOG IN.
-- The claimed pilot's list is SET PASSWORD and LOG OFF, the pair the pilot
-  page keeps at its foot today.
+- Acts on the account you are stand above a rule; ways of being somebody
+  else stand below it. The guest's list leads with CLAIM ACCOUNT in the
+  offer green the invite band uses (decision 80), with KEEP YOUR POINTS as
+  its note, then NEW NAME, the reroll the pilot page keeps behind a key of
+  that name; under the rule, SIGN UP with START FRESH beside it, and LOG IN.
+- The claimed pilot's list is SET PASSWORD and NEW NAME over the rule, and
+  LOG OFF under it.
 - Rows wear the menu's states from decision 72, and the panel is the nearly
   opaque ground land_list already draws, since two rows over a live fight
   have to be read rather than read through.

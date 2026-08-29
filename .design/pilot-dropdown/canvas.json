@@ -9,7 +9,7 @@
     {
       "id": "note-proposal",
       "x": -430, "y": 0, "w": 370,
-      "text": "The account stop stops being a door.\n\nToday a press on ACCOUNT opens the drawer on the pilot page. Here it opens a list in place, exactly the way ZONE and SHIP already do: same upward panel, same row states, same press-again-to-shut.\n\nThe list holds only the account acts. No career, no stats: those stay on the pilot page, which the drawer still has.\n\nA guest reads CLAIM ACCOUNT in the offer green with KEEP YOUR POINTS beside it, then under a rule the two ways of being somebody else: SIGN UP for a fresh account, LOG IN for one that already exists. A claimed pilot reads SET PASSWORD and LOG OFF, the pair the pilot page keeps at its foot today."
+      "text": "The account stop stops being a door.\n\nToday a press on ACCOUNT opens the drawer on the pilot page. Here it opens a list in place, exactly the way ZONE and SHIP already do: same upward panel, same row states, same press-again-to-shut.\n\nThe list holds only the account acts. No career, no stats: those stay on the pilot page, which the drawer still has.\n\nActs on the account you are stand above a rule; ways of being somebody else stand below it. A guest reads CLAIM ACCOUNT in the offer green with KEEP YOUR POINTS beside it and NEW NAME, the reroll; then SIGN UP for a fresh account and LOG IN for one that already exists. A claimed pilot reads SET PASSWORD and NEW NAME over the rule, LOG OFF under it."
     },
     {
       "id": "note-open",
