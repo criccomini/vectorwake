@@ -660,6 +660,168 @@ def option_diagram_board():
     write("Diagram.dc.html", board(body, head=hull_head("Apex")))
 
 
+# ===================== The A experiments: real controls =====================
+#
+# Chris's next ask: A again, but the laddered slots as drop down selectors,
+# the on/off add-ons as toggles, and the credit cost tried in different
+# homes. Three homes are drawn: in the choice (a row is clean until its list
+# is open or the cursor stands on it), on the row (every price always
+# visible), and in the tray (the rows are bare and the tray itself shows
+# what the focused step would take).
+def toggle(on):
+    if on:
+        return ('<span style="width:40px;height:20px;flex:none;'
+                'border:1px solid rgba(79,214,255,.75);'
+                'background:rgba(79,214,255,.18);position:relative">'
+                '<span style="position:absolute;right:2px;top:2px;'
+                'width:14px;height:14px;background:#4fd6ff"></span></span>')
+    return ('<span style="width:40px;height:20px;flex:none;'
+            'border:1px solid rgba(63,88,120,.75);position:relative">'
+            '<span style="position:absolute;left:2px;top:2px;'
+            'width:14px;height:14px;background:rgba(108,122,144,.6)">'
+            '</span></span>')
+
+
+def caret(col="#9fb6d4"):
+    return ('<svg width="9" height="9" viewBox="0 0 10 10" fill="none" '
+            f'style="flex:none"><path d="M1.5 3 L5 7 L8.5 3" stroke="{col}" '
+            'stroke-width="1.4" stroke-linecap="square"/></svg>')
+
+
+def select_field(value, inner="", w=None, zero=False):
+    vcol = "rgba(108,122,144,.9)" if zero else "#4fd6ff"
+    ww = f"width:{w}px;" if w else ""
+    return (f'<span class="key" style="height:34px;padding:0 10px;gap:8px;'
+            f'{ww}justify-content:space-between;text-transform:none">'
+            f'<span class="mono" style="font-size:12px;color:{vcol}">'
+            f'{value}</span>' + inner + caret() + '</span>')
+
+
+def ctl_row(label, control, mid="", state=None, h=46):
+    hot = state == "cursor"
+    return bleed(
+        f'<div class="row" style="height:{h}px;gap:10px">'
+        f'<span style="font-size:14px;color:rgba(223,233,245,'
+        f'{1 if hot else .85})">{label}</span>'
+        '<div style="flex:1"></div>' + mid + control + '</div>', state=state)
+
+
+def exp_rows(cost, cursor_on, fuse_on=False):
+    """The one list all four experiment boards share. cost(price, on_row,
+    focused) says what a row shows beside its control; the homes differ
+    only in that function."""
+    def c(price, focused=False, paid=False):
+        return cost(price, focused, paid)
+    return (
+        sect("gun", mt=10)
+        + '<div style="margin-top:2px">'
+        + ctl_row("spray", select_field("2 rounds", w=132),
+                  mid=c(5, cursor_on == "spray"),
+                  state="cursor" if cursor_on == "spray" else None)
+        + ctl_row("bounce", toggle(False),
+                  mid=c(3, cursor_on == "bounce"),
+                  state="cursor" if cursor_on == "bounce" else None)
+        + ctl_row("freeze", toggle(False),
+                  mid=c(3, cursor_on == "freeze"),
+                  state="cursor" if cursor_on == "freeze" else None)
+        + '</div>'
+        + sect("bomb", mt=8)
+        + '<div style="margin-top:2px">'
+        + ctl_row("fuse", toggle(fuse_on), mid=c(2, False, paid=fuse_on))
+        + ctl_row("shrapnel", select_field("none", w=132, zero=True),
+                  mid=c(3, False))
+        + ctl_row("bounce", toggle(False), mid=c(2, False))
+        + '</div>'
+        + sect("rack", mt=8)
+        + '<div style="margin-top:2px">'
+        + ctl_row("repel", select_field("1", w=132), mid=c(8, False))
+        + ctl_row("burst", select_field("1", w=132), mid=c(9, False))
+        + '</div>'
+        + sect("", mt=8)
+        + bleed('<div class="row" style="height:44px">'
+                '<span style="font-size:14px;color:#dfe9f5">reset</span>'
+                '</div>'))
+
+
+# -- A2: the cost lives in the choice. A row at rest shows nothing; the row
+# the cursor stands on shows what one step costs, and the open list prices
+# every rung (its own board, below).
+def exp_selects_board():
+    def cost(price, focused, paid=False):
+        if not focused:
+            return ""
+        return ('<span class="row" style="gap:8px;margin-right:4px">'
+                + chips(price, k=6, gap=2.5) + '</span>')
+    body = credits_tray(8) + exp_rows(cost, cursor_on="bounce")
+    write("ASelects.dc.html", board(body, head=hull_head("Apex")))
+
+
+# -- A2 with the spray list open: every rung wears its own chips, the rung
+# you hold washes at 0.07, the one under the cursor at 0.18. The price
+# comparison IS the list.
+def exp_selects_open_board():
+    def opt(value, n_chips, state=None, free=False):
+        wash = (CURSOR if state == "cursor"
+                else HERE if state == "here" else "")
+        right = ('<span class="lbl">free</span>' if free
+                 else chips(n_chips, k=6, gap=2.5))
+        return (f'<div class="row" style="height:38px;padding:0 12px;{wash}">'
+                f'<span class="mono" style="font-size:12px;color:#dfe9f5">'
+                f'{value}</span><div style="flex:1"></div>' + right + '</div>')
+    drop = ('<div style="position:absolute;left:150px;right:36px;top:114px;'
+            'background:rgba(6,9,15,.97);border:1px solid '
+            'rgba(63,88,120,.85);padding:4px 0;z-index:3">'
+            + opt("1 round", 0, free=True)
+            + opt("2 rounds", 5, state="here")
+            + opt("3 rounds", 10, state="cursor")
+            + '</div>')
+    def cost(price, focused, paid=False):
+        return ""
+    body = ('<div style="position:relative">'
+            + credits_tray(8)
+            + exp_rows(cost, cursor_on="spray")
+            + drop + '</div>')
+    write("ASelectsOpen.dc.html", board(body, head=hull_head("Apex")))
+
+
+# -- A3: the cost lives on the row, always. The most honest and the
+# busiest; a paid toggle keeps its chips beside it, dimmed, so on and off
+# rows read differently at a glance.
+def exp_inline_board():
+    def cost(price, focused, paid=False):
+        op = "opacity:.35;" if paid else ""
+        return (f'<span class="row" style="gap:8px;margin-right:4px;{op}">'
+                + chips(price, k=6, gap=2.5) + '</span>')
+    body = credits_tray(6) + exp_rows(cost, cursor_on="freeze", fuse_on=True)
+    write("ACostInline.dc.html", board(body, head=hull_head("Apex")))
+
+
+# -- A4: the cost lives in the tray. The rows are the cleanest of the
+# three; standing on a control lights the chips it would take at the end
+# of the tray's free run, about to go.
+def preview_tray(free, preview):
+    solid = "".join(chip(True, 6) for _ in range(free - preview))
+    prev = "".join(
+        '<span style="width:6px;height:6px;flex:none;'
+        'border:1.4px solid #ffd166;background:rgba(255,209,102,.25);'
+        'transform:rotate(45deg)"></span>' for _ in range(preview))
+    sockets = "".join(chip(False, 6) for _ in range(30 - free))
+    return ('<div class="row" style="height:34px;gap:10px;'
+            'border-bottom:1px solid rgba(63,88,120,.45);'
+            'margin:0 -14px;padding:0 14px">'
+            '<span class="lbl" style="color:#ffd166;opacity:.8;flex:none">'
+            'build credits</span>'
+            '<div class="row" style="gap:2px;flex-wrap:nowrap">'
+            + solid + prev + sockets + '</div></div>')
+
+
+def exp_tray_board():
+    def cost(price, focused, paid=False):
+        return ""
+    body = preview_tray(8, 3) + exp_rows(cost, cursor_on="freeze")
+    write("ACostTray.dc.html", board(body, head=hull_head("Apex")))
+
+
 main_board()
 tune_board()
 tune_states_board()
@@ -667,4 +829,8 @@ flight_option_board()
 option_chips_board()
 option_focus_board()
 option_diagram_board()
-print("seven boards written")
+exp_selects_board()
+exp_selects_open_board()
+exp_inline_board()
+exp_tray_board()
+print("eleven boards written")

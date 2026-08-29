@@ -1,6 +1,7 @@
 {
   "pages": [
     { "id": "options", "name": "Options" },
+    { "id": "a-experiments", "name": "A experiments" },
     { "id": "first-pass", "name": "First pass" }
   ],
   "artboards": [
@@ -12,6 +13,14 @@
       "title": "B &#183; One slot at a time", "page": "options" },
     { "file": "Diagram.dc.html", "x": 1440, "y": 0, "w": 390, "h": 844,
       "title": "C &#183; The ship is the page", "page": "options" },
+    { "file": "ASelects.dc.html", "x": 0, "y": 0, "w": 390, "h": 844,
+      "title": "A2 &#183; Selectors and toggles", "page": "a-experiments" },
+    { "file": "ASelectsOpen.dc.html", "x": 480, "y": 0, "w": 390, "h": 844,
+      "title": "A2 &#183; The spray list open", "page": "a-experiments" },
+    { "file": "ACostInline.dc.html", "x": 960, "y": 0, "w": 390, "h": 844,
+      "title": "A3 &#183; Cost on every row", "page": "a-experiments" },
+    { "file": "ACostTray.dc.html", "x": 1440, "y": 0, "w": 390, "h": 844,
+      "title": "A4 &#183; Cost in the tray", "page": "a-experiments" },
     { "file": "Tune.dc.html", "x": 0, "y": 0, "w": 390, "h": 844,
       "title": "Tune, the default", "page": "first-pass" },
     { "file": "TuneStates.dc.html", "x": 480, "y": 0, "w": 390, "h": 844,
@@ -28,10 +37,18 @@
       "text": "B holds one slot at a time and draws what it does. Left and right walk the slots, minus and plus are the whole interface, the plus key wears its price. Calmest and best on a phone or pad; costs a press per slot to survey the build." },
     { "id": "opt-c", "x": 1440, "y": 870, "w": 390, "page": "options",
       "text": "C has no list: the build is the ship firing it, and each drawn cluster is its own control, stepped inside the gold brackets. Most legible at a glance and the most fun; the add-ons without an obvious drawing (freeze, fuse) need one invented." },
+    { "id": "exp-head", "x": 0, "y": -150, "w": 440, "page": "a-experiments",
+      "text": "A rebuilt around real controls: selectors for the laddered slots, toggles for on/off add-ons. The three boards to the right try the credit cost in three homes; the controls are identical across them." },
+    { "id": "exp-choice", "x": 480, "y": 870, "w": 400, "page": "a-experiments",
+      "text": "Home one, in the choice: rows are clean at rest, the row you stand on shows one step's chips, and the open list prices every rung so comparison is the list itself. Quietest; the cost hides until you look." },
+    { "id": "exp-row", "x": 960, "y": 870, "w": 400, "page": "a-experiments",
+      "text": "Home two, on every row: prices always visible, a paid toggle keeps its chips beside it dimmed. Most honest, busiest; this is closest to the original A." },
+    { "id": "exp-tray", "x": 1440, "y": 870, "w": 400, "page": "a-experiments",
+      "text": "Home three, in the tray: rows are bare and standing on a control lights the chips it would take at the end of the tray's free run. Cleanest rows; the eye has to travel to the top to read a price." },
     { "id": "fork", "x": 960, "y": -140, "w": 390, "page": "first-pass",
       "text": "The open fork: whether flight is spendable too. This board sketches that side. The recommendation is no, so ships stay ships; the points live in gun, bomb and rack." },
     { "id": "proposal", "x": 0, "y": -170, "w": 420, "page": "first-pass",
       "text": "The first pass, kept for reference: sentences stepped by triangles, numeral prices, the budget as a bar. Chris's read: busy, the numbers and the bar opaque. The Options page is the answer." }
   ],
-  "launch": { "view": "canvas", "page": "options" }
+  "launch": { "view": "canvas", "page": "a-experiments" }
 }
