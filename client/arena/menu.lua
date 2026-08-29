@@ -1156,7 +1156,7 @@ local NODES = {
 
     -- What this build is, rather than what the game is.
     --
-    -- The page used to be six lines explaining energy and bounty, which is
+    -- The page used to be six lines explaining energy and the score, which is
     -- what `help` is for, and one build number at the bottom. Anybody who
     -- opens `about` in a game that updates several times a day wants to know
     -- which build they are looking at and what it is talking to, and that is

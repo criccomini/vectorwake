@@ -644,18 +644,4 @@ function M.weapon(cx, cy, k, me, t)
                    ship_lvl(me, sim.TRIG_GUN), ship_multi_off(me))
 end
 
--- The round with a named kit, for a caller that has no ship to read: the
--- shelf sells an add-on by drawing the round wearing the one on offer, and a
--- shelf that read a live hull would be selling whatever the pilot happened
--- to be flying. `modn` is counts in sim_mod order, and fragments take the
--- round's own rung, which on a mark about one trigger is the honest answer.
---
--- The volley is asked against the first hull, since a shelf is selling to
--- nobody in particular. Every shipped zone builds one gun ladder for all of
--- them, so that is the whole roster's answer; a zone that gave its hulls
--- different patterns would be selling against the first one's.
-function M.round(cx, cy, k, gun, lvl, modn)
-    return dressed(cx, cy, k, gun, 0, lvl, modn or {}, lvl, false)
-end
-
 return M

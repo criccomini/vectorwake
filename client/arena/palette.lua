@@ -158,15 +158,12 @@ M.UPGRADES = {
 -- are drawn onto the trigger they change, rather than presented as six separate
 -- weapons.
 --
--- Three lengths, for three places with three amounts of room. `short` is what
--- a shelf chip says, `name` labels a row, and `long` is for somewhere that is
--- explaining rather than reporting: the
--- hangar and the hover card in the corner, which exist because "prox"
--- teaches nobody what the round does. Only the ones whose short name is
--- jargon carry a `long`, and a caller that wants one falls back to `name`.
--- `short` is what a chip says, so it is the word rather than a code: a chip is
--- wide enough for one and three letters bought nothing. `name` is what the
--- rows and the shelf spell out.
+-- Three lengths, for three places with three amounts of room. `short` is a
+-- chip in the corner stack, `name` is what the ship page's roster spells out,
+-- and `long` is for somewhere that is explaining rather than reporting, which
+-- is the hover card, because "prox" teaches nobody what the round does. Only
+-- the ones whose short name is jargon carry a `long`, and a caller that wants
+-- one falls back to `name`.
 M.MODS = {
     -- Spray, not multifire. What it does is put more where one went, and
     -- "multi" was the core's word for the mechanism rather than a name for

@@ -1510,9 +1510,9 @@ end
 -- or on the label beside it, would eat the trigger at the exact moment a
 -- player is lined up on somebody. Asking who somebody is belongs to the
 -- scoreboard, where a click is a click and nothing else.
--- Where a world position lands on the glass. One formula, two callers: a
--- pilot's nameplate and the bounty that drifts off their wreck are the same
--- conversion, and they were the same two lines twice.
+-- Where a world position lands on the glass. One formula, and it was two
+-- callers: a pilot's nameplate and the figure that used to drift off their
+-- wreck were the same conversion written twice.
 local function on_glass(o, scale, x, y)
     return F.w / 2 + (x - o.cam_x) * scale, F.h / 2 + (y - o.cam_y) * scale
 end
@@ -1525,8 +1525,8 @@ local function nameplates(o)
     -- stopped being driven by that setting -- which it already had.
     local scale = F.w / (2 * o.half_w)
     -- The one hull that goes unlabeled is your own, and a watcher has none.
-    -- The pilot being observed therefore wears their name and their bounty
-    -- exactly like everybody else on screen: "who am I looking at" is the
+    -- The pilot being observed therefore wears their name exactly like
+    -- everybody else on screen: "who am I looking at" is the
     -- question a spectator has most of, and the answer belongs on the hull
     -- rather than in a caption at the foot of the screen. Written as a
     -- separate value because `o.me` is the perspective seat while watching,
