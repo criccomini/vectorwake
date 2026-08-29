@@ -4992,6 +4992,66 @@ mod tests {
         assert_eq!(session.filed(), 0, "and no allowance was spent on nothing");
     }
 
+    /// A pilot arrives with their hull's rack full, and a whistle fills it
+    /// again.
+    ///
+    /// Both are moments the design says fill a rack, and both go through
+    /// `deal_seat`. It dealt the frame without the ammunition, and because
+    /// `join` builds a seat by hand rather than through `sim_spawn` and clears
+    /// the counts on the way, nothing put them back: every pilot flew every
+    /// match with no charges at all, dim in the corner and doing nothing when
+    /// the key was pressed.
+    ///
+    /// Read off the simulation rather than a message, because what a client
+    /// draws is what the snapshot carries and what the snapshot carries is
+    /// this.
+    #[test]
+    fn a_pilot_arrives_with_their_hull_s_rack_and_a_whistle_fills_it_again() {
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vane\"]\n");
+        let (ship, _, _rx) = seat_rx(&mut a, "Arrival");
+
+        // Whatever this hull carries, off the same table the roster is written
+        // in, so the test does not pin a tuning number a balance pass moves.
+        let cls = a.world.state.ships[ship as usize].cls;
+        let profile = a.world.profile(cls);
+        let want: Vec<u8> = (0..sim::MAX_CHARGES)
+            .map(|k| profile[sim::slot_charge(k) as usize])
+            .collect();
+        assert!(
+            want.iter().any(|n| *n > 0),
+            "the hull under test carries no charges, so this proves nothing"
+        );
+
+        let held: Vec<u8> = a.world.state.ships[ship as usize].charge.to_vec();
+        assert_eq!(held, want, "a pilot arrives with their hull's rack");
+
+        // Spent, then a whistle. The rack comes back because a match start is
+        // the other moment that fills one.
+        for k in 0..sim::MAX_CHARGES {
+            a.world.state.ships[ship as usize].charge[k] = 0;
+        }
+        a.close_match();
+        a.open_match();
+        let after: Vec<u8> = a.world.state.ships[ship as usize].charge.to_vec();
+        assert_eq!(after, want, "and a whistle fills it again");
+
+        // And a death does not, which is the rule the refill is bounded by: a
+        // pilot who has spent both repels flies the rest of the match without
+        // them and cannot reload by dying. A respawn is the core's own path
+        // and deals the frame alone, which is what this asks for directly:
+        // driving a real death here would need a step loop and would be
+        // asking the same question through more machinery.
+        for k in 0..sim::MAX_CHARGES {
+            a.world.state.ships[ship as usize].charge[k] = 0;
+        }
+        a.world.deal_kit(ship as usize, false);
+        let after_death: Vec<u8> = a.world.state.ships[ship as usize].charge.to_vec();
+        assert!(
+            after_death.iter().all(|n| *n == 0),
+            "a respawn must not refill the rack, got {after_death:?}"
+        );
+    }
+
     /// Combat is the story of a session, and the log left it out for a day:
     /// a join and a leave with an hour of silence between them. A death files
     /// a row for each pilot in it, machines included, because a roster

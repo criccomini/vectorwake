@@ -1878,16 +1878,28 @@ impl Room {
         self.channel.pending_feed.push(msg);
     }
 
-    /// Deal this seat what it is flying, which is its hull's own profile.
+    /// Deal this seat what it is flying, which is its hull's own profile,
+    /// rack included.
     ///
     /// There is nothing to choose and nothing to check. A hull always has a
     /// profile, so a pilot who has never opened a menu, a bot and a guest all
-    /// arrive in a whole ship, and the core deals the same one back at every
-    /// respawn. This is here for the one case the core cannot cover on its
-    /// own: a seat re-dealt outside a spawn, such as a hull change refused
-    /// partway or a room re-opening a match.
+    /// arrive in a whole ship.
+    ///
+    /// With ammunition, because both callers are moments that fill a rack: a
+    /// pilot arriving, and a whistle. It dealt the frame alone and left the
+    /// rack empty, which cost every pilot every charge they had. `join` builds
+    /// a seat by hand rather than through `sim_spawn` and clears the counts on
+    /// the way, so nothing put them back; a match start then re-dealt over the
+    /// top of what `restart` had just filled. Charges were dim from the
+    /// whistle and no key did anything.
+    ///
+    /// Not a respawn, which is the one moment that must not refill: that is
+    /// the core's own path and deals the frame alone, so a pilot who has spent
+    /// both repels flies the rest of the match without them and cannot reload
+    /// by dying. A hull change is the core's too, and clamps rather than
+    /// fills.
     pub(crate) fn deal_seat(&mut self, ship: u8) {
-        self.world.deal_kit(ship as usize, false);
+        self.world.deal_kit(ship as usize, true);
     }
 
     /// Take a seat back from the bot fewest people are looking at.
@@ -3081,10 +3093,10 @@ impl Room {
         self.rebalance();
         self.world.restart();
         face_public_teams(&mut self.world);
-        // A whistle is where a hull and its kit are unlocked, so anything
-        // asked for during the last match lands here. After `restart`, which
-        // deals what each seat is already wearing: this deals the new one over
-        // the top, with its ammunition, which is what a match start means.
+        // A whistle is where a hull is unlocked, so anything asked for during
+        // the last match lands here. After `restart`, which deals what each
+        // seat is already wearing: this deals the new one over the top, with
+        // its ammunition, which is what a match start means.
         let seats: Vec<u8> = self.names.keys().copied().collect();
         for ship in seats {
             self.deal_seat(ship);
