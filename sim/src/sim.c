@@ -251,7 +251,16 @@ int sim_set_ship_kit(sim_state *s, const sim_settings *cfg, uint8_t i,
         uint8_t theirs = sh->kit[SIM_SLOT_CHARGE(k)];
         if (sh->charge[k] > theirs) sh->charge[k] = theirs;
     }
-    sh->energy = sim_eff_max_energy(&cfg->classes[sh->cls], sh);
+    /* Clamped to the new ceiling rather than filled to it, which is the
+     * whole reason this needs no gate. A hull change hands you a fresh ship
+     * and is refused to anyone short of a full bar, because ungated it is a
+     * way out of a fight you are losing. Spending a credit is not a fresh
+     * ship: it hands back no ammunition and no energy, so a pilot who edits
+     * at ten percent is still at ten percent and there is nothing here to
+     * do it for. A build that lowers the ceiling below where the bar is
+     * takes the difference, the way a smaller tank would. */
+    int32_t cap = sim_eff_max_energy(&cfg->classes[sh->cls], sh);
+    if (sh->energy > cap) sh->energy = cap;
     return 0;
 }
 

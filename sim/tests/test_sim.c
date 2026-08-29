@@ -5034,6 +5034,15 @@ static void test_kits_and_matches(const sim_settings *base) {
         CHECK(sh->charge[SIM_CHARGE_BURST] == 0,
               "and a kind they stopped paying for is gone");
 
+        /* Editing hands back no energy either, which is what lets it need no
+         * gate: a hull change is refused to anybody short of a full bar
+         * because a fresh ship is a fresh bar, and this is not one. */
+        sh->energy = 100;
+        CHECK(sim_set_ship_kit(&s, &kc, (uint8_t)id, mine) == 0,
+              "a pilot at a tenth of a bar may still spend");
+        CHECK(sh->energy == 100,
+              "and is still at a tenth of a bar afterwards");
+
         /* Editing is not a reload. Spend the rack, ask for it back. */
         sh->charge[SIM_CHARGE_REPEL] = 0;
         CHECK(sim_set_ship_kit(&s, &kc, (uint8_t)id, mine) == 0,
