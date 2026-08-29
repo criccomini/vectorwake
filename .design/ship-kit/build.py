@@ -894,7 +894,7 @@ def flat_toggle_row(label, on, can_raise=True, state=None, note=None):
 def flat_reset():
     return (sect("", mt=8)
             + bleed('<div class="row" style="height:44px">'
-                    '<span style="font-size:14px;color:#dfe9f5">reset</span>'
+                    '<span style="font-size:14px;color:#dfe9f5">Reset</span>'
                     '</div>'))
 
 
