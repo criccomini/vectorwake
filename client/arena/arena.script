@@ -2970,6 +2970,20 @@ end
 function land_act(self, action, value)
     -- The landing's one key. See session.deploy.
     if action == "play_now" then
+        -- With the ship panel open, the key flies the ship the panel is on.
+        -- Walking the roster does not pick, so without this a pilot who
+        -- paged to a Wedge and pressed the one key on the screen would
+        -- arrive in the Apex they walked away from, with the panel in front
+        -- of them saying Wedge the whole time.
+        if ui.land_open == "ship" and self.land_ship_at then
+            local at = self.land_ship_at
+            if at >= menu.hull_count() then
+                apply_menu(self, "spectate")
+            else
+                local act = menu.pick_profile(at)
+                if act then apply_menu(self, act) end
+            end
+        end
         ui.land_open = nil
         ui.land_sel, ui.land_sel_value = nil, nil
         session.deploy(self)

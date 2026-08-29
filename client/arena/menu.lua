@@ -930,6 +930,11 @@ function M.ship_panel(at)
     }
 end
 
+-- How many hulls the roster holds, which is also the page sitting out is on.
+function M.hull_count()
+    return #HULLS
+end
+
 -- Which page the panel opens on: the ship you are flying, or sitting out
 -- where that is what you have chosen. The one place that default is written
 -- down, so the drawing and the walking agree about where a fresh panel is.
