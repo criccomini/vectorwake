@@ -340,6 +340,109 @@ fn run_calibration_diagnostic() {
 ///
 /// Writes `hulls.json`, which nothing loads: it is a measurement to diff a
 /// change against, where `ladder.json` is an input.
+/// `calibrate builds <bouts> <zone> <dir> [map]`: every runaway build against
+/// the hull it was spent on.
+///
+/// The question the hull tournament cannot ask. A hull is no longer the whole
+/// ship: seven credits move between a dozen slots at one credit a step, so a
+/// roster balanced hull against hull can still have one slot everybody dumps
+/// into. Since a step cannot be made expensive, a slot that wins here has to
+/// be made weaker or given a lower ceiling, and `sim_slot_cap` is where the
+/// ceiling lives.
+///
+/// A mirror on purpose: both seats are the same hull, so the only difference
+/// in the room is how the credits were spent.
+fn run_build_sweep() {
+    let bouts: u32 = std::env::args()
+        .nth(3)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(12);
+    let zone = std::env::args().nth(4).unwrap_or_else(|| "baseline".into());
+    let dir = std::env::args().nth(5).unwrap_or_else(|| ".".into());
+    let map = std::env::args().nth(6).unwrap_or_else(|| "pit".into());
+
+    let builder = match map.as_str() {
+        "pit" => calibrate::Arena::Built(sim::build_pit),
+        "arena" => calibrate::Arena::Built(sim::build_arena),
+        path => match std::fs::read(path) {
+            Ok(bytes) => calibrate::Arena::Packed(std::sync::Arc::new(bytes)),
+            Err(e) => {
+                println!("builds: {path:?} will not open: {e}");
+                std::process::exit(1);
+            }
+        },
+    };
+    let tuning = if zone == "baseline" {
+        None
+    } else {
+        let cat = match catalog::load("catalog") {
+            Ok(c) => c,
+            Err(e) => {
+                println!("builds: {e}");
+                std::process::exit(1);
+            }
+        };
+        let Some(def) = cat.zone(&zone) else {
+            println!("builds: no zone named {zone:?} in the catalog");
+            std::process::exit(1);
+        };
+        Some(def.arena.clone())
+    };
+
+    const SKILL: f32 = 0.50;
+    println!("builds under {zone} tuning on the {map}: {bouts} bouts each");
+    let rows = calibrate::run_builds(SKILL, bouts, tuning.as_ref(), &builder, true);
+
+    // The top of the table is the whole reading: a build well past even
+    // against the ship it was spent on is a build the roster converges on.
+    println!("\nthe builds that beat the ship they were spent on:");
+    for r in rows.iter().take(12) {
+        println!(
+            "  {:>7}  {:5.1}%  {}",
+            r.name,
+            r.win_rate() * 100.0,
+            r.spend
+        );
+    }
+    let runaway: Vec<&calibrate::BuildRow> = rows.iter().filter(|r| r.win_rate() > 0.65).collect();
+    if runaway.is_empty() {
+        println!(
+            "\nnothing runs away with it: no build beats its own hull's row \
+past 65%, so the credits are worth about the same wherever they go."
+        );
+    } else {
+        println!(
+            "\n{} builds beat their own hull's row past 65%. Every step costs \
+one, so the answer is a lower ceiling or a weaker step, never a higher price.",
+            runaway.len()
+        );
+    }
+
+    let doc = serde_json::json!({
+        "tuning": zone,
+        "map": map,
+        "skill": SKILL,
+        "bouts_per_build": bouts,
+        "builds": rows.iter().map(|r| serde_json::json!({
+            "name": r.name,
+            "class": r.class,
+            "spend": r.spend,
+            "wins": r.wins,
+            "losses": r.losses,
+            "draws": r.draws,
+            "win_rate": r.win_rate(),
+        })).collect::<Vec<_>>(),
+    });
+    let path = format!("{dir}/builds.json");
+    match std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&doc).expect("serialize"),
+    ) {
+        Ok(()) => println!("\nwrote {path}"),
+        Err(e) => println!("\ncould not write {path}: {e}"),
+    }
+}
+
 fn run_hull_tournament() {
     let bouts: u32 = std::env::args()
         .nth(3)
@@ -643,10 +746,12 @@ async fn main() {
             run_pilot_tournament();
         } else if std::env::args().nth(2).as_deref() == Some("hulls") {
             run_hull_tournament();
+        } else if std::env::args().nth(2).as_deref() == Some("builds") {
+            run_build_sweep();
         } else if std::env::args().nth(2).as_deref() == Some("teams") {
             run_team_tournament();
         } else {
-            println!("calibrate needs one of: diagnostics, pilots, hulls, teams");
+            println!("calibrate needs one of: diagnostics, pilots, hulls, builds, teams");
             std::process::exit(2);
         }
         return;

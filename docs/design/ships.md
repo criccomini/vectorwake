@@ -5,12 +5,16 @@ turn, its energy and its recharge; the gun it fires and the bomb it throws;
 what those weapons carry and what it has in the rack. All of it belongs to the
 hull, and a pilot picks one.
 
-Nobody spends anything. There is no kit, no budget, no shelf and no wallet: the
-menu's ship page is the roster with the seven read down a column, and pressing
-one flies it. What used to stand there is in
-[decisions.md](../architecture/decisions.md); the short version is that a
-thirty point kit made every hull the same ship underneath, and the thing worth
-choosing between was the ship.
+What the hull owns is the shape and the flight. What it carries is a pilot's:
+seven build credits over the core's flat slot space, at one credit a step, and
+each hull's profile below is its default spend. Nothing is bought and nothing
+is owned, so there is no shelf, no wallet and no ceiling but the slot's own;
+what a pilot changes is which weapons and which rack their seven credits sit
+on. See [decision 100](../architecture/decisions.md).
+
+There is no ship page in the drawer. The landing's ship stop is the roster and
+the editor at once: one hull at a time, paged left and right, with its flight
+against the rest of the roster and the rows that spend its credits under it.
 
 The role names are what a hull is for, and they are load bearing again. A dart
 and a slab play differently because they fly differently, not only because
@@ -101,18 +105,32 @@ able to express it, and nothing until now used it.
 
 ## The profile
 
-What each hull carries, over the same flat slot space the kit used to spend
-points on. Nobody buys any of it.
+What each hull carries, over the flat slot space, and what its seven credits
+are spent on before a pilot moves any of them. The rightmost column is the
+sum, which is what a pilot has to re-spend.
 
-| Class | Gun | Bomb | Charges |
-|---|---|---|---|
-| Apex | spray 2 | plain | repel 2, burst 1 |
-| Wedge | plain | prox, shrapnel 2 | repel 1, burst 1 |
-| Chord | spray 3, freeze | prox | repel 2 |
-| Anvil | plain | plain | repel 2, burst 1 |
-| Cipher | plain | no rack | repel 1, burst 2 |
-| Facet | spray 5, bounce | plain | repel 2 |
-| Lattice | plain | bounce, freeze | repel 3, burst 2 |
+| Class | Gun | Bomb | Charges | Credits |
+|---|---|---|---|---:|
+| Apex | spray 2 | plain | repel 2, burst 1 | 4 |
+| Wedge | plain | prox, shrapnel 2 | repel 1, burst 1 | 5 |
+| Chord | spray 3, freeze | prox | repel 2 | 6 |
+| Anvil | plain | plain | repel 2, burst 1 | 3 |
+| Cipher | plain | no rack | repel 1, burst 2 | 3 |
+| Facet | spray 5, bounce | plain | repel 2 | 7 |
+| Lattice | plain | bounce, freeze | repel 3, burst 2 | 7 |
+
+Every one of them fits inside seven, which is where the budget came from: the
+roster arrived on this number rather than being moved onto it, and
+`the shipped roster spends no more than a pilot has` in
+`sim/tests/test_sim.c` holds it there. The Anvil and the Cipher ship with four
+credits in hand, so a pilot flying either starts by spending rather than by
+trading something away.
+
+A credit moves anywhere the hull can reach. An Anvil is three credits of ship
+and four credits of whatever its pilot wants, and a Facet is spent to the last
+one, so re-spending it means giving something up. That asymmetry is the roster
+speaking rather than a rule: a hull that ships light is a hull with room in
+it.
 
 Spray is a count of rounds, so "spray 2" is two rounds abreast and everything
 else is a depth. Two rounds sit two and a quarter degrees apart, tight enough
@@ -269,10 +287,17 @@ or the class is wrong.
 ## Balance
 
 `cargo run --manifest-path server/Cargo.toml -- calibrate hulls` flies the
-roster against itself and reports the matrix. It is the primary balance
-question now: with no kit in the way, a hull that beats the field is a hull
-that beats the field, and there is nothing a pilot could have spent to answer
-it.
+roster against itself on its own profiles and reports the matrix. That is one
+of the two balance questions, and with a pilot's credits back it is no longer
+the only one: a roster balanced hull against hull can still have one slot
+everybody dumps into.
+
+`calibrate builds` asks the second. It flies every runaway shape, every credit
+in one slot and the hull's own row with one credit moved, against the hull it
+was spent on, in a mirror so the only difference in the room is how the
+credits went. A build that beats its own hull's row well past even is one the
+roster would converge on, and since a step cannot be made expensive the answer
+is a lower ceiling or a weaker step. `sim_slot_cap` is where a ceiling lives.
 
 Run it on both rooms. The pit is one box a pilot can see across, which
 flatters everything that wants to be close and charges nothing for being slow;

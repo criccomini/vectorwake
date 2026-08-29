@@ -308,6 +308,25 @@ pub fn hull_bout(
     tuning: Option<&config::ArenaConfig>,
     map: &Arena,
 ) -> Bout {
+    hull_bout_with(classes, [None, None], skill, salt, tuning, map)
+}
+
+/// The same bout with a build named for either seat, `None` being the hull's
+/// own profile.
+///
+/// A hull is no longer the whole ship: seven credits move between a dozen
+/// slots, so "is this hull strong" and "is this build strong" are different
+/// questions and this is the one that answers the second. Balance moved here
+/// when the price list flattened, because a slot that is too good can no
+/// longer be made expensive and has to be made weaker or capped instead.
+pub fn hull_bout_with(
+    classes: [u8; 2],
+    kits: [Option<[u8; sim::SLOT_COUNT]>; 2],
+    skill: f32,
+    salt: u32,
+    tuning: Option<&config::ArenaConfig>,
+    map: &Arena,
+) -> Bout {
     // Sides alternate, so the room's geometry cannot turn into a result. The
     // seats keep their places and their bot seeds; it is the hulls that move.
     let flip = salt % 2 == 1;
@@ -316,6 +335,7 @@ pub fn hull_bout(
     } else {
         classes
     };
+    let builds: [Option<[u8; sim::SLOT_COUNT]>; 2] = if flip { [kits[1], kits[0]] } else { kits };
     let dead = Bout {
         sides: [Side::default(); 2],
         decided: false,
@@ -342,6 +362,15 @@ pub fn hull_bout(
     };
 
     let mut out = [Side::default(); 2];
+
+    // The builds go on after seating, because a seat is dealt its hull's own
+    // row on the way in and this is a pilot spending afterwards, which is
+    // the same order the arena does it in.
+    for (k, kit) in builds.iter().enumerate() {
+        if let Some(kit) = kit {
+            world.set_ship_kit(ships[k], kit);
+        }
+    }
 
     let mut bots = [ai::Bot::new(ships[0], skill), ai::Bot::new(ships[1], skill)];
     bots[0].reseed(salt.wrapping_mul(2246822519) ^ 0x1234);
@@ -431,6 +460,157 @@ pub fn hull_bout(
 }
 
 /// Every hull against every other, `bouts` times each, at one bounty.
+/// One candidate build, and how it did against the hull's own row.
+pub struct BuildRow {
+    pub class: u8,
+    pub name: &'static str,
+    /// What the build spends, as a sentence a person can read back.
+    pub spend: String,
+    pub wins: u32,
+    pub losses: u32,
+    pub draws: u32,
+}
+
+impl BuildRow {
+    pub fn win_rate(&self) -> f64 {
+        let n = self.wins + self.losses + self.draws;
+        if n == 0 {
+            return 0.0;
+        }
+        (self.wins as f64 + 0.5 * self.draws as f64) / n as f64
+    }
+}
+
+/// Name a build by what it spends, in the slot space's own words.
+fn spend_words(cfg: &sim::sim_settings, kit: &[u8; sim::SLOT_COUNT]) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for (slot, &n) in kit.iter().enumerate() {
+        if n == 0 {
+            continue;
+        }
+        let slot = slot as u8;
+        let word = if slot < sim::UP_COUNT as u8 {
+            ["energy", "recharge", "speed", "thrust", "rotation"][slot as usize].to_string()
+        } else if slot < sim::slot_mod(0, 0) {
+            let t = slot - sim::UP_COUNT as u8;
+            format!("{} rung", if t == 0 { "gun" } else { "bomb" })
+        } else if slot < sim::slot_charge(0) {
+            let at = (slot - sim::slot_mod(0, 0)) as usize;
+            let t = at / sim::MOD_COUNT;
+            let m = at % sim::MOD_COUNT;
+            format!(
+                "{} {}",
+                if t == 0 { "gun" } else { "bomb" },
+                ["spray", "bounce", "prox", "shrapnel", "freeze", "push"][m]
+            )
+        } else {
+            let k = (slot - sim::slot_charge(0)) as usize;
+            ["repel", "burst", "charge 3", "charge 4"][k.min(3)].to_string()
+        };
+        let _ = cfg;
+        parts.push(format!("{word} {n}"));
+    }
+    if parts.is_empty() {
+        "nothing at all".into()
+    } else {
+        parts.join(", ")
+    }
+}
+
+/// Every build worth trying against a hull's own row.
+///
+/// Not the whole space, which is tens of thousands of vectors and would take
+/// a week of bouts. What this enumerates is the shape a runaway build has:
+/// every credit in one slot, and the hull's own row with one credit moved
+/// into each slot it does not already spend on. A slot that is too strong
+/// shows up in the first list, and one that is worth more than what it
+/// displaces shows up in the second; a build that beats the field by
+/// spreading four credits over four ordinary slots is not a thing the price
+/// list can produce, because every step costs the same.
+fn build_candidates(world: &sim::World, cls: u8) -> Vec<[u8; sim::SLOT_COUNT]> {
+    let mut out = Vec::new();
+    let default = world.default_kit(cls);
+    for slot in 0..sim::SLOT_COUNT {
+        let cap = world.slot_cap(cls, slot as u8);
+        if cap == 0 {
+            continue;
+        }
+        // Everything in one slot.
+        let mut all = [0u8; sim::SLOT_COUNT];
+        all[slot] = cap.min(sim::KIT_CREDITS);
+        out.push(world.fit_kit(cls, &all));
+        // And the hull's own row with one more credit here, paid for by the
+        // fit taking it off the tallest slot.
+        let mut one = default;
+        if one[slot] < cap {
+            one[slot] += 1;
+            out.push(world.fit_kit(cls, &one));
+        }
+    }
+    out.sort();
+    out.dedup();
+    out.retain(|k| *k != default);
+    out
+}
+
+/// Fly every candidate build against its own hull's row.
+///
+/// A mirror on purpose: the question is whether spending differently beats
+/// the ship as it ships, and the cleanest way to ask it is to put the two
+/// builds in the same hull so nothing else differs. A build that wins this
+/// well past even is one the roster would converge on, which is what a flat
+/// price list has to be watched for.
+pub fn run_builds(
+    skill: f32,
+    bouts: u32,
+    tuning: Option<&config::ArenaConfig>,
+    map: &Arena,
+    verbose: bool,
+) -> Vec<BuildRow> {
+    let mut probe = sim::World::new(1);
+    if let Some(c) = tuning {
+        crate::Room::apply_config(&mut probe, c);
+    }
+    let mut rows = Vec::new();
+    let mut salt = 7_000_000u32;
+    for cls in 0..ai::CLASS_NAMES.len() as u8 {
+        let candidates = build_candidates(&probe, cls);
+        if verbose {
+            println!(
+                "{}: {} builds against its own row",
+                ai::CLASS_NAMES[cls as usize],
+                candidates.len()
+            );
+        }
+        for kit in candidates {
+            let (mut w, mut l, mut d) = (0u32, 0u32, 0u32);
+            for _ in 0..bouts {
+                let b = hull_bout_with([cls, cls], [Some(kit), None], skill, salt, tuning, map);
+                salt = salt.wrapping_add(1);
+                if !b.decided {
+                    d += 1;
+                } else if b.sides[0].kills > b.sides[1].kills {
+                    w += 1;
+                } else if b.sides[1].kills > b.sides[0].kills {
+                    l += 1;
+                } else {
+                    d += 1;
+                }
+            }
+            rows.push(BuildRow {
+                class: cls,
+                name: ai::CLASS_NAMES[cls as usize],
+                spend: spend_words(&probe.cfg, &kit),
+                wins: w,
+                losses: l,
+                draws: d,
+            });
+        }
+    }
+    rows.sort_by(|a, b| b.win_rate().partial_cmp(&a.win_rate()).unwrap());
+    rows
+}
+
 pub fn run_hulls(
     skill: f32,
     bouts: u32,

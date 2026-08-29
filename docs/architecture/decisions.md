@@ -4999,3 +4999,104 @@ last reference, and that code had no caller: the ladder is four rungs now.
 question is whether it belongs on a page of its own or on the site it is
 already on. The list itself does not care: it is the acts, and a career is not
 one.
+
+## 100. Seven credits, and every step costs one
+
+**Status:** accepted, partly superseding
+[decision 97](#97-ships-are-preconstructed-and-nothing-is-bought) and
+superseding the ship page half of
+[decision 89](#89-the-landing-grows-stops)
+
+**Decision:** a pilot spends seven build credits over the core's flat slot
+space, and every step costs one credit. Each hull's profile is its default
+spend, so a player who never opens anything flies the ship as it ships. There
+is nothing to own, nothing to buy, nothing to name and nothing to price. The
+drawer's ship page and its tab are removed, and the landing's ship stop opens
+a panel that pages one hull at a time and carries the rows that spend its
+credits.
+
+**Why:** Chris asked for the configurable kit back, and named what it died of
+rather than what it was: his son could not work out what anything on it was or
+how it worked. The interface was the problem and the spending was not.
+
+Most of that interface was the economy rather than the kit. A shop tab, rivet
+prices, per-account ceilings that trimmed a build to what you owned, a wallet,
+BUY keys, named builds saved under a library. All of that goes and does not
+come back: everything is reachable by everybody from the first session, which
+is what Chris asked for and also what removes the family of bugs the economy
+generated, from stale session tokens after a purchase to builds silently cut
+down to owned slots.
+
+What was left after the economy was still too much to read. Twenty-three slots
+drawn as ladders of pips under three-letter marks, thirty points, and a build
+manager with NEW, SAVE, RENAME and DELETE on it. Two things fix that, and both
+came out of the mocks in `.design/ship-kit` rather than out of an argument.
+
+The first is the price list. Thirty points against slots priced from two to
+nine puts arithmetic on the screen: every row needs a number, the budget needs
+a bar, and a player has to compare a nine against a three to know what a repel
+is worth. Seven credits at one credit a step needs none of it. There is no
+number on the page, because there is nothing to add up: the tray holds seven
+chips and a step takes one. That is the version a nine year old can read, and
+it is the version that fits on a phone.
+
+What flat pricing costs is the balance lever. A slot that is too strong used
+to be made expensive; it now has to be made weaker or given a lower ceiling,
+and `sim_slot_cap` is the one place a ceiling is written down, asked by the
+pilot spending, by the deal, and by the client drawing a stepper. What flat
+pricing buys back is that the build space becomes small enough to sweep:
+`calibrate builds` flies every runaway shape against the hull it was spent on,
+which is a question the hull tournament cannot ask and nobody could have
+afforded to ask against thirty points and variable prices.
+
+The second is that the roster and the editor are one surface. The ship stop
+opened a list of seven names; the drawer's ship page held the same seven with
+their flight bars. Two places saying the same thing, and neither could hold a
+build. The stop opens a panel now: one hull, its flight against the rest of
+the roster, its credits, and its rows. Left and right walk the roster, which
+is the friendliest gesture there is for a pad or a thumb, and it retires the
+list on its own terms, since seven hulls with bars and a build apiece is a
+page wearing a list's clothes.
+
+Which rows that panel draws is the core's answer rather than a list written in
+Lua. A slot whose ceiling is zero is one the hull cannot reach, so a hull with
+no bomb rack grows no bomb section; a stat whose step is zero would take a
+credit and change nothing, so it is not offered. That is what keeps the page
+honest for a zone nobody has written yet, and it is why `sim_slot_cap` and
+`class_up_step` are exported to the client at all.
+
+Seven is not a round number picked for looking like one. Every hull's profile
+in `sim/src/baseline.c` already summed to seven or less, from the Anvil's three
+credits to the Facet's and the Lattice's seven, so the roster arrived on this
+budget rather than being moved onto it, and a test in `sim/tests/test_sim.c`
+holds it there. The lighter hulls ship with credits in hand, which is a nicer
+first edit than a trade: a new pilot's first act is spending something rather
+than giving something up.
+
+A build lives on the ship in the core rather than on the seat in the server,
+because every re-deal happens inside the step. A respawn and a whistle both
+hand back what a pilot spent, and neither has a caller to ask. That is also
+the bug the last kit shipped with: a build that lived beside the arena was a
+build a whistle could forget, and a player flew a bare hull for a whole match
+before anybody noticed. It rides the owner's snapshot tail as the slots it
+actually spent, one byte each, since seven credits cannot reach eight slots.
+
+One build a hull, remembered on the device beside the wake and the key
+bindings. Nothing is owned, so there is nothing an account could be
+protecting, and seven ones over a dozen slots is not worth a table, a route, a
+migration and a login to carry between machines. A pilot on a new machine
+flies the shipped profiles, which is the same thing they would see having
+never opened the panel.
+
+**Cost:** flight stays the hull's. The credits buy weapons, add-ons and the
+rack, and not speed or energy, so decision 97's per-hull flight rows stand
+exactly as they are. The other side of that fork is drawn in `.design/ship-kit`
+and was not taken: two hulls tuned to the same numbers fly as the same ship,
+and a roster of seven silhouettes over one flight row is what decision 97 was
+undoing. The slots stay in the space and the panel offers them the moment a
+zone writes a hull whose flight climbs.
+
+The other cost is granularity. Thirty points let a pilot shave a fine trade;
+seven picks are coarse, and a build is now a handful of yes-or-no answers. For
+three minute matches that is the right trade, and it is the direction the whole
+front end has been going since decision 61.

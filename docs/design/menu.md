@@ -7,24 +7,29 @@
 > is a stop, first in a room, and leaving is a stop in the slot before settings,
 > going one step from wherever you are standing. Flying, it hands the seat back
 > and the panel stays up; benched, it leaves the room for the stands and asks
-> first. So the row is ship, pilot, settings at home, and side, ship, leave,
-> settings in a room, with the ship only where a hull is not locked. Every note
+> first. The row that decision left was ship, pilot, settings at home; the
+> pilot stop went with decision 99 and the ship stop with decision 100, so
+> what is left is settings at home and side, leave, settings in a room. Every note
 > below about a games page, a format strip, a sweep dial on a zone nobody is
 > serving, or a button hung off a row describes something that no longer
 > exists. See [decision 98](../architecture/decisions.md).
 
-> **The ship page is the roster.** Every note below about a kit, a shelf, a
-> build library, a wallet or a price describes a page that no longer exists.
-> Seven hulls are seven whole ships and the page is a list of them: one row a
-> ship, carrying its name, the shape it presents, its flight as five bars
-> against the rest of the roster, and what it flies with. Pressing a row flies
-> it. Sitting out is the last row, and the wake and the charge-key order are a
-> flair section under them. Nothing on it is a control except the rows: no
-> ladder, no price, no key that buys anything, and nothing behind it. The four
-> pages that stood behind it (the shelf's reading, the build library, the
-> naming field and the page explaining what thirty points were) are all gone.
-> See [ships.md](ships.md) and
-> [decisions.md](../architecture/decisions.md).
+> **There is no ship page.** The drawer's ship tab and every page behind it
+> are gone, and so is the row of the tab set that carried them: at home the
+> row is settings alone, and in a room it is leave and settings. Every note
+> below about a kit, a shelf, a build library, a wallet, a price or a roster
+> down a column describes something that no longer exists.
+>
+> What replaced it is the landing's ship stop, which opens a panel rather
+> than a list: one hull at a time, paged left and right, with its flight as
+> five bars against the rest of the roster, the build credits its pilot has
+> spent, and the rows that spend them. A slot that only goes to one draws as
+> a switch and anything you can have more of draws as a stepper, which is the
+> core's own ceiling deciding rather than the page. Sitting out is the page
+> past the roster. The wake and the charge-key order moved to settings, being
+> preferences about a look and a keyboard rather than about how a ship
+> fights. See [ships.md](ships.md) and
+> [decision 100](../architecture/decisions.md).
 
 > **Friends is gone.** The tab, the page, the add field and the band at its
 > foot are out of the menu, and so are the wire and the tables behind them.

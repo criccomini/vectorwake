@@ -400,8 +400,11 @@ one column of 248 always fits and smaller type on a phone fits less.
 Pages scroll in pixels, whole rows only. Type comes from the gui, which
 draws over every mesh, so nothing behind a heading can cover a row that has
 slid under it; what a row does at the edge is appear whole or not at all.
-The thing a page is spent against stays pinned: the ship page's band with
-its budget, and the week's heading.
+The thing a page is spent against stays pinned: the ship panel's head, with
+the hull and the credits it has left, and the week's heading. That rule is
+what a short window relies on. The panel is the same panel at every shape,
+and a landscape phone that cannot hold it scrolls the rows under a head that
+stays put, rather than growing a second layout of its own.
 
 ## Motion
 
