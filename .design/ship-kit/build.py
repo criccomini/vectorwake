@@ -449,8 +449,222 @@ def flight_option_board():
     write("FlightOption.dc.html", board(body, head=tune_head("Apex", 1)))
 
 
+# ======================= The build credits vocabulary =======================
+#
+# Chris's read of the first pass: busy, the right-hand numbers opaque, the
+# blue bar opaque. So the currency gets a name and a face. A build credit is
+# a gold diamond; the tray under the head holds all thirty, solid where they
+# are free and a faint socket where they are spent; a price anywhere on a
+# page is drawn as the chips it costs, never as a numeral. Nothing to read,
+# only to count.
+def chip(solid=True, k=7):
+    if solid:
+        return (f'<span style="width:{k}px;height:{k}px;flex:none;'
+                'background:#ffd166;transform:rotate(45deg)"></span>')
+    return (f'<span style="width:{k}px;height:{k}px;flex:none;'
+            'border:1px solid rgba(255,209,102,.3);'
+            'transform:rotate(45deg)"></span>')
+
+
+def chips(n, solid=True, k=7, gap=3):
+    return (f'<span class="row" style="gap:{gap}px;flex:none">'
+            + "".join(chip(solid, k) for _ in range(n)) + '</span>')
+
+
+def credits_tray(free):
+    cells = "".join(chip(True, 6) for _ in range(free)) + "".join(
+        chip(False, 6) for _ in range(30 - free))
+    return ('<div class="row" style="height:34px;gap:10px;'
+            'border-bottom:1px solid rgba(63,88,120,.45);'
+            'margin:0 -14px;padding:0 14px">'
+            '<span class="lbl" style="color:#ffd166;opacity:.8;flex:none">'
+            'build credits</span>'
+            '<div class="row" style="gap:2px;flex-wrap:nowrap">'
+            + cells + '</div></div>')
+
+
+def hull_head(name):
+    return ('<div class="row" style="height:48px;gap:10px;border-bottom:'
+            '1px solid rgba(63,88,120,.45);margin:0 -14px;padding:0 14px">'
+            + X_KEY
+            + '<div style="margin:0 -4px">' + thumb(name, "#4fd6ff") + '</div>'
+            + f'<span style="font-size:17px">{name}</span>'
+            '<div style="flex:1"></div></div>')
+
+
+# ====================== Option A: chips on the rows ======================
+#
+# The list survives but every number on it dies. A row at rest is three
+# things: the slot, what it is set to, and its price drawn as the chips one
+# step costs. Only the row the cursor is on grows its triangles, at the
+# row's full height so a thumb hits them as easily as a d-pad does; every
+# other row is quiet. Stepping up visibly drains the tray.
+def chips_row(label, value, price, state=None, zero=False, full=False):
+    hot = state == "cursor"
+    vcol = "rgba(108,122,144,.85)" if zero else "#4fd6ff"
+    right = ('<span class="lbl">full</span>' if full
+             else chips(price, solid=True, k=6, gap=2.5))
+    h = 52 if hot else 42
+    left_t = (tri(-1, on=not zero) if hot else "")
+    right_t = (tri(1, on=not full) if hot else "")
+    return bleed(
+        f'<div class="row" style="height:{h}px;gap:10px">'
+        f'<span style="font-size:14px;width:96px;flex:none;'
+        f'color:rgba(223,233,245,{1 if hot else .85})">{label}</span>'
+        + left_t
+        + f'<span class="mono" style="font-size:12.5px;color:{vcol};'
+        f'min-width:92px;text-align:center">{value}</span>'
+        + right_t
+        + '<div style="flex:1"></div>' + right + '</div>', state=state)
+
+
+def option_chips_board():
+    body = (
+        credits_tray(8)
+        + sect("gun", mt=10)
+        + '<div style="margin-top:2px">'
+        + chips_row("spray", "2 rounds", 5, state="cursor")
+        + chips_row("bounce", "off", 3, zero=True)
+        + chips_row("freeze", "off", 3, zero=True)
+        + '</div>'
+        + sect("bomb", mt=8)
+        + '<div style="margin-top:2px">'
+        + chips_row("fuse", "contact", 2, zero=True)
+        + chips_row("shrapnel", "none", 3, zero=True)
+        + '</div>'
+        + sect("rack", mt=8)
+        + '<div style="margin-top:2px">'
+        + chips_row("repel", "1", 8)
+        + chips_row("burst", "1", 9)
+        + '</div>'
+        + sect("", mt=8)
+        + bleed('<div class="row" style="height:44px">'
+                '<span style="font-size:14px;color:#dfe9f5">reset</span>'
+                '</div>'))
+    write("Chips.dc.html", board(body, head=hull_head("Apex")))
+
+
+# ====================== Option B: one slot at a time ======================
+#
+# The opposite cure for busy: the page holds one slot, drawn as what it
+# does. Left and right walk the slots, the picture changes, and the two keys
+# at the foot are the whole interface, the raise key wearing the chips it
+# will take. A controller and a thumb get the same four targets; a keyboard
+# gets four arrows.
+def option_focus_board():
+    dots = "".join(
+        '<span style="width:7px;height:7px;border-radius:50%;flex:none;'
+        + ('background:#4fd6ff' if i == 0
+           else 'border:1.2px solid rgba(108,122,144,.5)')
+        + '"></span>' for i in range(7))
+    strip = ('<div class="row" style="justify-content:center;gap:8px;'
+             'margin-top:16px">' + dots + '</div>')
+    picture = ('<svg width="300" height="230" viewBox="0 0 300 230" '
+               'style="display:block;margin:8px auto 0">'
+               '<g stroke="#4fd6ff" stroke-width="2" opacity=".9">'
+               '<path d="M138 130 L138 34"/><path d="M162 130 L162 34"/>'
+               '</g>'
+               '<g fill="#4fd6ff">'
+               '<path d="M138 26 l-4 10 h8 Z"/><path d="M162 26 l-4 10 h8 Z"/>'
+               '</g>'
+               '<g transform="translate(150,178) scale(3.2)">'
+               '<path d="M0,-20 L6,-3 L10,7 L4,5 L2,11 L-2,11 L-4,5 L-10,7 '
+               'L-6,-3 Z" fill="#0b1220" stroke="#4fd6ff" stroke-width="1.1" '
+               'stroke-linejoin="round"/></g></svg>')
+    name = ('<div class="row" style="justify-content:center;gap:14px;'
+            'margin-top:18px">'
+            + tri(-1) +
+            '<span class="lbl" style="font-size:11px;color:#9fb6d4">spray'
+            '</span>' + tri(1) + '</div>')
+    value = ('<div style="text-align:center;margin-top:10px">'
+             '<span class="mono" style="font-size:21px;color:#4fd6ff">'
+             '2 rounds</span></div>')
+    keys = ('<div class="row" style="gap:10px;margin-top:26px">'
+            '<div class="key" style="flex:1;height:56px;font-size:20px">'
+            '&#8722;</div>'
+            '<div class="key" style="flex:1;height:56px;gap:9px;'
+            'border-color:rgba(255,209,102,.55)">'
+            '<span style="font-size:20px">+</span>'
+            + chips(5, k=7) + '</div></div>')
+    body = credits_tray(8) + name + picture + value + keys + strip
+    write("Focus.dc.html", board(body, head=hull_head("Apex")))
+
+
+# ==================== Option C: the ship is the page ====================
+#
+# No list at all. The build is drawn once, as the ship firing it: the fan
+# ahead of the nose, the bomb under the tail, the rack beside the hull, and
+# each cluster is the control for itself. The cursor is the radar's corner
+# brackets; left and right step whatever is inside them, a tap moves them.
+# The only words are the count each cluster wears.
+def option_diagram_board():
+    def brackets(x, y, w, h):
+        c, s = "rgba(255,209,102,.85)", 12
+        return (f'<g stroke="{c}" stroke-width="1.4" fill="none">'
+                f'<path d="M{x} {y + s} V{y} H{x + s}"/>'
+                f'<path d="M{x + w - s} {y} H{x + w} V{y + s}"/>'
+                f'<path d="M{x + w} {y + h - s} V{y + h} H{x + w - s}"/>'
+                f'<path d="M{x + s} {y + h} H{x} V{y + h - s}"/></g>')
+
+    def word(x, y, text, col="#9fb6d4", anchor="middle"):
+        return (f'<text x="{x}" y="{y}" text-anchor="{anchor}" '
+                f'font-family="DejaVu Sans Mono,monospace" font-size="11" '
+                f'fill="{col}">{text}</text>')
+
+    def diamonds(x, y, n):
+        out = []
+        for i in range(n):
+            cx = x + i * 11
+            out.append(f'<rect x="{cx}" y="{y}" width="6" height="6" '
+                       f'transform="rotate(45 {cx + 3} {y + 3})" '
+                       'fill="#ffd166"/>')
+        return "".join(out)
+
+    svg = (
+        '<svg width="362" height="560" viewBox="0 0 362 560" '
+        'style="display:block;margin-top:6px">'
+        # The fan: two rounds abreast, the selected cluster.
+        '<g stroke="#4fd6ff" stroke-width="2" opacity=".9">'
+        '<path d="M169 150 L169 70"/><path d="M193 150 L193 70"/></g>'
+        '<g fill="#4fd6ff">'
+        '<path d="M169 62 l-4 10 h8 Z"/><path d="M193 62 l-4 10 h8 Z"/></g>'
+        + brackets(140, 48, 82, 118)
+        + word(181, 40, "spray &#183; 2", "#ffd166")
+        + diamonds(154, 178, 5)
+        # The hull.
+        + '<g transform="translate(181,290) scale(3.2)">'
+        '<path d="M0,-20 L6,-3 L10,7 L4,5 L2,11 L-2,11 L-4,5 L-10,7 L-6,-3 Z" '
+        'fill="#0b1220" stroke="#4fd6ff" stroke-width="1.1" '
+        'stroke-linejoin="round"/></g>'
+        # The bomb, under the tail: a plain round and its blast ring.
+        + '<circle cx="181" cy="430" r="7" fill="#ffa552" opacity=".9"/>'
+        '<circle cx="181" cy="430" r="24" stroke="#ffa552" fill="none" '
+        'stroke-width="1" opacity=".4"/>'
+        + word(181, 478, "bomb &#183; plain")
+        # The rack, beside the hull: repel arcs and a burst star.
+        + '<g stroke="#8dffb0" fill="none" stroke-width="1.4" opacity=".85">'
+        '<circle cx="66" cy="270" r="13"/><circle cx="66" cy="270" r="20"/>'
+        '<circle cx="106" cy="270" r="13"/><circle cx="106" cy="270" r="20"/>'
+        '</g>'
+        + word(86, 312, "repel &#183; 2")
+        + '<g stroke="#ffe08a" stroke-width="1.4" opacity=".9">'
+        '<path d="M286 258 v24 M274 270 h24 M278 262 l16 16 M294 262 '
+        'l-16 16"/></g>'
+        + word(286, 312, "burst &#183; 1")
+        + '</svg>')
+    stepper = ('<div class="row" style="justify-content:center;gap:22px;'
+               'margin-top:0">'
+               + tri(-1) + '<span class="lbl" style="font-size:10px;'
+               'color:#ffd166">spray</span>' + tri(1) + '</div>')
+    body = credits_tray(8) + svg + stepper
+    write("Diagram.dc.html", board(body, head=hull_head("Apex")))
+
+
 main_board()
 tune_board()
 tune_states_board()
 flight_option_board()
-print("four boards written")
+option_chips_board()
+option_focus_board()
+option_diagram_board()
+print("seven boards written")
