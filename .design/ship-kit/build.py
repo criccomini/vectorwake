@@ -906,7 +906,7 @@ def flat_board():
         flat_tray(3)
         + sect("gun", mt=10)
         + '<div style="margin-top:2px">'
-        + flat_row("Spray", "2 rounds", state="cursor",
+        + flat_row("Spray", "2", state="cursor",
                    note="How many rounds one pull of the trigger throws.")
         + flat_toggle_row("Bounce", False)
         + flat_toggle_row("Freeze", False)
@@ -934,7 +934,7 @@ def flat_spent_board():
         flat_tray(0)
         + sect("gun", mt=10)
         + '<div style="margin-top:2px">'
-        + flat_row("Spray", "3 rounds", plus=False)
+        + flat_row("Spray", "3", plus=False)
         + flat_toggle_row("Bounce", False, can_raise=False)
         + flat_toggle_row("Freeze", True)
         + '</div>'
