@@ -1227,74 +1227,30 @@ def land_pager_board():
           + land_frame(1440, 810, land_pager))
 
 
-# The same pager on a phone held sideways: no height for a column, so the
-# panel is the window. The head carries the pager and the credits at
-# opposite ends, the bars get a slim band of their own, and the three
-# sections stand side by side. PLAY NOW keeps the foot.
+# The same pager on a phone held sideways: the panel is identical to the
+# portrait one, and what the short window cannot hold scrolls. One layout
+# to learn, one to build; the scrollbar rides the panel's own right edge.
 def land_pager_wide_board():
-    def lrow(label, value, minus=True, plus=True, zero=False):
-        vcol = "rgba(108,122,144,.9)" if zero else "#4fd6ff"
-        return ('<div class="row" style="height:40px;gap:0">'
-                f'<span style="font-size:13px;color:rgba(223,233,245,.85)">'
-                f'{label}</span><div style="flex:1"></div>'
-                + tri(-1, on=minus)
-                + f'<span class="mono" style="font-size:12px;color:{vcol};'
-                f'min-width:52px;text-align:center;padding:0 4px">{value}'
-                '</span>' + tri(1, on=plus) + '</div>')
-
-    def ltog(label, on):
-        return ('<div class="row" style="height:40px;gap:0">'
-                f'<span style="font-size:13px;color:rgba(223,233,245,.85)">'
-                f'{label}</span><div style="flex:1"></div>' + toggle(on)
-                + '</div>')
-
-    def col(head_word, rows):
-        return ('<div style="flex:1;min-width:0">'
-                + FLAT_RULE
-                + f'<div class="lbl" style="padding:7px 0 7px">{head_word}'
-                '</div>' + FLAT_RULE
-                + '<div style="margin-top:2px">' + "".join(rows)
-                + '</div></div>')
-
-    tray = ('<div class="row" style="gap:12px;flex:none">'
-            '<span class="lbl" style="color:#ffd166;opacity:.8">'
-            'build credits</span>'
-            '<div class="row" style="gap:6px">'
-            + "".join('<span style="width:10px;height:10px;flex:none;'
-                      + ('background:#ffd166'
-                         if i < 3 else
-                         'border:1.2px solid rgba(255,209,102,.3)')
-                      + ';transform:rotate(45deg)"></span>'
-                      for i in range(7))
-            + '</div></div>')
-    head = ('<div class="row" style="height:46px;gap:16px;padding:0 16px;'
-            'border-bottom:1px solid rgba(63,88,120,.45)">'
-            + X_KEY + '<div style="flex:1"></div>'
-            + big_tri(-1) + thumb("Apex", "#4fd6ff")
-            + '<span style="font-size:17px;color:#4fd6ff">Apex</span>'
-            + big_tri(1)
-            + '<div style="flex:1"></div>' + tray + '</div>')
-    bars = ('<div style="padding:10px 16px 8px;border-bottom:1px solid '
+    head = ('<div class="row" style="height:48px;gap:16px;margin:0 -14px;'
+            'padding:0 14px;justify-content:center;border-bottom:1px solid '
             'rgba(63,88,120,.45)">'
-            + bars_strip((.76, .86, .48, .14, .57), "#4fd6ff") + '</div>')
-    cols = ('<div class="row" style="gap:24px;padding:14px 16px 0;'
-            'align-items:flex-start">'
-            + col("gun", [lrow("Spray", "2"), ltog("Bounce", False),
-                          ltog("Freeze", False)])
-            + col("bomb", [ltog("Proximity detonation", False),
-                           lrow("Shrapnel", "0", minus=False, zero=True),
-                           ltog("Bounce", False)])
-            + col("rack", [lrow("Repel", "2"), lrow("Burst", "1")])
-            + '</div>')
-    foot = ('<div class="row" style="position:absolute;left:16px;right:16px;'
-            'bottom:12px;gap:16px">'
-            '<span style="font-size:13px;color:#dfe9f5">Reset</span>'
-            '<div style="flex:1"></div>'
-            '<div class="play" style="width:220px;height:42px;'
-            'font-size:15px">PLAY NOW</div></div>')
-    panel = ('<div style="position:absolute;inset:0;'
-             'background:rgba(4,7,12,.94)">'
-             + head + bars + cols + foot + '</div>')
+            + big_tri(-1)
+            + thumb("Apex", "#4fd6ff")
+            + '<span style="font-size:17px;color:#4fd6ff">Apex</span>'
+            + big_tri(1) + '</div>')
+    bars = ('<div style="padding:12px 6px 14px">'
+            + bars_strip((.76, .86, .48, .14, .57), "#4fd6ff") + '</div>'
+            '<div style="border-top:1px solid rgba(63,88,120,.45);'
+            'margin:0 -14px"></div>')
+    scrollbar = ('<div style="position:absolute;right:2px;top:6px;'
+                 'bottom:6px;width:3px;background:rgba(63,88,120,.25)">'
+                 '<div style="position:absolute;top:0;height:38%;width:3px;'
+                 'background:rgba(108,122,144,.7)"></div></div>')
+    panel = ('<div style="position:absolute;left:50%;'
+             'transform:translateX(-50%);top:10px;bottom:10px;width:320px;'
+             'background:#070b12;border:1px solid rgba(63,88,120,.85);'
+             'padding:0 14px 8px;overflow:hidden;z-index:5">'
+             + head + bars + flat_body(cursor=False) + scrollbar + '</div>')
     write("LandPagerWide.dc.html",
           '<style>' + PLAY_CSS + '</style>'
           '<div style="position:relative;width:844px;height:390px;'
