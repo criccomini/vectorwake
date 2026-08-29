@@ -850,16 +850,6 @@ def flat_tray(free, total=7):
             + '</div></div>')
 
 
-def pm_keys(minus=True, plus=True):
-    def k(sign, on):
-        style = ("" if on
-                 else "opacity:.35;border-color:rgba(63,88,120,.4);")
-        return (f'<span class="key" style="width:40px;height:34px;'
-                f'font-size:17px;{style}">{sign}</span>')
-    return ('<span class="row" style="gap:8px;flex:none">'
-            + k("&#8722;", minus) + k("+", plus) + '</span>')
-
-
 def flat_note(note):
     """The active row says what its slot does, in one sentence under the
     controls, the way the menu's rows carry their wrapping notes."""
@@ -872,15 +862,19 @@ def flat_note(note):
 
 def flat_row(label, value, minus=True, plus=True, state=None, zero=False,
              note=None):
+    """A counted slot steps the wake row's way: the value between the two
+    friend triangles, the one that cannot fire dimmed."""
     hot = state == "cursor"
     vcol = "rgba(108,122,144,.9)" if zero else "#4fd6ff"
     return bleed(
-        '<div class="row" style="height:46px;gap:14px">'
+        '<div class="row" style="height:46px;gap:0">'
         f'<span style="font-size:14px;color:rgba(223,233,245,'
         f'{1 if hot else .85})">{label}</span>'
         '<div style="flex:1"></div>'
-        f'<span class="mono" style="font-size:12.5px;color:{vcol}">'
-        f'{value}</span>' + pm_keys(minus, plus) + '</div>'
+        + tri(-1, on=minus)
+        + f'<span class="mono" style="font-size:12.5px;color:{vcol};'
+        f'min-width:96px;text-align:center;padding:0 6px">{value}</span>'
+        + tri(1, on=plus) + '</div>'
         + flat_note(note if hot else None), state=state)
 
 
