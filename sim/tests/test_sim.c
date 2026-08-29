@@ -2650,9 +2650,18 @@ static void test_tech_tree(const sim_settings *base) {
                       "and everybody else does");
 
         /* What the profiles say, which is the roster's other half. */
-        CHECK(cfg.classes[6].kit[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] == 3
-                  && cfg.classes[6].kit[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] == 3,
-              "the support hull carries the deepest rack of both kinds");
+        /* The claim rather than the count. What makes the Lattice the Lattice
+         * is that nobody out-racks it in either kind, and how deep that is is
+         * a tuning number `calibrate hulls` moves. Pinning the number made a
+         * balance pass fail this test rather than the balance. */
+        for (int i = 0; i < cfg.class_count; i++) {
+            CHECK(cfg.classes[i].kit[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)]
+                      <= cfg.classes[6].kit[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)]
+                  && cfg.classes[i].kit[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)]
+                         <= cfg.classes[6]
+                                .kit[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)],
+                  "the support hull carries the deepest rack of both kinds");
+        }
         CHECK(cfg.classes[5].kit[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)]
                   == 4,
               "the brawler throws five rounds at a pull");

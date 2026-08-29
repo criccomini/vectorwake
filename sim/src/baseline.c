@@ -37,10 +37,10 @@ static const sim_class_units flight[SIM_MAX_CLASSES] = {
     /* Apex    */ {3600,0,3600, 190,0,190, 250,0,250, 1500,0,1500, 1150,0,1150},
     /* Wedge   */ {2900,0,2900, 155,0,155, 205,0,205, 1900,0,1900, 1000,0,1000},
     /* Chord   */ {2800,0,2800, 215,0,215, 310,0,310, 1550,0,1550, 1200,0,1200},
-    /* Anvil   */ {2650,0,2650, 145,0,145, 195,0,195, 2100,0,2100, 1300,0,1300},
-    /* Cipher  */ {3900,0,3900, 200,0,200, 235,0,235, 1300,0,1300,  950,0, 950},
+    /* Anvil   */ {2650,0,2650, 145,0,145, 195,0,195, 2100,0,2100, 1150,0,1150},
+    /* Cipher  */ {3900,0,3900, 200,0,200, 235,0,235, 1400,0,1400, 1100,0,1100},
     /* Facet   */ {3050,0,3050, 175,0,175, 265,0,265, 1400,0,1400, 1100,0,1100},
-    /* Lattice */ {3100,0,3100, 165,0,165, 240,0,240, 1750,0,1750, 1250,0,1250},
+    /* Lattice */ {3100,0,3100, 165,0,165, 240,0,240, 1750,0,1750, 1050,0,1050},
 };
 
 /* The weapons.
@@ -76,8 +76,8 @@ static const int32_t gun_row[SIM_MAX_CLASSES][3] = {
     /* Apex:    a fighter's, paired by its profile   */ {300, 40, 25},
     /* Wedge:   chip while the rack reloads          */ {200, 20, 25},
     /* Chord:   light, and it freezes                */ {200, 30, 25},
-    /* Anvil:   a cannon: slow, dear, and it lands   */ {500, 90, 45},
-    /* Cipher:  the whole of what it has             */ {400, 60, 28},
+    /* Anvil:   a cannon: slow, dear, and it lands   */ {440, 90, 45},
+    /* Cipher:  the whole of what it has             */ {400, 42, 28},
     /* Facet:   one of five, and five is the point   */ {300, 40, 25},
     /* Lattice: the weakest gun in the roster        */ {200, 20, 25},
 };
@@ -232,7 +232,7 @@ static const hull_profile profile[SIM_MAX_CLASSES] = {
     /* Chord   */ {0, 0,  2, 0, 1,  0, 1, 0, 0,  2, 0},
     /* Anvil: wins any fight it is allowed to have. One heavy round, the
        widest bomb in the game, and three repels to survive the wait.    */
-    /* Anvil   */ {0, 0,  0, 0, 0,  0, 0, 0, 0,  3, 1},
+    /* Anvil   */ {0, 0,  0, 0, 0,  0, 0, 0, 0,  2, 1},
     /* Cipher: the only hull with no rack. Fastest, thinnest, and it
        cannot afford a fight it did not choose.                          */
     /* Cipher  */ {0, 0,  0, 0, 0,  0, 0, 0, 0,  1, 2},
@@ -241,7 +241,7 @@ static const hull_profile profile[SIM_MAX_CLASSES] = {
     /* Facet   */ {0, 0,  4, 1, 0,  0, 0, 0, 0,  2, 0},
     /* Lattice: does not kill you, moves you. The deepest rack of both
        kinds, and a freezing bomb that fills a corridor.                 */
-    /* Lattice */ {0, 0,  0, 1, 0,  2, 0, 0, 1,  3, 3},
+    /* Lattice */ {0, 0,  0, 0, 0,  1, 0, 0, 1,  3, 2},
 };
 
 static void fill_profile(sim_ship_class *c, const hull_profile *p) {
