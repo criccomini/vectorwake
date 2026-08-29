@@ -146,6 +146,7 @@ local function frame(o)
             [3] = {name = "Vesper", label = "bot", ai = true, house = true},
         },
         ratings = o.ratings,
+        rated_from = o.rated_from,
         watchers = o.watchers,
         teams = o.teams or {},
         match = o.match,
@@ -317,10 +318,53 @@ check("and it is the winner's best net", wore ~= nil
       wore and wore.s or "nobody")
 
 -- What the match paid is not said here at all. It was, as BANKED and a rivet
--- in the corner, and it went where the wallet already is: an ending is about
--- the match, and a running total belongs on the page that spends it.
+-- in the corner, and both went with the shop. What stands in its place is the
+-- one number a match leaves behind: the rating, and what this match did to it.
 check("the payout is not on the ending", said("banked") == nil,
       table.concat(words(), " | "))
+
+-- --- what the match did to the ladder -------------------------------------
+--
+-- The rating is durable and a match is three minutes, so the ending is the
+-- one place a player is told what those three minutes were worth. The client
+-- subtracts it: the zone reports both pilots' rating after every rated death,
+-- so what is held here is exact, and the whistle's figure less the one
+-- latched at the last whistle is the answer.
+--
+-- Mid-fight it is not drawn at all. A rating is a standing rather than a
+-- running total, and a number climbing over somebody's head while they are
+-- being shot at is the shape the bounty had.
+do
+    local ended = {playing = false, left = 23, artifact = 1,
+                   score = {[0] = 8, [1] = 5}}
+    local RATED = {[0] = 1204, [1] = 1531, [2] = 1189, [3] = 1402}
+    local FROM = {[0] = 1216, [1] = 1508, [2] = 1189, [3] = 1409}
+    frame({match = ended, side_names = NAMES, side = 0,
+           ratings = RATED, rated_from = FROM})
+    check("the ending heads a column with the rating", said("rating") ~= nil,
+          table.concat(words(), " | "))
+    check("a pilot who climbed reads a signed gain", said("+23") ~= nil,
+          table.concat(words(), " | "))
+    check("and one who slid reads the loss", said("-12") ~= nil,
+          table.concat(words(), " | "))
+    -- A pilot the match did not move reads a zero rather than a blank: "this
+    -- changed nothing for you" is an answer, and an empty cell is not.
+    check("and one the match did not move reads nothing changed",
+          said("0") ~= nil, table.concat(words(), " | "))
+
+    -- Without the latch there is no column at all, which is what a client
+    -- that joined between the whistles sees.
+    frame({match = ended, side_names = NAMES, side = 0, ratings = RATED})
+    check("with nothing latched the column is not drawn",
+          said("rating") == nil, table.concat(words(), " | "))
+
+    -- And never during the match.
+    frame({match = {playing = true, left = 91, score = {[0] = 3, [1] = 2}},
+           side_names = NAMES, side = 0,
+           ratings = RATED, rated_from = FROM})
+    check("and it is not on screen while the match is running",
+          said("+23") == nil, table.concat(words(), " | "))
+end
 
 -- Nobody wears it in a match where nothing was shot down.
 room.kills = {[0] = 0, 0, 0, 0}

@@ -2225,6 +2225,13 @@ function update(self, dt)
             -- different beat: a roster arrives when somebody joins or leaves,
             -- and a rating changes on every rated death between two of them.
             ratings = net.ratings,
+            -- And what everybody was rated at when the match opened, which
+            -- the podium subtracts from the live figure to say what the
+            -- match did. Only the ending reads it: mid-fight a rating is a
+            -- standing rather than a running total, and a number climbing
+            -- over somebody's head while they are trying to fly is the shape
+            -- the bounty had.
+            rated_from = net.rated_from,
             -- The sides, as the zone is willing to describe them. A pilot's
             -- box names the one they are on only when the zone marked it
             -- public, so what may be said comes from here rather than from a

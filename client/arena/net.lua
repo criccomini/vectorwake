@@ -124,6 +124,17 @@ M.denied = nil
 M.lost = nil
 M.pilots = {}
 M.ratings = {}
+-- What everybody was rated at when this match opened, by ship.
+--
+-- A rating is durable and moves only through kills, and the zone reports both
+-- pilots' rating after every one, so this client's copy is exact. Latched at
+-- the whistle so the ending can say what the match itself did, which is the
+-- one number on the podium that outlives the match it is drawn over.
+--
+-- Nothing else is kept across the whistle. A player who arrives mid-match is
+-- latched where they were first seen, so their line reads from the point they
+-- had something to lose rather than from a match they were not in.
+M.rated_from = {}
 -- Kills involving this pilot that the zone has announced and the arena has
 -- not yet turned into feed lines. The feed reads these rather than the local
 -- simulation's death events, because prediction re-kills the same victim
@@ -556,6 +567,11 @@ local function on_roster(s)
             a = u16(string.byte(s, o + 10), string.byte(s, o + 11)),
         }
         ratings[ship] = rating
+        -- Where a pilot the ending has not seen before starts from. A seat
+        -- taken mid-match has nothing latched at the whistle, and a line
+        -- reading from zero would claim the whole of somebody's career as
+        -- this match's work.
+        if M.rated_from[ship] == nil then M.rated_from[ship] = rating end
         o = o + 13 + len
     end
     -- The watchers, after the ships: count, then label and name per row. No
@@ -790,12 +806,22 @@ local function on_match(s)
         local hi = u32(string.byte(s, at + 4, at + 7))
         artifact = lo + hi * 4294967296
     end
+    local was = M.match and M.match.playing
     M.match = {
         playing = flags % 2 == 1,
         left = string.byte(s, 3),
         score = score,
         artifact = artifact,
     }
+    -- The whistle that starts one, which is where the ratings are latched.
+    -- On the edge rather than on every message: this arrives four times a
+    -- second and a latch taken every time would be a latch of nothing.
+    if M.match.playing and not was then
+        M.rated_from = {}
+        for ship, rating in pairs(M.ratings) do
+            M.rated_from[ship] = rating
+        end
+    end
 end
 
 local function on_charge(s)

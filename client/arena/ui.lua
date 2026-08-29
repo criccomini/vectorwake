@@ -2063,7 +2063,9 @@ function M.player_step(delta, pilots, watchers, side, viewer_name)
     return M.inspect
 end
 
-local function scores(me, pilots, watchers, viewer_name, always)
+-- `moved` is what the match did to each pilot's rating, by ship, and is
+-- handed in only at the ending. See `podium`.
+local function scores(me, pilots, watchers, viewer_name, always, moved)
     -- Asked for, not assumed. Mid-fight this is the least useful thing on the
     -- screen and the feed still says who is killing whom, so it lives behind
     -- the same toggle your own loadout does.
@@ -2099,6 +2101,11 @@ local function scores(me, pilots, watchers, viewer_name, always)
     -- row is read. There were five, and the outer two were points and bounty:
     -- what a kill paid and what the next one would. Neither number exists.
     --
+    -- Four at the ending, where the outermost is what the match did to each
+    -- pilot's rating. Only there. A rating is a standing rather than a
+    -- running total, and a number climbing over somebody's head while they
+    -- are trying to fly is the shape the bounty had.
+    --
     -- Each is as wide as the widest thing actually in it, measured every
     -- frame against the heading as well as the numbers. Fixed offsets do not
     -- survive several columns in 248 points, so a column sized for the worst
@@ -2120,8 +2127,24 @@ local function scores(me, pilots, watchers, viewer_name, always)
         end
         return wide
     end
+    -- What the match did, as a signed figure, worked out before the columns
+    -- are measured because the widest of them is what the column is sized to.
+    -- A pilot whose rating did not move reads a dim zero rather than nothing:
+    -- "this match changed nothing for you" is an answer, and a blank is not.
+    if moved then
+        for i = 1, n do
+            local r = rows[i]
+            local by = (not r.watch) and r.i ~= nil and moved[r.i] or nil
+            r.moved = by and ((by > 0 and "+" or "") .. tostring(by)) or nil
+            r.moved_by = by
+        end
+    else
+        for i = 1, n do rows[i].moved, rows[i].moved_by = nil, nil end
+    end
     local aw, dw, kw = col_w("a", "A"), col_w("d", "D"), col_w("k", "K")
-    local ax = x + w - 12 * F.scale
+    local rw = moved and col_w("moved", "RATING") or 0
+    local rx = x + w - 12 * F.scale
+    local ax = moved and (rx - rw - GAP) or rx
     local dx = ax - aw - GAP
     local kx = dx - dw - GAP
     -- The marks sit in their own column left of the numbers rather than after
@@ -2147,6 +2170,13 @@ local function scores(me, pilots, watchers, viewer_name, always)
     -- in the box a row opens, because it is the same kind of fact as the two
     -- beside it and belongs where they are.
     head_col("assists", "A", ax, "right")
+    -- Not a sort control, unlike the three beside it. The ending sorts by the
+    -- side that took the match and by what each pilot did to the result, and
+    -- a heading that lit but changed nothing would be a button that lies.
+    if moved then
+        txt("RATING", rx, top + 14 * F.scale, small, pal.a(pal.DIM, 0.7),
+            "right")
+    end
     -- Hit boxes over the headings. Each takes its whole column and the gap to
     -- its left, so the four tile without overlapping and the labels, which
     -- are one or three characters wide, are not the target.
@@ -2257,7 +2287,8 @@ local function scores(me, pilots, watchers, viewer_name, always)
             -- watcher has not scored anything and three zeroes would say they
             -- had. One word instead, in the columns the numbers would have
             -- used, so the row is plainly a different kind of row.
-            txt("watching", ax, cy, small, pal.a(pal.DIM, 0.7), "right")
+            txt("watching", moved and rx or ax, cy, small,
+                pal.a(pal.DIM, 0.7), "right")
         else
             -- The one way to ask about a pilot. Published before the panel's
             -- own box below, which takes the wheel and would otherwise
@@ -2272,6 +2303,16 @@ local function scores(me, pilots, watchers, viewer_name, always)
             txt(tostring(r.k), kx, cy, num, pal.a(pal.INK, 0.85), "right")
             txt(tostring(r.d), dx, cy, num, pal.a(pal.INK, 0.85), "right")
             txt(tostring(r.a), ax, cy, num, pal.a(pal.INK, 0.85), "right")
+            -- Up in the green a kill of yours is already printed in, down in
+            -- the color the room uses for the other side, level in the ink
+            -- everything else on the row is set in.
+            if r.moved then
+                local col2 = pal.INK
+                local a2 = 0.6
+                if (r.moved_by or 0) > 0 then col2, a2 = pal.PAID, 0.95
+                elseif (r.moved_by or 0) < 0 then col2, a2 = pal.ENEMY, 0.9 end
+                txt(r.moved, rx, cy, num, pal.a(col2, a2), "right")
+            end
         end
         y = y + LINE * F.scale
     end
@@ -3865,6 +3906,29 @@ function END.band(m, names, x, y, w, sides, grow)
     end
 end
 
+-- What this match did to everybody's rating, by ship.
+--
+-- The client's own subtraction rather than a number off the wire. A rating
+-- moves only through rated deaths and the zone reports both pilots' rating
+-- after every one, so the copy this client holds is exact and the figure at
+-- the whistle less the figure at the last one is what the match was worth.
+--
+-- Rounded on each end rather than once at the difference. What a pilot sees
+-- on their own card is the rounded rating, and a movement worked out from the
+-- unrounded pair would be a point off the two numbers it is supposed to
+-- explain.
+local function rating_moves(o)
+    if not (o.ratings and o.rated_from) then return nil end
+    local out = {}
+    for ship, now in pairs(o.ratings) do
+        local was = o.rated_from[ship]
+        if was then
+            out[ship] = math.floor(now + 0.5) - math.floor(was + 0.5)
+        end
+    end
+    return out
+end
+
 local function podium(o, m, names)
     -- The room, ordered the way the ending reads it: the side that took the
     -- match first, whether or not it is this viewer's, and the best gun first
@@ -3979,7 +4043,7 @@ local function podium(o, m, names)
     board.x, board.w = x, w
     board.y = y + head + gap
     top_side = winner
-    scores(o.me, o.pilots, o.watchers, o.viewer_name, true)
+    scores(o.me, o.pilots, o.watchers, o.viewer_name, true, rating_moves(o))
     top_side = nil
     F.scale = was_scale
 end
