@@ -1,5 +1,18 @@
 # Landing, and the menu
 
+> **The play tab is gone, and the landing's zone stop is the games.** The
+> drawer carried a page of them and the landing carried a list of them, which
+> at home is the same games twice on one screen, each with its own cursor. What
+> that page held besides the games moved onto the tab row: the side you are on
+> is a stop, first in a room, and leaving is a stop in the slot before settings,
+> going one step from wherever you are standing. Flying, it hands the seat back
+> and the panel stays up; benched, it leaves the room for the stands and asks
+> first. So the row is ship, pilot, settings at home, and side, ship, leave,
+> settings in a room, with the ship only where a hull is not locked. Every note
+> below about a games page, a format strip, a sweep dial on a zone nobody is
+> serving, or a button hung off a row describes something that no longer
+> exists. See [decision 98](../architecture/decisions.md).
+
 > **The ship page is the roster.** Every note below about a kit, a shelf, a
 > build library, a wallet or a price describes a page that no longer exists.
 > Seven hulls are seven whole ships and the page is a list of them: one row a
@@ -129,32 +142,13 @@
 > right to make the room: pressing the key and pressing the x are one control
 > seen from either side.
 
-> **The play page is the games and nothing else.** No heading over the only list
-> on it, no player and robot counts beside each name, no roster under the rows,
-> and no DEPLOY key at the foot. A row is the way in, by a tap or by enter, and
-> its lit field and its press run edge to edge of the panel rather than stopping
-> at the row's own measure.
->
-> **A row is a name and its format.** Under the name, three small stacks in
-> the room band's label-over-value grammar: TEAMS, TIME and SCORING, with a
-> thin rule between them, so Team Battle reads 4 v 4, 3:00, kills. The words
-> ride the directory reply beside the
-> label, derived by the catalog from what each zone declares
-> (`ZoneDef::format`), so a tuning edit that moves the clock moves the strip
-> and the client never knows a format. Each game carried a sentence between
-> its name and its stacks until [decision 82](../architecture/decisions.md):
-> the strip answers what the sentence answered, in the zone's own numbers, and
-> the sentence was the half nobody had to read. A directory from before the
-> strip sends none and the row is its name alone. Mocked and chosen in
-> `.design/play-menu` (version I of three rounds).
-
 > **The landing is the game now.** Opening the client seats you in the stands
 > of a real melee room and draws the watcher's HUD; the front end is that
 > screen with the wordmark and a pulsing PLAY NOW key over its foot. The deck
 > this file describes below is gone, and so is the zone carousel that lived on
 > it. What is left of the menu is a panel you open over the stands, closable
-> like the one opened mid-fight, with the play tab back to being the list of
-> games. See [decision 61](../architecture/decisions.md) and the section
+> like the one opened mid-fight. See [decision 61](../architecture/decisions.md)
+> and the section
 > "Behind it, the sky the game is played under", which is now literally the
 > game. The reasoning below is kept where it still holds; where it describes a
 > deck, the stands are what exists.
@@ -238,8 +232,6 @@ row's value.
 
 ```
 vectorwake
-├ play        the zones a directory is running, each with a sentence saying
-│             what its game is
 ├ ship        the roster: one row a ship, with its name and the shape it
 │             presents on the first line, its flight as five bars against the
 │             rest of the roster on the second, and what it flies with on the
@@ -266,11 +258,25 @@ vectorwake
 │             one at all, per decision 73
 └ settings    sound · music · frames · fullscreen · bindings · about
 
-in a match
-├ play        the same list, because the way out of the game you are in is a
-│             button on that game's own row
+in a room
+├ side        which side you are on, and the page that crosses to the other:
+│             one row a side, in the room's own words and colors, with the
+│             count of people and machines apart. Only where the room has
+│             named some. See teams.md
+├ ship        the same roster, and only between matches, where a hull is not
+│             locked. A benched pilot has it whenever they are benched
+├ leave       one step out of wherever you are standing. Flying, the seat
+│             goes back and you are watching the same room, so the panel
+│             stays up and the corner's TAKE SEAT is the way in again.
+│             Benched, the room goes and the stands are what is left, which
+│             costs the match and is the one that asks first
 └ settings    the same page, because sound and fullscreen are needed there
 ```
+
+No games on either row. The landing's zone stop is the list of them, and there
+is no landing behind a room you are already in, so getting from a match to
+another game is leave, leave, and then pick one. See
+[decision 98](../architecture/decisions.md).
 
 Five inputs, which is exactly what a d-pad has, what a phone can draw as four
 arrows and a button, and what a keyboard already sends. It is two axes rather
@@ -430,38 +436,31 @@ down, enter, which had meant a play row a moment earlier, silently changed hull
 instead, because reopening had landed back in the ship list. The menu always
 opens on the tab row.
 
-## The play tab
+## The games, and the one list of them
 
-The zones, and nothing else. They were three sections at one point, zones and
-friends and community, because run together in one column they read as one list
-where a chat server is a game you could join and friends is a room with nobody
-in it. The community section left the game with the rest of the Discord door,
-per decision 73, and friends left it entirely, per decision 95. The heading
-that survived those two went as well: with one list left, a label reading
-"zones" over it was the interface naming what the reader could already see.
+The drawer had a tab for them, and it was the second list of the same games:
+the landing behind it already carried one under its zone stop, per decision 89.
+Two lists of one thing is two cursors and two ideas of which game the stands
+should show, so the tab went, per decision 98.
 
-Nothing on this page is a place outside the game any more, which is the rule
-the list wanted all along: a row is how the menu writes a place inside the
-game, and everything on the play page is one.
+`client/arena/directory.lua` asks a directory what is running. Opening the
+landing's zone list asks at once, and it re-asks every three seconds for as
+long as that list is the thing on screen, so a zone that comes up or goes down
+while somebody is reading it changes under them rather than sitting at whatever
+the first ask returned.
 
-`client/arena/directory.lua` asks a directory what is running. Opening the list
-asks at once, and it re-asks every three seconds for as long as the list is the
-thing on screen, so a zone that comes up or goes down while somebody is reading
-the page changes under them rather than sitting at whatever it was when the
-page loaded.
-
-It polls nowhere else. What is running matters while somebody is deciding
-which one to join, and not at all while they are three levels away setting the
-volume or ten minutes into a fight. Stopping is also what makes the next look
-start with a fresh ask: without that, coming back to the list after a match
-would show the fleet as it stood before the match began, and the interval would
-have to elapse before that corrected itself.
+It polls nowhere else. What is running matters while somebody is deciding which
+one to join, and not at all while they are three levels away setting the volume
+or ten minutes into a fight. Stopping is also what makes the next look start
+with a fresh ask: without that, coming back to the list after a match would
+show the fleet as it stood before the match began, and the interval would have
+to elapse before that corrected itself.
 
 What a row is called is the zone's label, and what a press on it names is the
 zone's own key. They were one string, so the game a player reads and the game a
-join and a rating are filed under could not differ: renaming
-Melee to Team Battle would have moved all of them. A zone that sets no label
-reads as its key, which is what every zone did before labels existed.
+join and a rating are filed under could not differ: renaming Melee to Team
+Battle would have moved all of them. A zone that sets no label reads as its
+key, which is what every zone did before labels existed.
 
 A row is a mode, not a machine. The reply lists the instances running each zone
 underneath it, already ordered so the head is the fullest one that still has
@@ -469,23 +468,21 @@ room, and joining takes that head. The address is never shown. The zone's name
 travels with the join, so arriving at an instance that has since changed game is
 a refusal rather than a surprise.
 
-One column: the name, with the format strip set under it on the same row. A
-sentence saying what the game is held that place first, and it went three ways
-before it landed there. Both on one line does not fit, because "everybody
-against everybody" beside "5 playing, 3 AI" is 45 characters against the 40 a
-phone has room for. The description then moved under the list, as a line about
-whichever row was selected, which is not reading three sentences: it is reading
-one at a time, a long way from the name it belongs to. What settled its place
-was dropping the count. How many people and how many machines are in a room is
-a fact about the next thirty seconds rather than about which game to pick, and
-taking it out left the row wide enough for a second line under the name. The
-strip is what stands on that line now, per decision 82, and the sentence is
-gone: the stacks say what it said, in the numbers the zone already declares.
+A row is the game's name with its format under it, reading as one line: 4 v 4,
+3:00. The words ride the directory reply beside the label, derived by the
+catalog from what each zone declares (`ZoneDef::format`), so a tuning edit that
+moves the clock moves the line and the client never knows a format. A sentence
+saying what the game is held that place first and went three ways before it
+landed here, and what settled it was dropping the count: how many people and how
+many machines are in a room is a fact about the next thirty seconds rather than
+about which game to pick. In the drawer the same words were three stacks under
+the name in the room band's label-over-value grammar, per decision 82, which is
+the layout that went with the page.
 
-The game you played last is marked and the cursor opens on it, so coming back is
-one press. A zone nobody is running is still a row, because a player is better
-off seeing that Chaos exists and is down than wondering whether they misread the
-list.
+The game the stands are showing is marked, so coming back is one press. A zone
+nobody is running is still a row, drawn a register back, because a player is
+better off seeing that a game exists and is down than wondering whether they
+misread the list.
 
 ### The landing
 

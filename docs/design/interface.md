@@ -196,11 +196,11 @@ worth 4.68:1 on the column at full alpha, so it clears the 4.5 small type wants
 with nothing left over and cannot survive being drawn on a lit row at all.
 Thirty-three call sites passed it a fraction anyway, and a third of the type in
 the menu went under the line: a tab row at 3.33, a games row's own figures at
-1.97, a field's own placeholder at 1.94, which is the box telling you what
-to type. Each of those was defensible on its own line. The number that condemned
-them is a function of the color, the alpha and the ground three files apart,
-which is why `client/tests/type_test.lua` exists and this paragraph is not
-enough on its own.
+1.97 before decision 98 took that page, a field's own placeholder at 1.94,
+which is the box telling you what to type. Each of those was defensible on its
+own line. The number that condemned them is a function of the color, the alpha
+and the ground three files apart, which is why `client/tests/type_test.lua`
+exists and this paragraph is not enough on its own.
 
 One alpha is left on type: `LIT.breath` on the row you are standing on, which
 rides on a name at full ink and floors at 0.74, worth 9.2:1 at the bottom of the
@@ -273,11 +273,12 @@ not the letter x.
 ## Marks
 
 Every mark is a picture of the thing, not a symbol somebody has to learn.
-The rail's play stop is a world with a ring around it; settings is a gauge off
-the panel in front of you, dark in the body and lit at the rim with a needle up
-among its graduations, because that stop is the one thing on the row about the
-machine rather than the match; leave is a doorway with the arrow going out the
-open side. The ship stop is the hull you are flying, drawn as itself.
+The rail's settings stop is a gauge off the panel in front of you, dark in the
+body and lit at the rim with a needle up among its graduations, because that
+stop is the one thing on the row about the machine rather than the match; leave
+is a doorway with the arrow going out the open side. The ship stop is the hull
+you are flying, drawn as itself. Play was a world with a ring around it, for as
+long as the menu carried the games.
 
 A drawing that appears in two places is one function. The weapon marks live
 in `marks.lua` because the corner stack and the touch pads both draw them,

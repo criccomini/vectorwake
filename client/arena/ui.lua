@@ -787,33 +787,6 @@ end
 
 -- A key with a word in it: the shape every page presses to do a thing.
 --
--- Laid out from its right edge and handing back its left, so a row can hang
--- two or three of them off its own end and let the name give way. `go` is
--- whether the thing it does is the encouraging one, which is the difference
--- between "accept" and "ignore" sitting side by side.
---
--- One drawing rather than one per page. The shop needs this shape for its
--- BUY and a row hangs its own keys off it, and two of these would be two
--- chances to change the look of a button and only remember one of them.
-local function row_button_w(label)
-    return text_w(label, TYPE.BODY * F.scale, MENU_FONT) + 26 * F.scale
-end
-
-local function row_button(bx, cy, h, label, go, hot, action, val, lev)
-    local bw = row_button_w(label)
-    local by = cy - h / 2
-    local edge = go and pal.FRIEND or pal.KEY_EDGE
-    rect(bx - bw, by, bw, h, pal.rgb(0x070b12, hot and 0.85 or 0.55))
-    if hot then rect(bx - bw, by, bw, h, pal.a(pal.FRIEND, LIT.CURSOR)) end
-    -- The wash goes down before the outline, so the stroke is the last
-    -- thing drawn on the shape rather than a line under a field.
-    key_box(bx - bw, by, bw, h, nil, edge)
-    txt(label, bx - bw / 2, cy, TYPE.BODY * F.scale,
-        go and pal.FRIEND or pal.INK, "center", MENU_FONT)
-    if action then hit(bx - bw, by, bw, h, action, val, lev) end
-    return bx - bw
-end
-
 local function population(x, y, players, bots, col)
     local right = x
     if bots and bots > 0 then
@@ -5321,24 +5294,15 @@ end
 pages.NOTE_PX = TYPE.BODY
 pages.NOTE_LINE = 19
 
--- What a row keeps back at its right for the keys it carries, if any.
-function pages.acts_w(r)
-    local out = 0
-    for _, a in ipairs(r.acts or {}) do
-        out = out + row_button_w(a.label) + 8 * F.scale
-    end
-    return out
-end
-
 -- The sentence, broken to the room the row has for it. `w` is the column.
 --
 -- Cased once over the whole sentence and drawn raw: left to `txt`, the case
 -- is applied to each line as it is drawn, and a sentence that wrapped came
 -- back with a capital in the middle of itself.
-function pages.note_lines(note, w, r)
+function pages.note_lines(note, w)
     if not note or note == "" then return nil end
     return wrapped(cased(note), pages.NOTE_PX * F.scale,
-                   math.max(40 * F.scale, w - pages.acts_w(r)), MENU_FONT)
+                   math.max(40 * F.scale, w), MENU_FONT)
 end
 
 -- One row of the stage: a mark for the one you are on, the name, and
@@ -5347,9 +5311,7 @@ end
 -- `hot` is the cursor, from either hand: the row the arrows are on while the
 -- stage has them, or the row a pointer is resting on.
 --
--- `idx` is the row's place in the page, which is what a press on it says, and
--- `warm` is which of the row's own buttons a pointer is resting on, if any.
-local function stage_row(x, y, w, h, r, hot, idx, warm)
+local function stage_row(x, y, w, h, r, hot)
     local col = r.mark and pal.FRIEND or pal.INK
     -- A row that stands for a side is written in that side's color, which is
     -- what makes this list the key to every plate in the arena. It outranks
@@ -5376,19 +5338,6 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
     -- above the list is set in.
     local tx = x
     local sel = hot or r.mark
-    -- Two kinds of row you cannot press, written a register back from the ones
-    -- you can: one nothing is serving yet, and one with no seat left.
-    --
-    -- It was `col = pal.a(col, 0.6)` and it did nothing at all, because the
-    -- two places that draw the name ask for `pal.a(col, label_a)` and `pal.a`
-    -- replaces an alpha rather than multiplying one. So a room nobody was
-    -- serving named itself at exactly the weight of a room you could join,
-    -- while the strip of figures under it did dim, through a multiplier that
-    -- worked, down to 1.97:1. The row said the wrong half of itself quietly.
-    -- A register carries it now, which is a thing that cannot be thrown away
-    -- by the next hand that sets an alpha.
-    local off = r.waiting or r.full
-    if off then col = pal.MUTE end
     -- The row you are already on breathes, unless the cursor is also on it, in
     -- which case the cursor has it and the row is still: one thing moves on a
     -- page, and it is the thing you are not looking at. Breath is the one
@@ -5415,11 +5364,6 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
     -- where the page stopped drawing, and the menu came up empty over the
     -- arena with nothing on screen saying why.
     local note = (h >= 44 * F.scale) and r.note ~= "" and r.note or nil
-    -- The format strip, where the row carries one and the list gave it the
-    -- room. It is the whole of the row under the name: a game had a sentence
-    -- between the two until the strip made it a second answer to a question
-    -- the stacks already answer, and no row carries both.
-    local strip = (h >= 58 * F.scale) and r.specs or nil
     -- A row you are choosing between, rather than one setting a value, sets
     -- its name half again as large, which is how the mocks draw both: it is
     -- the name that is being read, and what is under it is the reading.
@@ -5429,11 +5373,10 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
     -- global is nil, and the larger size this chooses never once applied.
     -- That is the bug .luacheckrc exists to catch, and it caught this one.
     local size = TYPE.ROW * F.scale
-    if (note or strip) and h >= 44 * F.scale then
+    if note and h >= 44 * F.scale then
         size = TYPE.LEAD * F.scale
     end
     local ly = note and (y + h * 0.36) or (y + h / 2)
-    if strip then ly = y + h * 0.25 end
     -- Drawn here unless the detail turns out not to fit beside it, in which
     -- case the pair is laid out as two lines below and this one is skipped.
     --
@@ -5456,78 +5399,18 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
         -- sentence fits is drawn exactly where it always was and a row whose
         -- sentence takes two grows into the room the list gave it, evenly,
         -- rather than hanging off the top of the gap.
-        local lines = pages.note_lines(note, w, r)
+        local lines = pages.note_lines(note, w)
         local ny = y + h * 0.68
             - (#lines - 1) * pages.NOTE_LINE * F.scale / 2
         for _, line in ipairs(lines) do
-            txt(line, tx, ny, pages.NOTE_PX * F.scale,
-                off and pal.MUTE or pal.READ,
+            txt(line, tx, ny, pages.NOTE_PX * F.scale, pal.READ,
                 nil, MENU_FONT, true)
             ny = ny + pages.NOTE_LINE * F.scale
         end
     end
-    if strip then
-        -- Label over value, a thin rule between the stacks: the room band's
-        -- own grammar (TIME, PLAYERS), reading down the same columns on
-        -- every game because the rows share one height and one order. The
-        -- words are the catalog's; this only lays them out. Values keep
-        -- their authored case, since "4 v 4" is data rather than a
-        -- sentence, and a row nothing is serving writes its facts a
-        -- register back, with the rest of itself.
-        --
-        -- About seven points of air over the name and seven under the
-        -- values, which is what the row had when a sentence sat between
-        -- them: it lost a line, so the two that are left closed up rather
-        -- than spreading into the gap.
-        local sx2 = tx
-        local right = x + w
-        for si, s in ipairs(strip) do
-            local sw2 = math.max(
-                text_w(string.upper(s[1] or ""), LBL_PX * F.scale, nil, true),
-                text_w(s[2] or "", 13 * F.scale, nil, true))
-            -- Whole stacks only, rule included. A drawer too narrow for the
-            -- next one drops it rather than running the strip under the
-            -- dial at the right.
-            local at2 = sx2 + (si > 1 and 15 * F.scale or 0)
-            if at2 + sw2 > right then break end
-            if si > 1 then
-                F.layer:seg(sx2, ry(y + h * 0.49), sx2, ry(y + h * 0.90),
-                            1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.45), true)
-            end
-            lbl(s[1], at2, y + h * 0.59,
-                pal.MUTE)
-            txt(s[2], at2, y + h * 0.81, TYPE.BODY * F.scale,
-                off and pal.MUTE or pal.READ, nil, nil, true)
-            sx2 = at2 + sw2 + 15 * F.scale
-        end
-    end
     -- The right hand side is data, so it stays in the face the numbers in
     -- flight are set in: a call sign, a count, a hull's name.
-    if r.acts then
-        -- What can be done to this row, as buttons at its right hand end. The
-        -- games list carries one: the way out of the seat you are flying, on
-        -- the row of the room it is in.
-        --
-        -- A button rather than a row of its own, because it is about the row it
-        -- sits on, and the row goes on meaning what every other row in the list
-        -- means. Drawn with `row_button`, so every key hung off a name in
-        -- this menu wears one shape.
-        local kh = math.min(h - 12 * F.scale, 26 * F.scale)
-        local edge = x + w
-        for k = #r.acts, 1, -1 do
-            local a = r.acts[k]
-            -- Published inside `row_button`, and before the row's own box, so
-            -- a press on the button is the button rather than the row under it.
-            edge = row_button(edge, y + h / 2, kh, a.label, a.go,
-                              warm == k, "row_act", idx, k) - 8 * F.scale
-        end
-    elseif r.waiting then
-        -- No count, because there is nothing to count. The instrument that
-        -- looks for a game says what the words did, in the room the numbers
-        -- would have taken, and it keeps saying it while the list refreshes
-        -- underneath: an arena can come back and this row is where it lands.
-        sweep_dial(x + w - 11 * F.scale, ly, 11 * F.scale)
-    elseif r.choice then
+    if r.choice then
         -- A setting drawn as its own range: one step per value, the one it
         -- is on filled. "half" is a word to read and hold against the word
         -- on the row above; three steps of four lit is a position, and a
@@ -6959,20 +6842,13 @@ function M.menu(v)
         for _, r in ipairs(v.rows) do
             if r.note then noted = true break end
         end
-        -- And a second line of room where a row carries its format strip:
-        -- the name, and the stacks under it. One height for the whole list,
-        -- as above, so the games read down the same columns.
-        local specced = false
-        for _, r in ipairs(v.rows) do
-            if r.specs then specced = true break end
-        end
         -- Whatever the longest sentence in the list needs beyond one line. A
         -- row is as tall as the tallest, so a list does not change pitch
         -- halfway down; the sentence that wraps is usually the only one, and
         -- the rows above it keep their own single line centered.
         local wrapped_extra = 0
         for _, r in ipairs(v.rows) do
-            local lines = pages.note_lines(r.note, lw, r)
+            local lines = pages.note_lines(r.note, lw)
             if lines and #lines > 1 then
                 wrapped_extra = math.max(wrapped_extra,
                                          (#lines - 1) * pages.NOTE_LINE)
@@ -6988,7 +6864,7 @@ function M.menu(v)
             if r.sect then heads = heads + 1 end
         end
         local SECT = pages.SECT * F.scale
-        local rowh = math.min((wrapped_extra + (specced and 70 or noted and 58
+        local rowh = math.min((wrapped_extra + (noted and 58
                                or (M.compact and 46 or 40))) * F.scale,
                               math.max(30 * F.scale,
                                        (room - heads * SECT)
@@ -7066,8 +6942,7 @@ function M.menu(v)
                 -- home screen, where the cursor belongs to the rail and the
                 -- stage is a preview of what the mark beside it holds.
                 stage_row(tx, y, lw, rowh, r,
-                          (focused and i == v.sel) or i == v.hover,
-                          i, v.row_hot == i and v.row_hot_act)
+                          (focused and i == v.sel) or i == v.hover)
                 if r.pick then
                     -- The whole width of the panel, which is what the lit
                     -- field covers: a press that missed by a margin the eye

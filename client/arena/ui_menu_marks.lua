@@ -200,6 +200,11 @@ function M.new(context)
         thumb(cx, cy, cls or 0, col, r / 17)
     end
 
+    -- Every mark the rail has ever asked for, including the ones no row asks
+    -- for now. Stops come and go: `team` and `leave` sat here unused from the
+    -- day the games list took the way out onto a row of its own until decision
+    -- 98 put both back on the tab row, and they were only there to put back
+    -- because nobody swept them. `zones` is the one in that state now.
     local MARKS = {zones = mark_zones, pilot = mark_pilot, team = mark_team,
                    settings = mark_settings, controls = mark_controls,
                    about = mark_about, leave = mark_leave}

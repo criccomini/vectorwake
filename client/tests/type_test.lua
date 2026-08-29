@@ -101,50 +101,36 @@ end
 -- --- the pages ------------------------------------------------------------
 
 local RAIL = {}
-for i, e in ipairs({{"play", "zones"}, {"ship", "ship"},
-                    {"pilot", "pilot"}, {"settings", "settings"}}) do
+for i, e in ipairs({{"ship", "ship"}, {"pilot", "pilot"},
+                    {"settings", "settings"}}) do
     RAIL[i] = {label = e[1], icon = e[2], index = i}
 end
 
 -- Rows chosen for the states that used to fail rather than for the states that
--- are easy to draw: a room nobody is serving, a room with no seat left, an
--- empty field wearing its placeholder.
---
--- A games row carries a strip and a shelf row carries a sentence, never both,
--- which is what the catalog builds and what `stage_row` draws. Handed both, it
--- lays one over the other, and a fixture that does so is measuring a page no
--- player is ever shown.
+-- are easy to draw: somebody else's name in their own side's color, a row
+-- wearing the mark for where you already are, an empty field wearing its
+-- placeholder.
 local PAGES = {
-    {"play", {at = "play", rail_sel = 1, rows = {
-        {sect = "games", label = "Team Battle", index = 1, pick = true,
-         players = 3, bots = 5, live = true,
-         specs = {{"teams", "4 v 4"}, {"time", "3 min"},
-                  {"scoring", "kills"}}},
-        {label = "Chaos", index = 2, pick = true, players = 1, bots = 1,
-         live = true, mark = true,
-         specs = {{"teams", "1 v 1"}, {"time", "one life"},
-                  {"scoring", "streak"}}},
-        {label = "Trial", index = 3, pick = true, waiting = true,
-         specs = {{"teams", "2 v 2"}, {"time", "5 min"}}},
-        {label = "Scrap", index = 4, pick = true, full = true,
-         specs = {{"teams", "4 v 4"}}},
+    {"teams", {at = "teams", rail_sel = 1, rows = {
+        {label = "Pylon", named = true, tint = 1, index = 1, pick = true,
+         detail = "3 + 1 AI", mark = true},
+        {label = "Caisson", named = true, tint = 2, index = 2, pick = true,
+         detail = "4"},
+        {label = "new team", detail = "yours", index = 3, pick = true},
     }}},
-    {"ship", {at = "ship", rail_sel = 2, rows = {
+    {"ship", {at = "ship", rail_sel = 1, rows = {
         {sect = "bomb", label = "Bomb bounce", index = 1, detail = "120",
          note = "a round that comes back"},
         {label = "Bomb prox", index = 2, detail = "300"},
         {label = "Bomb freeze", index = 3, detail = "900", mark = true},
     }}},
-    {"newbuild", {at = "newbuild", rail_sel = 2, depth = 3, newbuild = true,
-     home = true, new = {name = "", on = false, suggest = "Gunner"},
-     rows = {{label = "create", group = "keys", index = 1, pick = true}}}},
-    {"pilot", {at = "pilot", rail_sel = 3, depth = 2,
+    {"pilot", {at = "pilot", rail_sel = 2, depth = 2,
      pilot_card = {name = "Krait 4", claimed = true, online = true,
                    rivets = 310,
                    career = {kills = 3, deaths = 4, games = 7}},
      rows = {{label = "new name", index = 1, pick = true},
              {label = "log out", index = 2, pick = true}}}},
-    {"settings", {at = "settings", rail_sel = 4, rows = {
+    {"settings", {at = "settings", rail_sel = 3, rows = {
         {sect = "flight", label = "Invert thrust", index = 1, choice = 1,
          choices = 2, note = "which way the stick points"},
         {label = "Deadzone", index = 2, choice = 3, choices = 5},
@@ -190,8 +176,21 @@ for _, shape in ipairs(SHAPES) do
     end
 end
 
-check("the menu draws something on every page and shape",
-      #all > 200, #all .. " runs")
+-- Asked page by page rather than as one total. A total is a number that has to
+-- be re-chosen every time a page leaves the menu, and it passes a fixture set
+-- where one page draws nothing at all as long as the others are wordy enough.
+-- What this ever wanted to know is that none of them comes up blank.
+local blank = nil
+for _, shape in ipairs(SHAPES) do
+    for _, p in ipairs(PAGES) do
+        local n = 0
+        for _, t in ipairs(all) do
+            if t.page == p[1] and t.shape == shape[1] then n = n + 1 end
+        end
+        if n < 4 then blank = p[1] .. " on " .. shape[1] .. ": " .. n end
+    end
+end
+check("the menu draws something on every page and shape", not blank, blank)
 
 -- --- 1. the floor ---------------------------------------------------------
 

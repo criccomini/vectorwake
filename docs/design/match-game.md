@@ -15,10 +15,10 @@
 
 > **Built, for Melee.** Everything below through the week is running: three
 > minute matches with an intermission, seven preconstructed ships, six match
-> maps, and the six tabs. Capture and Holdfast are named here and not written;
-> so are parties and livery. Friends was built and then removed, per decision
-> 95. Alpha did not survive this document, and greens, gunners and turrets went
-> with it.
+> maps, and the menu's tab row. Capture and Holdfast are named here and not
+> written; so are parties and livery. Friends was built and then removed, per
+> decision 95. Alpha did not survive this document, and greens, gunners and
+> turrets went with it.
 >
 > It replaces the six-gripe proposal that used to live at `progression.md`,
 > which was a persistent layer bolted around an untouched Alpha.
@@ -565,19 +565,26 @@ and grids, and the menu tree was deliberately one narrow column that
 [menu.md](menu.md) says "falls apart at 390 points wide". So there are two
 surfaces now rather than one:
 
-- **Four tabs** at the front end, which is where you are between matches and
-  where there is time to read: play, ship, pilot, settings. Pilot is
+- **Three tabs** at the front end, which is where you are when you are not in a
+  room and where there is time to read: ship, pilot, settings. Pilot is
   your account, and your call sign at the far end of the row opens the same
   page. Standings was one of
   them until the week's table came out, and friends was one until decision 95.
   Upgrades was another, selling rungs for the kit, and it went with the kit;
-  the ship page is the roster now, one row a ship, and nothing behind it. See
-  [menu.md](menu.md) and [decision 64](../architecture/decisions.md).
-- **Two tabs in a match**: play and settings. Same row in the same
-  place, carrying what you can act on from a cockpit. It was settings and
-  leave once; the games list is on it now because the way out of the game you
-  are in is a button on that game's own row, and the roster stays off it
-  because a ship is locked for the match.
+  the ship page is the roster now, one row a ship, and nothing behind it. Play
+  was one until [decision 98](../architecture/decisions.md), because at home it
+  put the same games on the screen twice, once in a page and once in the
+  landing's zone stop behind it. See [menu.md](menu.md) and
+  [decision 64](../architecture/decisions.md).
+- **In a room**: the side you are on, the ship in the window where a hull is
+  not locked, the way out, and settings. Same row in the same place, carrying
+  what you can act on from where you are standing. Side appears with a room
+  that has named some, because a side is a thing a room has and at home the
+  stop would stand there saying nothing. The roster is off the row while a
+  match is being flown, because a ship is locked for one, and back on it
+  between matches and for as long as a pilot is benched. It was settings and
+  leave once, then the games list, which carried the way out as a button on the
+  row of the game you were flying; with the list gone, leaving is a stop again.
 
 Settings holds everything that is about the machine rather than about a
 match, in one column: audio, video, the control bindings, and about. Help
@@ -589,10 +596,11 @@ Pilot is the one tab about you rather than about a match: your call sign and
 its reroll, whether the account is claimed, and your career. It carried a
 wallet until there was nothing to spend.
 
-**It is one surface, and in a match it carries two tabs: play and
-settings.** Same chrome as the front end, full screen, with the tab row on top;
-what differs is which tabs are on it, not how any of it looks or works. That
-is the point. A player learns one screen and meets it in both places.
+**It is one surface, and in a room it carries the way out where the front end
+carries your account.** Same chrome as the front end, full screen, with the tab
+row on top; what differs is which tabs are on it, not how any of it looks or
+works. That is the point. A player learns one screen and meets it in both
+places.
 
 Discord is not a tab, or a button, or a page. It is not in the game at all,
 per `decision 73`: the site carries the link and the client carries no way out
@@ -618,9 +626,9 @@ in". Hiding the fight would be a lie about what is happening,
 which is the same reason the interface stays up today.
 
 None of this needs a new mechanism. `menu.home` already builds rows from the
-moment rather than declaring them, which is how the leave button appears on a
-game's row only while you are flying that game. The ship page is the same
-conditional in the other direction.
+moment rather than declaring them, which is how the way out takes the slot your
+call sign holds at home. The ship page is the same conditional in the other
+direction, on the row only while a hull is not locked.
 
 ### It stays navigable from a keyboard, a d-pad and a thumb
 
@@ -641,7 +649,8 @@ layout constraint worth having anyway.
 
 Two consequences for [menu.md](menu.md). Changing ship is a respawn today and
 becomes a front-end action, because a ship is locked for the match. And the
-games list stops being a menu node, because picking a mode is a screen now.
+games list stops being a menu node, because picking a game is what the
+landing's zone stop is for.
 
 ## The week
 

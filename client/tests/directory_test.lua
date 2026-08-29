@@ -221,13 +221,15 @@ check("and says so", dir.note ~= "", "note: " .. tostring(dir.note))
 
 -- --- what the player is actually shown -------------------------------------
 
--- The list is the whole way in, so an empty one has to say why in words
--- somebody can act on, and it has to say that waiting is one of the actions.
--- Reloading the client used to be the only way out of this screen, and a
--- player has no way to know that it is not still.
+-- The menu is not where a game is picked. The landing's zone stop is the one
+-- list of them, so nothing the directory says reaches a menu page: a fleet
+-- that is down says so on the waiting screen, which reads `directory.note`
+-- once the directory has answered, and a fleet that is up is a list under the
+-- landing's zone stop with the key that joins it underneath.
 --
--- It is a page with nothing in it rather than a row with nothing in it: a
--- blank row carrying the note was a row pretending to be a game.
+-- What is worth pinning here is that the drawer offers no game at all, with a
+-- list and without one. It carried the same games twice for a while, once in
+-- its own page and once on the landing behind it.
 package.loaded["arena.account"].name = ""
 package.loaded["arena.account"].status = function() return "" end
 package.loaded["arena.account"].aim = function() end
@@ -235,35 +237,24 @@ _G.sys = {get_config_string = function(_, d) return d or "" end,
           load = function() return {} end, save = function() return true end,
           get_save_file = function() return "" end}
 local menu = require("arena.menu")
-menu.show("play")
+menu.show()
 
-dir.rows = {}
-dir.note = "no servers found"
-dir.why = "retrying"
-local view = menu.view()
--- The play page carries one row that is not a game: the way to the community,
--- which is where somebody is already thinking about who to play with. So an
--- empty list is a page with nothing on it a player can join.
 local function games_on(v)
     local n = 0
     for _, r in ipairs(v.rows) do
-        if r.act == "join" then n = n + 1 end
+        if r.zone ~= nil or r.act == "join" then n = n + 1 end
     end
     return n
 end
-check("an empty list offers no game to join", games_on(view) == 0,
-      games_on(view) .. " games")
-check("and says why", view.empty and view.empty.head == dir.note,
-      "head: " .. tostring(view.empty and view.empty.head))
-check("and that it is still trying",
-      view.empty and view.empty.line ~= nil and view.empty.line ~= "",
-      "line: " .. tostring(view.empty and view.empty.line))
-
--- And a page with games on it has nothing to explain.
+dir.rows = {}
+dir.note = "no servers found"
+dir.why = "retrying"
+check("an empty fleet puts no game in the drawer",
+      games_on(menu.view()) == 0, games_on(menu.view()) .. " games")
 dir.rows = {{zone = "chaos", name = "chaos", count = "",
              players = 0, bots = 0, live = true}}
-check("a list with games in it says nothing", menu.view().empty == nil,
-      tostring(menu.view().empty))
+check("and neither does one with games in it",
+      games_on(menu.view()) == 0, games_on(menu.view()) .. " games")
 
 -- --- the rooms of a zone, across the servers holding them ------------------
 --
@@ -349,13 +340,13 @@ check("and the rooms that were numbered are still listed",
       torn ~= nil and #torn == 2 and torn[1].n == 1 and torn[2].n == 3,
       "rooms: " .. tostring(torn and #torn))
 
--- --- the format strip -------------------------------------------------------
+-- --- the format words -------------------------------------------------------
 --
--- The words a row's stacks say under TEAMS, TIME and SCORING travel on the
--- reply beside the label, in the catalog's own words. The client lays them
--- out and never derives one, so what matters here is that they land on the
--- row verbatim and that a directory from before the strip leaves the row
--- without one.
+-- What a game's format says under TEAMS, TIME and SCORING travels on the reply
+-- beside the label, in the catalog's own words. The client lays them out and
+-- never derives one, so what matters here is that they land on the row
+-- verbatim and that a directory that states none leaves the row bare. The
+-- landing's zone list is what reads them; see client/tests/landing_test.lua.
 
 _G.NEXT_REPLY = {zones = {{
     name = "melee", label = "Team Battle",
@@ -363,39 +354,13 @@ _G.NEXT_REPLY = {zones = {{
     players = 3, bots = 5, instances = {{address = "wss://x/m"}},
 }}}
 message(last(), "ignored")
-check("the format strip lands on the row in the catalog's words",
+check("the format lands on the row in the catalog's words",
       dir.rows[1] and dir.rows[1].teams == "4 v 4"
       and dir.rows[1].time == "3:00" and dir.rows[1].scoring == "kills",
       tostring(dir.rows[1] and dir.rows[1].teams))
-menu.show("play")
-local played = menu.view().rows
-check("and the play page reads it as stacks, in a fixed order",
-      played[1] and played[1].specs and #played[1].specs == 3
-      and played[1].specs[1][1] == "teams"
-      and played[1].specs[1][2] == "4 v 4"
-      and played[1].specs[2][1] == "time"
-      and played[1].specs[3][2] == "kills",
-      tostring(played[1] and played[1].specs and #played[1].specs))
-
--- A game is its name and its format now, and a directory still sending the
--- sentence that used to sit between them is a fleet that has not been
--- published yet. The row drops it rather than drawing what the catalog no
--- longer states.
-_G.NEXT_REPLY = {zones = {{
-    name = "melee", label = "Team Battle",
-    description = "the longer your run, the bigger the bounty on you",
-    teams = "4 v 4", time = "3:00", scoring = "kills",
-    players = 3, bots = 5, instances = {{address = "wss://x/m"}},
-}}}
-message(last(), "ignored")
-menu.show("play")
-local said = menu.view().rows[1]
-check("a row says nothing about the game beyond its name and its format",
-      said and said.note == nil and said.detail == nil,
-      tostring(said and (said.note or said.detail)))
 
 -- A directory that says nothing about a format is the fleet from before the
--- strip, and the row is its name alone.
+-- words existed, and the row carries none rather than inventing one.
 _G.NEXT_REPLY = {zones = {{
     name = "old", players = 0, bots = 0,
     instances = {{address = "wss://x/a1"}},
@@ -404,22 +369,17 @@ message(last(), "ignored")
 check("a directory that states no format leaves the row bare",
       dir.rows[1] and dir.rows[1].teams == "" and dir.rows[1].scoring == "",
       tostring(dir.rows[1] and dir.rows[1].teams))
-check("and the play page draws no strip for it",
-      menu.view().rows[1] and menu.view().rows[1].specs == nil,
-      tostring(menu.view().rows[1] and menu.view().rows[1].specs))
 
--- A zone whose mode has words for only part of the strip sends only that
--- part, and the stacks close up rather than holding an empty column.
+-- A zone whose mode has words for only part of it sends only that part.
 _G.NEXT_REPLY = {zones = {{
     name = "bare", scoring = "kills",
     players = 0, bots = 0, instances = {{address = "wss://x/b"}},
 }}}
 message(last(), "ignored")
-local bare = menu.view().rows[1]
-check("a partial format is the stacks it stated and no more",
-      bare and bare.specs and #bare.specs == 1
-      and bare.specs[1][1] == "scoring" and bare.specs[1][2] == "kills",
-      tostring(bare and bare.specs and #bare.specs))
+check("a partial format is what it stated and no more",
+      dir.rows[1] and dir.rows[1].scoring == "kills"
+      and dir.rows[1].teams == "" and dir.rows[1].time == "",
+      tostring(dir.rows[1] and dir.rows[1].scoring))
 
 -- Full is the instance's own answer to "am I out of room", and the row carries
 -- it so a full game keeps its counts instead of wearing the dial that means

@@ -10,7 +10,7 @@ engineering, see [docs/architecture](../architecture/README.md).
 | [weapons.md](weapons.md) | One model for everything that leaves a ship: fire patterns, projectile specs, and the recipes for every weapon in the original |
 | [audio.md](audio.md) | What the game sounds like: the kit, weapon rungs, what stays silent, and why a sound that answers your hands is engineered differently from one that describes a state |
 | [maps.md](maps.md) | Tile classes, the arenas, and what a map carries so a zone does not have to |
-| [menu.md](menu.md) | Landing in the game, the six tabs, changing hull, and the loading hand-off |
+| [menu.md](menu.md) | Landing in the game, the tab row and the pages under it, changing hull, and the loading hand-off |
 | [interface.md](interface.md) | The design language: color, type, shape, marks, layout, motion, and words, across the menu and the flight HUD |
 | [ai-players.md](ai-players.md) | AI opponents that fill empty arenas and yield to humans: styles, skill, the long-lived roster, and the population director |
 | [bot-ecosystem.md](bot-ecosystem.md) | Versioned bot pilots: stable identity, behavior profiles, competence axes, derived taste, rating, and the social boundary |

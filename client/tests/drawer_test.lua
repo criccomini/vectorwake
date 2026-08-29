@@ -33,16 +33,16 @@ local ui = harness.install({sim = setmetatable({
 }, {__index = function() return function() return 0 end end})})
 
 local RAIL = {}
-for i, n in ipairs({"play", "ship", "pilot", "settings"}) do
-    RAIL[i] = {label = n, icon = n == "play" and "zones" or n, index = i}
+for i, n in ipairs({"ship", "leave", "settings"}) do
+    RAIL[i] = {label = n, icon = n, index = i}
 end
 
 local function view(open)
     return {depth = 1, sel = 1, rail = RAIL, rail_sel = 1, focus = "rail",
-            home = false, scenery = true, closable = true, at = "play",
+            home = false, scenery = true, closable = true, at = "root",
             open = open, pilot = {name = "Krait 4", rivets = 0},
-            rows = {{label = "melee", detail = "3 + 5 AI", index = 1,
-                     pick = true, players = 3, bots = 5, live = true}}}
+            rows = {{label = "Apex", detail = "a dart", index = 1,
+                     pick = true}}}
 end
 
 -- One frame at a given moment. Returns the drawer's left edge, which is what
@@ -366,7 +366,7 @@ do
         ui.finish()
         for i = 1, state.n do
             local t = state.text[i]
-            if t and t.s == "Melee" then return t.x end
+            if t and t.s == "Apex" then return t.x end
         end
         return nil
     end
@@ -464,7 +464,7 @@ do
     local done = page(3, DEEP, 31.30)
     check("and stands whole once it has settled",
           has(done, "Wormhole") and has(done, "Gantry"), done)
-    check("and the page it left is gone", not has(done, "Melee"), done)
+    check("and the page it left is gone", not has(done, "Apex"), done)
 
     -- A word is cut at the nearest letter rather than dropped whole. The mesh
     -- can be cut anywhere and a glyph cannot, so what a run crossing the edge

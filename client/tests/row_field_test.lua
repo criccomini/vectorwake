@@ -57,7 +57,7 @@ local ui = harness.install()
 local pal = require("arena.palette")
 
 local RAIL = {}
-for i, n in ipairs({"zones", "ship", "settings", "pilot"}) do
+for i, n in ipairs({"team", "ship", "settings", "pilot"}) do
     RAIL[i] = {label = n, icon = n, index = i}
 end
 
@@ -137,19 +137,16 @@ end
 -- something on the page that is already yours.
 local PAGES = {
     {
-        name = "games",
+        name = "sides",
         view = function()
-            return {depth = 1, sel = 2, rail = RAIL, rail_sel = 1,
-                    focus = "stage", closable = true, rows = {
-                {label = "Chaos", index = 1, pick = true,
-                 specs = {{"teams", "1 v 1"}, {"time", "one life"},
-                          {"scoring", "streak"}}},
-                {label = "Team Battle", index = 2, pick = true,
-                 specs = {{"teams", "4 v 4"}, {"time", "3:00"},
-                          {"scoring", "kills"}}},
-                {label = "Shoal", index = 3, pick = true, mark = true,
-                 specs = {{"teams", "8 v 8"}, {"time", "5:00"},
-                          {"scoring", "kills"}}},
+            return {depth = 2, sel = 2, rail = RAIL, rail_sel = 1,
+                    focus = "stage", closable = true, at = "teams", rows = {
+                {label = "Pylon", named = true, tint = 1, index = 1,
+                 pick = true, detail = "3 + 1 AI"},
+                {label = "Caisson", named = true, tint = 2, index = 2,
+                 pick = true, detail = "4"},
+                {label = "new team", detail = "yours", index = 3, pick = true,
+                 mark = true},
             }}
         end,
     },
@@ -162,20 +159,6 @@ local PAGES = {
                  choices = 3},
                 {label = "Fullscreen", detail = "fill the screen", index = 2,
                  pick = true},
-            }}
-        end,
-    },
-    {
-        name = "play",
-        view = function()
-            return {depth = 2, sel = 1, rail = RAIL, rail_sel = 1,
-                    focus = "stage", closable = true, at = "play",
-                    rows = {
-                {label = "Team Battle", detail = "3 + 5 AI", index = 1,
-                 pick = true, players = 3, bots = 5, live = true,
-                 acts = {{label = "leave", go = true}}},
-                {label = "Duel", detail = "1 + 1 AI", index = 2,
-                 pick = true, players = 1, bots = 1, live = true},
             }}
         end,
     },
@@ -419,15 +402,12 @@ end
 -- --- a sentence too long for the column wraps rather than running on -------
 
 do
-    -- The row keeps its key clear too: the note wraps to what is left beside
-    -- it, which is what the leave key on the game you are flying needs.
     local long = "The longer your run, the bigger the bounty on you, and the "
         .. "longer the odds of getting home with it"
     local st = draw({depth = 1, sel = 1, rail = RAIL, rail_sel = 1,
                      focus = "stage", closable = true, rows = {
-        {label = "Team Battle", note = long, index = 1, pick = true,
-         acts = {{label = "leave"}}},
-        {label = "Chaos", index = 2, pick = true},
+        {label = "Apex", note = long, index = 1, pick = true},
+        {label = "Lattice", index = 2, pick = true},
     }})
     local pieces = 0
     for i = 1, st.n do
@@ -441,7 +421,7 @@ do
     local note_y, next_y
     for i = 1, st.n do
         local t = st.text[i]
-        if t and t.s == "Chaos" then next_y = t.y end
+        if t and t.s == "Lattice" then next_y = t.y end
         if t and t.s and t.s:find("odds", 1, true) then note_y = t.y end
     end
     check("and the line it grew into clears the row below it",

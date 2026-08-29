@@ -4870,3 +4870,56 @@ playing does not need one.
 fewer ships rather than a budget coming back. Or if the game needs something to
 earn, in which case it is something that is not strength: livery, a name, a
 mark. Strength behind a price is what came out.
+
+## 98. The drawer stops carrying the games
+
+**Status:** accepted, superseding the games half of
+[decision 66](#66-a-game-row-is-one-press-and-leaving-is-a-button-on-it)
+
+**Decision:** the play tab and the page under it are removed from the menu. The
+landing's zone stop is the one list of games, and the drawer is what is left:
+the ship, who you are, the side you are on, the way out, and settings.
+
+**Why:** Chris asked for it, and the reason is on the screen. Decision 89 put
+three stops on the landing because the drawer went undiscovered, and one of
+them is the games. From then on a player standing at home with the drawer open
+was looking at the same games twice, once in a page and once in the column
+behind it, each with its own cursor and its own idea of which game the stands
+should be showing. Two lists of one thing is two things to keep in step, and
+the attract loop was already reading both: whichever the drawer's cursor was
+on, or whichever the landing's stop last named.
+
+Two things on that page were not games, and both moved onto the tab row.
+
+The side you are on was its last row. It is a stop now, first in a room, and it
+appears only where the room has named sides, which is the same answer the page
+gave by leaving the row off.
+
+Leaving was a button on the row of the game you were flying, which decision 66
+put there on the argument that a stop beside the sound settings filed the way
+out of a game a page away from the game it was about. That argument needed a
+list to hang the button on, and there is no list. So leave is a stop again, in
+the slot before settings that decision 83 gave to whatever varies with where
+you are standing, and it goes one step: flying, it hands the seat back and
+leaves you watching the room, which costs nothing that TAKE SEAT cannot undo,
+so it does not ask; benched, it leaves the room for the stands, which costs the
+match and asks first. Both acts already existed and both were already reachable.
+What changed is that they answer to one label in one place.
+
+A pilot mid-match therefore has leave and settings, which is what a locked hull
+leaves anybody. Getting from a match into a different game costs two presses
+more than it did: hand the seat back, leave the room, then pick from the
+landing. That is the price of having the games in one place, and it is paid by
+the pilot least likely to be shopping for another game.
+
+**Cost:** the drawer no longer refreshes the directory by being open on the
+games, so the landing's open zone list is what keeps it fresh instead. A row
+vocabulary went with the page: the format strip of TEAMS, TIME and SCORING
+stacks, the sweep dial a zone nobody was serving wore, and the buttons a row
+could carry at its right hand end, along with the pointer hover and the press
+route behind those. The landing's own zone row says the format as one line, so
+what is lost is the stacked layout rather than the facts.
+
+**Reconsider if:** a second way into a game turns out to be wanted from inside
+one, which is the case this makes worse. The answer then is a stop that opens
+the landing rather than a page that lists games a second time.

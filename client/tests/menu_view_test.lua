@@ -948,7 +948,7 @@ do
         -- is not the thing being measured.
         return {depth = 2, sel = 1, rail = RAIL, rail_sel = 1,
                 focus = "rail", home = true, closable = false,
-                at = "play", banner = true, guest_dot = true,
+                at = "hangar", banner = true, guest_dot = true,
                 pilot = {name = "Vantage 7"},
                 -- The band at the foot, which takes its room out of the
                 -- list's: a fixture without one measures a page shorter than
