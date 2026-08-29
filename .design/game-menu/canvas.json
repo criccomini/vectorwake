@@ -1,0 +1,54 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "Pause column", "x": 0, "y": 0, "w": 1440, "h": 810 },
+    { "file": "SettingsOpen.dc.html", "title": "Pause column, settings open", "x": 1560, "y": 0, "w": 1440, "h": 810 },
+    { "file": "CornerPanel.dc.html", "title": "Corner panel", "x": 0, "y": 1000, "w": 1440, "h": 810 },
+    { "file": "CenterCard.dc.html", "title": "Center card", "x": 1560, "y": 1000, "w": 1440, "h": 810 },
+    { "file": "Radial.dc.html", "title": "Radial", "x": 3120, "y": 1000, "w": 1440, "h": 810 }
+  ],
+  "annotations": [
+    {
+      "id": "framing",
+      "x": 0,
+      "y": -230,
+      "w": 470,
+      "text": "Settings lives in the match and nowhere else; the landing keeps saying only who, where and what. So the whole question is the in-game menu: leave, change sides, settings, one system for mouse, keyboard, controller and touch. One honest constraint under every board: nothing pauses in a shared arena, so a menu is something you open while the fight goes on."
+    },
+    {
+      "id": "pause-column",
+      "x": 490,
+      "y": -170,
+      "w": 380,
+      "text": "The landing column's grammar carried into the match: stops for LEAVE, SETTINGS and SIDE, RESUME breathing where PLAY NOW breathes at home. Same muscle memory everywhere, targets big enough for a thumb. The dim is deliberately thin so the fight stays half-visible behind it."
+    },
+    {
+      "id": "settings-open",
+      "x": 1560,
+      "y": -170,
+      "w": 400,
+      "text": "The settings stop opens the way the ship stop opens at home: the panel climbs from its row. Since this is the only home settings has, the panel is the drawer's whole settings page, bands and all."
+    },
+    {
+      "id": "corner-panel",
+      "x": 0,
+      "y": 1860,
+      "w": 400,
+      "text": "The direction that most respects the no-pause truth: the corner key docks a panel and the fight stays live and undimmed beside it. Nothing is hidden while you fiddle. On a phone, though, the live fight is exactly what a stray thumb hits."
+    },
+    {
+      "id": "center-card",
+      "x": 1560,
+      "y": 1860,
+      "w": 380,
+      "text": "The shape every console game has taught: four rows in the middle of a dimmed screen. Compact, but settings becomes a second page in place, one level deeper than the column version needs."
+    },
+    {
+      "id": "radial",
+      "x": 3120,
+      "y": 1860,
+      "w": 380,
+      "text": "Hold the key and four choices ring your own ship; flick toward one and let go. Fastest on a stick or a thumb and invisible until held, but it is the one direction that costs a new grammar to learn, and settings still needs a panel after the flick. Drawn to bound the space."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}
