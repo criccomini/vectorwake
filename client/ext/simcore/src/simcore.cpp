@@ -421,6 +421,27 @@ int ClassKit(lua_State* L) {
 }
 
 
+// How deep this ship's rack is in one slot, which is a fact about its hull.
+//
+// It read `sh->kit` when a kit was a pilot's own thirty points and lived on
+// the ship. A hull is a whole ship now and the profile belongs to the class,
+// so the ship is the way in and the class is the answer. The corner stack and
+// the touch pads ask this every frame to draw the empty places beside the
+// full ones, which is why it stays an accessor rather than becoming a table
+// they would have to allocate and index.
+int ShipKit(lua_State* L) {
+    int i = CheckShip(L);
+    int slot = (int)luaL_checkinteger(L, 2);
+    int cls = g_cur->ships[i].cls;
+    if (slot < 0 || slot >= SIM_SLOT_COUNT || cls < 0
+        || cls >= g_cfg.class_count) {
+        lua_pushnumber(L, 0);
+        return 1;
+    }
+    lua_pushnumber(L, g_cfg.classes[cls].kit[slot]);
+    return 1;
+}
+
 int ShipMod(lua_State* L) {
     int i = CheckShip(L);
     int t = (int)luaL_checkinteger(L, 2);
@@ -1199,6 +1220,7 @@ const luaL_reg kFunctions[] = {
     {"ship_vel", ShipVel},
     {"ship_repel", ShipRepel},
     {"ship_up", ShipUp},
+    {"ship_kit", ShipKit},
     {"class_kit", ClassKit},
     {"class_flight", ClassFlight},
     {"hull_extent", HullExtent},

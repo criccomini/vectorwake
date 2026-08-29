@@ -282,6 +282,90 @@ for i, b in ipairs(bands) do
     end
 end
 
+-- --- every call into the compiled core has something to land on -----------
+--
+-- The Lua reaches the simulation through one table the extension registers,
+-- and nothing about that binding is checked until it is called. A function
+-- deleted from simcore.cpp with a caller left in Lua is a nil call that raises
+-- inside whatever frame reaches it first, and the harness cannot catch it:
+-- every test here stubs `_G.sim` with a table of its own, so the stub answers
+-- and the real gap never shows.
+--
+-- It shipped once. `sim.ship_kit` went when a kit stopped being a thing a ship
+-- carried, and three call sites in arena.script did not, so joining a game
+-- raised every frame and the client sat on "joining melee" forever with a
+-- healthy server on the other end.
+--
+-- Names only, read out of both sources. Whether the function does the right
+-- thing is a question for a test that runs it; this asks the one question no
+-- other test here can, which is whether it exists at all.
+do
+    local core = read("client/ext/simcore/src/simcore.cpp")
+
+    -- The registration table, `{"name", Fn},`, and the constants pushed with
+    -- `lua_setfield(L, -2, "NAME")` beside it.
+    local exported = {}
+    for name in core:gmatch('{"([%a_][%w_]*)",%s*[%a_][%w_]*}') do
+        exported[name] = true
+    end
+    for name in core:gmatch('lua_setfield%(L,%s*%-2,%s*"([%a_][%w_]*)"%)') do
+        exported[name] = true
+    end
+    check("the core exports a registration table", next(exported) ~= nil)
+
+    -- Set by the client rather than the core: `world.lua` hangs its own
+    -- helpers off the same table, so a name it defines is a name that exists.
+    local client_side = {}
+    for _, f in ipairs({"client/arena/world.lua", "client/arena/net.lua",
+                        "client/arena/arena.script"}) do
+        for name in read(f):gmatch("sim%.([%a_][%w_]*)%s*=") do
+            client_side[name] = true
+        end
+    end
+
+    -- Every file the client ships rather than a list to keep in step. A
+    -- module added next month reaches the same table and deserves the same
+    -- check without anybody remembering to name it here.
+    local sources = {}
+    local ls = io.popen("ls client/arena/*.lua client/arena/*.script "
+                        .. "client/render/*.render_script 2>/dev/null")
+    if ls then
+        for line in ls:lines() do sources[#sources + 1] = line end
+        ls:close()
+    end
+    check("the sweep found the client's sources", #sources > 5,
+          #sources .. " files")
+
+    -- Comments stripped first. Prose points at `sim.TRIG_*` and at the
+    -- header it was copied from, `sim/include/sim/sim.h`, and neither is a
+    -- call: the first names a family and the second is a path that happens to
+    -- read as one.
+    local function code_of(src)
+        local out = {}
+        for line in (src .. "\n"):gmatch("([^\n]*)\n") do
+            out[#out + 1] = line:gsub("%-%-.*$", "")
+        end
+        return table.concat(out, "\n")
+    end
+
+    local missing = {}
+    for _, f in ipairs(sources) do
+        for name in code_of(read(f)):gmatch("sim%.([%a_][%w_]*)") do
+            if not exported[name] and not client_side[name]
+                and not missing[name] then
+                missing[name] = f
+            end
+        end
+    end
+    local names = {}
+    for name, where in pairs(missing) do
+        names[#names + 1] = name .. " (" .. where .. ")"
+    end
+    table.sort(names)
+    check("every sim.* the client calls is exported by the core",
+          #names == 0, table.concat(names, ", "))
+end
+
 if fails > 0 then
     print(fails .. " failed")
     os.exit(1)

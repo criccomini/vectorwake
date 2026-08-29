@@ -286,15 +286,16 @@ end
 -- The charge kinds this pilot is actually carrying, in kind order, which is
 -- the order Q and W spend them in.
 --
--- Off the ship's own kit rather than off the arena's ceiling. The ceiling says
--- what a kit may hold and every hull in the zone shares it, so it named every
--- kind for everybody and bound keys to charges the pilot was not carrying. A
--- kit carries two kinds and which two is the pilot's choice, so the kit is the
--- only thing that can say which key spends what.
+-- Off the hull's own profile rather than off a zone-wide ceiling. A ceiling
+-- is what a rack may hold and every hull in the zone shares it, so it named
+-- every kind for everybody and bound keys to charges the pilot was not
+-- carrying. A hull carries two kinds and which two is the hull's, so the
+-- profile is the only thing that can say which key spends what.
 --
--- The kit, not the count in hand: the corner shows what is left, and binding
--- to that would move Q onto the burst the moment the last repel went, which is
--- a key that spends the wrong thing exactly when a fight is going badly.
+-- The profile, not the count in hand: the corner shows what is left, and
+-- binding to that would move Q onto the burst the moment the last repel went,
+-- which is a key that spends the wrong thing exactly when a fight is going
+-- badly.
 local function my_slots()
     local out = {}
     if watching then return out end
@@ -464,11 +465,11 @@ local function charge_row()
             -- "RPL" is three letters nobody has been taught.
             name = c and c.name or "charge",
             count = held_kit and held_kit.charge[k] or sim.ship_charge(me, k),
-            -- How many the kit put in the rack, so the row draws the empties
-            -- as well as the full ones. The kit's own number rather than the
-            -- arena's ceiling: the ceiling is what a kit may hold and is the
-            -- same fifteen for everybody, so the rail drew a pilot carrying
-            -- three repels as three of fifteen.
+            -- How deep this hull's rack is, so the row draws the empties as
+            -- well as the full ones. The hull's own number rather than a
+            -- zone-wide ceiling: a ceiling is the same fifteen for everybody,
+            -- so the rail drew a pilot carrying three repels as three of
+            -- fifteen.
             max = sim.ship_kit(me, sim.SLOT_CHARGE0 + k),
             -- How long until this kind may be thrown again, and how long it
             -- waits when it is. A burst shuts its own key behind it and the
