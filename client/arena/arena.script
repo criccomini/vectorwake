@@ -1694,6 +1694,15 @@ function update(self, dt)
         watching = net.watching
     end
 
+    -- A seat just taken has the hull's own profile on it, so tell the arena
+    -- what this pilot actually spent their credits on. Outside the joining
+    -- branch below, because a seat is also taken from the stands halfway
+    -- through a session, where nothing is joining any more.
+    if net.owes_build then
+        net.owes_build = false
+        menu.send_build(menu.class)
+    end
+
     -- A zone that accepts the socket but never sends a snapshot is as broken
     -- as one that refuses it, and on the web a connection to a dead port can
     -- hang without ever raising an error. Either way the player gets the menu

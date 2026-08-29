@@ -1408,6 +1408,16 @@ local function on_message(s)
         M.room = (lo and hi) and (lo + hi * 256) or nil
         if M.room == 0 then M.room = nil end
         M.connected = true
+        -- A fresh seat is dealt its hull's own profile, so a pilot who has
+        -- spent their credits differently has to say so. Flagged rather than
+        -- sent from here: this module is required by the menu that holds the
+        -- build, so it cannot ask for one. `arena.script` sees both and sends
+        -- it on the next frame.
+        --
+        -- Without this a returning pilot pressing PLAY NOW flies the shipped
+        -- profile and their own build never leaves the machine, which is the
+        -- shape of the bug the last kit shipped with.
+        M.owes_build = seat ~= 255
     elseif kind == S2C_SNAPSHOT then
         on_snapshot(s)
     elseif kind == S2C_KILL then
@@ -1733,8 +1743,13 @@ end
 -- its arithmetic wrong is corrected rather than refused, and one that lied
 -- gains nothing by it.
 function M.set_kit(cls, kit)
+    -- The slot space walked explicitly rather than with `#`, which counts a
+    -- border on a table keyed from zero and would answer differently for a
+    -- build with a gap in it than for one without.
+    local core = _G.sim
+    local slots = (core and tonumber(core.SLOT_COUNT)) or 23
     local spent = {}
-    for slot = 0, #kit do
+    for slot = 0, slots - 1 do
         local n = kit[slot]
         if n and n > 0 then
             spent[#spent + 1] = string.char(slot, n)

@@ -214,6 +214,33 @@ wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5000)})
 check("the welcome and the snapshot land", net.connected
       and net.stats.snaps == 1)
+-- A seat arrives on its hull's own profile, so the client owes the arena
+-- whatever its pilot spent their credits on. Flagged rather than sent from
+-- here, since this module is required by the menu that holds the build.
+--
+-- The bug this pins is the one the last kit shipped with: a returning pilot
+-- pressing PLAY NOW flew the shipped profile and their own build never left
+-- the machine.
+check("a fresh seat owes the arena a build", net.owes_build == true)
+net.owes_build = false
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = welcome(255)})
+check("and sitting out owes nothing, having no ship to spend on",
+      net.owes_build == false)
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = welcome(3)})
+check("while taking a seat back owes one again", net.owes_build == true)
+
+-- And what a build looks like on the wire: the hull it was spent on, a
+-- count of spent slots, then a slot and a count for each. Only the slots
+-- with something in them, because a build is mostly zeroes.
+local before = #wt.sent
+net.set_kit(2, {[0] = 0, [7] = 3, [19] = 1})
+check("a build goes out naming its hull", #wt.sent == before + 1)
+local kit_msg = wt.sent[#wt.sent]
+check("as spent slots rather than the whole vector",
+      kit_msg == string.char(10, 2, 2, 7, 3, 19, 1),
+      (kit_msg or ""):gsub(".", function(c)
+          return string.byte(c) .. " "
+      end))
 check("server lag telemetry reaches the readout",
       net.stats.server_rtt_ms == 80 and net.stats.jitter_ms == 5
       and net.stats.down_loss == 2
