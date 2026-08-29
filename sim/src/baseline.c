@@ -34,10 +34,10 @@
  * and `eff` reads it the same way whether the step is zero or not. */
 static const sim_class_units flight[SIM_MAX_CLASSES] = {
     /*        speed        thrust        rotation       energy      recharge */
-    /* Apex    */ {3600,0,3600, 190,0,190, 250,0,250, 1500,0,1500, 1150,0,1150},
-    /* Wedge   */ {2900,0,2900, 155,0,155, 205,0,205, 1900,0,1900, 1000,0,1000},
+    /* Apex    */ {3600,0,3600, 205,0,205, 250,0,250, 1500,0,1500, 1150,0,1150},
+    /* Wedge   */ {2900,0,2900, 155,0,155, 205,0,205, 1900,0,1900, 1020,0,1020},
     /* Chord   */ {2800,0,2800, 215,0,215, 310,0,310, 1550,0,1550, 1200,0,1200},
-    /* Anvil   */ {2650,0,2650, 145,0,145, 195,0,195, 2100,0,2100, 1150,0,1150},
+    /* Anvil   */ {2650,0,2650, 145,0,145, 195,0,195, 2100,0,2100, 1250,0,1250},
     /* Cipher  */ {3900,0,3900, 200,0,200, 235,0,235, 1400,0,1400, 1100,0,1100},
     /* Facet   */ {3050,0,3050, 175,0,175, 265,0,265, 1400,0,1400, 1100,0,1100},
     /* Lattice */ {3100,0,3100, 165,0,165, 240,0,240, 1750,0,1750, 1050,0,1050},
@@ -73,13 +73,13 @@ static const sim_class_units flight[SIM_MAX_CLASSES] = {
  *
  *                                        damage energy delay */
 static const int32_t gun_row[SIM_MAX_CLASSES][3] = {
-    /* Apex:    a fighter's, paired by its profile   */ {300, 40, 25},
-    /* Wedge:   chip while the rack reloads          */ {200, 20, 25},
+    /* Apex:    a fighter's, paired by its profile   */ {320, 40, 25},
+    /* Wedge:   chip while the rack reloads          */ {208, 20, 25},
     /* Chord:   light, and it freezes                */ {200, 30, 25},
-    /* Anvil:   a cannon: slow, dear, and it lands   */ {440, 90, 45},
-    /* Cipher:  the whole of what it has             */ {400, 42, 28},
+    /* Anvil:   a cannon: slow, dear, and it lands   */ {465, 90, 45},
+    /* Cipher:  the whole of what it has             */ {400, 58, 28},
     /* Facet:   one of five, and five is the point   */ {300, 40, 25},
-    /* Lattice: the weakest gun in the roster        */ {200, 20, 25},
+    /* Lattice: the weakest gun in the roster        */ {200, 26, 25},
 };
 
 /* Bomb, per hull: damage, blast radius in px, energy, ticks. Damage of zero
@@ -89,7 +89,7 @@ static const int32_t gun_row[SIM_MAX_CLASSES][3] = {
  *                                    damage blast energy delay */
 static const int32_t bomb_row[SIM_MAX_CLASSES][4] = {
     /* Apex    */ {750,  80, 300, 150},
-    /* Wedge:   the bay down the spine          */ {750, 128, 350, 120},
+    /* Wedge:   the bay down the spine          */ {750, 128, 310, 120},
     /* Chord   */ {750,  80, 300, 150},
     /* Anvil:   the widest, and the slowest     */ {750, 160, 400, 200},
     /* Cipher:  no rack, and it is the only one */ {  0,   0,   0,   0},
@@ -230,17 +230,21 @@ static const hull_profile profile[SIM_MAX_CLASSES] = {
     /* Chord: turns inside everything and outruns nothing. Three light
        rounds that stall a recharge, and a fuse so it need not be exact. */
     /* Chord   */ {0, 0,  2, 0, 1,  0, 1, 0, 0,  2, 0},
-    /* Anvil: wins any fight it is allowed to have. One heavy round, the
-       widest bomb in the game, and three repels to survive the wait.    */
+    /* Anvil: wins any fight it is allowed to have. One heavy round and
+       the widest bomb in the game, on the slowest hull there is.        */
     /* Anvil   */ {0, 0,  0, 0, 0,  0, 0, 0, 0,  2, 1},
     /* Cipher: the only hull with no rack. Fastest, thinnest, and it
        cannot afford a fight it did not choose.                          */
     /* Cipher  */ {0, 0,  0, 0, 0,  0, 0, 0, 0,  1, 2},
-    /* Facet: five rounds off two barrels, bouncing once, which is a kill
-       inside three tiles and one round beyond six.                      */
+    /* Facet: five rounds off two barrels, bouncing once, which is most
+       of a bar point blank and one round arriving at any real range.    */
     /* Facet   */ {0, 0,  4, 1, 0,  0, 0, 0, 0,  2, 0},
-    /* Lattice: does not kill you, moves you. The deepest rack of both
-       kinds, and a freezing bomb that fills a corridor.                 */
+    /* Lattice: does not kill you, moves you. The deepest rack in the
+       game, and a bouncing freezing bomb that fills a corridor.
+       Its rounds bounced too, and that was the whole roster's problem:
+       on the hull that fires the most of them, a bouncing gun is a room
+       where every miss keeps hunting. It won every bout of its first
+       tournament. See docs/design/ships.md.                             */
     /* Lattice */ {0, 0,  0, 0, 0,  1, 0, 0, 1,  3, 2},
 };
 

@@ -43,13 +43,13 @@ One row a hull, in the settings file's own units.
 
 | Class | Speed | Thrust | Rotation | Energy | Recharge |
 |---|---:|---:|---:|---:|---:|
-| Apex | 3600 | 190 | 250 | 1500 | 1150 |
-| Wedge | 2900 | 155 | 205 | 1900 | 1000 |
+| Apex | 3600 | 205 | 250 | 1500 | 1150 |
+| Wedge | 2900 | 155 | 205 | 1900 | 1020 |
 | Chord | 2800 | 215 | 310 | 1550 | 1200 |
-| Anvil | 2650 | 145 | 195 | 2100 | 1300 |
-| Cipher | 3900 | 200 | 235 | 1300 | 950 |
+| Anvil | 2650 | 145 | 195 | 2100 | 1250 |
+| Cipher | 3900 | 200 | 235 | 1400 | 1100 |
 | Facet | 3050 | 175 | 265 | 1400 | 1100 |
-| Lattice | 3100 | 165 | 240 | 1750 | 1250 |
+| Lattice | 3100 | 165 | 240 | 1750 | 1050 |
 
 Speed is tenths of a pixel a second, so the Cipher runs at 390 and the Anvil
 at 265. Thrust is tenths of the settings unit. Rotation counts 400 to a full
@@ -77,23 +77,24 @@ shipped roster names rung zero for every one of them.
 
 | Class | Gun damage | Energy | Delay | Bomb damage | Blast | Energy | Delay |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Apex | 300 | 40 | 25 | 750 | 80 | 300 | 150 |
-| Wedge | 200 | 20 | 25 | 750 | 128 | 350 | 120 |
+| Apex | 320 | 40 | 25 | 750 | 80 | 300 | 150 |
+| Wedge | 208 | 20 | 25 | 750 | 128 | 310 | 120 |
 | Chord | 200 | 30 | 25 | 750 | 80 | 300 | 150 |
-| Anvil | 500 | 90 | 45 | 750 | 160 | 400 | 200 |
-| Cipher | 400 | 60 | 28 | none | | | |
+| Anvil | 465 | 90 | 45 | 750 | 160 | 400 | 200 |
+| Cipher | 400 | 58 | 28 | none | | | |
 | Facet | 300 | 40 | 25 | 750 | 80 | 300 | 150 |
-| Lattice | 200 | 20 | 25 | 750 | 80 | 300 | 150 |
+| Lattice | 200 | 26 | 25 | 750 | 80 | 300 | 150 |
 
 The gun row is one round. What a pull actually throws is that times the hull's
 spray, and the extra rounds cost energy and cooldown on top, so the Facet's
 five are dearer and slower than the Apex's two rather than free.
 
-The damage numbers are the original's ladder read as fixed points rather than
-as rungs: it starts at 200 and adds 100 a level, so 200, 300, 400 and 500 are
-four hulls sitting at four places on one ladder. The bomb is 750 at every
-level in the original, which is why every rack here does the same damage and
-the blast radius is what separates them.
+The damage numbers started as the original's ladder read as fixed points
+rather than as rungs: it begins at 200 and adds 100 a level, so the roster was
+laid out on 200, 300, 400 and 500. Balance has moved four of them off those
+marks by a few percent, which is what a ladder read as fixed points is for.
+The bomb is 750 at every level in the original, which is why every rack here
+does the same damage and the blast radius is what separates them.
 
 The Cipher has no rack at all. It is the only one, the core has always been
 able to express it, and nothing until now used it.
@@ -108,10 +109,10 @@ points on. Nobody buys any of it.
 | Apex | spray 2 | plain | repel 2, burst 1 |
 | Wedge | plain | prox, shrapnel 2 | repel 1, burst 1 |
 | Chord | spray 3, freeze | prox | repel 2 |
-| Anvil | plain | plain | repel 3, burst 1 |
+| Anvil | plain | plain | repel 2, burst 1 |
 | Cipher | plain | no rack | repel 1, burst 2 |
 | Facet | spray 5, bounce | plain | repel 2 |
-| Lattice | bounce | bounce 2, freeze | repel 3, burst 3 |
+| Lattice | plain | bounce, freeze | repel 3, burst 2 |
 
 Spray is a count of rounds, so "spray 2" is two rounds abreast and everything
 else is a depth. Two rounds sit two and a quarter degrees apart, tight enough
@@ -182,7 +183,7 @@ drift apart again, and the sim's own tests hold the diagonal ceiling.
 ## What each ship is for
 
 **Apex** is the fighter, and the ship most players should be flying while they
-work out what they like. Third fastest, a pair of heavy rounds off one pull,
+work out what they like. Second fastest, a pair of heavy rounds off one pull,
 an ordinary bomb, and two repels to leave a fight it is losing. Nothing about
 it is the best in the roster and nothing about it is a weakness.
 
@@ -199,17 +200,22 @@ fuse on the bomb so it need not be exact. Freezing a recharge is what makes it
 dangerous: the Chord does not kill people, it stops them recharging while
 somebody else does.
 
-**Anvil** wins any fight it is allowed to have. One 500-damage round every 45
-ticks, the widest bomb in the game at ten tiles, the deepest energy pool and
-the best recharge. It is also the slowest thing here with the worst turn, so
-the whole question is whether it gets to have the fight. Three repels are how
-it survives the wait.
+**Anvil** wins any fight it is allowed to have. One 465-damage round every 45
+ticks, which is half again the hardest thing anybody else throws, the widest
+bomb in the game at ten tiles, and the deepest energy pool. It is also the
+slowest thing here with the worst turn, so the whole question is whether it
+gets to have the fight.
 
 **Cipher** is the fastest and thinnest ship in the game and the only one with
 no bomb rack. Nose-on it is 16 pixels of target; broadside it is the largest
-in the roster. Its gun is the whole of what it has, and its energy is the
+in the roster. Its gun is the whole of what it has and its pool is the
 smallest, so it cannot afford a fight it did not choose. Two bursts are its
 answer to being cornered.
+
+Its pool and its gun's price are the tightest coupling in the roster and the
+one the tournament found first: at 1300 energy and 60 a pull it drew dry in
+twenty-one rounds and recharged slower than its own trigger, which on a map
+with nowhere to run left it beating nothing at all.
 
 **Facet** fires five rounds off two barrels, fanned fifteen degrees apart,
 and they bounce. It is a shotgun. Point blank most of the fan lands on one
@@ -218,10 +224,15 @@ the rounds are a hull's width apart and one arrives. The bounce is what makes
 it a room-clearer rather than a duelist: five bouncing rounds fill a corridor,
 and it is the hull that wins one it cannot see down.
 
-**Lattice** does not kill you, it moves you. The weakest gun in the roster,
-bouncing rounds, a bomb that bounces twice and freezes, and the deepest rack
-of both charges: three repels and three bursts. It is the hull that decides
-where a fight happens, and it needs somebody else there to finish it.
+**Lattice** does not kill you, it moves you. The weakest gun in the roster, a
+bomb that bounces once and freezes, and the deepest rack in the game: three
+repels and two bursts. It is the hull that decides where a fight happens, and
+it needs somebody else there to finish it.
+
+It arrived with bouncing rounds on top of all that and won every single bout
+of its first tournament. A bouncing gun on the hull that fires the most rounds
+in the roster is a room where every miss keeps hunting, which is not area
+denial, it is the best gun in the game wearing the worst gun's numbers.
 
 ## Design rules that hold across the roster
 
@@ -262,6 +273,33 @@ roster against itself and reports the matrix. It is the primary balance
 question now: with no kit in the way, a hull that beats the field is a hull
 that beats the field, and there is nothing a pilot could have spent to answer
 it.
+
+Run it on both rooms. The pit is one box a pilot can see across, which
+flatters everything that wants to be close and charges nothing for being slow;
+the arena has cover and somewhere to run to. A hull whose weakness is written
+down as "slow" or "must choose its fights" only pays for it on the second, and
+a number from one room alone is a fact about that room.
+
+Where the shipped roster stands, mean of the two rooms at 24 bouts a pair:
+
+| hull | win% | pit | arena |
+|---|---:|---:|---:|
+| Anvil | 54.6 | 51.0 | 58.3 |
+| Lattice | 51.4 | 46.9 | 55.9 |
+| Cipher | 51.2 | 52.8 | 49.7 |
+| Wedge | 50.9 | 51.7 | 50.0 |
+| Chord | 49.7 | 51.7 | 47.6 |
+| Facet | 46.9 | 52.8 | 41.0 |
+| Apex | 45.4 | 43.1 | 47.6 |
+
+A row is 144 bouts and worth about eight points either way, so the order
+inside that band is not meaningful and the band is. It opened at 28 to 90.
+
+The largest single correction was not a hull. Melee charged a whole base
+cooldown for every round past the first, which was written when spray was a
+rung on a shelf and a cheaper price made it an upgrade nobody could decline.
+Nobody buys spray now, so the same number was a tax on the three ships that
+have barrels, and it put all three in the bottom three on both rooms.
 
 ## Open questions
 

@@ -4847,6 +4847,15 @@ have spent to answer a bad matchup, so `calibrate hulls` is the primary harness
 now and the kit's profile experiment, with its ten preregistered marginal-pip
 contrasts, is gone with the question it answered.
 
+The first roster written against it came out between 28% and 90%, and four
+measured passes brought it to 45 to 55. The largest single correction was not a
+hull: melee charged a whole base cooldown for every round of spray past the
+first, which was the right price for a rung anybody could buy and a tax on the
+three ships that have barrels once nobody could. Every spray hull was in the
+bottom three on both rooms, in order. That is the shape of mistake this change
+invites, and it is worth naming: a number tuned against a shop is a number to
+re-derive, not to keep.
+
 A pilot on two kills looks exactly like a pilot on none, since the bounty over
 a hull was the only thing that said otherwise below the streak threshold. Chris
 accepted that: the streak at three is the one thing this game says about how
