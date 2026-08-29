@@ -162,10 +162,26 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
              * snapshot. */
             w8(&w, sh->multi_off);
             w16(&w, sh->btn_prev);
-            /* The profile is not here. A respawn re-deals from the class, and
-             * the class is in the settings both ends already hold, so sending
-             * it per ship per snapshot would be sending the same twenty-three
-             * bytes about a Wedge to everybody flying a Wedge. */
+            /* And the build, which is here because a respawn re-deals from
+             * it inside the step: a prediction rebuilt from a snapshot that
+             * left it out would put the owner back on an empty frame the
+             * moment they died, and be corrected a tick later, every death.
+             *
+             * Written as the slots that were actually spent rather than as
+             * the whole vector, because a build is mostly zeroes: seven
+             * credits cannot reach more than seven of twenty-three slots. A
+             * credit count fits in three bits and a slot index in five, so
+             * one spent slot is one byte, and the worst build anybody can
+             * afford costs eight of them instead of twenty-three. At the
+             * whole-state shape, which carries every ship's tail, that is
+             * the difference between fitting the buffer and not. */
+            uint32_t spent = 0;
+            for (int k = 0; k < SIM_SLOT_COUNT; k++)
+                if (sh->kit[k]) spent++;
+            w8(&w, spent);
+            for (int k = 0; k < SIM_SLOT_COUNT; k++)
+                if (sh->kit[k])
+                    w8(&w, (uint32_t)((k << 3) | (sh->kit[k] & 7)));
         }
     }
 
@@ -340,6 +356,23 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
             sh->multi_off = (uint8_t)r8(&r);
             if (sh->multi_off > 1) return -1;
             sh->btn_prev = (uint16_t)r16(&r);
+            /* The build, as the slots that were spent. Refused rather than
+             * fitted when it does not add up: this function has no settings
+             * to fit against, and a snapshot carrying an unaffordable build
+             * is a broken sender rather than a pilot to be corrected. Every
+             * honest path in has already been through `sim_kit_fit`. */
+            uint32_t spent = r8(&r);
+            if (spent > SIM_KIT_CREDITS) return -1;
+            for (uint32_t k = 0; k < spent; k++) {
+                uint32_t word = r8(&r);
+                uint32_t slot = word >> 3, n = word & 7;
+                /* A slot named twice would let a sender smuggle a count past
+                 * the budget check below one byte at a time. */
+                if (slot >= SIM_SLOT_COUNT || n == 0 || sh->kit[slot])
+                    return -1;
+                sh->kit[slot] = (uint8_t)n;
+            }
+            if (sim_kit_cost(sh->kit) > SIM_KIT_CREDITS) return -1;
         }
     }
 

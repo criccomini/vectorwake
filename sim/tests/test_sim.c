@@ -1960,7 +1960,7 @@ static void test_lifecycle(sim_map *m, const sim_settings *base) {
         s.ships[0].charge[SIM_CHARGE_REPEL] = 1;
         int32_t foe_y = s.ships[1].y;
         CHECK(s.ships[0].y != s.ships[0].spawn_y, "the pilot had flown off");
-        CHECK(sim_set_ship_class(&s, &cfg, 0, ANVIL) == 0, "the hull changed");
+        CHECK(sim_set_ship_class(&s, &cfg, 0, ANVIL, NULL) == 0, "the hull changed");
         CHECK(s.ships[0].cls == ANVIL, "into the one asked for");
         CHECK(s.ships[0].y == s.ships[0].spawn_y, "back at the start");
         CHECK(s.ships[0].vx == 0 && s.ships[0].vy == 0, "and at rest");
@@ -1973,8 +1973,8 @@ static void test_lifecycle(sim_map *m, const sim_settings *base) {
               "with a full bar of the new ship");
         CHECK(s.ships[1].y == foe_y, "and nobody else moved");
         CHECK(s.ships[0].team == 0, "and you are still on your own team");
-        CHECK(sim_set_ship_class(&s, &cfg, 9, APEX) == -1, "no such ship");
-        CHECK(sim_set_ship_class(&s, &cfg, 0, 99) == -1, "no such class");
+        CHECK(sim_set_ship_class(&s, &cfg, 9, APEX, NULL) == -1, "no such ship");
+        CHECK(sim_set_ship_class(&s, &cfg, 0, 99, NULL) == -1, "no such class");
     }
 
     /* Changing sides is the same respawn under the same gate, and it takes
@@ -2047,12 +2047,12 @@ static void test_lifecycle(sim_map *m, const sim_settings *base) {
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         s.ships[0].up[SIM_UP_SPEED] = 2;
         s.ships[0].energy -= 1;
-        CHECK(sim_set_ship_class(&s, &cfg, 0, ANVIL) == -1,
+        CHECK(sim_set_ship_class(&s, &cfg, 0, ANVIL, NULL) == -1,
               "a damaged pilot cannot swap hull");
         CHECK(s.ships[0].cls == APEX, "and is left in the one they had");
         CHECK(s.ships[0].up[SIM_UP_SPEED] == 2, "with what they had collected");
         step_n(&s, &cfg, 0, 0, 40);      /* recharge to the top */
-        CHECK(sim_set_ship_class(&s, &cfg, 0, ANVIL) == 0,
+        CHECK(sim_set_ship_class(&s, &cfg, 0, ANVIL, NULL) == 0,
               "and can once the bar is full again");
     }
 
@@ -2064,7 +2064,7 @@ static void test_lifecycle(sim_map *m, const sim_settings *base) {
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         s.ships[0].alive = 0;
         s.ships[0].respawn_at = 200;
-        CHECK(sim_set_ship_class(&s, &cfg, 0, ANVIL) == -1,
+        CHECK(sim_set_ship_class(&s, &cfg, 0, ANVIL, NULL) == -1,
               "a dead pilot cannot swap hull");
         CHECK(s.ships[0].respawn_at == 200, "and still owes the full wait");
     }
@@ -2077,7 +2077,7 @@ static void test_lifecycle(sim_map *m, const sim_settings *base) {
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         s.ships[0].up[SIM_UP_ENERGY] = 4;
         s.ships[0].energy = sim_eff_max_energy(&cfg.classes[APEX], &s.ships[0]);
-        CHECK(sim_set_ship_class(&s, &cfg, 0, APEX) == 0, "asking for it succeeds");
+        CHECK(sim_set_ship_class(&s, &cfg, 0, APEX, NULL) == 0, "asking for it succeeds");
         CHECK(s.ships[0].up[SIM_UP_ENERGY] == 4, "and costs nothing");
     }
 
@@ -4531,7 +4531,8 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
                 if (action == 0)
                     sim_set_ship_class(&s, &mixed, i,
                                        (uint8_t)(next_random(&random)
-                                                 % mixed.class_count));
+                                                 % mixed.class_count),
+                                       NULL);
                 else if (action == 1)
                     sim_set_ship_team(&s, &mixed, i,
                                       (uint8_t)(next_random(&random) % 3));
@@ -4896,7 +4897,14 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
         static sim_state full;
         memset(&full, 0, sizeof full);
         full.ship_count = SIM_MAX_SHIPS;
-        for (int i = 0; i < SIM_MAX_SHIPS; i++) full.ships[i].active = 1;
+        for (int i = 0; i < SIM_MAX_SHIPS; i++) {
+            full.ships[i].active = 1;
+            /* The dearest build to send is not the dearest build to fly: a
+             * spent slot costs a byte whatever it holds, so seven credits in
+             * seven different slots is the widest a pilot can make this,
+             * and seven in one slot is the narrowest. */
+            for (int k = 0; k < SIM_KIT_CREDITS; k++) full.ships[i].kit[k] = 1;
+        }
         full.weapon_count = SIM_MAX_WEAPONS;
         full.flag_count = SIM_MAX_FLAGS;
 
@@ -4941,18 +4949,33 @@ static void test_kits_and_matches(const sim_settings *base) {
               "which for the brawler is five rounds at a pull");
 
         /* A slot that would overflow the bits it is packed into is clamped
-         * rather than wrapping, whatever a zone writes into a profile. */
+         * rather than wrapping, whatever a zone writes into a profile. Held
+         * inside the budget on its own, so what is being read here is the
+         * ceiling rather than the purse. */
         sim_settings fat = kc;
+        memset(fat.classes[FACET].kit, 0, SIM_SLOT_COUNT);
         fat.classes[FACET].kit[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] = 60;
-        fat.classes[FACET].kit[SIM_SLOT_STAT(SIM_UP_SPEED)] = 60;
         static sim_state f;
         sim_init(&f, 3);
         int fid = sim_spawn(&f, FACET, 0, 8192, 8192, 0, &fat);
         CHECK(sim_mod_get(f.ships[fid].mods[SIM_TRIG_GUN], SIM_MOD_MULTI)
                   == SIM_MOD_MULTI_MAX,
               "an overlong spray clamps to what the word holds");
-        CHECK(f.ships[fid].up[SIM_UP_SPEED] == SIM_UP_STEPS,
-              "and an overlong stat to what the ladder holds");
+
+        /* And a profile nobody could afford is cut to something they can,
+         * which is the second gate and the one a budget adds: every slot is
+         * inside its own ceiling here and the sum still is not. */
+        sim_settings rich = kc;
+        memset(rich.classes[FACET].kit, 0, SIM_SLOT_COUNT);
+        rich.classes[FACET].kit[SIM_SLOT_STAT(SIM_UP_SPEED)] = SIM_UP_STEPS;
+        rich.classes[FACET].kit[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 4;
+        static sim_state g;
+        sim_init(&g, 3);
+        int gid = sim_spawn(&g, FACET, 0, 8192, 8192, 0, &rich);
+        CHECK(sim_kit_cost(g.ships[gid].kit) == SIM_KIT_CREDITS,
+              "a profile over budget is fitted to the budget");
+        CHECK(g.ships[gid].up[SIM_UP_SPEED] < SIM_UP_STEPS,
+              "and the tallest slot is what pays for it");
 
         /* A rung the hull's ladder does not have is a rung it does not climb
          * to, so a profile reaching past the end of one costs a rung rather
@@ -4978,6 +5001,94 @@ static void test_kits_and_matches(const sim_settings *base) {
               "with the profile re-dealt, add-ons and all");
         CHECK(sh->charge[SIM_CHARGE_REPEL] == 1,
               "and exactly the ammunition they had left");
+    }
+
+    /* A pilot spends their own credits, and what they spent is what a death
+     * hands back. The whole point of a build living on the ship rather than
+     * on the class: a respawn happens inside the step, where there is nobody
+     * to ask what this pilot chose. */
+    {
+        sim_settings kc = *base;
+        static sim_state s;
+        sim_init(&s, 3);
+        const int APEX_ = 0;
+        int id = sim_spawn(&s, APEX_, 0, 8192, 8192, 0, &kc);
+        sim_ship *sh = &s.ships[id];
+
+        uint8_t mine[SIM_SLOT_COUNT];
+        sim_kit_default(&kc, APEX_, mine);
+        CHECK(sim_kit_cost(mine) == 4,
+              "the Apex arrives on the four credits its profile spends");
+
+        /* Three of the four moved off the rack and onto the gun: an Apex
+         * that fires four rounds and carries one repel. */
+        memset(mine, 0, sizeof mine);
+        mine[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] = 3;
+        mine[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 1;
+        CHECK(sim_set_ship_kit(&s, &kc, (uint8_t)id, mine) == 0,
+              "a pilot may spend their credits their own way");
+        CHECK(sim_mod_get(sh->mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 3,
+              "and the frame is dealt from what they spent");
+        CHECK(sh->charge[SIM_CHARGE_REPEL] == 1,
+              "the rack clamped down to the build, never up");
+        CHECK(sh->charge[SIM_CHARGE_BURST] == 0,
+              "and a kind they stopped paying for is gone");
+
+        /* Editing is not a reload. Spend the rack, ask for it back. */
+        sh->charge[SIM_CHARGE_REPEL] = 0;
+        CHECK(sim_set_ship_kit(&s, &kc, (uint8_t)id, mine) == 0,
+              "the same build again is allowed");
+        CHECK(sh->charge[SIM_CHARGE_REPEL] == 0,
+              "and hands back no ammunition at all");
+
+        /* A death re-deals the build the pilot chose, not the hull's row. */
+        sh->alive = 0;
+        sh->energy = 0;
+        sh->respawn_at = 1;
+        step_n(&s, &kc, 0, 0, 2);
+        CHECK(sh->alive, "the pilot comes back");
+        CHECK(sim_mod_get(sh->mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 3,
+              "on their own build rather than the hull's");
+
+        /* Nobody can outspend the budget, whatever they send. */
+        uint8_t greedy[SIM_SLOT_COUNT];
+        memset(greedy, 0, sizeof greedy);
+        for (int k = 0; k < SIM_SLOT_COUNT; k++) greedy[k] = 9;
+        CHECK(sim_set_ship_kit(&s, &kc, (uint8_t)id, greedy) == 0,
+              "an impossible build is taken rather than refused");
+        CHECK(sim_kit_cost(sh->kit) == SIM_KIT_CREDITS,
+              "and fitted to exactly what a pilot has to spend");
+        for (int k = 0; k < SIM_SLOT_COUNT; k++)
+            CHECK(sh->kit[k] <= sim_slot_cap(&kc, sh->cls, (uint8_t)k),
+                  "with every slot inside its own ceiling");
+
+        /* A build crosses a hull change with the caller, because a build
+         * belongs to a hull and only the caller holds both rows. */
+        uint8_t bomber[SIM_SLOT_COUNT];
+        memset(bomber, 0, sizeof bomber);
+        bomber[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_SHRAPNEL)] = 2;
+        sh->energy = sim_eff_max_energy(&kc.classes[sh->cls], sh);
+        CHECK(sim_set_ship_class(&s, &kc, (uint8_t)id, 1, bomber) == 0,
+              "a pilot climbs into a Wedge with a Wedge's build");
+        CHECK(sim_mod_get(sh->mods[SIM_TRIG_BOMB], SIM_MOD_SHRAPNEL) == 2,
+              "and arrives carrying what they spent on it");
+    }
+
+    /* Every hull the game ships is affordable on the budget, which is the
+     * claim the roster makes and the one thing that would quietly stop being
+     * true if somebody wrote a richer profile. */
+    {
+        sim_settings kc = *base;
+        for (uint8_t c = 0; c < kc.class_count; c++) {
+            uint8_t row[SIM_SLOT_COUNT];
+            memcpy(row, kc.classes[c].kit, sizeof row);
+            CHECK(sim_kit_cost(row) <= SIM_KIT_CREDITS,
+                  "a shipped profile spends no more than a pilot has");
+            uint8_t fitted[SIM_SLOT_COUNT];
+            sim_kit_default(&kc, c, fitted);
+            CHECK(memcmp(row, fitted, sizeof row) == 0,
+                  "so fitting one changes nothing about it");
+        }
     }
 
     /* A match opens with everybody home, whole, and reloaded. This is the

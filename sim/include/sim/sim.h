@@ -534,8 +534,29 @@ typedef enum {
                               + SIM_TRIG_COUNT * SIM_MOD_COUNT \
                               + SIM_MAX_CHARGES)
 /* Steps a stat's ladder holds. A profile names how many of them a hull
- * carries; nobody buys one. See docs/design/ships.md. */
+ * carries. See docs/design/ships.md. */
 #define SIM_UP_STEPS 8
+
+/* What a pilot has to spend on that space, and what one step off it costs.
+ *
+ * Every step costs one. That is the whole price list, and it is a design
+ * decision rather than a simplification waiting to be undone: a shop that
+ * priced a repel at nine and a fuse at two put the cost of a build on the
+ * screen in numbers nobody could read, and the interface it grew was the
+ * reason the last kit was taken out. Seven ones need no numbers at all.
+ *
+ * What that moves is where balance happens. A slot cannot be made expensive,
+ * so a slot that is too strong has to be made weaker or given a lower
+ * ceiling, and `sim_slot_cap` is where the ceiling lives. In exchange the
+ * build space is small enough to enumerate: seven credits over the dozen
+ * slots a shipped hull can reach is a few thousand builds, which the
+ * tournament harness sweeps whole rather than sampling. See decision 100.
+ *
+ * Seven is the number the shipped roster already spends. Every hull's
+ * profile in `sim/src/baseline.c` sums to seven or less, from the Anvil's
+ * three to the Facet's and the Lattice's seven, so the roster arrived on
+ * this budget without being moved onto it. */
+#define SIM_KIT_CREDITS 7
 
 
 /* Per-class tuning in core units. sim_class_from_units fills this from
@@ -794,10 +815,22 @@ typedef struct {
      * corrected by the next snapshot, exactly as it does a kill. */
     uint8_t hurt_by[SIM_ASSIST_SLOTS];
     uint32_t hurt_at[SIM_ASSIST_SLOTS];
-    /* What this hull is, which is the profile dealt back at every spawn.
-     * These are not accumulated and are not lost by dying: a death re-deals
-     * the frame. The profile itself is not kept here, because it belongs to
-     * the class and a ship already knows which class it is. */
+    /* What this pilot flies, over the flat slot space: the build, and the
+     * one thing on this struct a player chooses.
+     *
+     * It is kept per ship rather than read off the class because a build is
+     * the pilot's and a class is the zone's, and because every re-deal below
+     * happens inside the step: a respawn and a whistle both have to hand back
+     * the build the pilot spent, and neither has a caller to ask.
+     *
+     * A seat starts on its hull's own row, so a bot or a test that never
+     * spends anything still flies a whole ship. `sim_set_ship_kit` is how a
+     * pilot's own row gets here, and it is fitted on the way in, so nothing
+     * downstream has to wonder whether this vector is affordable. */
+    uint8_t kit[SIM_SLOT_COUNT];
+    /* What that build dealt: the frame, dealt back at every spawn. These are
+     * not accumulated and are not lost by dying, because a death re-deals
+     * the frame from the row above. */
     uint8_t up[SIM_UP_COUNT];
     uint8_t level[SIM_TRIG_COUNT];
     uint16_t mods[SIM_TRIG_COUNT];
@@ -847,13 +880,42 @@ typedef struct {
 int sim_on_streak(const sim_settings *cfg, const sim_ship *sh);
 
 
-/* Deal this hull's profile onto it.
+/* Deal this ship's own build onto it.
  *
  * `ammunition` is the whole of the difference between arriving and
  * respawning. A match deals charges once and a death re-deals only the
  * frame, so a pilot who has spent both repels flies the rest of the match
  * without them and cannot reload by dying. */
 void sim_deal_kit(sim_ship *sh, const sim_settings *cfg, int ammunition);
+
+/* How high one slot goes, for this hull, in this zone.
+ *
+ * Four different ceilings wearing one name: a stat ends at SIM_UP_STEPS, a
+ * level ends where the hull's own ladder does, an add-on ends at its width
+ * in the projectile word, and a charge ends at SIM_CHARGE_MAX, or at zero
+ * where the zone fills that kind with no weapon. A pilot's ceiling and the
+ * clamp `sim_grant` already applies are the same number by construction:
+ * both call this. */
+uint8_t sim_slot_cap(const sim_settings *cfg, uint8_t cls, uint8_t slot);
+
+/* What a build costs, which is the sum of it: every step is one credit. */
+int sim_kit_cost(const uint8_t *kit);
+
+/* Cut a build down to something this hull can actually fly, in place.
+ *
+ * Two passes, in the order a player would expect: every slot is first
+ * clamped to its own ceiling, then, while the total is still over budget,
+ * the highest slot still standing gives a credit back. Deterministic, so a
+ * client that fits a build and a server that fits the same bytes land on the
+ * same vector without either trusting the other.
+ *
+ * Every path into the core runs through this, which is what lets everything
+ * downstream take a build at face value. Returns what it ends up costing. */
+int sim_kit_fit(const sim_settings *cfg, uint8_t cls, uint8_t *kit);
+
+/* The row this hull flies when nobody has spent anything: its profile from
+ * the settings, fitted. This is the build a seat starts on. */
+void sim_kit_default(const sim_settings *cfg, uint8_t cls, uint8_t *out);
 
 /* Hand a ship one named slot, clamped to what that slot can hold. Returns 1
  * if the count moved and 0 if it was already full, which is how a caller
@@ -1056,10 +1118,26 @@ void sim_spawn_point(sim_state *s, const sim_settings *cfg, uint8_t team,
  * ungated, changing hull is a way out of a fight you are losing. Asking for
  * the hull you are already in does nothing and succeeds.
  *
+ * `kit` is the build to arrive in, which a caller passes because a build
+ * belongs to a hull: the row a pilot spent on an Anvil is not the row they
+ * spent on a Cipher, and only the caller holds both. NULL asks for the new
+ * hull's own profile, which is what a bot and a test want.
+ *
  * Returns 0, or -1 for an unknown ship or class, a dead pilot, or one who is
  * not at full energy. */
 int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
-                       uint8_t cls);
+                       uint8_t cls, const uint8_t *kit);
+
+/* Give a seated pilot a build for the hull they are already in, and re-deal
+ * the frame from it.
+ *
+ * Fitted on the way in, so a caller may hand over anything at all. The rack
+ * is not refilled and is clamped down to the new build the way a hull change
+ * clamps it: a pilot who has thrown both repels has thrown them, and editing
+ * a build mid-match is not a reload. Returns -1 for a seat that is not
+ * there. */
+int sim_set_ship_kit(sim_state *s, const sim_settings *cfg, uint8_t i,
+                     const uint8_t *kit);
 
 /* Put a pilot on a different side. Gated exactly as a hull change is, and for
  * the same reason: it is a respawn at the new side's start with a full bar, so

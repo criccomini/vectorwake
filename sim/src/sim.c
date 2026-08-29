@@ -192,11 +192,67 @@ void sim_deal_kit(sim_ship *sh, const sim_settings *cfg, int ammunition) {
          * of the next one, and this is the only place a rack is refilled. */
         memset(sh->charge_cooldown, 0, sizeof sh->charge_cooldown);
     }
-    const uint8_t *kit = cfg->classes[sh->cls].kit;
+    const uint8_t *kit = sh->kit;
     for (int i = 0; i < SIM_SLOT_COUNT; i++) {
         if (i >= SIM_SLOT_CHARGE(0) && !ammunition) continue;
         for (int k = 0; k < kit[i]; k++) sim_grant(sh, cfg, (uint8_t)i);
     }
+}
+
+int sim_kit_cost(const uint8_t *kit) {
+    int n = 0;
+    for (int i = 0; i < SIM_SLOT_COUNT; i++) n += kit[i];
+    return n;
+}
+
+int sim_kit_fit(const sim_settings *cfg, uint8_t cls, uint8_t *kit) {
+    for (int i = 0; i < SIM_SLOT_COUNT; i++) {
+        uint8_t cap = sim_slot_cap(cfg, cls, (uint8_t)i);
+        if (kit[i] > cap) kit[i] = cap;
+    }
+    /* Then buy the overspend back, the tallest slot first. Taking from the
+     * tallest rather than the last means an over-budget vector loses its
+     * one extravagance before it loses four ordinary steps, and scanning
+     * forward on a tie keeps the choice the same on every machine. */
+    for (int cost = sim_kit_cost(kit); cost > SIM_KIT_CREDITS; cost--) {
+        int at = -1;
+        for (int i = 0; i < SIM_SLOT_COUNT; i++)
+            if (kit[i] && (at < 0 || kit[i] > kit[at])) at = i;
+        if (at < 0) break;
+        kit[at]--;
+    }
+    return sim_kit_cost(kit);
+}
+
+void sim_kit_default(const sim_settings *cfg, uint8_t cls, uint8_t *out) {
+    memset(out, 0, SIM_SLOT_COUNT);
+    if (cls >= cfg->class_count) return;
+    memcpy(out, cfg->classes[cls].kit, SIM_SLOT_COUNT);
+    sim_kit_fit(cfg, cls, out);
+}
+
+int sim_set_ship_kit(sim_state *s, const sim_settings *cfg, uint8_t i,
+                     const uint8_t *kit) {
+    if (i >= s->ship_count) return -1;
+    sim_ship *sh = &s->ships[i];
+    if (!sh->active) return -1;
+    if (kit) {
+        memcpy(sh->kit, kit, SIM_SLOT_COUNT);
+        sim_kit_fit(cfg, sh->cls, sh->kit);
+    } else {
+        sim_kit_default(cfg, sh->cls, sh->kit);
+    }
+    /* The frame comes back from the new row; the rack does not. Editing a
+     * build is not a reload, so what is in hand is kept and clamped to what
+     * the new row would have dealt, which is the rule a hull change follows
+     * for the same reason. */
+    sim_deal_kit(sh, cfg, 0);
+    for (int k = 0; k < SIM_MAX_CHARGES; k++) {
+        uint8_t theirs = sh->kit[SIM_SLOT_CHARGE(k)];
+        if (sh->charge[k] > theirs) sh->charge[k] = theirs;
+    }
+    sh->energy = sim_eff_max_energy(&cfg->classes[sh->cls], sh);
+    return 0;
 }
 
 uint32_t sim_offsetof_settings_max_ships(void) {
@@ -236,10 +292,13 @@ int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
     sh->x = sh->spawn_x = x_px * 256;
     sh->y = sh->spawn_y = y_px * 256;
     sh->heading = heading;
-    /* And the hull's profile, with ammunition, because arriving is the one
+    /* And the hull's own row, with ammunition, because arriving is the one
      * thing besides a whistle that fills a rack. There is nothing to ask a
      * caller for: a hull always has a profile, so every seat flies a whole
-     * ship whether a person, a bot or a test put somebody in it. */
+     * ship whether a person, a bot or a test put somebody in it, and a pilot
+     * who has spent their credits differently says so afterwards through
+     * `sim_set_ship_kit`. */
+    sim_kit_default(cfg, sh->cls, sh->kit);
     sim_deal_kit(sh, cfg, 1);
     sh->energy = sim_eff_max_energy(&cfg->classes[sh->cls], sh);
     return i;
@@ -1327,7 +1386,7 @@ static void drop_flags(sim_state *s, const sim_settings *cfg, uint8_t ship,
 
 
 int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
-                       uint8_t cls) {
+                       uint8_t cls, const uint8_t *kit) {
     if (i >= s->ship_count || cls >= cfg->class_count) return -1;
     sim_ship *sh = &s->ships[i];
     if (!sh->active) return -1;
@@ -1347,8 +1406,10 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
     if (sh->energy < sim_eff_max_energy(&cfg->classes[sh->cls], sh)) return -1;
     drop_flags(s, cfg, i, 0);
     sh->cls = cls;
-    /* And the new hull's profile with it, because the profile is the ship:
-     * an Anvil flies an Anvil's gun whoever climbed into it.
+    /* And the build for the new hull with it. A build belongs to a hull, so
+     * this is the caller's row for the ship being climbed into rather than
+     * the row being climbed out of; without one, the hull's own profile,
+     * because an Anvil flies an Anvil's gun whoever climbed into it.
      *
      * The rack is the exception, and it is the same exception a death makes.
      * Charges are dealt once a match and spent from there, so a hull change
@@ -1360,9 +1421,15 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
      * That leaves the honest case: a pilot who has spent nothing and switches
      * to a deeper rack does not get the difference. The rack you fly the
      * match with is the one you were dealt at the whistle. */
+    if (kit) {
+        memcpy(sh->kit, kit, SIM_SLOT_COUNT);
+        sim_kit_fit(cfg, cls, sh->kit);
+    } else {
+        sim_kit_default(cfg, cls, sh->kit);
+    }
     sim_deal_kit(sh, cfg, 0);
     for (int k = 0; k < SIM_MAX_CHARGES; k++) {
-        uint8_t theirs = cfg->classes[cls].kit[SIM_SLOT_CHARGE(k)];
+        uint8_t theirs = sh->kit[SIM_SLOT_CHARGE(k)];
         if (sh->charge[k] > theirs) sh->charge[k] = theirs;
     }
     sh->streak = 0;
@@ -1483,35 +1550,60 @@ static void lock_trigger(sim_ship *sh, int trig, uint16_t ticks) {
     if (ticks > sh->fire_cooldown[trig]) sh->fire_cooldown[trig] = ticks;
 }
 
-/* Add one step to a slot, clamped where that slot ends.
+/* How high one slot goes, for this hull, in this zone.
  *
- * The ceiling is the arena's, read straight off `cfg->kit_ceiling` at the
- * slot this call is about. It used to be the hull's row, and the difference
- * shows up here as one lookup instead of three: a stat, an add-on and a
- * charge all end at the same kind of number now, and the class is consulted
- * for exactly one thing, which is whether the ladder a level indexes has a
- * rung there to stand on. */
+ * The one place a ceiling is written down. A pilot spending credits, a
+ * profile being dealt and a client drawing a stepper all ask this, so a slot
+ * that is full looks full to every one of them and the answer cannot drift
+ * between the three.
+ *
+ * A level is the odd one and the reason the class is passed: a rung the hull
+ * does not carry is a rung nothing climbs to, so the ladder itself is the
+ * ceiling, and a hull with no bomb rack ends at zero without anybody writing
+ * that down twice. */
+uint8_t sim_slot_cap(const sim_settings *cfg, uint8_t cls, uint8_t slot) {
+    if (slot >= SIM_SLOT_COUNT || cls >= cfg->class_count) return 0;
+    const sim_ship_class *c = &cfg->classes[cls];
+    if (slot < SIM_UP_COUNT) return SIM_UP_STEPS;
+    slot = (uint8_t)(slot - SIM_UP_COUNT);
+    if (slot < SIM_TRIG_COUNT) {
+        uint8_t rungs = 0;
+        while (rungs + 1 < SIM_MAX_RUNGS
+               && c->trigger[slot][rungs + 1] != SIM_NO_PATTERN) {
+            rungs++;
+        }
+        return rungs;
+    }
+    slot = (uint8_t)(slot - SIM_TRIG_COUNT);
+    if (slot < SIM_TRIG_COUNT * SIM_MOD_COUNT) {
+        /* Spray is a count of rounds and takes three bits; everything else is
+         * a rung of something and takes two. */
+        return slot % SIM_MOD_COUNT == SIM_MOD_MULTI ? SIM_MOD_MULTI_MAX
+                                                     : SIM_MOD_MAX;
+    }
+    {
+        /* A slot the zone fills with no weapon holds no ammunition, which is
+         * what keeps an unused charge kind out of every hull. */
+        int k = slot - SIM_TRIG_COUNT * SIM_MOD_COUNT;
+        return cfg->charge[k] == SIM_NO_PATTERN ? 0 : SIM_CHARGE_MAX;
+    }
+}
+
+/* Add one step to a slot, stopping where `sim_slot_cap` says that slot ends. */
 static void grant_count(sim_ship *sh, const sim_settings *cfg, uint8_t type) {
-    const sim_ship_class *c = &cfg->classes[sh->cls];
+    uint8_t cap = sim_slot_cap(cfg, sh->cls, type);
     if (type < SIM_UP_COUNT) {
-        if (sh->up[type] < SIM_UP_STEPS) sh->up[type]++;
+        if (sh->up[type] < cap) sh->up[type]++;
         return;
     }
     type = (uint8_t)(type - SIM_UP_COUNT);
     if (type < SIM_TRIG_COUNT) {
-        /* The ladder itself is the ceiling: a rung the hull does not have is
-         * a rung it does not climb to. */
-        int next = sh->level[type] + 1;
-        if (next < SIM_MAX_RUNGS && c->trigger[type][next] != SIM_NO_PATTERN)
-            sh->level[type] = (uint8_t)next;
+        if (sh->level[type] < cap) sh->level[type]++;
         return;
     }
     type = (uint8_t)(type - SIM_TRIG_COUNT);
     if (type < SIM_TRIG_COUNT * SIM_MOD_COUNT) {
         int t = type / SIM_MOD_COUNT, m = type % SIM_MOD_COUNT;
-        /* Spray is a count of rounds and takes three bits; everything else is
-         * a rung of something and takes two. */
-        uint8_t cap = m == SIM_MOD_MULTI ? SIM_MOD_MULTI_MAX : SIM_MOD_MAX;
         uint8_t have = sim_mod_get(sh->mods[t], m);
         if (have < cap) {
             sh->mods[t] = sim_mod_set(sh->mods[t], m, (uint8_t)(have + 1));
@@ -1519,12 +1611,8 @@ static void grant_count(sim_ship *sh, const sim_settings *cfg, uint8_t type) {
         return;
     }
     {
-        /* A slot the zone fills with no weapon holds no ammunition, which is
-         * what keeps an unused charge kind out of every hull. */
         int k = type - SIM_TRIG_COUNT * SIM_MOD_COUNT;
-        if (cfg->charge[k] != SIM_NO_PATTERN && sh->charge[k] < SIM_CHARGE_MAX) {
-            sh->charge[k]++;
-        }
+        if (sh->charge[k] < cap) sh->charge[k]++;
     }
 }
 
