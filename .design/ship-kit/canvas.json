@@ -1,5 +1,6 @@
 {
   "pages": [
+    { "id": "no-ship-menu", "name": "No ship menu" },
     { "id": "flat", "name": "Flat credits" },
     { "id": "options", "name": "Options" },
     { "id": "a-experiments", "name": "A experiments" },
@@ -14,6 +15,10 @@
       "title": "B &#183; One slot at a time", "page": "options" },
     { "file": "Diagram.dc.html", "x": 1440, "y": 0, "w": 390, "h": 844,
       "title": "C &#183; The ship is the page", "page": "options" },
+    { "file": "Land.dc.html", "x": 0, "y": 0, "w": 1440, "h": 810,
+      "title": "The ship stop is the roster", "page": "no-ship-menu" },
+    { "file": "LandTune.dc.html", "x": 1540, "y": 0, "w": 1440, "h": 810,
+      "title": "Tune, over the landing", "page": "no-ship-menu" },
     { "file": "Flat.dc.html", "x": 0, "y": 0, "w": 390, "h": 844,
       "title": "Flat, the Apex default", "page": "flat" },
     { "file": "FlatSpent.dc.html", "x": 480, "y": 0, "w": 390, "h": 844,
@@ -42,6 +47,8 @@
       "text": "B holds one slot at a time and draws what it does. Left and right walk the slots, minus and plus are the whole interface, the plus key wears its price. Calmest and best on a phone or pad; costs a press per slot to survey the build." },
     { "id": "opt-c", "x": 1440, "y": 870, "w": 390, "page": "options",
       "text": "C has no list: the build is the ship firing it, and each drawn cluster is its own control, stepped inside the gold brackets. Most legible at a glance and the most fun; the add-ons without an obvious drawing (freeze, fuse) need one invented." },
+    { "id": "land-head", "x": 0, "y": -190, "w": 460, "page": "no-ship-menu",
+      "text": "The brainstorm: no ship tab anywhere. The landing's ship stop is the only roster, its list carrying each hull's five bars (labels taught once at the head), the cursor's row spelling its build, TUNE and SPECTATE at the foot. TUNE opens the flat editor as a card over the landing.\nGains: one tab fewer, the choice lives where flying starts, stats meet you at the moment you pick.\nOpen questions: where a ship change goes mid-session (the bench and the ending are the natural moments; the drawer no longer has an answer), and the list is close to a page in a dropdown's clothes at seven hulls." },
     { "id": "flat-head", "x": 0, "y": -170, "w": 450, "page": "flat",
       "text": "Everything costs one build credit and the tray holds seven, drawn big enough to count at a glance. No price appears anywhere because there is none: plus, minus and toggles are the whole page. Out of credits needs no message, every way to spend an eighth just stands down. The Apex default is four picks, so a new pilot's first edit spends a free credit rather than trading. Balance moves to per-slot caps and effect tuning; seven picks over a dozen steps is a build space calibrate can sweep whole." },
     { "id": "exp-head", "x": 0, "y": -150, "w": 440, "page": "a-experiments",
@@ -57,5 +64,5 @@
     { "id": "proposal", "x": 0, "y": -170, "w": 420, "page": "first-pass",
       "text": "The first pass, kept for reference: sentences stepped by triangles, numeral prices, the budget as a bar. Chris's read: busy, the numbers and the bar opaque. The Options page is the answer." }
   ],
-  "launch": { "view": "canvas", "page": "flat" }
+  "launch": { "view": "canvas", "page": "no-ship-menu" }
 }

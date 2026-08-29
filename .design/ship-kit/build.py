@@ -203,6 +203,8 @@ HULLS = {
     "Anvil":   "M-8,-15 L8,-15 L13,-5 L13,6 L8,11 L-8,11 L-13,6 L-13,-5 Z",
     "Cipher":  "M0,-22 L3,-6 L6,8 L2,12 L-2,12 L-6,8 L-3,-6 Z",
     "Facet":   "M0,-8 L11,-1 L8,12 L-8,12 L-11,-1 Z",
+    "Lattice": ("M-4,-16 L4,-16 L4,-5 L14,-5 L14,4 L4,4 L4,14 L-4,14 L-4,4 "
+                "L-14,4 L-14,-5 L-4,-5 Z"),
 }
 
 
@@ -901,8 +903,8 @@ def flat_reset():
 # The Apex default: spray 2, repel 2, burst 1 is four picks of seven, so a
 # fresh player holds three free credits and their first edit is spending
 # one rather than trading.
-def flat_board():
-    body = (
+def flat_body():
+    return (
         flat_tray(3)
         + sect("gun", mt=10)
         + '<div style="margin-top:2px">'
@@ -923,7 +925,10 @@ def flat_board():
         + flat_row("Burst", "1")
         + '</div>'
         + flat_reset())
-    write("Flat.dc.html", board(body, head=hull_head("Apex")))
+
+
+def flat_board():
+    write("Flat.dc.html", board(flat_body(), head=hull_head("Apex")))
 
 
 # The same page with all seven spent: every way to spend an eighth stands
@@ -956,6 +961,218 @@ def flat_spent_board():
     write("FlatSpent.dc.html", board(body, head=hull_head("Apex")))
 
 
+# ================== No ship menu: the landing is the roster ==================
+#
+# Chris's brainstorm: kill the ship tab and let the landing's ship stop be
+# the only place a ship is chosen. The stop's list grows into the roster:
+# every hull with its five bars, the one you fly marked, the flight labels
+# taught once at the head of the list, the cursor's row spelling out what
+# it carries. TUNE at the list's foot opens the flat editor as a card over
+# the landing, so tuning needs no drawer either. The open questions ride
+# the sticky notes: where mid-game switching goes, and how much reading a
+# dropdown can hold before it is a page wearing a list's clothes.
+
+MARK_PATHS = (
+    '<path fill="#ff9d22" d="M42 0L84 67L66 78L42 53L18 78L0 67Z"/>'
+    '<path fill="#27c5ed" d="M0 67L18 78L42 53L66 78L84 67L60 103L42 74L24 103Z"/>'
+    '<path fill="none" stroke="#000" stroke-width="3" stroke-linecap="square" '
+    'stroke-linejoin="miter" d="M0 67L18 78L42 53L66 78L84 67"/>'
+)
+
+WORD_PATH = (
+    '<path transform="translate(424.175,144.9)" d="M1 -49.8H10.6L24.4 -10H24.8L38.5 '
+    '-49.8H48.1L29.6 0H19.6ZM54.1 -9.5V-40.2L63.7 -49.8H89.8L99.4 -40.2V-22H63.4V-12.4'
+    'L67.8 -8H85.7L90.1 -12.3V-15.7H99.3V-9.5L89.9 0H63.6ZM90.1 -29.3V-37.4L85.6 -41.8'
+    'H67.9L63.4 -37.4V-29.3ZM110.9 -9.5V-40.3L120.4 -49.8H145.5L155.1 -40.2V-33.1H145.8'
+    'V-37.2L141.3 -41.7H124.7L120.2 -37.2V-12.6L124.7 -8.1H141.3L145.8 -12.6V-16.7H155.1'
+    'V-9.6L145.5 0H120.4ZM170.6 -9.5V-41.8H161.6V-49.8H170.8V-66H179.9V-49.8H195.4V-41.7'
+    'H179.9V-12.5L184.4 -8.1H195.4V0H180.2ZM203.4 -9.6V-40.2L213 -49.8H239.6L249.1 -40.2'
+    'V-9.6L239.6 0H213ZM235.3 -8.1 239.8 -12.5V-37.3L235.3 -41.7H217.2L212.7 -37.3V-12.5'
+    'L217.2 -8.1ZM262.1 -49.8H271V-41.1L279.6 -49.8H292.9V-41.7H281.7L271.4 -31.3V0H262.1'
+    'ZM297.4 -49.8H306.9L314.5 -11.7H314.8L325.8 -49.8H334.6L344.7 -11.7H345L353.3 -49.8'
+    'H362.8L350.1 0H340.7L330.3 -38.6H330L318.7 0H309.2ZM369.3 -8.5V-20.8L377.8 -29.3H404'
+    'V-37.7L399.6 -42H383.3L379 -37.7V-34H369.7V-40.1L379.4 -49.8H403.5L413.2 -40.1V0'
+    'H404.5V-8.2L395.9 0H377.8ZM394.6 -7.7 404 -16.7V-21.9H382.1L378.6 -18.4V-11.1L382.1 '
+    '-7.7ZM426.7 -71.4H436V-30H446.7L460.7 -49.8H471L454.3 -25.8L472 0H461.7L446.6 -21.8'
+    'H436V0H426.7ZM477 -9.5V-40.2L486.6 -49.8H512.7L522.3 -40.2V-22H486.3V-12.4L490.7 '
+    '-8H508.6L513 -12.3V-15.7H522.2V-9.5L512.8 0H486.5ZM513 -29.3V-37.4L508.5 -41.8'
+    'H490.8L486.3 -37.4V-29.3Z" fill="#dfe9f5"/>'
+)
+
+
+def lockup(w):
+    h = round(w * 88 / 616)
+    return (f'<svg width="{w}" height="{h}" viewBox="332 71 616 88" '
+            f'style="display:block">'
+            f'<g transform="translate(334.975 83) scale(.7115)">{MARK_PATHS}</g>'
+            f'{WORD_PATH}</svg>')
+
+
+PLAY_CSS = """
+@keyframes breath{
+  0%,100%{background:rgba(79,214,255,.06);border-color:rgba(79,214,255,.62)}
+  50%{background:rgba(79,214,255,.18);border-color:rgba(79,214,255,1)}
+}
+.play{display:flex;align-items:center;justify-content:center;
+  border:1.6px solid rgba(79,214,255,.62);
+  animation:breath 2.42s ease-in-out infinite;
+  font-family:var(--mono);letter-spacing:.14em;color:var(--ink)}
+.field{display:flex;align-items:center;justify-content:space-between;
+  border:1px solid rgba(63,88,120,.75);background:rgba(8,12,20,.66);
+  font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;
+  padding:0 12px;color:var(--ink)}
+"""
+
+
+def land_caret():
+    return caret()
+
+
+def land_scene(w, h):
+    hulls = [("Wedge", 260, 240, 24, "#4fd6ff"),
+             ("Cipher", 1120, 520, 205, "#ffa552"),
+             ("Facet", 1020, 170, 320, "#ffa552"),
+             ("Lattice", 340, 620, 100, "#4fd6ff")]
+    parts = []
+    for name, x, y, rot, col in hulls:
+        parts.append(
+            f'<g transform="translate({x},{y}) rotate({rot})">'
+            f'<path d="M-4,10 L-2,44 L2,44 L4,10 Z" fill="{col}" '
+            'opacity=".16"/>'
+            f'<path d="{HULLS[name]}" fill="#0b1220" stroke="{col}" '
+            'stroke-width="1.5" stroke-linejoin="round"/></g>')
+    parts.append('<rect x="640" y="120" width="30" height="110" '
+                 'fill="#080d16" stroke="#22344f"/>'
+                 '<path d="M640 120 H670" stroke="#5b82b8" '
+                 'stroke-width="1.4" opacity=".55"/>')
+    return (f'<svg width="{w}" height="{h}" '
+            f'style="position:absolute;inset:0">{"".join(parts)}</svg>')
+
+
+def land_stop(label, value, lit=False, bottom=0, kw=320):
+    edge = "border-color:rgba(79,214,255,.85);" if lit else ""
+    return (f'<div class="field" style="position:absolute;left:50%;'
+            f'transform:translateX(-50%);bottom:{bottom}px;width:{kw}px;'
+            f'height:36px;{edge}">'
+            f'<span class="lbl">{label}</span>'
+            f'<span class="row" style="gap:9px;font-size:12px">{value}'
+            + land_caret() + '</span></div>')
+
+
+def land_frame(w, h, extra):
+    kw, kh = 320, 54
+    body = [land_scene(w, h)]
+    body.append(f'<div class="play" style="position:absolute;left:50%;'
+                f'transform:translateX(-50%);bottom:22px;width:{kw}px;'
+                f'height:{kh}px;font-size:19px">PLAY NOW</div>')
+    y = 22 + kh + 12
+    stops = [("SHIP", "APEX", True), ("ZONE", "TEAM BATTLE", False),
+             ("ACCOUNT", "DELTA 154", False)]
+    tops = {}
+    for label, value, lit in stops:
+        tops[label] = y
+        body.append(land_stop(label, value, lit=lit, bottom=y, kw=kw))
+        y += 36 + 8
+    body.append(f'<div style="position:absolute;left:50%;'
+                f'transform:translateX(-50%);bottom:{y + 8}px">'
+                + lockup(208) + '</div>')
+    body.append(extra(tops))
+    return ('<div style="position:relative;width:%dpx;height:%dpx;'
+            'overflow:hidden;%s">%s</div>'
+            % (w, h, stars(w, h), "".join(body)))
+
+
+LAND_ROSTER = [
+    ("Apex", (.76, .86, .48, .14, .57), "here", None),
+    ("Wedge", (.20, .14, .09, .71, .00), "cursor",
+     "prox, shrapnel 2, repel 1, burst 1"),
+    ("Chord", (.12, 1.0, 1.0, .21, .78), None, None),
+    ("Anvil", (.00, .00, .00, 1.0, 1.0), None, None),
+    ("Cipher", (1.0, .79, .35, .00, .35), None, None),
+    ("Facet", (.32, .43, .61, .00, .35), None, None),
+    ("Lattice", (.36, .29, .39, .50, .13), None, None),
+]
+
+
+def mini_bars(shares, col, w=170):
+    cells = []
+    for share in shares:
+        cells.append(
+            '<div style="flex:1;position:relative;height:3px;'
+            'background:rgba(108,122,144,.22)">'
+            f'<div style="position:absolute;left:0;top:0;bottom:0;'
+            f'width:{share * 100:.0f}%;background:{col};opacity:.85"></div>'
+            '</div>')
+    return (f'<div class="row" style="gap:5px;width:{w}px;flex:none">'
+            + "".join(cells) + '</div>')
+
+
+def land_ship_list(tops):
+    rows = []
+    # The flight labels once, at the head of the list, over the bars column.
+    rows.append('<div class="row" style="height:24px;padding:0 12px">'
+                '<div style="flex:1"></div>'
+                '<div class="row" style="width:170px;flex:none;'
+                'justify-content:space-between">'
+                + "".join(f'<span class="lbl" style="font-size:7px;'
+                          f'letter-spacing:.08em">{w}</span>'
+                          for w in ["SPD", "THR", "TURN", "NRG", "RCH"])
+                + '</div></div>')
+    for name, shares, state, carries in LAND_ROSTER:
+        wash = (CURSOR if state == "cursor"
+                else HERE if state == "here" else "")
+        col = "#4fd6ff" if state == "here" else "rgba(223,233,245,.9)"
+        note = ""
+        if carries:
+            note = ('<div style="padding:0 0 9px">'
+                    f'<span class="mono" style="font-size:11px;'
+                    f'color:#9fb6d4">{carries}</span></div>')
+        rows.append(
+            f'<div style="padding:0 12px;{wash}">'
+            '<div class="row" style="height:40px;gap:12px">'
+            + thumb(name, col)
+            + f'<span style="font-size:14px;color:{col}">{name}</span>'
+            '<div style="flex:1"></div>'
+            + mini_bars(shares, col if state == "here" else "#8593a9")
+            + '</div>' + note + '</div>')
+    rows.append('<div style="height:1px;margin:4px 12px;'
+                'background:rgba(63,88,120,.6)"></div>')
+    rows.append('<div class="row" style="height:38px;padding:0 12px;gap:10px">'
+                '<span class="key" style="height:26px;padding:0 12px;'
+                'font-size:10px">tune</span>'
+                '<span class="lbl">the Apex, before you fly it</span></div>')
+    rows.append('<div class="row" style="height:34px;padding:0 12px">'
+                '<span class="mono" style="font-size:12px;color:#9fb6d4">'
+                'SPECTATE</span></div>')
+    bottom = tops["SHIP"] + 36 + 6
+    return (f'<div style="position:absolute;left:50%;'
+            f'transform:translateX(-50%);bottom:{bottom}px;width:420px;'
+            'background:#080c14;border:1px solid '
+            'rgba(63,88,120,.85);padding:5px 0;z-index:5">' + "".join(rows) + '</div>')
+
+
+def land_board():
+    write("Land.dc.html",
+          '<style>' + PLAY_CSS + '</style>'
+          + land_frame(1440, 810, land_ship_list))
+
+
+# TUNE pressed: the flat editor rides a card over the landing, the landing
+# dimmed behind it, X returning to the open list. No drawer anywhere.
+def land_tune_board():
+    def card(tops):
+        return ('<div style="position:absolute;inset:0;'
+                'background:rgba(3,5,10,.55)"></div>'
+                '<div style="position:absolute;left:50%;top:48px;'
+                'transform:translateX(-50%);width:390px;'
+                'background:#070b12;border:1px solid '
+                'rgba(63,88,120,.85);padding:0 14px 10px;z-index:5">'
+                + hull_head("Apex") + flat_body() + '</div>')
+    write("LandTune.dc.html",
+          '<style>' + PLAY_CSS + '</style>'
+          + land_frame(1440, 810, card))
+
+
 main_board()
 tune_board()
 tune_states_board()
@@ -969,4 +1186,6 @@ exp_inline_board()
 exp_tray_board()
 flat_board()
 flat_spent_board()
-print("thirteen boards written")
+land_board()
+land_tune_board()
+print("fifteen boards written")
