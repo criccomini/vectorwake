@@ -1,29 +1,28 @@
 # No-drawer mocks
 
 Four boards for the proposal that the slide-out drawer goes away and its
-settings move onto the main landing page. The constraint that shapes all
-four: the landing exists only in the stands. A pilot in a seat has no
-landing under them and still needs volume, a side switch, and a way to
-hand the seat back, so any answer that only rearranges the landing leaves
-the drawer alive for flight, and then there are two systems instead of
-one. The corner MENU key is the real question.
+settings move into the landing column itself. The ship stop already taught
+the column the grammar this needs, a stop that opens a panel at the
+column's own width, so settings becomes a stop and the corner MENU key
+disappears from the home screen.
 
-- **Corner key, home** the direction recommended: the corner key stops
-  saying MENU and becomes a settings key, icon only, that opens the
-  settings panel in place over the stars. The panel is the drawer's
-  settings page in the landing column's clothes: full-width section bands,
-  the wake and charge-key steppers, Controls and About as rows.
-- **Corner key, flying** the same key and the same panel mid-match, with
-  Leave and Side riding at the head because they only mean anything in a
-  seat. This board is what the proposal stands on; if it works, nothing
-  needs the drawer.
-- **Settings stop** a fourth SETTINGS stop in the landing column, opening
-  upward from its row. Honest about where settings live, but it bends the
-  who-where-what sentence the column speaks, and it answers only the
-  stands.
-- **Account fold** settings folded under the account list, drawn to be
-  ruled out: it buries sound and controls behind an identity chooser and
-  still says nothing about flight.
+- **Settings stop, closed** the column at rest with the settings stop at
+  its head, above the account: same field, a step shorter and dimmer than
+  the three below it, the mixer icon where a value would be. Quiet on
+  purpose, because it is not part of the who-where-what sentence that ends
+  in PLAY NOW.
+- **Settings stop, open** the panel climbing from the stop the way the
+  ship pager climbs from the ship stop: the drawer's settings page whole,
+  banded the way the ship panel bands its sections, with Controls and
+  About as rows that open in place.
+- **Footer line** the alternative that costs no stop: a quiet mono line
+  under PLAY NOW opening the same panel. Cheapest presence, hardest to
+  find.
+- **Cockpit remainder** the one place the landing cannot reach. A seated
+  pilot has no landing under them and still needs the way out of the seat,
+  which side it is on, and the volume; the corner key keeps the mixer icon
+  mid-match and opens only those three rows. Everything else waits at
+  home.
 
 `build.py` is the source, chrome carried forward from
 `../ship-kit/build.py`: the landing column as shipped after decision 100,

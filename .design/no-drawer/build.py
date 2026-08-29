@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
-# The end of the drawer: settings moves onto the landing, and the slide-out
-# menu is deleted whole.
+# The end of the drawer: settings joins the landing column itself, and the
+# slide-out menu is deleted whole.
 #
 # The arc that makes this thinkable is decisions 98 through 100. The games
 # went to the zone stop, the account to the account stop, the ship to the
 # ship stop, and what the drawer holds now is settings alone at home, plus
-# side and leave in a room. The catch, and the thing these boards are really
-# about: the landing exists only in the stands, and a cockpit still needs
-# volume, the way out of the seat, and which side it is on. A direction that
-# only answers the stands does not kill the drawer, it strands it.
+# side and leave in a room. The ship stop also taught the column a grammar
+# on the way: a stop can open a panel at the column's own width. Settings
+# rides the same grammar.
 #
-# So the question is what the corner MENU key becomes, and three answers are
-# drawn:
-#
-#   Main         the corner key becomes settings, opening a panel in place
-#   CornerFlying the same key and the same panel, mid-match, with LEAVE and
-#                SIDE at its head: the board that shows the drawer can die
-#   StopColumn   a fourth stop in the landing's column instead
-#   AccountFold  settings crammed under the account list, drawn to be ruled
-#                out
+#   Main        the column at rest with a settings stop at its head, a step
+#               quieter than the three below it, wearing the mixer icon; the
+#               corner MENU key is gone at home
+#   StopOpen    the stop open: the panel climbs from it the way the ship
+#               pager does, holding everything the drawer held
+#   FootLinks   the quieter alternative: no stop, a footer line under PLAY
+#               NOW instead
+#   CockpitRows what a seat still needs once the drawer dies: a corner key
+#               with leave, side and sound, nothing more, because the rest
+#               lives at home
 #
 # Chrome and hues are the client's own, in the manner of ../ship-kit/build.py:
 # the row states of decision 72, the ship panel's banded sections, the stops
@@ -216,15 +216,32 @@ def land_stop(label, value, lit=False, w=320, h=36):
             + caret() + '</span></div>')
 
 
-def column(stops, lit=None, kw=320):
-    """The stops over PLAY NOW, bottom-up, with the lockup at the head."""
+def attic_stop(lit=False, w=320):
+    """The settings stop: same field, a step shorter and dimmer, the mixer
+    icon where a value would be. Quiet on purpose: it is not part of the
+    who-where-what sentence the three stops below it speak."""
+    edge = ("border-color:rgba(79,214,255,.85);" if lit
+            else "border-color:rgba(63,88,120,.45);")
+    return (f'<div class="field" style="width:{w}px;height:31px;{edge}'
+            'background:rgba(8,12,20,.45)">'
+            '<span class="lbl">settings</span>'
+            '<span class="row" style="gap:9px">' + mixer("#8593a9", 13)
+            + caret("#6c7a90") + '</span></div>')
+
+
+def column(stops, lit=None, kw=320, attic=None, bottom=22):
+    """The stops over PLAY NOW, bottom-up, with the lockup at the head.
+    attic: None | "closed" | "open" adds the settings stop above the three."""
     out = ['<div style="position:absolute;left:50%;transform:translateX(-50%);'
-           'bottom:22px;display:flex;flex-direction:column-reverse;gap:8px;'
-           'align-items:center">'
+           f'bottom:{bottom}px;display:flex;flex-direction:column-reverse;'
+           'gap:8px;align-items:center">'
            f'<div class="play" style="width:{kw}px;height:54px;'
            'font-size:19px;margin-top:12px;order:-1">PLAY NOW</div>']
     for label, value in stops:
         out.append(land_stop(label, value, lit == label, w=kw))
+    if attic:
+        out.append('<div style="margin-top:6px">'
+                   + attic_stop(lit=(attic == "open"), w=kw) + '</div>')
     out.append('<div style="margin-bottom:14px">' + lockup(208) + '</div>')
     out.append('</div>')
     return "".join(out)
@@ -267,8 +284,8 @@ def stepper(text):
 
 
 def settings_rows(cursor="sound"):
-    """The whole of what the drawer holds at home, as one scrolling panel:
-    the settings page's rows, the two ship preferences, and the two pages
+    """The whole of what the drawer holds at home, as one panel: the
+    settings page's rows, the two ship preferences, and the two pages
     (controls, about) as rows that open in place with a way back."""
     return (
         band("audio")
@@ -290,20 +307,10 @@ def settings_rows(cursor="sound"):
     )
 
 
-def panel(x, y, w, content, anchor="top"):
-    pos = (f"left:{x}px;top:{y}px" if anchor == "top"
-           else f"left:{x}px;bottom:{y}px")
-    return (f'<div style="position:absolute;{pos};width:{w}px;'
-            'background:#070b12;border:1px solid rgba(63,88,120,.85);'
-            'padding:0 14px 10px;z-index:5">' + content + '</div>')
-
-
-def corner_key(label_word=None, lit=False):
+def corner_key(lit=False):
     edge = "border-color:rgba(79,214,255,.85);" if lit else ""
-    word = (f'<span style="font-size:11px">{label_word}</span>'
-            if label_word else "")
     return (f'<div class="key" style="position:absolute;left:14px;top:14px;'
-            f'height:26px;padding:0 9px;{edge}">' + mixer() + word + '</div>')
+            f'height:26px;padding:0 9px;{edge}">' + mixer() + '</div>')
 
 
 def board(w, h, parts):
@@ -315,30 +322,67 @@ def board(w, h, parts):
 STOPS3 = [("SHIP", "APEX"), ("ZONE", "TEAM BATTLE"), ("ACCOUNT", "DELTA 154")]
 
 
-# ==================== Main: the corner key, at home ====================
+# ================== Main: the column at rest, stop closed ==================
 #
-# The corner's MENU key becomes the settings key, wearing the rail's own
-# mixer icon, and it opens this panel in place over the landing. Nothing
-# else on the screen moves: the stops keep saying who, where and what, and
-# settings stays what it has always been, the thing in the corner you
-# almost never touch.
+# The settings stop rides at the head of the column, above the account,
+# shorter and dimmer than the three below it: present, findable, and
+# visibly not part of the sentence that ends in PLAY NOW. The corner MENU
+# key is gone from this screen; the column is the whole interface.
 def main_board():
     parts = [
-        column(STOPS3),
-        corner_key(lit=True),
-        panel(14, 48, 300, settings_rows()),
+        column(STOPS3, attic="closed"),
     ]
     write("Main.dc.html", board(1440, 810, parts))
 
 
-# ================ CornerFlying: the same key, mid-match ================
+# ==================== StopOpen: the stop, opened ====================
 #
-# The board the whole proposal stands on. A cockpit has no landing behind
-# it, so if settings only lived on one this drawer would survive as the
-# cockpit's menu. The same corner key opens the same panel here, with the
-# two things a room adds at its head: the way out of the seat, and which
-# side you are on. One control, one panel, both places.
-def flying_board():
+# The same grammar the ship stop just taught: a stop opens a panel at the
+# column's own width, climbing from its row. Everything the drawer's
+# settings page holds is here, banded the way the ship panel bands its
+# sections, with controls and about as rows that open in place.
+def stop_open_board():
+    parts = [
+        column(STOPS3, attic="open"),
+        '<div style="position:absolute;left:50%;'
+        'transform:translateX(-50%);bottom:267px;width:320px;'
+        'background:#070b12;border:1px solid rgba(63,88,120,.85);'
+        'padding:0 14px 10px;z-index:5">' + settings_rows() + '</div>',
+    ]
+    write("StopOpen.dc.html", board(1440, 810, parts))
+
+
+# ================= FootLinks: the footer line instead =================
+#
+# The alternative that costs no stop: a quiet mono line under PLAY NOW,
+# opening the same panel. Cheapest possible presence, but it puts the way
+# to turn the music down in the smallest type on the screen, and a first
+# session will not find it.
+def foot_links_board():
+    foot = ('<div class="row" style="position:absolute;left:50%;'
+            'transform:translateX(-50%);bottom:16px;gap:8px;'
+            'justify-content:center">'
+            + mixer("#6c7a90", 12)
+            + '<span class="lbl" style="font-size:9.5px">settings</span>'
+            '<span class="lbl" style="opacity:.5">&middot;</span>'
+            '<span class="lbl" style="font-size:9.5px">controls</span>'
+            '<span class="lbl" style="opacity:.5">&middot;</span>'
+            '<span class="lbl" style="font-size:9.5px">about</span></div>')
+    parts = [
+        column(STOPS3, bottom=48),
+        foot,
+    ]
+    write("FootLinks.dc.html", board(1440, 810, parts))
+
+
+# ================ CockpitRows: what a seat still needs ================
+#
+# The landing exists only in the stands, so the drawer's death leaves a
+# seated pilot needing exactly three things: the way out of the seat, which
+# side it is on, and the volume. The corner key keeps the mixer icon and
+# opens only that. Everything else waits at home, which is where a pilot
+# retunes anyway.
+def cockpit_board():
     hud = [
         # The score band and a radar, said small: this is a fight, not a
         # front page.
@@ -355,71 +399,23 @@ def flying_board():
         'height:168px;background:rgba(6,10,16,.55);border:1px solid '
         'rgba(63,88,120,.5)"></div>',
     ]
-    head = (
+    rows = (
         srow("Leave", '<span class="key" style="height:24px;padding:0 11px;'
-             'font-size:10px">hand the seat back</span>')
+             'font-size:10px">hand the seat back</span>', state="cursor")
         + srow("Side", stepper("Pylon"))
+        + srow("Sound", pips(4, 3))
     )
     parts = hud + [
         corner_key(lit=True),
-        panel(14, 48, 300, head + settings_rows(cursor=None)),
-    ]
-    write("CornerFlying.dc.html", board(1440, 810, parts))
-
-
-# =================== StopColumn: a fourth stop instead ===================
-#
-# Settings as a stop under the ship's, opening upward the way the ship
-# panel does. It reads wrong in the column's own sentence: account, zone
-# and ship answer who you are, where you are going and what you arrive as,
-# and "sound" is not an answer to anything the key asks. It also answers
-# only the stands, so the cockpit still needs a menu and the drawer
-# survives this board. Drawn to be looked at rather than picked.
-def stop_column_board():
-    stops = [("SETTINGS", "SOUND, KEYS")] + STOPS3
-    parts = [
-        column(stops, lit="SETTINGS"),
-        # The panel climbs from its stop, at the stop's own width.
-        '<div style="position:absolute;left:50%;'
-        'transform:translateX(-50%);bottom:266px;width:320px;'
+        '<div style="position:absolute;left:14px;top:48px;width:300px;'
         'background:#070b12;border:1px solid rgba(63,88,120,.85);'
-        'padding:0 14px 10px;z-index:5">' + settings_rows() + '</div>',
-        corner_key(label_word="MENU"),
+        'padding:0 14px 10px;z-index:5">' + rows + '</div>',
     ]
-    write("StopColumn.dc.html", board(1440, 810, parts))
-
-
-# ================ AccountFold: crammed under the account ================
-#
-# The cheapest answer: the account list grows a rule and the settings rows
-# under it. It buries the volume behind "who am I", makes the longest list
-# on the screen, and still leaves the cockpit needing a drawer. Here so the
-# choice is looked at rather than argued.
-def account_fold_board():
-    acct = (
-        srow("Sign up", val("keep your points", "#8dffb0"))
-        + srow("New name", "")
-        + srow("Log in", "")
-        + band("settings")
-        + srow("Sound", pips(4, 3))
-        + srow("Music", pips(3, 1))
-        + srow("Fullscreen", val("fill the screen"))
-        + srow("Controls", '<span class="row" style="gap:8px">'
-               + val("24 keys") + go_mark() + '</span>')
-    )
-    parts = [
-        column(STOPS3, lit="ACCOUNT"),
-        '<div style="position:absolute;left:50%;'
-        'transform:translateX(-50%);bottom:178px;width:320px;'
-        'background:#070b12;border:1px solid rgba(63,88,120,.85);'
-        'padding:0 14px 10px;z-index:5">' + acct + '</div>',
-        corner_key(label_word="MENU"),
-    ]
-    write("AccountFold.dc.html", board(1440, 810, parts))
+    write("CockpitRows.dc.html", board(1440, 810, parts))
 
 
 main_board()
-flying_board()
-stop_column_board()
-account_fold_board()
+stop_open_board()
+foot_links_board()
+cockpit_board()
 print("four boards written")

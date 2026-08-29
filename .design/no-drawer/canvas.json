@@ -1,45 +1,45 @@
 {
   "artboards": [
-    { "file": "Main.dc.html", "title": "Corner key, home", "x": 0, "y": 0, "w": 1440, "h": 810 },
-    { "file": "CornerFlying.dc.html", "title": "Corner key, flying", "x": 1560, "y": 0, "w": 1440, "h": 810 },
-    { "file": "StopColumn.dc.html", "title": "Settings stop", "x": 0, "y": 1000, "w": 1440, "h": 810 },
-    { "file": "AccountFold.dc.html", "title": "Account fold", "x": 1560, "y": 1000, "w": 1440, "h": 810 }
+    { "file": "Main.dc.html", "title": "Settings stop, closed", "x": 0, "y": 0, "w": 1440, "h": 810 },
+    { "file": "StopOpen.dc.html", "title": "Settings stop, open", "x": 1560, "y": 0, "w": 1440, "h": 810 },
+    { "file": "FootLinks.dc.html", "title": "Footer line", "x": 0, "y": 1000, "w": 1440, "h": 810 },
+    { "file": "CockpitRows.dc.html", "title": "Cockpit remainder", "x": 1560, "y": 1000, "w": 1440, "h": 810 }
   ],
   "annotations": [
     {
       "id": "framing",
       "x": 0,
-      "y": -210,
+      "y": -200,
       "w": 460,
-      "text": "The drawer has two homes and the landing is only one of them. In the stands the landing page is on screen, so its column can absorb anything. In the cockpit there is no landing, and a pilot still needs volume, side, and a way to leave the seat. Whatever replaces the drawer has to answer the corner MENU key, or the drawer survives for flight and we have two systems instead of one."
+      "text": "Settings joins the landing column itself. The ship stop already taught the column the grammar this needs: a stop can open a panel at the column's own width. So settings becomes a stop and the corner MENU key disappears from the home screen entirely."
     },
     {
-      "id": "corner-home",
+      "id": "stop-closed",
       "x": 480,
-      "y": -150,
+      "y": -140,
       "w": 380,
-      "text": "B, at home: the corner MENU key becomes a settings key, icon only, and opens the panel in place over the stars. Same panel everywhere, drawer deleted. This is the direction I would take."
+      "text": "At rest: the settings stop rides at the head of the column, above the account, shorter and dimmer than the three below it. Present and findable, but visibly not part of the sentence that ends in PLAY NOW."
     },
     {
-      "id": "corner-flying",
+      "id": "stop-open",
       "x": 1560,
-      "y": -150,
+      "y": -140,
       "w": 400,
-      "text": "B, flying: the same key mid-match. Leave and Side ride at the head of the panel, because they only mean anything in a seat. This board is what the whole proposal stands on: if this works, nothing needs the drawer."
+      "text": "Open: the panel climbs from the stop the way the ship pager climbs from the ship stop. Everything the drawer's settings page held is here, banded the same way, with Controls and About opening in place."
     },
     {
-      "id": "stop-column",
+      "id": "foot-links",
       "x": 0,
       "y": 1860,
       "w": 420,
-      "text": "A: a fourth SETTINGS stop in the landing column, opening upward from its row. Honest about where settings live, but it reads oddly in the who-where-what sentence the column speaks, and it answers only the stands. The cockpit still needs a key, and once that key exists it may as well open the same panel, which is B."
+      "text": "The alternative that costs no stop: a quiet mono line under PLAY NOW opening the same panel. Cheapest presence, but it puts the way to turn the music down in the smallest type on the screen, and a first session will not find it."
     },
     {
-      "id": "account-fold",
+      "id": "cockpit",
       "x": 1560,
       "y": 1860,
       "w": 400,
-      "text": "C: settings folded under the account list, drawn to be ruled out. It buries sound and controls behind an identity chooser they have nothing to do with, trims rows to fit, and still says nothing about flight."
+      "text": "The landing exists only in the stands, so the drawer's death leaves a seated pilot needing exactly three things: the way out of the seat, which side it is on, and the volume. The corner key keeps the mixer icon mid-match and opens only that. Everything else waits at home."
     }
   ],
   "launch": { "view": "canvas" }
