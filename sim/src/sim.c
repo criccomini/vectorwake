@@ -85,21 +85,21 @@ int32_t sim_units_speed(int32_t v) {
     return (int32_t)(((int64_t)v << 16) / 1000);
 }
 
-static int32_t sim_units_thrust(int32_t t) {
+int32_t sim_units_thrust(int32_t t) {
     /* Thrust uses tenths of the documented settings unit. Its useful
      * increments are smaller than one whole unit now, and integer source
      * values would otherwise force a point to be either too strong or dead. */
     return (int32_t)(((int64_t)t << 16) / 10000);
 }
 
-static int32_t sim_units_rotation(int32_t r) {
+int32_t sim_units_rotation(int32_t r) {
     return (int32_t)(((int64_t)r << 16) / 40000);
 }
 
 int32_t sim_units_energy(int32_t e) { return e * 1024; }
 
 /* r is energy*10 per second; per tick that is r/1000 energy. */
-static int32_t sim_units_recharge(int32_t r) {
+int32_t sim_units_recharge(int32_t r) {
     return (int32_t)(((int64_t)r * 1024) / 1000);
 }
 

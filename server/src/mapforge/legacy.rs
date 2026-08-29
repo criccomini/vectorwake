@@ -401,6 +401,7 @@ mod tests {
             let (map, graph) = brief.build().expect("a generated map");
             let wrapped = super::super::Brief::V1(brief.clone());
             let metrics = assess_brief(&wrapped, &map, graph, false).expect("metrics");
+            println!("MEASURE {name}: contact {:.2}", metrics.contact_seconds);
             assert!(metrics.accepted, "{name}: {:?}", metrics.gates);
             assert_eq!(brief.expected_hash.as_deref(), Some(metrics.hash.as_str()));
             assert_eq!(

@@ -35,7 +35,7 @@
 //!                    and they pull opposite ways, so a sweep of both together
 //!                    reports their sum and hides which one is doing what
 
-use crate::{ai, calibrate::spec_triggers, config, nav, pilots, shopper, sim};
+use crate::{ai, calibrate::spec_triggers, config, nav, pilots, sim};
 
 const HZ: u32 = 100;
 
@@ -54,18 +54,19 @@ const ROSTER: usize = pilots::AUTHORED_PILOT_COUNT;
 /// The room, unpacked and tuned. `Arena::build` salts the same way, and the
 /// salt is what makes twenty matches twenty matches rather than one repeated.
 ///
-/// `VW_MELEE_SPRAY` lands here rather than on the caller's copy of the
-/// ceiling, because `sim_set_kit` checks the arena's own and refuses a kit
-/// built past it. Set rather than clamped down: the live ceiling is not
-/// necessarily the one the zone asked for, since `Room::apply_config` caps
-/// every add-on at `MOD_MAX` and spray's own maximum is higher. Running above
-/// the live ceiling is how that difference gets a number on it.
+/// `VW_MELEE_SPRAY` lands on every hull's profile rather than on a ceiling,
+/// because there is no ceiling any more: a hull throws what its profile says.
+/// Set on all seven, so the sweep asks what spray is worth to the roster
+/// rather than what it is worth to whichever hull already had the most.
 fn open(map: &[u8], salt: u32, tuning: &config::ArenaConfig) -> sim::World {
     match sim::World::from_packed(0x5ea1 ^ salt, map) {
         Ok(mut world) => {
             crate::Room::apply_config(&mut world, tuning);
             if let Some(cap) = knob("VW_MELEE_SPRAY") {
-                world.cfg.kit_ceiling[SPRAY] = (cap as u8).min(sim::mod_max(sim::MOD_MULTI));
+                let rounds = (cap as u8).min(sim::mod_max(sim::MOD_MULTI));
+                for class in world.cfg.classes.iter_mut() {
+                    class.kit[SPRAY] = rounds;
+                }
             }
             world
         }
@@ -156,7 +157,6 @@ fn play(
     roster: &mut [Seat],
     map: &[u8],
     tuning: &config::ArenaConfig,
-    ceiling: &[u8; sim::SLOT_COUNT],
     salt: u32,
     ticks: u32,
     per_side: usize,
@@ -181,14 +181,9 @@ fn play(
             println!("melee: the map has no start for seat {i}");
             std::process::exit(1);
         }
-        let kit = shopper::build(&shopper::wants(&person_of(pilot)), ceiling);
-        if !world.set_kit(id as usize, &kit) {
-            println!("melee: seat {i} will not wear its kit");
-            std::process::exit(1);
-        }
         ships.push(id as u8);
     }
-    // A live room deals every kit and then restarts: full bars, loaded
+    // A live room restarts once every seat is filled: full bars, loaded
     // charges, authored starts. Anything else measures a fixture the game
     // never opens.
     world.restart();
@@ -502,15 +497,15 @@ pub fn run() {
     };
     let map: &[u8] = bytes;
 
-    // The ceiling a bot flies under: the zone's own, which is what a house
-    // account that has bought everything the zone sells reaches.
-    let ceiling = open(map, 1, &tuning).kit_ceilings();
+    // What each hull flies with, read off the tuned zone so a retune shows up
+    // in the table rather than under it.
+    let profiles = open(map, 1, &tuning);
 
     let mut seats: Vec<Seat> = (0..ROSTER)
         .map(|i| {
             let spec = pilots::individual(i);
             let person = person_of(i);
-            let kit = shopper::build(&shopper::wants(&person), &ceiling);
+            let kit = profiles.profile(spec.hull);
             Seat {
                 skill: if sweep() {
                     swept_skill(i, ROSTER)
@@ -550,7 +545,6 @@ pub fn run() {
             &mut seats,
             map,
             &tuning,
-            &ceiling,
             0x5eed_1eaf ^ m.wrapping_mul(2654435761),
             ticks,
             per_side,
@@ -562,10 +556,9 @@ pub fn run() {
     let mins = matches as f64 * ticks as f64 / (HZ as f64 * 60.0) * seated as f64 / ROSTER as f64;
     println!(
         "melee on {map_name}: {per_side} a side, {matches} matches of {}s, \
-multi_delay {}, spray ceiling {}",
+multi_delay {}",
         ticks / HZ,
         tuning.multi_delay.unwrap_or(50),
-        ceiling[SPRAY],
     );
     println!("  {air:.1} rounds in the air on average across the whole room");
     println!();

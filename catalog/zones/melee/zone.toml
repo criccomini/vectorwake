@@ -88,13 +88,14 @@ spawn_radius = 0
 # zone that later wants one should not also have to remember this line.
 safe_limit = 3000
 
-# A pilot is worth one the moment they spawn and one more for every kill on the
-# run. Their killer takes it. So the number over a ship is the length of its
-# current streak and nothing else, which is a sum a player can do at a glance,
-# and a fresh spawn is worth almost nothing to camp. docs/design/bounty.md.
-bounty_base = 1
-bounty_per_kill = 1
-points_per_flag = 0
+# Three kills without dying is a streak: the room is told, the hull goes gold,
+# and somebody comes to end it. Left at the baseline's threshold.
+#
+# Two settings stood here, `bounty_base` and `bounty_per_kill`, and a third
+# for flags. A kill paid the victim's bounty into a points total, and both
+# numbers went with the shop they fed. What a kill moves now is the killer's
+# own count and the room's score.
+streak_kills = 3
 
 # Five degrees between rounds. Between tunings this was the one setting that
 # moved a lot: a 15-degree fan was worth +5 win points and a 5-degree one +29,
@@ -152,44 +153,23 @@ damage = 515
 
 # The ships.
 #
-# There is no ships section. Every hull here flies alike, climbs alike and
-# holds alike. What tells them apart is how each spends the same target budget:
-# every oriented collision rectangle occupies exactly 625 square pixels. A
-# Cipher is 16 pixels across its flank and just over 39 down its length, while
-# Chord makes the opposite trade. The client art is fitted around those fixed
-# extents, and a zone has no business moving them.
+# There is no ships section, and the roster is the baseline's: seven hulls,
+# each with its own flight row, its own gun and bomb, and its own profile. See
+# docs/design/ships.md for what each one is and `sim/src/baseline.c` for the
+# four tables it is written in.
 #
-# This used to be seven blocks: a rotation for the interceptor, a speed for
-# the bomber, a recharge for the skirmisher, and a row of add-on ceilings
-# apiece. Both are gone, for the same reason. Thirty points has to mean the
-# same thing to everybody or a kit is not a fair trade, and an add-on ceiling
-# that lives on a hull is an upgrade the shop can never sell. See
-# docs/design/ships.md.
-
-# What a kit may hold here, once, for every hull alike. A pilot spends thirty
-# points inside these ceilings; the shop sells the right to reach the ones
-# their account has not bought yet, never a point more to spend.
+# It is not repeated here on purpose. A zone that wrote the roster out would be
+# a second copy of it to keep in step, and this zone plays the game as shipped.
+# A block per hull is how a zone that wants a different ship says so:
 #
-# These are the baseline's own numbers, written out because this is the zone
-# people actually play and the ceilings are worth reading in one place. Guns
-# spray, bounce and freeze. Bombs bounce, sense, shatter and freeze. Neither
-# crosses over: a bullet with a fuse is a bomb, and a rack that throws three at
-# a pull is a different game.
+#   [[arena.ships]]
+#   name = "Facet"
+#   speed = 3050
+#   gun_mods = { multi = 4, bounce = 1 }
+#   charges = [2, 0]
 #
-# Spray to three, which is four rounds at a pull.
-#
-# This said five, and five is what the core allows, but the arena clamped every
-# add-on at three on its way in and nothing said so: the number here has never
-# been the number in the room. That clamp is fixed, so this is now the figure
-# it looks like, and three is deliberate rather than inherited. Four rounds
-# already fill a lane, and each rung above costs the room in bullets it does
-# not pay back in decisions: measured over forty matches, going from three to
-# five put another three rounds in the air across the room and narrowed the gap
-# between the best pilot on the roster and the worst.
-[arena.kit]
-gun_mods = { multi = 3, bounce = 1, freeze = 1 }
-bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, freeze = 1 }
-
-# Three repels and three bursts for anyone who buys the rungs and is willing
-# to spend a fifth of their kit on them.
-charges = [3, 3]
+# Two blocks that used to live under this heading are gone with the shop. One
+# was a flight row per hull, removed when a kit was thirty points and thirty
+# points had to buy the same ship whatever you were sitting in; the other was
+# `[arena.kit]`, which said what that kit could hold here. There is no kit, so
+# the hulls have their engines back and there is no shelf left to describe.

@@ -291,10 +291,12 @@ pub struct sim_ship_class {
     pub fore: i32,
     pub aft: i32,
     pub halfw: i32,
-    /// A ladder of patterns per trigger, climbed by the pilot's level, with
-    /// 255 ending it. The baseline builds the same ladders for every class;
-    /// how far a weapon climbs is `sim_settings::kit_ceiling` now.
+    /// A ladder of patterns per trigger, climbed by the level in the profile,
+    /// with 255 ending it. The shipped roster names one rung per hull.
     pub trigger: [[u8; MAX_RUNGS]; TRIG_COUNT],
+    /// The profile: what this hull flies with, over the flat slot space.
+    /// Dealt at every spawn and owned by nobody.
+    pub kit: [u8; SLOT_COUNT],
 }
 
 #[repr(C)]
@@ -308,23 +310,8 @@ pub struct sim_settings {
     pub pattern_count: u8,
     /// What each charge kind fires, as a pattern index.
     pub charge: [u8; MAX_CHARGES],
-    /// The most a kit may put in each slot, over the flat slot space, and
-    /// zero for a slot this arena does not have. Zone-wide: it was a row per
-    /// hull, which meant an upgrade could be bought and then refused by the
-    /// hull somebody wanted to fly it on.
-    pub kit_ceiling: [u8; SLOT_COUNT],
-    /// What a kill adds to the killer's own bounty. Bounty is a run rather
-    /// than a loadout, so this is the whole of what makes one.
-    pub bounty_per_kill: u16,
-    /// What a pilot who has just spawned is worth. One, so killing one pays
-    /// almost nothing and camping a pad is not a living.
-    pub bounty_base: u16,
-    /// Points on top of the victim's bounty per flag they were carrying.
-    pub points_per_flag: u16,
-    /// How many kills without dying make a streak, and what being on one adds
-    /// to the pilot's bounty. Zero kills turns it off.
+    /// How many kills without dying make a streak. Zero turns it off.
     pub streak_kills: u16,
-    pub streak_bounty: u16,
     /// What one rung of each add-on is worth, in the units of the field it
     /// moves.
     pub mod_step: [i32; MOD_COUNT],
@@ -417,31 +404,25 @@ pub struct sim_ship {
     /// hand out the assists above. 255 is an empty slot.
     pub hurt_by: [u8; ASSIST_SLOTS],
     pub hurt_at: [u32; ASSIST_SLOTS],
-    /// What this hull is, which is the kit dealt back at every spawn.
+    /// What this hull is, which is the profile dealt back at every spawn. The
+    /// profile itself belongs to the class, and a ship knows its class.
     pub up: [u8; UP_COUNT],
     pub level: [u8; TRIG_COUNT],
     pub mods: [u16; TRIG_COUNT],
-    /// The kit itself, over the flat slot space, so a respawn can re-deal it.
-    pub kit: [u8; SLOT_COUNT],
     /// Multifire declined: the add-on is still held, it is just not applied
     /// when the trigger is pulled.
     pub multi_off: u8,
     /// Last tick's buttons, for the toggles that fire on a press.
     pub btn_prev: u16,
     /// Charges in hand, and the one thing a death does not give back: the
-    /// kit deals them once and the match spends them.
+    /// profile deals them once and the match spends them.
     pub charge: [u8; MAX_CHARGES],
     /// Ticks until each kind may be thrown again. A clock per kind, so a
     /// burst shutting its own key says nothing about the repel.
     pub charge_cooldown: [u16; MAX_CHARGES],
-    /// Kills since this hull last spawned, which is its whole bounty beyond
-    /// the base. Cleared by death.
-    pub run: u16,
-    /// The same kills counted rather than priced, which is what a streak is
-    /// measured in. Cleared wherever `run` is.
+    /// Kills since this hull last spawned, which is what a streak is measured
+    /// in. Cleared by death.
     pub streak: u16,
-    /// The score. Not cleared by death.
-    pub points: u32,
 }
 
 #[repr(C)]
@@ -559,12 +540,6 @@ extern "C" {
     pub fn sim_set_ship_class(s: *mut sim_state, cfg: *const sim_settings, i: u8, cls: u8)
         -> c_int;
     pub fn sim_hash(s: *const sim_state) -> u64;
-    /// What a pilot is worth to whoever kills them: a sum over what they hold
-    /// plus what killing has earned. Derived, never stored.
-    /// What a pilot is worth: the zone's base plus their run. It takes the
-    /// settings now because the base is a zone number rather than a sum over
-    /// what the hull is holding.
-    pub fn sim_bounty(cfg: *const sim_settings, sh: *const sim_ship) -> i32;
     /// Whether this pilot has `streak_kills` kills without dying, which is
     /// the one place the threshold is compared.
     pub fn sim_on_streak(cfg: *const sim_settings, sh: *const sim_ship) -> c_int;
@@ -630,19 +605,10 @@ extern "C" {
     pub fn sim_eff_max_energy(c: *const sim_ship_class, s: *const sim_ship) -> i32;
     pub fn sim_eff_speed(c: *const sim_ship_class, s: *const sim_ship) -> i32;
     pub fn sim_eff_thrust(c: *const sim_ship_class, s: *const sim_ship) -> i32;
-    /// Per-slot ceilings for a hull, over the flat kit space. Zero is a slot
-    /// the roster keeps from it.
-    /// What a kit spends, which is its sum: every slot costs one.
-    pub fn sim_kit_cost(kit: *const u8) -> c_int;
-    /// Validate a kit against the hull and the budget, store it, deal it with
-    /// ammunition. Returns 0 and changes nothing if it does not fit.
-    pub fn sim_set_kit(sh: *mut sim_ship, cfg: *const sim_settings, kit: *const u8) -> c_int;
     /// Deal the stored kit. `ammunition` is the difference between arriving
     /// and respawning: a death re-deals only the frame.
     pub fn sim_deal_kit(sh: *mut sim_ship, cfg: *const sim_settings, ammunition: c_int);
     pub fn sim_restart(s: *mut sim_state, cfg: *const sim_settings);
-    pub fn sim_base_entitlements(out: *mut u8);
-    pub fn sim_starter_kit(ceiling: *const u8, out: *mut u8) -> c_int;
     /// One named slot, with the arena's ceilings enforced.
     pub fn sim_grant(sh: *mut sim_ship, cfg: *const sim_settings, ty: u8) -> c_int;
     pub fn sim_pack(s: *const sim_state, out: *mut u8, cap: c_int) -> c_int;
@@ -660,6 +626,27 @@ extern "C" {
     pub fn sim_flags_held(s: *const sim_state, team: u8) -> c_int;
     pub fn sim_units_speed(v: i32) -> i32;
     pub fn sim_units_energy(v: i32) -> i32;
+    pub fn sim_units_thrust(v: i32) -> i32;
+    pub fn sim_units_rotation(v: i32) -> i32;
+    pub fn sim_units_recharge(v: i32) -> i32;
+}
+
+/// The zone file's units, converted the way the core converts them. A zone
+/// writes 3600 for a speed and 190 for a thrust, exactly as `baseline.c` does.
+pub fn units_speed(v: i32) -> i32 {
+    unsafe { sim_units_speed(v) }
+}
+pub fn units_energy(v: i32) -> i32 {
+    unsafe { sim_units_energy(v) }
+}
+pub fn units_thrust(v: i32) -> i32 {
+    unsafe { sim_units_thrust(v) }
+}
+pub fn units_rotation(v: i32) -> i32 {
+    unsafe { sim_units_rotation(v) }
+}
+pub fn units_recharge(v: i32) -> i32 {
+    unsafe { sim_units_recharge(v) }
 }
 
 pub const PACK_MAX: usize = 64 * 1024;
@@ -667,7 +654,7 @@ pub const PACK_MAX: usize = 64 * 1024;
 /// is worked out: every seat carrying its owner-only tail. Grows whenever that
 /// tail does, and `a_full_private_snapshot_uses_the_state_bound` below is what
 /// notices when this copy has not kept up.
-pub const STATE_PACK_MAX: usize = 68_238;
+pub const STATE_PACK_MAX: usize = 60_843;
 pub const PACK_PRIVATE_ALL: u8 = 0x01;
 pub const SETTINGS_PACK_MAX: usize = 8192;
 pub const UP_COUNT: usize = 5;
@@ -694,14 +681,13 @@ pub const CHARGE_MAX: u8 = 15;
 /// How many recent attackers a hull remembers, which is what an assist is
 /// made of. Mirrors SIM_ASSIST_SLOTS.
 pub const ASSIST_SLOTS: usize = 4;
-/// How many kinds of charge one kit may carry. Mirrors SIM_KIT_CHARGE_SLOTS.
+/// How many kinds of charge one hull may carry. Mirrors SIM_KIT_CHARGE_SLOTS.
 pub const KIT_CHARGE_SLOTS: usize = 2;
-/// The flat kit space: a stat, a rung, an add-on or a charge, all one shape.
+/// The flat profile space: a stat, a rung, an add-on or a charge, one shape.
 pub const SLOT_COUNT: usize = UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + MAX_CHARGES;
-/// Every stat has eight effective build steps, and a kit may spend thirty
-/// points in total.
+/// Steps a stat's ladder holds. The shipped roster spends none of them: a
+/// hull's flight is its own row, where the step is zero.
 pub const UP_STEPS: u8 = 8;
-pub const KIT_BUDGET: u32 = 30;
 /// Charge kinds: a count you carry and spend. Two of the four slots the rack
 /// holds, the rest left for a zone that ships more.
 pub const CHARGE_REPEL: usize = 0;
@@ -1052,16 +1038,16 @@ impl World {
         std::mem::swap(&mut self.state, &mut self.scratch);
     }
 
-    /// What a ship's run was going into the step whose events are still in
-    /// hand, which is the one thing about a dead pilot the live state cannot
-    /// answer: a death clears the run, and the run is what the kill was
-    /// priced on.
+    /// How long a ship's run was going into the step whose events are still
+    /// in hand, which is the one thing about a dead pilot the live state
+    /// cannot answer: a death clears the run, and the length of the run it
+    /// ended is what the pilot log files against the death.
     ///
     /// `scratch` is the state the last step started from. The swap above
     /// leaves it there rather than throwing it away, so this is free and
     /// exact, and it means only until the next step.
     pub fn run_before(&self, ship: usize) -> u16 {
-        self.scratch.ships[ship].run
+        self.scratch.ships[ship].streak
     }
 
     pub fn hash(&self) -> u64 {
@@ -1134,10 +1120,6 @@ impl World {
         unsafe { sim_eff_max_energy(&self.cfg.classes[cls], &self.state.ships[ship]) }
     }
 
-    pub fn bounty(&self, ship: usize) -> i32 {
-        unsafe { sim_bounty(&*self.cfg, &self.state.ships[ship]) }
-    }
-
     pub fn on_streak(&self, ship: usize) -> bool {
         unsafe { sim_on_streak(&*self.cfg, &self.state.ships[ship]) != 0 }
     }
@@ -1149,68 +1131,42 @@ impl World {
         sh.active != 0 && sh.alive != 0 && sh.energy >= self.eff_max_energy(ship)
     }
 
-    /// Give a seat a kit, validated against the hull and the budget. False
-    /// means it did not fit and nothing changed, so a refused kit leaves the
-    /// pilot in what they were already flying rather than half dressed.
-    ///
-    /// This is what a seat is handed on arrival and what a hangar sends. The
-    /// core deals it again at every respawn, minus the ammunition.
     /// Open a match: everybody home, whole, and reloaded. See `sim_restart`.
     pub fn restart(&mut self) {
         unsafe { sim_restart(&mut *self.state, &*self.cfg) }
     }
 
-    pub fn set_kit(&mut self, ship: usize, kit: &[u8; SLOT_COUNT]) -> bool {
-        let sh: *mut sim_ship = &mut self.state.ships[ship];
-        unsafe { sim_set_kit(sh, &*self.cfg, kit.as_ptr()) != 0 }
+    /// What a hull flies with, over the flat slot space. Nobody spends points
+    /// on this and nobody buys a rung: you pick a ship and the ship is the
+    /// build. See `sim_ship_class::kit`.
+    pub fn profile(&self, cls: u8) -> [u8; SLOT_COUNT] {
+        self.cfg.classes[cls as usize].kit
     }
 
-    /// Per-slot ceilings for a hull: how many of each a kit may ask for.
-    /// Zero is a slot the roster keeps from that hull.
-    /// What a kit costs, which is the sum of its slots: every one of them is
-    /// worth exactly one. See `sim_kit_cost`.
-    pub fn kit_cost(kit: &[u8; SLOT_COUNT]) -> u32 {
-        unsafe { sim_kit_cost(kit.as_ptr()).max(0) as u32 }
-    }
-
-    /// What an account owns before it has bought anything. See
-    /// `sim_base_entitlements`.
-    pub fn base_entitlements() -> [u8; SLOT_COUNT] {
-        let mut out = [0u8; SLOT_COUNT];
-        unsafe { sim_base_entitlements(out.as_mut_ptr()) };
-        out
-    }
-
-    /// A whole budget spent inside these ceilings, which is what a seat with
-    /// no kit of its own flies. See `sim_starter_kit`.
-    pub fn starter_kit(ceiling: &[u8; SLOT_COUNT]) -> [u8; SLOT_COUNT] {
-        let mut out = [0u8; SLOT_COUNT];
-        unsafe { sim_starter_kit(ceiling.as_ptr(), out.as_mut_ptr()) };
-        out
-    }
-
-    /// What this arena lets a kit hold. No hull argument: the roster stopped
-    /// having a say, so an upgrade that fits in one hangar fits in all of them.
-    pub fn kit_ceilings(&self) -> [u8; SLOT_COUNT] {
-        self.cfg.kit_ceiling
-    }
-
-    /// What the game itself has, before any zone tunes it: the baseline's own
-    /// ceiling over the flat slot space.
+    /// The same, before any zone tunes it, for tools with no catalog to hand.
     ///
-    /// Used by tests and offline tools that have no catalog. The live shop
-    /// applies the selected zone and reads its ceiling instead.
-    ///
-    /// Built once. It needs a whole settings block to read twenty-five bytes
-    /// out of, and that block is a megabyte of specs and patterns.
-    pub fn baseline_kit_ceiling() -> &'static [u8; SLOT_COUNT] {
-        static CEILING: std::sync::OnceLock<[u8; SLOT_COUNT]> = std::sync::OnceLock::new();
-        CEILING.get_or_init(|| {
+    /// Built once. It needs a whole settings block to read a few bytes out
+    /// of, and that block is a megabyte of specs and patterns.
+    pub fn baseline_profiles() -> &'static [[u8; SLOT_COUNT]; MAX_CLASSES] {
+        static PROFILES: std::sync::OnceLock<[[u8; SLOT_COUNT]; MAX_CLASSES]> =
+            std::sync::OnceLock::new();
+        PROFILES.get_or_init(|| {
             let map: Box<sim_map> = zeroed_box();
             let mut cfg: Box<sim_settings> = zeroed_box();
             unsafe { sim_settings_baseline(&mut *cfg, &*map) };
-            cfg.kit_ceiling
+            let mut out = [[0u8; SLOT_COUNT]; MAX_CLASSES];
+            for (i, row) in out.iter_mut().enumerate() {
+                *row = cfg.classes[i].kit;
+            }
+            out
         })
+    }
+
+    /// Deal this hull's profile onto it. `ammunition` refills the rack, which
+    /// only a match start does: a death re-deals the frame alone.
+    pub fn deal_kit(&mut self, ship: usize, ammunition: bool) {
+        let sh: *mut sim_ship = &mut self.state.ships[ship];
+        unsafe { sim_deal_kit(sh, &*self.cfg, c_int::from(ammunition)) }
     }
 
     pub fn grant(&mut self, ship: usize, ty: u8) -> bool {
@@ -1476,19 +1432,23 @@ mod layout {
 
         let mut packed = vec![0u8; STATE_PACK_MAX];
         let len = world.pack_around(&mut packed, 0, 0, -1, 0, PACK_PRIVATE_ALL);
+        // The whole-state bound used to be the larger of the two, because a
+        // ship carried its kit and the whole-state shape carried everybody's.
+        // The profile belongs to the class now, so it travels once with the
+        // settings and both shapes fell under 64 KiB. The bound is still its
+        // own number, because it is the exact size of the largest whole-state
+        // snapshot and this is what notices when that copy goes stale.
         assert!(
-            len > PACK_MAX as i32,
-            "the maximum private state exceeds 64 KiB"
-        );
-        assert!(
-            len <= STATE_PACK_MAX as i32,
-            "the state bound is large enough"
+            len == STATE_PACK_MAX as i32,
+            "a full whole-state snapshot exactly fills its bound, and reads {len}"
         );
 
+        // And the network buffer takes it, which it did not used to: the two
+        // shapes differ by one private tail per ship, and a tail lost its kit.
         let mut network = vec![0u8; PACK_MAX];
         assert!(
-            world.pack_around(&mut network, 0, 0, -1, 0, PACK_PRIVATE_ALL) <= 0,
-            "the network scratch buffer must refuse this whole-state shape"
+            world.pack_around(&mut network, 0, 0, -1, 0, PACK_PRIVATE_ALL) > 0,
+            "a whole-state shape now fits the network buffer too"
         );
     }
 }

@@ -34,7 +34,6 @@ pub struct Pilot {
     pub kills: i16,
     pub deaths: u16,
     pub assists: u16,
-    pub points: u32,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]

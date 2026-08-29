@@ -739,21 +739,6 @@ pub(crate) async fn serve_client(
                     }
                 }
             }
-            C2S_KIT => {
-                let before = presence.current().flying();
-                commands::kit(&zone, &presence, &data).await;
-                // The command helper owns the mutation, but the connection
-                // still owns the fleet-visible departure edge.
-                if let Some((room, _)) = before {
-                    if presence.current() == Presence::Unjoined {
-                        let mut z = zone.lock().await;
-                        if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
-                            z.rooms[index].broadcast_roster();
-                        }
-                        z.push_status();
-                    }
-                }
-            }
             C2S_SAY => {
                 commands::say(&zone, &presence, &data).await;
             }

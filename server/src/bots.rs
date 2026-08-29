@@ -328,9 +328,12 @@ impl Default for Standings {
 }
 
 impl Standings {
-    /// Read one roster message. Rows are seventeen bytes and a name: ship,
-    /// label, rating, games, team, kills, deaths, points, bounty, and the
-    /// name's length before it.
+    /// Read one roster message. Rows are twelve bytes and a name: ship, label,
+    /// rating, games, team, kills, deaths, assists, and the name's length
+    /// before it.
+    ///
+    /// It was nineteen. Points and bounty came off the row with the two
+    /// numbers a kill used to pay.
     ///
     /// Built fresh rather than merged, so a seat that has left the room takes
     /// its row with it instead of haunting the table.
@@ -341,8 +344,8 @@ impl Standings {
         for _ in 0..n {
             // A short read keeps the rows already parsed and abandons the
             // rest, which is what the client does with the same message.
-            let Some(&len) = m.get(o + 18) else { break };
-            if m.len() < o + 19 + len as usize {
+            let Some(&len) = m.get(o + 12) else { break };
+            if m.len() < o + 13 + len as usize {
                 break;
             }
             let ship = m[o] as usize;
@@ -354,7 +357,7 @@ impl Standings {
                     bot: label == 2 || label == 3,
                 });
             }
-            o += 19 + len as usize;
+            o += 13 + len as usize;
         }
         self.0 = next;
     }
@@ -816,12 +819,13 @@ struct Live {
 
 const RATED_BUSY_BACKOFF_MS: u64 = 180_000;
 
+/// One roster individual's credential, kept for the life of the process.
+///
+/// It used to carry a shopping flag too, because a completed flight earned an
+/// individual the right to buy one rung. There is nothing to buy: what a bot
+/// flies is the hull it was written into.
 struct Account {
     secret: String,
-    /// A successful flight makes the next session eligible to buy one rung.
-    /// A failed join leaves this false, so reconnect churn cannot empty a
-    /// wallet one request at a time.
-    shop_ready: bool,
 }
 
 #[derive(Default)]
@@ -834,34 +838,9 @@ impl Accounts {
 
     fn remember(&self, who: &str, secret: String) {
         if let Ok(mut accounts) = self.0.lock() {
-            accounts.entry(who.to_string()).or_insert(Account {
-                secret,
-                shop_ready: true,
-            });
-        }
-    }
-
-    fn may_shop(&self, who: &str) -> bool {
-        self.0
-            .lock()
-            .ok()
-            .and_then(|accounts| accounts.get(who).map(|a| a.shop_ready))
-            .unwrap_or(false)
-    }
-
-    fn bought(&self, who: &str) {
-        if let Ok(mut accounts) = self.0.lock() {
-            if let Some(account) = accounts.get_mut(who) {
-                account.shop_ready = false;
-            }
-        }
-    }
-
-    fn complete_session(&self, who: &str) {
-        if let Ok(mut accounts) = self.0.lock() {
-            if let Some(account) = accounts.get_mut(who) {
-                account.shop_ready = true;
-            }
+            accounts
+                .entry(who.to_string())
+                .or_insert(Account { secret });
         }
     }
 }
@@ -1241,13 +1220,11 @@ async fn ask(addr: &str) -> Option<(ArenaWant, String)> {
 /// still allowed to fly bots, but each one must use its own filtered world.
 #[derive(Debug, PartialEq, Eq)]
 enum BotIdentity {
-    /// A token, and what the account behind it owns. The entitlements come
-    /// back with the session the way they do for a player's client, and they
-    /// are what a kit is built inside: an individual flies what it has bought
-    /// and nothing else, checked at the arena's door like anybody's.
+    /// A token, and nothing else. What a bot flies is the hull it was written
+    /// with, and a hull is a whole ship: there is no kit to build and nothing
+    /// an account could own that would change what leaves the barrel.
     House {
         token: String,
-        entitlements: [u8; crate::sim::SLOT_COUNT],
     },
     Unaccounted,
 }
@@ -1255,21 +1232,13 @@ enum BotIdentity {
 impl BotIdentity {
     fn session(&self) -> &str {
         match self {
-            BotIdentity::House { token, .. } => token,
+            BotIdentity::House { token } => token,
             BotIdentity::Unaccounted => "",
         }
     }
 
     fn shares_world(&self) -> bool {
         matches!(self, BotIdentity::House { .. })
-    }
-
-    /// What this flight may wear: what its own account has bought.
-    fn kit_entitlements(&self) -> [u8; crate::sim::SLOT_COUNT] {
-        match self {
-            BotIdentity::House { entitlements, .. } => *entitlements,
-            BotIdentity::Unaccounted => crate::sim::World::base_entitlements(),
-        }
     }
 }
 
@@ -1325,120 +1294,17 @@ async fn bot_identity(who: &pilots::PilotSpec, accounts: &Accounts) -> Result<Bo
                 .map_err(|e| format!("{name} cannot begin a session: {e}"))
         }
     };
-    let mut reply = session(secret.clone()).await?;
+    let reply = session(secret.clone()).await?;
 
-    // The shopping, which happens between sessions and never during one.
-    //
-    // This is the part of a career a player can see: an individual banks the
-    // bounty it takes and comes back after a completed flight in a ship it paid
-    // for. The hull and skill stay fixed; rating and purchases carry the
-    // account's history.
-    //
-    // Through the endpoints a person's client uses, with nothing added for
-    // being ours: the shelf prices it, the wallet is checked at the meta-layer
-    // and the refusal is the same one a player gets.
-    if accounts.may_shop(name) && spend(&meta, &secret, who, &reply).await {
-        accounts.bought(name);
-        // A purchase moves the ceiling and the arena reads its copy off the
-        // token, so the one in hand is already out of date. This is why the
-        // client asks for a fresh one after buying too.
-        reply = session(secret).await?;
-    }
-
+    // What carries an individual's history is its rating and nothing else.
+    // The hull and the skill are written down, and the ship is the hull.
     let token = reply
         .get("token")
         .and_then(|v| v.as_str())
         .filter(|token| !token.is_empty())
         .ok_or_else(|| format!("{name} cannot begin a session: response had no token"))?
         .to_string();
-    let mut entitlements = crate::sim::World::base_entitlements();
-    if let Some(owned) = reply.get("entitlements").and_then(|v| v.as_array()) {
-        for (slot, n) in owned.iter().enumerate() {
-            if let (Some(c), Some(n)) = (entitlements.get_mut(slot), n.as_u64()) {
-                *c = n.min(u8::MAX as u64) as u8;
-            }
-        }
-    }
-    Ok(BotIdentity::House {
-        token,
-        entitlements,
-    })
-}
-
-/// One session's worth of shopping, and whether anything was bought.
-///
-/// One rung at a time. A bot that emptied its wallet the moment it could would
-/// arrive one evening in a ship three weeks ahead of the pilots it is filling a
-/// room for. One rung after a completed flight spreads that growth over time
-/// instead of turning a saved wallet into a finished ship at once.
-async fn spend(
-    meta: &str,
-    secret: &str,
-    who: &pilots::PilotSpec,
-    session: &serde_json::Value,
-) -> bool {
-    let rivets = session
-        .get("rivets")
-        .and_then(|v| v.as_i64())
-        .unwrap_or_default();
-    if rivets <= 0 {
-        return false;
-    }
-    let body = serde_json::json!({ "secret": secret }).to_string();
-    let Ok(shelf) = crate::meta::call(meta, "/v1/upgrades", &body).await else {
-        return false;
-    };
-    // Rows with no price on them are slots this account has already taken to
-    // the top of its ladder. `?` on the price drops them, which is exactly the
-    // set this used to be handed before the catalog started listing them.
-    let offered: Vec<(usize, u32)> = shelf
-        .get("slots")
-        .and_then(|v| v.as_array())
-        .map(|rows| {
-            rows.iter()
-                .filter_map(|row| {
-                    let slot = row.get("slot")?.as_u64()? as usize;
-                    let price = row.get("price")?.as_u64()? as u32;
-                    Some((slot, price))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    let Some(slot) = next_purchase(who, &offered, rivets) else {
-        return false;
-    };
-    let body = serde_json::json!({ "secret": secret, "slot": slot }).to_string();
-    match crate::meta::call(meta, "/v1/buy", &body).await {
-        Ok(bought) => {
-            let left = bought.get("rivets").and_then(|v| v.as_i64()).unwrap_or(0);
-            println!("{} bought slot {slot}; {left} rivets left", who.callsign);
-            true
-        }
-        // A refusal is the meta-layer's answer and is not an error here: a
-        // wallet that moved between the shelf and the purchase is a race this
-        // pilot loses by flying what it already owns.
-        Err(why) => {
-            println!("{} could not buy slot {slot}: {why}", who.callsign);
-            false
-        }
-    }
-}
-
-fn next_purchase(who: &pilots::PilotSpec, offered: &[(usize, u32)], rivets: i64) -> Option<usize> {
-    crate::shopper::next_buy(&crate::shopper::wants(&who.behavior), offered, rivets)
-}
-
-fn pilot_kit(
-    who: &pilots::PilotSpec,
-    arena_ceiling: &[u8; crate::sim::SLOT_COUNT],
-    identity: &BotIdentity,
-) -> [u8; crate::sim::SLOT_COUNT] {
-    let owned = identity.kit_entitlements();
-    let mut ceiling = *arena_ceiling;
-    for (slot, top) in ceiling.iter_mut().enumerate() {
-        *top = (*top).min(owned[slot]);
-    }
-    crate::shopper::build(&crate::shopper::wants(&who.behavior), &ceiling)
+    Ok(BotIdentity::House { token })
 }
 
 /// The join a bot sends, built where something can check it.
@@ -1512,10 +1378,7 @@ async fn fly(
             return FlightEnd::AuthFailed;
         }
     };
-    fly_socket(
-        addr, who, room, maps, rigs, yielding, accounts, identity, ws,
-    )
-    .await
+    fly_socket(addr, who, room, maps, rigs, yielding, identity, ws).await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1526,7 +1389,6 @@ async fn fly_socket<S>(
     maps: Arc<Maps>,
     rigs: Arc<Rigs>,
     yielding: Arc<AtomicBool>,
-    accounts: Arc<Accounts>,
     identity: BotIdentity,
     ws: tokio_tungstenite::WebSocketStream<S>,
 ) -> FlightEnd
@@ -1767,22 +1629,8 @@ where
                         // the same answer a player gets.
                         // A named opponent substitutes the common base entitlement for
                         // the career ceiling so a rung stays the same opponent.
-                        let arena_ceiling = match &sight {
-                            Sight::Shared(rig) => rig.lock_world().kit_ceilings(),
-                            // No shared world to read it off yet. The game's
-                            // own row is right for every zone that has not
-                            // tuned one, and a zone that has will refuse the
-                            // kit and leave the starter one, which is a safe
-                            // way to be wrong.
-                            Sight::Dark => *crate::sim::World::baseline_kit_ceiling(),
-                        };
-                        let kit = pilot_kit(&who, &arena_ceiling, &identity);
-                        let mut m = Vec::with_capacity(1 + kit.len());
-                        m.push(crate::C2S_KIT);
-                        m.extend_from_slice(&kit);
-                        if sink.send(Message::Binary(m)).await.is_err() {
-                            break;
-                        }
+                        // Nothing to send about a loadout. The hull went out
+                        // with the join and the hull is the whole ship.
                         let brain_config = who.brain();
                         let b = fresh_brain(ship, brain_config, match_seed, match_number);
                         if !share_world {
@@ -2134,12 +1982,6 @@ where
     // ends, so a close that hangs is a seat the room has already given up and
     // the population has not noticed.
     let _ = tokio::time::timeout(std::time::Duration::from_secs(2), sink.close()).await;
-    let completed = welcomed_at.is_some()
-        && (matches!(outcome, FlightEnd::Departed | FlightEnd::Yielded)
-            || welcomed_at.is_some_and(|at| at.elapsed().as_millis() as u64 >= MIN_LIFE_MS));
-    if completed {
-        accounts.complete_session(&who.callsign);
-    }
     outcome
 }
 
@@ -2148,36 +1990,12 @@ mod tests {
 
     use super::*;
 
-    fn map_message(world: &sim::World) -> Vec<u8> {
-        let mut message = vec![crate::S2C_MAP];
-        message.extend_from_slice(&world.packed_map());
-        message
-    }
-
-    fn settings_message(world: &sim::World) -> Vec<u8> {
-        let mut message = vec![crate::S2C_SETTINGS];
-        message.extend_from_slice(&1u32.to_le_bytes());
-        message.extend_from_slice(&world.packed_settings());
-        message
-    }
-
     fn welcome_message(ship: u8, lifecycle: u32, tick: u32, room: u16) -> Vec<u8> {
         let mut message = vec![crate::S2C_WELCOME, ship];
         message.extend_from_slice(&lifecycle.to_le_bytes());
         message.extend_from_slice(&tick.to_le_bytes());
         message.extend_from_slice(&room.to_le_bytes());
         message.extend_from_slice(&1u32.to_le_bytes());
-        message
-    }
-
-    fn snapshot_message(world: &sim::World) -> Vec<u8> {
-        let mut packed = vec![0u8; sim::STATE_PACK_MAX];
-        let len = world.pack(&mut packed);
-        assert!(len > 0, "the test world packs");
-        packed.truncate(len as usize);
-        let mut message = vec![0u8; crate::SNAPSHOT_HEADER];
-        message[0] = crate::S2C_SNAPSHOT;
-        message.extend_from_slice(&packed);
         message
     }
 
@@ -2518,66 +2336,6 @@ mod tests {
     }
 
     #[test]
-    fn only_an_authenticated_house_bot_shares_a_world() {
-        let mut owned = crate::sim::World::base_entitlements();
-        owned[crate::sim::slot_mod(crate::sim::TRIG_GUN, crate::sim::MOD_MULTI) as usize] = 1;
-        let house = BotIdentity::House {
-            token: "session-token".into(),
-            entitlements: owned,
-        };
-        assert!(house.shares_world());
-        assert_eq!(house.session(), "session-token");
-        assert_eq!(
-            house.kit_entitlements(),
-            owned,
-            "a house bot flies what its account has bought"
-        );
-
-        let unaccounted = BotIdentity::Unaccounted;
-        assert!(!unaccounted.shares_world());
-        assert_eq!(unaccounted.session(), "");
-        assert_eq!(
-            unaccounted.kit_entitlements(),
-            crate::sim::World::base_entitlements(),
-            "and one with no account behind it flies what everybody is dealt"
-        );
-    }
-
-    #[test]
-    fn a_generated_pilot_shops_for_its_own_behavior() {
-        let who = pilots::individual(ai::CALIBRATED.len());
-        let wanted = crate::shopper::wants(&who.behavior)[0];
-        // Somebody who wants something else first. Taste comes off the profile
-        // now, so the contrast is another personality rather than another plan.
-        let other = pilots::BehaviorProfile::for_strategy(
-            if who.behavior.strategy == pilots::Strategy::Brawler {
-                pilots::Strategy::Denier
-            } else {
-                pilots::Strategy::Brawler
-            },
-        );
-        let wrong = crate::shopper::wants(&other)[0];
-        assert_ne!(wanted, wrong, "the two tastes must differ to be a test");
-        let shelf = [(wrong, 1), (wanted, 1)];
-        assert_eq!(
-            next_purchase(&who, &shelf, 10),
-            Some(wanted),
-            "shopping follows the resolved pilot spec"
-        );
-    }
-
-    #[test]
-    fn a_purchase_requires_a_completed_session_before_the_next_one() {
-        let accounts = Accounts::default();
-        accounts.remember("Ozone", "secret".into());
-        assert!(accounts.may_shop("Ozone"));
-        accounts.bought("Ozone");
-        assert!(!accounts.may_shop("Ozone"));
-        accounts.complete_session("Ozone");
-        assert!(accounts.may_shop("Ozone"));
-    }
-
-    #[test]
     fn retry_backoff_is_stable_exponential_and_capped() {
         let delays: Vec<u64> = (1..=8)
             .map(|failure| retry_delay_ms(failure, "ws://arena"))
@@ -2649,248 +2407,6 @@ mod tests {
         assert!(!Arc::ptr_eq(&original, &other_arena));
     }
 
-    /// A real WebSocket proves the private flight loop consumes a rotated map,
-    /// applies its snapshot, and keeps sending controls from the new clock.
-    #[tokio::test]
-    async fn a_private_bot_keeps_flying_after_the_server_rotates_its_map() {
-        let mut first = sim::World::with_map(7, sim::build_pit);
-        let ship = first.spawn(0, 0, 100, 100, 0) as u8;
-        assert_eq!(ship, 0);
-        let mut second = sim::World::with_map(11, sim::build_arena);
-        assert_eq!(second.spawn(0, 0, 100, 100, 0) as u8, ship);
-        second.state.tick = 500;
-
-        let initial = [
-            map_message(&first),
-            settings_message(&first),
-            welcome_message(ship, 9, first.state.tick, 0),
-            snapshot_message(&first),
-        ];
-        let rotated_map = second.packed_map();
-        let rotated_key = fingerprint(&rotated_map);
-        let rotated = [
-            [&[crate::S2C_MAP][..], &rotated_map].concat(),
-            settings_message(&second),
-            snapshot_message(&second),
-        ];
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("ws://{}", listener.local_addr().unwrap());
-        let (rotated_tx, rotated_rx) = tokio::sync::oneshot::channel();
-        let (finish_tx, finish_rx) = tokio::sync::oneshot::channel();
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.unwrap();
-            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
-            let join = ws.next().await.unwrap().unwrap().into_data();
-            assert_eq!(join.first(), Some(&crate::C2S_JOIN));
-            for message in initial {
-                ws.send(Message::Binary(message)).await.unwrap();
-            }
-
-            let (sent_kit, sent_input) =
-                tokio::time::timeout(std::time::Duration::from_secs(10), async {
-                    let mut sent_kit = false;
-                    while let Some(Ok(message)) = ws.next().await {
-                        match message.into_data().first().copied() {
-                            Some(crate::C2S_KIT) => sent_kit = true,
-                            Some(crate::C2S_INPUT) => return (sent_kit, true),
-                            _ => {}
-                        }
-                    }
-                    (sent_kit, false)
-                })
-                .await
-                .expect("the bot sends controls on the first map");
-            assert!(sent_kit, "the private flight sends its account kit");
-            assert!(sent_input, "the private flight sends controls");
-
-            for message in rotated {
-                ws.send(Message::Binary(message)).await.unwrap();
-            }
-            let moved = tokio::time::timeout(std::time::Duration::from_secs(10), async {
-                while let Some(Ok(message)) = ws.next().await {
-                    let data = message.into_data();
-                    let Some(packet) = crate::input_packet(&data) else {
-                        continue;
-                    };
-                    if packet.records.iter().any(|(tick, _)| *tick >= 501) {
-                        return true;
-                    }
-                }
-                false
-            })
-            .await
-            .expect("the bot sends controls from the rotated world's clock");
-            assert!(moved, "the bot kept flying after the map changed");
-            rotated_tx.send(()).unwrap();
-            finish_rx.await.unwrap();
-            ws.send(Message::Binary(vec![crate::S2C_YIELD]))
-                .await
-                .unwrap();
-        });
-
-        let (ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-        let maps = Arc::new(Maps::default());
-        let flight = tokio::spawn(fly_socket(
-            url,
-            pilots::individual(8),
-            0,
-            Arc::clone(&maps),
-            Arc::new(Rigs::default()),
-            Arc::new(AtomicBool::new(false)),
-            Arc::new(Accounts::default()),
-            BotIdentity::Unaccounted,
-            ws,
-        ));
-
-        tokio::time::timeout(std::time::Duration::from_secs(15), rotated_rx)
-            .await
-            .expect("the rotated world becomes active")
-            .unwrap();
-        {
-            let cache = maps.0.lock().unwrap();
-            let Some(MapEntry::Ready(map, route)) = cache.get(&rotated_key) else {
-                panic!("the rotated map reached the bot cache");
-            };
-            assert!(
-                map.upgrade().is_some(),
-                "the private world owns the new map"
-            );
-            assert!(
-                route.upgrade().is_some(),
-                "the private pilot owns the new routing grid"
-            );
-        }
-        finish_tx.send(()).unwrap();
-        assert_eq!(
-            tokio::time::timeout(std::time::Duration::from_secs(10), flight)
-                .await
-                .expect("the flight stops when yielded")
-                .unwrap(),
-            FlightEnd::Yielded
-        );
-        server.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn a_private_bot_is_quiet_between_fresh_single_life_matches() {
-        let mut world = sim::World::with_map(7, sim::build_pit);
-        let ship = world.spawn(0, 0, 100, 100, 0) as u8;
-        let initial = [
-            map_message(&world),
-            settings_message(&world),
-            welcome_message(ship, 9, world.state.tick, 0),
-            snapshot_message(&world),
-            vec![crate::S2C_MATCH, 0, 0, 0],
-        ];
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("ws://{}", listener.local_addr().unwrap());
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.unwrap();
-            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
-            let join = ws.next().await.unwrap().unwrap().into_data();
-            assert_eq!(join.first(), Some(&crate::C2S_JOIN));
-            for message in initial {
-                ws.send(Message::Binary(message)).await.unwrap();
-            }
-
-            let kit = tokio::time::timeout(std::time::Duration::from_secs(2), async {
-                while let Some(Ok(message)) = ws.next().await {
-                    if message.into_data().first() == Some(&crate::C2S_KIT) {
-                        return true;
-                    }
-                }
-                false
-            })
-            .await
-            .expect("the bot sends its kit");
-            assert!(kit);
-            assert!(
-                tokio::time::timeout(std::time::Duration::from_millis(650), ws.next())
-                    .await
-                    .is_err(),
-                "the private controller sends no input during intermission"
-            );
-
-            ws.send(Message::Binary(vec![
-                crate::S2C_MATCH,
-                crate::MATCH_PLAYING,
-                0,
-                0,
-            ]))
-            .await
-            .unwrap();
-            let first_match = tokio::time::timeout(std::time::Duration::from_secs(2), async {
-                while let Some(Ok(message)) = ws.next().await {
-                    if message.into_data().first() == Some(&crate::C2S_INPUT) {
-                        return true;
-                    }
-                }
-                false
-            })
-            .await
-            .expect("the private controller starts with the match");
-            assert!(first_match);
-
-            ws.send(Message::Binary(vec![crate::S2C_MATCH, 0, 0, 0]))
-                .await
-                .unwrap();
-            // Empty any control already in the transport when the whistle was
-            // sent. A full heartbeat interval of silence after that proves the
-            // intermission does not run the controller.
-            while let Ok(Some(_)) =
-                tokio::time::timeout(std::time::Duration::from_millis(100), ws.next()).await
-            {
-            }
-            assert!(
-                tokio::time::timeout(std::time::Duration::from_millis(650), ws.next())
-                    .await
-                    .is_err(),
-                "the private controller stays quiet after a played match"
-            );
-
-            ws.send(Message::Binary(vec![
-                crate::S2C_MATCH,
-                crate::MATCH_PLAYING,
-                0,
-                0,
-            ]))
-            .await
-            .unwrap();
-            let rematch = tokio::time::timeout(std::time::Duration::from_secs(2), async {
-                while let Some(Ok(message)) = ws.next().await {
-                    if message.into_data().first() == Some(&crate::C2S_INPUT) {
-                        return true;
-                    }
-                }
-                false
-            })
-            .await
-            .expect("a fresh private controller starts the rematch");
-            assert!(rematch);
-            ws.send(Message::Binary(vec![crate::S2C_YIELD]))
-                .await
-                .unwrap();
-        });
-
-        let (ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-        let outcome = fly_socket(
-            url,
-            pilots::individual(8),
-            0,
-            Arc::new(Maps::default()),
-            Arc::new(Rigs::default()),
-            Arc::new(AtomicBool::new(false)),
-            Arc::new(Accounts::default()),
-            BotIdentity::Unaccounted,
-            ws,
-        )
-        .await;
-        assert_eq!(outcome, FlightEnd::Yielded);
-        server.await.unwrap();
-    }
-
     #[tokio::test]
     async fn an_invalid_welcome_is_a_protocol_failure() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2911,7 +2427,6 @@ mod tests {
             Arc::new(Maps::default()),
             Arc::new(Rigs::default()),
             Arc::new(AtomicBool::new(false)),
-            Arc::new(Accounts::default()),
             BotIdentity::Unaccounted,
             ws,
         )
@@ -2942,7 +2457,6 @@ mod tests {
                 Arc::new(Maps::default()),
                 Arc::new(Rigs::default()),
                 Arc::new(AtomicBool::new(true)),
-                Arc::new(Accounts::default()),
                 BotIdentity::Unaccounted,
                 ws,
             ),

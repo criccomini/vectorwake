@@ -91,6 +91,16 @@ pub fn class_index(name: &str) -> Option<usize> {
         .position(|n| n.eq_ignore_ascii_case(name))
 }
 
+/// The run at which a pilot reads as fully dangerous, for the two weights
+/// that care: how hard a bot protects its own life, and how much it prefers a
+/// target already on one.
+///
+/// Six kills, which is twice the threshold a streak is announced at and about
+/// as long as a run gets inside a three minute match. The old divisor was
+/// sixty, from when a bounty summed the tech tree, and against a run of one to
+/// ten it made both terms arithmetic that never moved anything.
+const RUN_FULL: f32 = 6.0;
+
 /// How far a pilot can see, in world pixels.
 ///
 /// Sixty tiles, which is exactly the radar's reach in the client: `RADAR_TILES`
@@ -139,9 +149,14 @@ pub struct Own {
     /// Share of this hull's effective maximum.
     pub energy: f32,
     pub in_safe: bool,
-    /// What this death would pay whoever takes it. A kit survives dying, so
-    /// this is the run: what a pilot stands to hand over by being killed
-    /// before they are killed again.
+    /// How long a run this pilot is on, in kills since they last died.
+    ///
+    /// It was a bounty, and bounty was scaled to a loaded tech tree: the
+    /// weights below divide it by sixty, which is what a fully shopped pilot
+    /// was worth back when a kill paid for what the victim was carrying. Once
+    /// bounty became a run alone it topped out around ten, and both terms
+    /// have been reading close to zero ever since. So this is the run
+    /// directly, and the weights are scaled to what a run actually reaches.
     pub value: u16,
     /// A carried objective makes survival more important than another duel.
     pub carrying_flag: bool,
@@ -395,7 +410,7 @@ pub fn own(w: &World, ship: u8) -> Own {
         heading: me.heading as f32 / 65536.0,
         energy: me.energy as f32 / max_e,
         in_safe: unsafe { sim::sim_in_safe(&*w.map, me.x, me.y) } != 0,
-        value: w.bounty(ship as usize).clamp(0, u16::MAX as i32) as u16,
+        value: w.state.ships[ship as usize].streak,
         carrying_flag,
         standing: None,
         charges: me.charge,
@@ -500,7 +515,7 @@ pub fn scan(w: &World, ship: u8) -> Scan {
                 + target_class.halfw * target_class.halfw) as f32)
                 .sqrt()
                 / 256.0,
-            value: w.bounty(i).clamp(0, u16::MAX as i32) as u16,
+            value: w.state.ships[i].streak,
             carrying_flag,
             clear: clear_line(w, mx, my, ox, oy),
             crowd: 0,
@@ -2164,7 +2179,7 @@ impl Bot {
         // Retreat was tested as a skill parameter and made the ladder noisier
         // rather than stronger. It belongs here as a stable risk preference:
         // a runner protects a life earlier, while a brawler accepts the trade.
-        let value = (o.value as f32 / 60.0).min(1.0);
+        let value = (o.value as f32 / RUN_FULL).min(1.0);
         let numbers = self
             .seen
             .hostiles_near
@@ -2253,7 +2268,7 @@ impl Bot {
                 (if f.clear { 0.55 } else { 0.0 })
                     + (1.0 - f.energy.clamp(0.0, 1.0)) * 1.1
                     + if f.carrying_flag { 1.4 } else { 0.0 }
-                    + (f.value as f32 / 60.0).min(1.0) * 0.25
+                    + (f.value as f32 / RUN_FULL).min(1.0) * 0.25
                     - d / SIGHT * (0.8 / self.profile.pursuit.clamp(0.40, 1.40))
                     - piling
                     - outclassed
@@ -3170,18 +3185,11 @@ mod tests {
             let e = crate::pilots::individual(i);
             let ship = w.spawn_on_map(e.hull, (i % 2) as u8, i as u32 / 2, 0);
             assert!(ship >= 0, "a seat on the map");
-            // The kit a room would deal this seat. `sim_spawn` leaves one
-            // empty and a room fills it before the pilot flies, so a drill
-            // that skipped this step flew eight bare hulls: rung zero guns, no
-            // add-ons and no charges, which is a fight nobody in this game
-            // ever has. It also made the drill fragile, since a room full of
-            // pilots who cannot finish each other is a room nobody can leave.
-            let mut ceiling = w.kit_ceilings();
-            for (c, own) in ceiling.iter_mut().zip(sim::World::base_entitlements()) {
-                *c = (*c).min(own);
-            }
-            let kit = sim::World::starter_kit(&ceiling);
-            assert!(w.set_kit(ship as usize, &kit), "a starter kit is legal");
+            // Nothing to deal: `sim_spawn` puts this hull's profile on before
+            // it returns, so a drill seat arrives in a whole ship. It used to
+            // have to be filled in here, and a drill that skipped the step
+            // flew eight bare hulls, which is a fight nobody in this game
+            // ever has.
             let mut b = Bot::new(ship as u8, &e);
             b.reseed(i as u32 * 977 + 13);
             bots.push(b);
@@ -3483,18 +3491,11 @@ mod tests {
             let e = crate::pilots::individual(i);
             let ship = w.spawn_on_map(e.hull, (i % 2) as u8, i as u32 / 2, 0);
             assert!(ship >= 0, "a seat on the map");
-            // The kit a room would deal this seat. `sim_spawn` leaves one
-            // empty and a room fills it before the pilot flies, so a drill
-            // that skipped this step flew eight bare hulls: rung zero guns, no
-            // add-ons and no charges, which is a fight nobody in this game
-            // ever has. It also made the drill fragile, since a room full of
-            // pilots who cannot finish each other is a room nobody can leave.
-            let mut ceiling = w.kit_ceilings();
-            for (c, own) in ceiling.iter_mut().zip(sim::World::base_entitlements()) {
-                *c = (*c).min(own);
-            }
-            let kit = sim::World::starter_kit(&ceiling);
-            assert!(w.set_kit(ship as usize, &kit), "a starter kit is legal");
+            // Nothing to deal: `sim_spawn` puts this hull's profile on before
+            // it returns, so a drill seat arrives in a whole ship. It used to
+            // have to be filled in here, and a drill that skipped the step
+            // flew eight bare hulls, which is a fight nobody in this game
+            // ever has.
             let mut b = Bot::new(ship as u8, &e);
             b.reseed(i as u32 * 977 + 13);
             bots.push(b);

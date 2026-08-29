@@ -102,11 +102,9 @@ pub struct ArenaConfig {
     /// does not reach.
     pub wormhole_pull: Option<i32>,
     pub wormhole_range: Option<i32>,
-    /// Per class: a footprint and a ladder. Anything left out keeps the
-    /// baseline.
+    /// Per class: a flight row, a weapon ladder and a profile. Anything left
+    /// out keeps the baseline's, which is the shipped roster.
     pub ships: Vec<ShipConfig>,
-    /// What a kit may hold here, for every hull alike.
-    pub kit: KitConfig,
     /// Weapons, by name. A name the baseline already built (`apex-gun`,
     /// `anvil-bomb`, `anvil-bomb-2` for the rung above it, `charge-1` for the
     /// repel, `shrapnel-2` for what a second rung of shrapnel breaks into)
@@ -126,18 +124,9 @@ pub struct ArenaConfig {
     /// a bad one is nearly over. Only a match game reads them.
     pub match_seconds: Option<u16>,
     pub intermission_seconds: Option<u16>,
-    /// What a pilot is worth the moment they spawn, and what each kill on a
-    /// run adds to that. A bounty is the run rather than the kit: the kit is
-    /// the same every life, so it is what a pilot has done since their last
-    /// death that prices their head.
-    pub bounty_base: Option<u16>,
-    pub bounty_per_kill: Option<u16>,
-    /// Points on top of the victim's bounty for each flag they were holding.
-    pub points_per_flag: Option<u16>,
-    /// How many kills without dying put a pilot on a streak, and what being on
-    /// one adds to their bounty. Zero kills turns streaks off in this zone.
+    /// How many kills without dying put a pilot on a streak. Zero turns
+    /// streaks off in this zone.
     pub streak_kills: Option<u16>,
-    pub streak_bounty: Option<u16>,
     /// What a rung of multifire adds to the cost of pulling the trigger, as a
     /// percentage of the shot's own energy and cooldown. The original's are 50
     /// and 100: three rounds for half again the energy and twice the wait.
@@ -209,32 +198,40 @@ pub struct ShipConfig {
     /// first. One name is a hull that never levels and `bomb = []` takes the
     /// rack out. A hull keeps its own ladder unless the file says otherwise.
     ///
-    /// How far a pilot may climb one is `arena.kit` below, and it follows the
-    /// longest ladder in the roster, so a zone that shortens one hull's has
-    /// not quietly made a purchase worthless everywhere else.
+    /// Which rung this hull fires is `gun_rung` below, and the shipped roster
+    /// leaves every hull on rung zero.
     pub gun: Option<Vec<String>>,
     pub bomb: Option<Vec<String>>,
-}
 
-/// What a kit may hold in this arena, over the flat slot space.
-///
-/// One section for the zone, where this was a row per hull. Seven rows meant
-/// an upgrade could be bought and then refused by the hull somebody wanted to
-/// fly it on, and it meant the shelf was whatever the roster happened
-/// to allow rather than whatever the game has. Anything left out keeps the
-/// baseline's, which is the union of what the seven rows used to allow.
-#[derive(Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct KitConfig {
-    /// Which add-ons a kit may hold on each trigger, and how many rungs of
-    /// each: `gun_mods = { multi = 2, barrel = 2 }`. An add-on left out of a
-    /// map that names any is a slot this arena does not have.
-    pub gun_mods: HashMap<String, u8>,
-    pub bomb_mods: HashMap<String, u8>,
-    /// How many of each charge a kit may carry, by slot: `charges = [3, 3]`
-    /// is three repels and three bursts. Slots left off keep the baseline's,
-    /// and zero is a charge this arena does not have.
-    pub charges: Vec<u8>,
+    /// This hull's flight, in the settings file's own units: px/s/10, tenths
+    /// of the documented thrust unit, 400 to a full turn a second, energy,
+    /// and energy a second times ten. What a hull flies at, flat: nobody
+    /// upgrades one, so there is no floor and step to write.
+    pub speed: Option<i32>,
+    pub thrust: Option<i32>,
+    pub rotation: Option<i32>,
+    pub energy: Option<i32>,
+    pub recharge: Option<i32>,
+
+    /// The profile: what this hull carries, over the flat slot space.
+    ///
+    /// `gun_mods = { multi = 4, bounce = 1 }` is the brawler's five rounds
+    /// coming off a wall. A block that names any add-on for a trigger names
+    /// all of them, so what it leaves out is an add-on this hull does not
+    /// carry; leaving the table out entirely keeps the baseline's.
+    ///
+    /// This was one section for the whole arena, describing a shelf. There is
+    /// no shelf: a hull is a whole ship and this is where that ship is said.
+    pub gun_mods: Option<HashMap<String, u8>>,
+    pub bomb_mods: Option<HashMap<String, u8>>,
+    /// The rack, by slot: `charges = [2, 1]` is two repels and one burst. At
+    /// most two kinds, since a third would bind to no key.
+    pub charges: Option<Vec<u8>>,
+    /// Which rung of each ladder this hull fires. Zero, and the shipped
+    /// roster leaves it there: a rung is machinery a zone may use, not
+    /// something anybody climbs.
+    pub gun_rung: Option<u8>,
+    pub bomb_rung: Option<u8>,
 }
 
 /// One weapon: what a trigger makes, and what one projectile of it is. The
@@ -395,9 +392,9 @@ bounce = 12
 [[arena.ships]]
 name = "Apex"
 bomb = []
-
-[arena.kit]
-gun_mods = { multi = 2, barrel = 2 }
+speed = 3700
+gun_mods = { multi = 2 }
+charges = [3, 1]
 "#;
 
     #[test]
@@ -407,7 +404,12 @@ gun_mods = { multi = 2, barrel = 2 }
         assert_eq!(c.arena.flags, 3);
         assert_eq!(c.arena.bounce, Some(12));
         assert_eq!(c.arena.ships[0].bomb, Some(Vec::new()));
-        assert_eq!(c.arena.kit.gun_mods.get("barrel"), Some(&2));
+        assert_eq!(c.arena.ships[0].speed, Some(3700));
+        assert_eq!(
+            c.arena.ships[0].gun_mods.as_ref().unwrap().get("multi"),
+            Some(&2)
+        );
+        assert_eq!(c.arena.ships[0].charges, Some(vec![3, 1]));
     }
 
     #[test]

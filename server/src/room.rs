@@ -521,25 +521,13 @@ pub(crate) struct Seat {
     /// The baseline for a guest and for a token from a meta-layer that does
     /// not send them yet, which is the reading that lets a pilot fly a whole
     /// ship without an account rather than a chassis.
-    pub(crate) entitlements: [u8; sim::SLOT_COUNT],
     /// The kit this pilot asked for and has not been dealt yet. The hull is
     /// locked for a match and the kit with it, so one that arrives mid-match
     /// waits for the whistle; one that arrives at a join or between matches is
     /// dealt on the spot and never lands here.
-    pub(crate) pending_kit: Option<[u8; sim::SLOT_COUNT]>,
     /// The tick this seat last said one of the fixed things, so it cannot say
     /// them faster than anybody wants to read them. Zero is never.
     pub(crate) said_at: u32,
-    /// Whether this seat has ever worn a kit its owner chose.
-    ///
-    /// False until the first one lands, which is what separates a change from
-    /// an arrival. A pilot joining a room is dealt a starter kit, because the
-    /// arena has no way to know what they fly until their client says so; the
-    /// kit that follows a second later is not a re-spec, it is the build they
-    /// came in with, and holding it to the next whistle left them flying a
-    /// bare hull for up to three minutes with everything they own sitting in
-    /// `pending_kit`. Reported as bought add-ons doing nothing.
-    pub(crate) kitted: bool,
     /// When the credential used at the door expires. Guests have no credential.
     /// A rated pilot proves their standing again through the renewable lease;
     /// a watcher has no lease, so this clock closes a session that has outlived
@@ -570,9 +558,6 @@ impl Seat {
             },
             account: None,
             carried: None,
-            entitlements: sim::World::base_entitlements(),
-            pending_kit: None,
-            kitted: false,
             said_at: 0,
             expires: None,
             session: pilot::Session::new("none"),
@@ -875,20 +860,8 @@ impl Room {
                 named.push((name, pat));
             }
         }
-        if let Some(v) = c.bounty_base {
-            world.cfg.bounty_base = v;
-        }
-        if let Some(v) = c.bounty_per_kill {
-            world.cfg.bounty_per_kill = v;
-        }
-        if let Some(v) = c.points_per_flag {
-            world.cfg.points_per_flag = v;
-        }
         if let Some(v) = c.streak_kills {
             world.cfg.streak_kills = v;
-        }
-        if let Some(v) = c.streak_bounty {
-            world.cfg.streak_bounty = v;
         }
         if let Some(v) = c.multi_energy {
             world.cfg.mod_multi_energy = v;
@@ -1000,70 +973,129 @@ impl Room {
                     world.cfg.classes[idx].trigger[t] = ladder;
                 }
             }
+
+            // This hull's flight. Flat, because nobody upgrades one: the
+            // floor, the step and the ceiling all move together, so a zone
+            // writes one number a stat and gets exactly that.
+            {
+                let class = &mut world.cfg.classes[idx];
+                for (want, floor, step, cap, to_core) in [
+                    (
+                        s.speed,
+                        &mut class.init_speed,
+                        &mut class.up_speed,
+                        &mut class.max_speed,
+                        sim::units_speed as fn(i32) -> i32,
+                    ),
+                    (
+                        s.thrust,
+                        &mut class.init_thrust,
+                        &mut class.up_thrust,
+                        &mut class.thrust,
+                        sim::units_thrust as fn(i32) -> i32,
+                    ),
+                    (
+                        s.rotation,
+                        &mut class.init_rot,
+                        &mut class.up_rot,
+                        &mut class.rot,
+                        sim::units_rotation as fn(i32) -> i32,
+                    ),
+                    (
+                        s.energy,
+                        &mut class.init_energy,
+                        &mut class.up_energy,
+                        &mut class.max_energy,
+                        sim::units_energy as fn(i32) -> i32,
+                    ),
+                    (
+                        s.recharge,
+                        &mut class.init_recharge,
+                        &mut class.up_recharge,
+                        &mut class.recharge,
+                        sim::units_recharge as fn(i32) -> i32,
+                    ),
+                ] {
+                    if let Some(v) = want {
+                        let v = to_core(v);
+                        *floor = v;
+                        *step = 0;
+                        *cap = v;
+                    }
+                }
+            }
+
+            // And this hull's profile: what it actually carries.
+            for (t, mods) in [("gun", &s.gun_mods), ("bomb", &s.bomb_mods)]
+                .into_iter()
+                .enumerate()
+            {
+                let Some(mods) = mods.1 else { continue };
+                // A block that names any add-on names all of them: what it
+                // leaves out is an add-on this hull does not carry. Merging
+                // into the baseline instead would make "no shrapnel on this
+                // one" unsayable.
+                for m in 0..sim::MOD_COUNT {
+                    world.cfg.classes[idx].kit[sim::slot_mod(t, m) as usize] = 0;
+                }
+                for (name, rungs) in mods {
+                    match Room::mod_index(name) {
+                        // Clamped to what the slot can physically hold. Spray
+                        // is a count of rounds and climbs to five where
+                        // everything else stops at three, which `mod_max`
+                        // exists to say.
+                        Some(m) => {
+                            world.cfg.classes[idx].kit[sim::slot_mod(t, m) as usize] =
+                                (*rungs).min(sim::mod_max(m));
+                        }
+                        None => warn.push(format!("\"{name}\" is not an add-on")),
+                    }
+                }
+            }
+            if let Some(charges) = &s.charges {
+                if charges.len() > sim::MAX_CHARGES {
+                    warn.push(format!(
+                        "{} names {} charge slots and there are {}",
+                        s.name,
+                        charges.len(),
+                        sim::MAX_CHARGES
+                    ));
+                }
+                for k in 0..sim::MAX_CHARGES {
+                    world.cfg.classes[idx].kit[sim::slot_charge(k) as usize] = 0;
+                }
+                for (k, &n) in charges.iter().take(sim::MAX_CHARGES).enumerate() {
+                    world.cfg.classes[idx].kit[sim::slot_charge(k) as usize] =
+                        n.min(sim::CHARGE_MAX);
+                }
+                // Two kinds and no more, whatever the file asks for: a third
+                // would bind to no key. Kept in kind order, so which two is
+                // the zone's decision and which key is the pilot's.
+                let mut kinds = 0;
+                for k in 0..sim::MAX_CHARGES {
+                    let slot = sim::slot_charge(k) as usize;
+                    if world.cfg.classes[idx].kit[slot] == 0 {
+                        continue;
+                    }
+                    kinds += 1;
+                    if kinds > sim::KIT_CHARGE_SLOTS {
+                        world.cfg.classes[idx].kit[slot] = 0;
+                        warn.push(format!(
+                            "{} names more than {} kinds of charge",
+                            s.name,
+                            sim::KIT_CHARGE_SLOTS
+                        ));
+                    }
+                }
+            }
+            for (t, rung) in [s.gun_rung, s.bomb_rung].into_iter().enumerate() {
+                if let Some(rung) = rung {
+                    world.cfg.classes[idx].kit[sim::slot_level(t) as usize] =
+                        rung.min(sim::MAX_RUNGS as u8 - 1);
+                }
+            }
         }
 
-        // And what a kit may hold, once, for the whole arena.
-        //
-        // The ladder ceilings are derived rather than written: a level slot
-        // buys a rung, so what it can buy is however far the longest ladder in
-        // the roster climbs. Deriving it is what keeps a zone from selling a
-        // rung that nothing fires, and taking the longest rather than the
-        // shortest is what keeps one short-laddered hull from making the
-        // purchase worthless on the other six.
-        for t in 0..sim::TRIG_COUNT {
-            let mut deepest = 0u8;
-            for i in 0..world.cfg.class_count as usize {
-                let ladder = &world.cfg.classes[i].trigger[t];
-                let mut rungs = 0u8;
-                while (rungs as usize) + 1 < sim::MAX_RUNGS
-                    && ladder[rungs as usize + 1] != sim::NO_PATTERN
-                {
-                    rungs += 1;
-                }
-                if ladder[0] == sim::NO_PATTERN {
-                    rungs = 0;
-                }
-                deepest = deepest.max(rungs);
-            }
-            world.cfg.kit_ceiling[sim::slot_level(t) as usize] = deepest;
-        }
-        for (t, mods) in [&c.kit.gun_mods, &c.kit.bomb_mods].into_iter().enumerate() {
-            if mods.is_empty() {
-                continue;
-            }
-            // A map that names any add-on names all of them: what it leaves
-            // out is a slot this arena does not have. Merging into the
-            // baseline instead would make "no shrapnel here" unsayable.
-            for m in 0..sim::MOD_COUNT {
-                world.cfg.kit_ceiling[sim::slot_mod(t, m) as usize] = 0;
-            }
-            for (name, rungs) in mods {
-                match Room::mod_index(name) {
-                    Some(m) => {
-                        // Each add-on's own ceiling, not one number for all of
-                        // them. Spray is a count of rounds rather than a rung
-                        // and climbs to five where everything else stops at
-                        // three, which `sim::mod_max` exists to say; clamping
-                        // every add-on at three instead meant a zone asking
-                        // for spray four or five got three and no warning,
-                        // and melee has been asking for five since it shipped.
-                        world.cfg.kit_ceiling[sim::slot_mod(t, m) as usize] =
-                            (*rungs).min(sim::mod_max(m));
-                    }
-                    None => warn.push(format!("\"{name}\" is not an add-on")),
-                }
-            }
-        }
-        if c.kit.charges.len() > sim::MAX_CHARGES {
-            warn.push(format!(
-                "arena.kit names {} charge slots and there are {}",
-                c.kit.charges.len(),
-                sim::MAX_CHARGES
-            ));
-        }
-        for (k, &n) in c.kit.charges.iter().take(sim::MAX_CHARGES).enumerate() {
-            world.cfg.kit_ceiling[sim::slot_charge(k) as usize] = n.min(sim::CHARGE_MAX);
-        }
         warn
     }
 
@@ -1657,18 +1689,15 @@ impl Room {
             sh.alive = 1;
             // Everything a pilot carries, cleared. This was `up` alone, so a
             // seat handed on kept the last occupant's weapon levels, add-ons,
-            // charges, earned bounty and score. Leaving and rejoining is the
-            // case that shows it: seats come back in the order they were
-            // vacated, so a player is handed their own and the zone reads as
-            // having saved their game.
+            // charges and run. Leaving and rejoining is the case that shows
+            // it: seats come back in the order they were vacated, so a player
+            // is handed their own and the zone reads as having saved their
+            // game. The profile goes back on below, off the hull.
             sh.up = [0; sim::UP_COUNT];
             sh.level = [0; sim::TRIG_COUNT];
             sh.mods = [0; sim::TRIG_COUNT];
             sh.charge = [0; sim::MAX_CHARGES];
-            sh.kit = [0; sim::SLOT_COUNT];
-            sh.run = 0;
             sh.streak = 0;
-            sh.points = 0;
             sh.stall = 0;
             sh.repel = 0;
             sh.repel_speed = 0;
@@ -1809,66 +1838,9 @@ impl Room {
         Some(id)
     }
 
-    /// What a hull will actually take from this seat, which is the roster's
-    /// row and the account's entitlements together, smaller wins.
-    ///
-    /// Two ceilings rather than one because they answer different questions.
-    /// The arena's row is what this zone has, and it moves when a zone is
-    /// retuned; the account's is what has been bought, and it moves when
-    /// somebody spends. A kit legal under both is a kit the core will deal.
-    ///
-    /// The hull is not one of the two. It used to be, and a pilot could buy
-    /// an upgrade and then find the ship they wanted refused it.
-    pub(crate) fn kit_ceiling(&self, ship: u8) -> [u8; sim::SLOT_COUNT] {
-        let mut ceiling = self.world.kit_ceilings();
-        let seat = self.names.get(&ship);
-        let mut owned = seat
-            .map(|seat| seat.entitlements)
-            .unwrap_or_else(sim::World::base_entitlements);
-        // A bot may earn and buy its own specialties, but it does not bring a
-        // deeper shelf into a room than the least-equipped human there. That
-        // keeps bot careers real in bot-only play and makes the first person
-        // through the door the field's progression floor, not its target.
-        if seat.is_some_and(|seat| seat.bot) {
-            for human in self.names.values().filter(|other| !other.bot) {
-                for (value, floor) in owned.iter_mut().zip(human.entitlements) {
-                    *value = (*value).min(floor);
-                }
-            }
-        }
-        for (c, own) in ceiling.iter_mut().zip(owned.iter()) {
-            *c = (*c).min(*own);
-        }
-        ceiling
-    }
-
     /// Apply an in-seat hull change, under the core's own rules.
     pub(crate) fn set_ship_class(&mut self, ship: u8, class: u8) -> bool {
         self.world.set_ship_class(ship, class)
-    }
-
-    /// Put a kit on a seat, or say it does not fit.
-    ///
-    /// False changes nothing, which is the whole contract: a refused kit
-    /// leaves a pilot in what they were already flying rather than half
-    /// dressed. The core checks the arena's ceiling and the budget again on
-    /// the way through, so this is two independent refusals rather than one:
-    /// the entitlement half is only checked here, because an account is not
-    /// something the core knows about.
-    pub(crate) fn set_kit(&mut self, ship: u8, kit: &[u8; sim::SLOT_COUNT]) -> bool {
-        let ceiling = self.kit_ceiling(ship);
-        if kit.iter().zip(ceiling.iter()).any(|(want, max)| want > max) {
-            return false;
-        }
-        let ok = self.world.set_kit(ship as usize, kit);
-        if ok {
-            // This seat is wearing a build its owner chose, so the next one to
-            // arrive mid-match is a change and waits for the whistle.
-            if let Some(s) = self.names.get_mut(&ship) {
-                s.kitted = true;
-            }
-        }
-        ok
     }
 
     /// One of the fixed things, said to the room.
@@ -1906,132 +1878,16 @@ impl Room {
         self.channel.pending_feed.push(msg);
     }
 
-    /// A kit the pilot in this seat asked for: dealt now, or held to the
-    /// whistle.
+    /// Deal this seat what it is flying, which is its hull's own profile.
     ///
-    /// The hull is locked for a match and the kit with it, so a change made
-    /// mid-match waits. The first kit of a session is not a change. A pilot
-    /// who has just joined is wearing the starter kit `deal_seat` gave them,
-    /// because nothing here knows what they fly until their client says so,
-    /// and the message saying so arrives a moment after they are already in
-    /// the room. Held, that pilot spent the rest of the match in a bare hull
-    /// with everything they own sitting in `pending_kit`; joining during an
-    /// intermission worked, so the same build flew or did not depending on
-    /// where the clock happened to be. Reported as bought add-ons doing
-    /// nothing.
-    ///
-    /// Once per seat, because `set_kit` marks it: everything after the first
-    /// is a re-spec and waits, which is the rule this was always meant to be.
-    ///
-    /// Always false. A refused kit leaves the pilot in what they were already
-    /// flying; nothing is evicted over one any more, now that no seat is bound
-    /// to a measured build.
-    pub(crate) fn ask_kit(&mut self, ship: u8, kit: &[u8; sim::SLOT_COUNT]) -> bool {
-        let playing = self.mode.match_state().is_some_and(|m| m.playing);
-        let settled = self.names.get(&ship).is_some_and(|s| s.kitted);
-        let first_build_state = (!settled).then(|| {
-            let row = &self.world.state.ships[ship as usize];
-            (
-                row.alive != 0,
-                row.energy,
-                self.world.eff_max_energy(ship as usize),
-            )
-        });
-        let accepted = if playing && settled {
-            if let Some(s) = self.names.get_mut(&ship) {
-                s.pending_kit = Some(*kit);
-            }
-            true
-        } else {
-            self.set_kit(ship, kit)
-        };
-        if let (true, Some((was_alive, held, old_full))) = (accepted, first_build_state) {
-            // This is the seat's first authored build, not a mid-life respec.
-            // Joining filled the starter's bar before the client could name
-            // its kit. Move a full live bar to the new ceiling, preserve any
-            // damage taken before the packet arrived, and keep a benched seat
-            // at zero so a dead snapshot stays valid.
-            let new_full = self.world.eff_max_energy(ship as usize);
-            self.world.state.ships[ship as usize].energy = if !was_alive {
-                0
-            } else if held >= old_full {
-                new_full
-            } else if new_full < old_full {
-                held.saturating_sub(old_full - new_full).max(1)
-            } else {
-                held
-            };
-        }
-        let _ = accepted;
-        false
-    }
-
-    /// Deal this seat what it is flying, which is its own kit if it has one
-    /// and a starter kit if it does not.
-    ///
-    /// Every seat has to be flying something. A pilot who has never opened the
-    /// hangar, a bot, and a guest all arrive with nothing chosen, and a bare
-    /// hull against a built one is not a game.
+    /// There is nothing to choose and nothing to check. A hull always has a
+    /// profile, so a pilot who has never opened a menu, a bot and a guest all
+    /// arrive in a whole ship, and the core deals the same one back at every
+    /// respawn. This is here for the one case the core cannot cover on its
+    /// own: a seat re-dealt outside a spawn, such as a hull change refused
+    /// partway or a room re-opening a match.
     pub(crate) fn deal_seat(&mut self, ship: u8) {
-        let asked = self.names.get(&ship).and_then(|s| s.pending_kit);
-        if let Some(kit) = asked {
-            // Trimmed to what fits, rather than refused whole.
-            //
-            // `set_kit` is all or nothing and has to be: a kit arriving over
-            // the wire is a claim, and half of a claim is not a build anybody
-            // asked for. This is the other case. The build is the pilot's own,
-            // saved by them, and what it outgrew is one slot: an add-on that
-            // stopped being granted, or a zone that retuned under it. Refusing
-            // it whole cost them the twenty-eight points that were still
-            // theirs along with the two that were not, and dealt a starter kit
-            // over the top without saying so. Found in a playtest, reported as
-            // bounce and proximity going missing after a death, which is
-            // simply where the next re-deal fell.
-            let ceiling = self.kit_ceiling(ship);
-            let mut fits = kit;
-            for (want, max) in fits.iter_mut().zip(ceiling.iter()) {
-                if *want > *max {
-                    *want = *max;
-                }
-            }
-            // And down to the two kinds of charge a kit may carry, keeping
-            // the first two in kind order. A build saved before that rule
-            // existed names three or four, and dropping it whole would take
-            // the twenty-eight points that are still fine along with the two
-            // that are not, which is the same mistake the ceiling trim above
-            // exists to avoid.
-            {
-                let mut kinds = 0;
-                for k in 0..sim::MAX_CHARGES {
-                    let slot = sim::slot_charge(k) as usize;
-                    if fits[slot] == 0 {
-                        continue;
-                    }
-                    kinds += 1;
-                    if kinds > sim::KIT_CHARGE_SLOTS {
-                        fits[slot] = 0;
-                    }
-                }
-            }
-            if self.set_kit(ship, &fits) {
-                if let Some(s) = self.names.get_mut(&ship) {
-                    s.pending_kit = None;
-                }
-                return;
-            }
-            // Still refused, which the core does for reasons of its own: a
-            // rung whose ladder has no step there, a budget the trim did not
-            // bring under. Dropped rather than kept, so it is not tried again
-            // at every whistle for the rest of the session.
-            if let Some(s) = self.names.get_mut(&ship) {
-                s.pending_kit = None;
-            }
-        }
-        if sim::World::kit_cost(&self.world.state.ships[ship as usize].kit) > 0 {
-            return;
-        }
-        let starter = sim::World::starter_kit(&self.kit_ceiling(ship));
-        self.world.set_kit(ship as usize, &starter);
+        self.world.deal_kit(ship as usize, false);
     }
 
     /// Take a seat back from the bot fewest people are looking at.
@@ -3276,7 +3132,6 @@ impl Room {
                     kills: row.kills,
                     deaths: row.deaths,
                     assists: row.assists,
-                    points: row.points,
                 }
             })
             .collect();
@@ -4147,9 +4002,6 @@ impl Room {
             m.extend_from_slice(&sh.kills.to_le_bytes());
             m.extend_from_slice(&sh.deaths.to_le_bytes());
             m.extend_from_slice(&sh.assists.to_le_bytes());
-            m.extend_from_slice(&sh.points.to_le_bytes());
-            let bounty = self.world.bounty(*ship as usize).clamp(0, u16::MAX as i32) as u16;
-            m.extend_from_slice(&bounty.to_le_bytes());
             let bytes = seat.name.as_bytes();
             let len = bytes.len().min(24) as u8;
             m.push(len);

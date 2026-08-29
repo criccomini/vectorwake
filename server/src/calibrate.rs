@@ -24,7 +24,7 @@ use crate::experiment::{
     SeededMeasurements, Sidedness, SimultaneousBootstrapReport, TostResult,
 };
 use crate::pilots::{self, PilotSpec};
-use crate::{ai, catalog, config, nav, profiles, rating, shopper, sim};
+use crate::{ai, catalog, config, nav, rating, sim};
 
 /// A match ends at this many kills, or this many ticks if the two are too
 /// evenly matched to settle it. 100 ticks is a second.
@@ -45,16 +45,6 @@ const MATCH_TICKS: u32 = 30_000; // five minutes of arena time
 /// pilots on a subset of the game and then seeds their careers in the whole
 /// of it.
 ///
-/// So thirty, matched, the same figure Alpha hands out at every spawn. Held
-/// still the same way as before, which is what matters: both pilots draw the
-/// same kit off the same stream, and none of it is lying on the floor to be
-/// raced for.
-#[allow(
-    dead_code,
-    reason = "kept for the legacy scalar calibration compatibility entry point"
-)]
-const LADDER_KIT: u32 = 30;
-
 /// Run a full round-robin `rounds` times and return the resulting ladder.
 ///
 /// Calibration deliberately does not mark these pilots as bots. A bot's K is
@@ -95,7 +85,7 @@ pub fn run_roster(roster: &[ai::RosterEntry], rounds: u32, verbose: bool) -> rat
         for i in 0..roster.len() {
             for j in (i + 1)..roster.len() {
                 duel(
-                    &bytes, &route, at, &mut r, &roster[i], &roster[j], salt, LADDER_KIT, None,
+                    &bytes, &route, at, &mut r, &roster[i], &roster[j], salt, None,
                 );
                 salt = salt.wrapping_add(1);
             }
@@ -125,199 +115,6 @@ pub fn table(r: &rating::Rating) -> Vec<(String, f64, u32, &'static str)> {
     rows
 }
 
-/* ---- the loadout tournament -------------------------------------------
- *
- * Everything above holds the tech tree at zero so it can rank pilots. This
- * inverts it: one hull, one skill on both sides, and the kit is the only
- * thing that differs between two pilots. What comes out is a price for each
- * stage of the tree in win probability, which is the balance question the
- * ladder cannot answer and the drill does not ask.
- *
- * It is the same argument the ladder's matched budget makes higher up, read
- * the other way round. Thirty points flatten a two-to-one skill gap, so
- * somewhere between nothing and thirty the kit stops being a garnish on
- * flying and becomes the whole result. This maps where.
- */
-
-/// A kit, handed to a pilot at every spawn.
-pub struct Stage {
-    pub name: &'static str,
-    /// What to grant and how many of each. `TO_CEILING` grants until the hull
-    /// refuses, so "every stat maxed" does not require this file to know how
-    /// many steps a stat has.
-    pub kit: &'static [(u8, u8)],
-}
-
-/// Grant this one until the count stops moving.
-const TO_CEILING: u8 = 255;
-/// A bound on that, so a ceiling that never arrives is a finite bug.
-const GRANT_LIMIT: u32 = 64;
-
-impl Stage {
-    /// How many grants the kit asks for, or `None` when it asks for a ceiling
-    /// and the answer is whatever the hull turns out to hold.
-    ///
-    /// The report needs this to say `1/2`. Most hulls stop at one
-    /// bomb rung, so on those a two-rung stage is the one-rung stage under
-    /// another name, and a matrix that did not say so would be inviting a
-    /// reader to compare a row against itself.
-    pub fn asked(&self) -> Option<u32> {
-        if self.kit.iter().any(|&(_, n)| n == TO_CEILING) {
-            return None;
-        }
-        Some(self.kit.iter().map(|&(_, n)| n as u32).sum())
-    }
-}
-
-/// The stages, in the order the matrix reports them.
-///
-/// Each is one axis of the tree on its own, because a stage that changes two
-/// things at once cannot be priced. The add-ons sit on the trigger they belong
-/// to: shrapnel is a bomber's, and asking a hull to wear it on its gun would
-/// measure a refusal rather than an add-on.
-pub const STAGES: &[Stage] = &[
-    Stage {
-        name: "bare",
-        kit: &[],
-    },
-    Stage {
-        name: "gun 1",
-        kit: &[(sim::slot_level(sim::TRIG_GUN), 1)],
-    },
-    Stage {
-        name: "gun 2",
-        kit: &[(sim::slot_level(sim::TRIG_GUN), 2)],
-    },
-    Stage {
-        name: "bomb 1",
-        kit: &[(sim::slot_level(sim::TRIG_BOMB), 1)],
-    },
-    Stage {
-        name: "bomb 2",
-        kit: &[(sim::slot_level(sim::TRIG_BOMB), 2)],
-    },
-    Stage {
-        name: "stats",
-        // This ceiling-only diagnostic prices the whole flight axis. With
-        // five eight-step ladders it is deliberately not a legal thirty-point
-        // build; the profile harness uses legal matched one-point margins.
-        kit: &[
-            (sim::slot_stat(0), TO_CEILING),
-            (sim::slot_stat(1), TO_CEILING),
-            (sim::slot_stat(2), TO_CEILING),
-            (sim::slot_stat(3), TO_CEILING),
-            (sim::slot_stat(4), TO_CEILING),
-        ],
-    },
-    Stage {
-        name: "multifire",
-        kit: &[(sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI), 1)],
-    },
-    Stage {
-        name: "bouncing gun",
-        kit: &[(sim::slot_mod(sim::TRIG_GUN, sim::MOD_BOUNCE), 1)],
-    },
-    Stage {
-        name: "freezing gun",
-        kit: &[(sim::slot_mod(sim::TRIG_GUN, sim::MOD_FREEZE), 1)],
-    },
-    Stage {
-        name: "shrapnel",
-        kit: &[(sim::slot_mod(sim::TRIG_BOMB, sim::MOD_SHRAPNEL), 1)],
-    },
-    Stage {
-        name: "proximity",
-        kit: &[(sim::slot_mod(sim::TRIG_BOMB, sim::MOD_PROX), 1)],
-    },
-    Stage {
-        name: "shoving bomb",
-        kit: &[(sim::slot_mod(sim::TRIG_BOMB, sim::MOD_PUSH), 1)],
-    },
-    // A second bare hull, and the most useful row in the table.
-    //
-    // It is `bare` under another name, so the gap between the two is a
-    // difference this harness reports between two identical things: the noise
-    // floor, measured rather than assumed, on whatever hull and bout count you
-    // just ran. Every other row is worth reading against it, and a run whose
-    // control gap is wider than the finding you came for has not found
-    // anything. Unwearable stages land here too and widen the estimate, which
-    // is right: they are also bare.
-    Stage {
-        name: "control",
-        kit: &[],
-    },
-];
-
-/// What one side did in one bout.
-#[derive(Clone, Copy, Default)]
-pub struct Side {
-    pub kills: u32,
-    /// Trigger pulls, by trigger, so a stage nobody used can be told from a
-    /// stage that was used and lost.
-    pub shots: [u32; sim::TRIG_COUNT],
-    /// Damaging impacts on somebody else, and what they came to. A count alone
-    /// cannot tell a fuse that lands more often from one that lands harder,
-    /// and a blast falls off to nothing at its rim: a proximity round that
-    /// goes off early connects exactly as often and arrives spent.
-    pub hits: u32,
-    pub damage: u64,
-    /// And the same, landed on yourself. A bomb's blast has no owner test, so
-    /// this is the count that says whether a stage is losing because the pilot
-    /// flying it keeps standing in it.
-    pub self_hits: u32,
-    pub self_damage: u64,
-    /// Grants that landed at the first spawn. Zero on a hull that cannot wear
-    /// the kit at all, which makes the row a control rather than a mystery.
-    pub worn: u32,
-    /// Grants that landed on every spawn after it. The kit going back on is
-    /// the property the whole harness rests on and the one that fails
-    /// silently, so it is counted rather than assumed.
-    pub regrants: u32,
-}
-
-pub struct Bout {
-    pub sides: [Side; 2],
-    #[cfg(test)]
-    pub ticks: u32,
-    /// Whether somebody reached the kill target. A pair that mostly times out
-    /// is a pair whose numbers mean less than they look.
-    pub decided: bool,
-}
-
-/// Put a kit on, and say how much of it went on.
-///
-/// Called at every spawn, not once. A stage grants slot by slot rather than
-/// setting a kit, so it is put back on at the dead-to-alive edge the way the
-/// arena re-deals one; granted once at the start it would measure one
-/// outfitted life and four bare ones.
-fn wear(world: &mut sim::World, ship: usize, stage: &Stage) -> u32 {
-    let mut worn = 0;
-    for &(slot, n) in stage.kit {
-        let want = if n == TO_CEILING {
-            GRANT_LIMIT
-        } else {
-            n as u32
-        };
-        for _ in 0..want {
-            if !world.grant(ship, slot) {
-                break;
-            }
-            worn += 1;
-        }
-    }
-    // `wear` is called only at a spawn edge. The core filled the bar before
-    // these grants raised its ceiling, while a live room opens after dealing
-    // its kit. Put both fixtures on the same full starting bar.
-    world.state.ships[ship].energy = world.eff_max_energy(ship);
-    worn
-}
-
-/// Which trigger fired a given spec, for this hull.
-///
-/// A fire event names the spec that left the barrel rather than the trigger
-/// that was pulled, and the report needs the trigger: "the shrapnel stage won
-/// nothing" and "the shrapnel stage never threw a bomb" are different findings
-/// that look identical from the win column.
 pub(crate) fn spec_triggers(
     cfg: &sim::sim_settings,
     class: u8,
@@ -335,194 +132,30 @@ pub(crate) fn spec_triggers(
     m
 }
 
-/// One bout between two kits. The returned sides are in the order passed in,
-/// whichever end of the pit each of them actually flew.
-///
-/// `tuning` is a zone's arena block, or `None` for the roster as this binary
-/// compiled it. It matters more than it sounds: a zone owns its weapon table
-/// and its add-on steps, so what multifire costs is a zone's answer rather
-/// than the core's, and a price measured on the baseline is a price for a room
-/// nobody is necessarily running.
-///
-/// The map stays the pit whatever the zone says. A zone's own map would put
-/// routing, corridors and a thousand tiles of separation into a measurement
-/// that exists to isolate the kit, and two pilots on Alpha's map would spend
-/// most of a bout looking for each other.
-pub fn stage_bout(
-    kits: [&Stage; 2],
-    class: u8,
-    skill: f32,
-    salt: u32,
-    tuning: Option<&config::ArenaConfig>,
-) -> Bout {
-    stage_bout_for(kits, class, skill, salt, tuning, MATCH_TICKS)
-}
-
-fn stage_bout_for(
-    kits: [&Stage; 2],
-    class: u8,
-    skill: f32,
-    salt: u32,
-    tuning: Option<&config::ArenaConfig>,
-    tick_limit: u32,
-) -> Bout {
-    let mut world = sim::World::with_map(0x5ea1 ^ salt, sim::build_pit);
-    let route = nav::Nav::build(&world.map);
-    if let Some(c) = tuning {
-        // The arena's own path, so a setting this harness reads is a setting a
-        // room would read. It rebuilds the baseline first, which is why it
-        // comes before the two lines below rather than after.
-        crate::Room::apply_config(&mut world, c);
-    }
-    // And the zone's spawn scatter, for a reason the other two did not have to
-    // spell out. A radius drops a respawning ship on a random tile that far
-    // from the map's centre, and Alpha's is 250 against a pit thirty-two tiles
-    // wide: the first death throws both pilots out of the room and into the
-    // empty field around it, where they spend the rest of the bout not finding
-    // each other. It halved the kills in this tournament and I spent a while
-    // blaming a refactor for it. Zero puts them back on the map's own starts.
-    world.cfg.spawn_radius = 0;
-
-    // Sides alternate, so the pit's own geometry cannot turn into a result.
-    let flip = salt % 2 == 1;
-    let seats: [&Stage; 2] = if flip {
-        [kits[1], kits[0]]
-    } else {
-        [kits[0], kits[1]]
-    };
-
-    let ships = [
-        world.spawn(class, 0, 505, 522, 0) as u8,
-        world.spawn(class, 1, 519, 502, 32768) as u8,
-    ];
-
-    let mut out = [Side::default(); 2];
-    for k in 0..2 {
-        out[k].worn = wear(&mut world, ships[k] as usize, seats[k]);
-    }
-
-    let mut bots = [ai::Bot::new(ships[0], skill), ai::Bot::new(ships[1], skill)];
-    bots[0].reseed(salt.wrapping_mul(2246822519) ^ 0x1234);
-    bots[1].reseed(salt.wrapping_mul(3266489917) ^ 0x5678);
-
-    let trig_of = spec_triggers(&world.cfg, class);
-    let mut alive_was = [true; 2];
-    #[cfg(test)]
-    let mut ticks = 0;
-    let mut decided = false;
-
-    for _ in 0..tick_limit {
-        let inputs = [
-            sim::sim_input {
-                ship: ships[0],
-                buttons: bots[0].think(
-                    &ai::own(&world, ships[0]),
-                    &route,
-                    bots[0].looks_due().then(|| ai::scan(&world, ships[0])),
-                ),
-            },
-            sim::sim_input {
-                ship: ships[1],
-                buttons: bots[1].think(
-                    &ai::own(&world, ships[1]),
-                    &route,
-                    bots[1].looks_due().then(|| ai::scan(&world, ships[1])),
-                ),
-            },
-        ];
-        world.step(&inputs);
-        #[cfg(test)]
-        {
-            ticks += 1;
-        }
-
-        {
-            let ev = &*world.events;
-            for i in 0..ev.count as usize {
-                let e = ev.e[i];
-                match e.etype {
-                    sim::EV_FIRE => {
-                        if let Some(k) = ships.iter().position(|&s| s == e.a) {
-                            if let Some(&t) = trig_of.get(&e.b) {
-                                out[k].shots[t] += 1;
-                            }
-                        }
-                    }
-                    // Victim in `a`, attacker in `b`, damage in `v`. The two
-                    // are the same ship when a blast catches whoever set it
-                    // off, which the core allows on purpose.
-                    sim::EV_HIT => {
-                        if let Some(k) = ships.iter().position(|&s| s == e.b) {
-                            if e.a == e.b {
-                                out[k].self_hits += 1;
-                                out[k].self_damage += e.v.max(0) as u64;
-                            } else {
-                                out[k].hits += 1;
-                                out[k].damage += e.v.max(0) as u64;
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        // The kit goes back on at the dead-to-alive edge.
-        for k in 0..2 {
-            let alive = world.state.ships[ships[k] as usize].alive != 0;
-            if alive && !alive_was[k] {
-                out[k].regrants += wear(&mut world, ships[k] as usize, seats[k]);
-            }
-            alive_was[k] = alive;
-        }
-
-        let kills = [
-            world.state.ships[ships[0] as usize].kills,
-            world.state.ships[ships[1] as usize].kills,
-        ];
-        if kills[0] >= KILL_TARGET || kills[1] >= KILL_TARGET {
-            decided = true;
-            break;
-        }
-    }
-
-    for k in 0..2 {
-        out[k].kills = world.state.ships[ships[k] as usize].kills as u32;
-    }
-    Bout {
-        sides: if flip { [out[1], out[0]] } else { out },
-        #[cfg(test)]
-        ticks,
-        decided,
-    }
-}
-
-/// One stage's whole tournament.
-#[derive(Clone)]
-pub struct StageRow {
-    pub name: &'static str,
-    pub worn: u32,
-    /// What the kit asked for, when that is a fixed number.
-    pub asked: Option<u32>,
-    pub wins: u32,
-    pub losses: u32,
-    pub draws: u32,
+/// What one side did in one bout.
+#[derive(Clone, Copy, Default)]
+pub struct Side {
     pub kills: u32,
+    /// Trigger pulls, by trigger, so a hull nobody fired can be told from one
+    /// that was fired and lost.
     pub shots: [u32; sim::TRIG_COUNT],
+    /// Damaging impacts on somebody else, and what they came to. A count alone
+    /// cannot tell a fuse that lands more often from one that lands harder,
+    /// and a blast falls off to nothing at its rim.
     pub hits: u32,
     pub damage: u64,
+    /// And the same, landed on yourself. A blast has no owner test, so this is
+    /// the count that says whether a hull is losing because the pilot flying
+    /// it keeps standing in its own bomb.
     pub self_hits: u32,
     pub self_damage: u64,
-    /// Kit re-issued after a death, summed over the tournament.
-    pub regrants: u32,
-    /// Win rate against each stage, indexed as `STAGES` is. `None` where the
-    /// stage meets itself, which is scored as a control instead.
-    pub vs: Vec<Option<f64>>,
-    /// The mirror match: this kit against itself, as the share of bouts the
-    /// first-listed side took. Near a half or the harness has a bias in it.
-    pub mirror: f64,
-    /// Mirror bouts that nobody won inside the tick limit.
-    pub stalemates: u32,
+}
+
+pub struct Bout {
+    pub sides: [Side; 2],
+    /// Whether somebody reached the kill target. A pair that mostly times out
+    /// is a pair whose numbers mean less than they look.
+    pub decided: bool,
 }
 
 /// A win rate, counting a draw as half a win each way.
@@ -549,328 +182,6 @@ pub fn margin_of(wins: u32, losses: u32, draws: u32) -> f64 {
     let p = win_rate_of(wins, losses, draws);
     let denom = 1.0 + Z * Z / n;
     100.0 * Z * ((p * (1.0 - p) / n) + (Z * Z / (4.0 * n * n))).sqrt() / denom
-}
-
-impl StageRow {
-    /// The denominator under `win_rate`, for a caller reporting both.
-    #[cfg(test)]
-    pub fn bouts(&self) -> u32 {
-        self.wins + self.losses + self.draws
-    }
-    pub fn win_rate(&self) -> f64 {
-        win_rate_of(self.wins, self.losses, self.draws)
-    }
-
-    /// Half the 95% interval on this row's win rate, in points.
-    ///
-    /// A win rate is a coin counted `bouts()` times, and this is what that
-    /// counting is worth. It exists because the report used to answer "is this
-    /// gap real" with the spread of the kit-less rows, which is the range of
-    /// four samples and mostly luck: it read 4.2 points where the sampling
-    /// spread alone was nearer 15. Every row can price its own error from its
-    /// own count, so every row now does.
-    pub fn margin(&self) -> f64 {
-        margin_of(self.wins, self.losses, self.draws)
-    }
-}
-
-fn stage_rows() -> Vec<StageRow> {
-    let n = STAGES.len();
-    STAGES
-        .iter()
-        .map(|stage| StageRow {
-            name: stage.name,
-            worn: 0,
-            asked: stage.asked(),
-            wins: 0,
-            losses: 0,
-            draws: 0,
-            kills: 0,
-            shots: [0; sim::TRIG_COUNT],
-            hits: 0,
-            damage: 0,
-            self_hits: 0,
-            self_damage: 0,
-            regrants: 0,
-            vs: vec![None; n],
-            mirror: 0.0,
-            stalemates: 0,
-        })
-        .collect()
-}
-
-#[derive(Default)]
-struct PairTally {
-    first_wins: u32,
-    second_wins: u32,
-    draws: u32,
-    stalemates: u32,
-    bouts: u32,
-}
-
-impl PairTally {
-    fn record(&mut self, rows: &mut [StageRow], first: usize, second: usize, bout: Bout) {
-        rows[first].worn = bout.sides[0].worn;
-        rows[second].worn = bout.sides[1].worn;
-
-        for (row, side) in [(first, bout.sides[0]), (second, bout.sides[1])] {
-            rows[row].kills += side.kills;
-            rows[row].hits += side.hits;
-            rows[row].damage += side.damage;
-            rows[row].self_hits += side.self_hits;
-            rows[row].self_damage += side.self_damage;
-            rows[row].regrants += side.regrants;
-            for trigger in 0..sim::TRIG_COUNT {
-                rows[row].shots[trigger] += side.shots[trigger];
-            }
-        }
-        if !bout.decided {
-            self.stalemates += 1;
-        }
-        match bout.sides[0].kills.cmp(&bout.sides[1].kills) {
-            std::cmp::Ordering::Greater => self.first_wins += 1,
-            std::cmp::Ordering::Less => self.second_wins += 1,
-            std::cmp::Ordering::Equal => self.draws += 1,
-        }
-        self.bouts += 1;
-    }
-
-    fn finish(self, rows: &mut [StageRow], first: usize, second: usize) {
-        let bouts = self.bouts.max(1) as f64;
-        let rate = (self.first_wins as f64 + 0.5 * self.draws as f64) / bouts;
-        if first == second {
-            rows[first].mirror = rate;
-            rows[first].stalemates = self.stalemates;
-            return;
-        }
-
-        rows[first].wins += self.first_wins;
-        rows[first].losses += self.second_wins;
-        rows[first].draws += self.draws;
-        rows[second].wins += self.second_wins;
-        rows[second].losses += self.first_wins;
-        rows[second].draws += self.draws;
-        rows[first].vs[second] = Some(rate);
-        rows[second].vs[first] = Some(1.0 - rate);
-    }
-}
-
-/// Every stage against every other, `bouts` times each, plus a mirror control.
-///
-/// The diagonal is deliberately not folded into the win column. A stage meeting
-/// itself contributes one win and one loss to the same row whatever happens, so
-/// counting it would drag every rate toward a half and hide the thing it is
-/// actually good for: a mirror that does not come out even says the harness is
-/// biased, and a mirror that never resolves says the pair is too dull to score.
-pub fn run_stages(
-    class: u8,
-    skill: f32,
-    bouts: u32,
-    tuning: Option<&config::ArenaConfig>,
-    verbose: bool,
-) -> Vec<StageRow> {
-    let n = STAGES.len();
-    let mut rows = stage_rows();
-
-    let mut salt = 0u32;
-    for (i, first) in STAGES.iter().enumerate() {
-        for (j, second) in STAGES.iter().enumerate().skip(i) {
-            let mut tally = PairTally::default();
-            for _ in 0..bouts {
-                let b = stage_bout([first, second], class, skill, salt, tuning);
-                salt = salt.wrapping_add(1);
-                tally.record(&mut rows, i, j, b);
-            }
-            tally.finish(&mut rows, i, j);
-        }
-        if verbose {
-            println!("{} done ({}/{})", first.name, i + 1, n);
-        }
-    }
-    rows
-}
-
-/// Print the tournament, and hand back the document worth keeping.
-pub fn report_stages(
-    rows: &[StageRow],
-    hull: &str,
-    skill: f32,
-    bouts: u32,
-    zone: &str,
-) -> serde_json::Value {
-    // Whose numbers these are, said at the top. A price for multifire is a
-    // price under some zone's `multi_energy` and `mod_spread`, and a report
-    // that did not name the tuning would invite being carried to a room that
-    // does not use it.
-    println!(
-        "\nloadout tournament: {hull}, {zone} tuning, skill {skill:.2}, \
-{bouts} bouts a pair, {} stages",
-        rows.len()
-    );
-    println!(
-        "\n{:<14} {:>5} {:>7} {:>7} {:>7} {:>7} {:>8} {:>7} {:>6} {:>7}",
-        "stage", "worn", "win%", "+-95%", "guns", "bombs", "hit/pull", "dmg/hit", "self%", "mirror"
-    );
-    for r in rows {
-        let fired: u32 = r.shots.iter().sum();
-        let worn = match r.asked {
-            Some(a) if a != r.worn => format!("{}/{a}", r.worn),
-            _ => r.worn.to_string(),
-        };
-        println!(
-            "{:<14} {:>5} {:>7.1} {:>7.1} {:>7} {:>7} {:>8.2} {:>7.0} {:>6.1} {:>7.1}",
-            r.name,
-            worn,
-            100.0 * r.win_rate(),
-            r.margin(),
-            r.shots[sim::TRIG_GUN],
-            r.shots[sim::TRIG_BOMB],
-            // Impacts per trigger pull, and deliberately not a percentage. A
-            // fire event is a trigger being pulled, so a hull with two barrels
-            // can land two on one pull and one with a multifire fan four. It
-            // read as a hit rate until a Facet came back at 111%.
-            r.hits as f64 / fired.max(1) as f64,
-            // What one impact actually arrives with. A blast falls off to
-            // nothing at its rim, so a fuse that goes off early lands the same
-            // count for a fraction of the damage, and only this column says so.
-            r.damage as f64 / r.hits.max(1) as f64,
-            // The share of everything this stage dealt that it dealt to
-            // itself.
-            100.0 * r.self_damage as f64 / (r.damage + r.self_damage).max(1) as f64,
-            100.0 * r.mirror,
-        );
-    }
-
-    println!("\nrow's win% against column");
-    print!("{:<15}", "");
-    for i in 0..rows.len() {
-        print!("{:>5}", i + 1);
-    }
-    println!();
-    for (i, r) in rows.iter().enumerate() {
-        print!("{:>2} {:<12}", i + 1, r.name);
-        for cell in &r.vs {
-            match cell {
-                Some(v) => print!("{:>5.0}", 100.0 * v),
-                None => print!("{:>5}", "-"),
-            }
-        }
-        println!();
-    }
-
-    let stale: u32 = rows.iter().map(|r| r.stalemates).sum();
-    if stale > 0 {
-        println!(
-            "\n{stale} mirror bouts of {} reached the tick limit undecided",
-            rows.len() as u32 * bouts
-        );
-    }
-    // Every row that ended up wearing nothing is flying the same hull as every
-    // other, so they ought to agree, and how far they miss by is worth seeing.
-    //
-    // It is not this run's error bar, which is what it used to be called. It is
-    // the range of a handful of samples, and the range of four is a poor
-    // estimator of anything: it carries about as much scatter as the quantity
-    // it is estimating. Three runs here read 4.2, 6.2 and 9.6 points while
-    // their sampling spreads were near 15, 15 and 5, so it landed a third of
-    // the truth twice and double it once. Reading a gap against a number that
-    // wrong in either direction is how a coin flip gets written up.
-    //
-    // The rows do meet equivalent fields, which is worth saying because the
-    // spread looks like it ought to have an explanation: `bare` faces the
-    // kitted stages plus `control`, `control` faces the same stages plus
-    // `bare`, and an empty kit is an empty kit. No structure, just a noisy
-    // statistic.
-    //
-    // The `+-95%` column is the honest version and it is per row, off that
-    // row's own count. Two rows differ when their intervals come apart, which
-    // is a question this line cannot answer and should not look like it can.
-    let flat: Vec<&StageRow> = rows.iter().filter(|r| r.worn == 0).collect();
-    let kitless_spread = if flat.len() > 1 {
-        let lo = flat
-            .iter()
-            .map(|r| r.win_rate())
-            .fold(f64::INFINITY, f64::min);
-        let hi = flat
-            .iter()
-            .map(|r| r.win_rate())
-            .fold(f64::NEG_INFINITY, f64::max);
-        let widest = flat.iter().map(|r| r.margin()).fold(0.0, f64::max);
-        println!(
-            "\n{} rows are wearing nothing at all and spread {:.1} points, against \
-a 95% interval of +-{widest:.1} on each of them. Sampling explains a spread of \
-about {:.0}; anything past that is those rows meeting different fields, not this \
-run being noisy. Either way, read gaps against the per-row interval and not \
-against this number.",
-            flat.len(),
-            100.0 * (hi - lo),
-            2.06 * widest,
-        );
-        Some(100.0 * (hi - lo))
-    } else {
-        None
-    };
-
-    // A row nobody can wear is a copy of `bare` under another name, and a row
-    // worn short is a copy of a shallower row. Either one invites a reader to
-    // compare a stage against itself and call the difference a finding, so both
-    // are said out loud rather than left in the wear column to be noticed.
-    let cannot: Vec<&str> = rows
-        .iter()
-        .filter(|r| r.worn == 0 && r.asked.is_none_or(|a| a > 0))
-        .map(|r| r.name)
-        .collect();
-    if !cannot.is_empty() {
-        println!(
-            "\n{hull} cannot wear: {} (each is a second copy of bare)",
-            cannot.join(", ")
-        );
-    }
-    let short: Vec<String> = rows
-        .iter()
-        .filter(|r| r.worn > 0 && r.asked.is_some_and(|a| r.worn < a))
-        .map(|r| format!("{} ({} of {})", r.name, r.worn, r.asked.unwrap_or(0)))
-        .collect();
-    if !short.is_empty() {
-        println!("worn short on {hull}: {}", short.join(", "));
-    }
-
-    serde_json::json!({
-        "hull": hull,
-        "tuning": zone,
-        "skill": skill,
-        "bouts_per_pair": bouts,
-        /* Percentage points between the best and worst of the rows wearing
-         * nothing. A diagnostic and not an error bar: rows that ought to agree
-         * and do not have found something the harness is not controlling for.
-         * For whether a gap is real, use each row's own `win_rate_margin`. */
-        "kitless_spread": kitless_spread,
-        "stages": rows.iter().map(|r| serde_json::json!({
-            "name": r.name,
-            "worn": r.worn,
-            "asked": r.asked,
-            "wins": r.wins,
-            "losses": r.losses,
-            "draws": r.draws,
-            "win_rate": r.win_rate(),
-            /* Half the 95% interval, in points. In the file as well as the
-             * table, because a run gets diffed against another run and the
-             * only question that ever asks is whether the two moved further
-             * apart than either could wander on its own. */
-            "win_rate_margin": r.margin(),
-            "kills": r.kills,
-            "gun_shots": r.shots[sim::TRIG_GUN],
-            "bomb_shots": r.shots[sim::TRIG_BOMB],
-            "hits": r.hits,
-            "damage": r.damage,
-            "self_hits": r.self_hits,
-            "self_damage": r.self_damage,
-            "regrants": r.regrants,
-            "mirror": r.mirror,
-            "stalemates": r.stalemates,
-            "vs": r.vs,
-        })).collect::<Vec<_>>(),
-    })
 }
 
 /* ---- the hull tournament ----------------------------------------------
@@ -902,12 +213,7 @@ against this number.",
 /// So this is a parameter, and a result carries the room it came from.
 #[derive(Clone)]
 pub enum Arena {
-    /// One of the core's own builders, with the fixed facing spawns the
-    /// tournament has always used. Symmetric by construction.
     Built(fn(&mut sim::sim_map)),
-    /// A packed map off disk, whether shipped with a zone or generated. Spawns
-    /// come from the map's own starts, because a coordinate that is open in the
-    /// pit is inside a wall somewhere else.
     Packed(std::sync::Arc<Vec<u8>>),
 }
 
@@ -968,8 +274,6 @@ pub struct HullRow {
     /// one; the second is what this hull got for it. Two hulls on the same
     /// budget with different conversion is the mechanism behind most of this
     /// table.
-    pub budget: u32,
-    pub converted: u32,
     /// Win rate against each hull, indexed as the roster is. `None` on the
     /// diagonal, which is scored as a bias check instead.
     pub vs: Vec<Option<f64>>,
@@ -991,73 +295,19 @@ impl HullRow {
     }
 }
 
-/// Deal one ship a kit worth `budget`, and return what it actually spent.
+/// Two hulls, one bout, and nothing between them but the ships.
 ///
-/// Random within the hull's own ceilings rather than a fixed list, because
-/// what this harness measures is a hull at a level of kit rather than a hull
-/// wearing one author's idea of a good build. The generator is the caller's,
-/// so the same salt builds the same kit and dressing a pilot does not shift
-/// the bout's own stream.
-///
-/// The return is what fit, which is the budget in any arena with room for it.
-fn deal_kit(world: &mut sim::World, ship: usize, budget: u32, rng: &mut u32) -> u32 {
-    let ceiling = world.kit_ceilings();
-    let mut kit = [0u8; sim::SLOT_COUNT];
-    let mut spent = 0u32;
-    while spent < budget {
-        let mut placed = false;
-        for _ in 0..64 {
-            *rng ^= *rng << 13;
-            *rng ^= *rng >> 17;
-            *rng ^= *rng << 5;
-            let k = (*rng as usize) % sim::SLOT_COUNT;
-            // Two kinds of charge, whatever the roll says: the arena refuses
-            // a third, and a bout flown on a kit the arena would not take is
-            // a bout measuring a bare hull.
-            if k >= sim::slot_charge(0) as usize && kit[k] == 0 {
-                let kinds = (0..sim::MAX_CHARGES)
-                    .filter(|c| kit[sim::slot_charge(*c) as usize] > 0)
-                    .count();
-                if kinds >= sim::KIT_CHARGE_SLOTS {
-                    continue;
-                }
-            }
-            if kit[k] < ceiling[k] {
-                kit[k] += 1;
-                spent += 1;
-                placed = true;
-                break;
-            }
-        }
-        if !placed {
-            break;
-        }
-    }
-    // Refused where `budget` is more than a kit may hold, which the harness
-    // does on purpose to measure a wider build than a match allows; the ship
-    // then keeps what it had. Left as it was rather than made an assertion,
-    // which is a thread of its own: what this change owes is that the charge
-    // cap above is not a new way to be refused.
-    if world.set_kit(ship, &kit) {
-        // `deal_kit` is likewise a spawn-edge helper. A random Energy count
-        // must change the bar that this life starts with, not only its cap.
-        world.state.ships[ship].energy = world.eff_max_energy(ship);
-    }
-    spent
-}
-
-/// Two hulls, the same bounty each, one bout.
-///
-/// Returns the bout and the kit budget each side was offered over it, which is
-/// `budget` times the number of lives it had rather than a constant.
+/// This is the whole balance question in a preconstructed game. It used to
+/// need a kit budget on top, because a hull was a shape and a budget bought
+/// the rest of the ship; both sides carry their own profiles now, so the only
+/// variable left is which two hulls are in the room.
 pub fn hull_bout(
     classes: [u8; 2],
     skill: f32,
-    budget: u32,
     salt: u32,
     tuning: Option<&config::ArenaConfig>,
     map: &Arena,
-) -> (Bout, [u32; 2]) {
+) -> Bout {
     // Sides alternate, so the room's geometry cannot turn into a result. The
     // seats keep their places and their bot seeds; it is the hulls that move.
     let flip = salt % 2 == 1;
@@ -1066,15 +316,10 @@ pub fn hull_bout(
     } else {
         classes
     };
-    let dead = (
-        Bout {
-            sides: [Side::default(); 2],
-            #[cfg(test)]
-            ticks: 0,
-            decided: false,
-        },
-        [0, 0],
-    );
+    let dead = Bout {
+        sides: [Side::default(); 2],
+        decided: false,
+    };
     let Some(mut world) = map.build(salt) else {
         return dead;
     };
@@ -1096,20 +341,7 @@ pub fn hull_bout(
         return dead;
     };
 
-    // Nonzero, because xorshift stays at zero forever once it arrives there and
-    // a bout whose kits all rolled the same thing is not obvious from a
-    // report that only prints totals.
-    let mut prng = [
-        (salt.wrapping_mul(2654435761) ^ 0x9E37_79B9) | 1,
-        (salt.wrapping_mul(2246822519) ^ 0x85EB_CA6B) | 1,
-    ];
-
     let mut out = [Side::default(); 2];
-    let mut offered = [0u32; 2];
-    for k in 0..2 {
-        out[k].worn = deal_kit(&mut world, ships[k] as usize, budget, &mut prng[k]);
-        offered[k] = budget;
-    }
 
     let mut bots = [ai::Bot::new(ships[0], skill), ai::Bot::new(ships[1], skill)];
     bots[0].reseed(salt.wrapping_mul(2246822519) ^ 0x1234);
@@ -1122,8 +354,6 @@ pub fn hull_bout(
         spec_triggers(&world.cfg, seats[1]),
     ];
     let mut alive_was = [true; 2];
-    #[cfg(test)]
-    let mut ticks = 0;
     let mut decided = false;
 
     for _ in 0..MATCH_TICKS {
@@ -1146,10 +376,6 @@ pub fn hull_bout(
             },
         ];
         world.step(&inputs);
-        #[cfg(test)]
-        {
-            ticks += 1;
-        }
 
         {
             let ev = &*world.events;
@@ -1179,15 +405,10 @@ pub fn hull_bout(
             }
         }
 
-        // Death clears the tech tree, so the bounty goes back on at the
-        // dead-to-alive edge or the rest of the bout is fought bare.
+        // The profile goes back on at the dead-to-alive edge, which the core
+        // does at the spawn, so this only tracks the edge itself.
         for k in 0..2 {
-            let alive = world.state.ships[ships[k] as usize].alive != 0;
-            if alive && !alive_was[k] {
-                out[k].regrants += deal_kit(&mut world, ships[k] as usize, budget, &mut prng[k]);
-                offered[k] += budget;
-            }
-            alive_was[k] = alive;
+            alive_was[k] = world.state.ships[ships[k] as usize].alive != 0;
         }
 
         let kills = [
@@ -1203,25 +424,15 @@ pub fn hull_bout(
     for k in 0..2 {
         out[k].kills = world.state.ships[ships[k] as usize].kills as u32;
     }
-    (
-        Bout {
-            sides: if flip { [out[1], out[0]] } else { out },
-            #[cfg(test)]
-            ticks,
-            decided,
-        },
-        if flip {
-            [offered[1], offered[0]]
-        } else {
-            offered
-        },
-    )
+    Bout {
+        sides: if flip { [out[1], out[0]] } else { out },
+        decided,
+    }
 }
 
 /// Every hull against every other, `bouts` times each, at one bounty.
 pub fn run_hulls(
     skill: f32,
-    budget: u32,
     bouts: u32,
     tuning: Option<&config::ArenaConfig>,
     map: &Arena,
@@ -1241,8 +452,6 @@ pub fn run_hulls(
             damage: 0,
             self_hits: 0,
             self_damage: 0,
-            budget: 0,
-            converted: 0,
             vs: vec![None; n],
             mirror: 0.0,
             stalemates: 0,
@@ -1254,7 +463,7 @@ pub fn run_hulls(
         for j in i..n {
             let (mut wi, mut wj, mut drew, mut stale) = (0u32, 0u32, 0u32, 0u32);
             for _ in 0..bouts {
-                let (b, offered) = hull_bout([i as u8, j as u8], skill, budget, salt, tuning, map);
+                let b = hull_bout([i as u8, j as u8], skill, salt, tuning, map);
                 salt = salt.wrapping_add(1);
 
                 for (k, side) in [(i, b.sides[0]), (j, b.sides[1])] {
@@ -1263,13 +472,10 @@ pub fn run_hulls(
                     rows[k].damage += side.damage;
                     rows[k].self_hits += side.self_hits;
                     rows[k].self_damage += side.self_damage;
-                    rows[k].converted += side.worn + side.regrants;
                     for t in 0..sim::TRIG_COUNT {
                         rows[k].shots[t] += side.shots[t];
                     }
                 }
-                rows[i].budget += offered[0];
-                rows[j].budget += offered[1];
 
                 if !b.decided {
                     stale += 1;
@@ -1310,25 +516,25 @@ pub fn run_hulls(
 pub fn report_hulls(
     rows: &[HullRow],
     skill: f32,
-    budget: u32,
     bouts: u32,
     zone: &str,
     map: &str,
+    built: &Arena,
 ) -> serde_json::Value {
     let n = rows.len();
     println!(
-        "\nhull tournament: {zone} tuning on the {map}, skill {skill:.2}, a {budget}-point \
-kit a life, {bouts} bouts a pair, {n} hulls"
+        "\nhull tournament: {zone} tuning on the {map}, skill {skill:.2}, \
+{bouts} bouts a pair, {n} hulls"
     );
 
     println!(
-        "\n{:<10} {:>7} {:>7} {:>7} {:>7} {:>8} {:>7} {:>6} {:>7} {:>7}",
-        "hull", "win%", "+-95%", "guns", "bombs", "hit/pull", "dmg/hit", "self%", "conv%", "mirror"
+        "\n{:<10} {:>7} {:>7} {:>7} {:>7} {:>8} {:>7} {:>6} {:>7}",
+        "hull", "win%", "+-95%", "guns", "bombs", "hit/pull", "dmg/hit", "self%", "mirror"
     );
     for r in rows {
         let fired: u32 = r.shots.iter().sum();
         println!(
-            "{:<10} {:>7.1} {:>7.1} {:>7} {:>7} {:>8.2} {:>7.0} {:>6.1} {:>7.1} {:>7.1}",
+            "{:<10} {:>7.1} {:>7.1} {:>7} {:>7} {:>8.2} {:>7.0} {:>6.1} {:>7.1}",
             r.name,
             100.0 * r.win_rate(),
             r.margin(),
@@ -1341,10 +547,6 @@ kit a life, {bouts} bouts a pair, {n} hulls"
             r.hits as f64 / fired.max(1) as f64,
             r.damage as f64 / r.hits.max(1) as f64,
             100.0 * r.self_damage as f64 / (r.damage + r.self_damage).max(1) as f64,
-            // What this hull turned its budget into. Two hulls matched on
-            // budget and split on this column are the same price and not the
-            // same ship.
-            100.0 * r.converted as f64 / r.budget.max(1) as f64,
             100.0 * r.mirror,
         );
     }
@@ -1417,8 +619,10 @@ those hulls, so read their rows knowing the map is in them.",
     serde_json::json!({
         "tuning": zone,
         "map": map,
+        // The map's own bytes, so two runs a month apart can be told apart
+        // when the map has moved under them and the name has not.
+        "map_fingerprint": built.fingerprint(),
         "skill": skill,
-        "kit_budget": budget,
         "bouts_per_pair": bouts,
         "hulls": rows.iter().map(|r| serde_json::json!({
             "name": r.name,
@@ -1435,8 +639,6 @@ those hulls, so read their rows knowing the map is in them.",
             "damage": r.damage,
             "self_hits": r.self_hits,
             "self_damage": r.self_damage,
-            "kit_offered": r.budget,
-            "kit_spent": r.converted,
             "mirror": r.mirror,
             "stalemates": r.stalemates,
             "vs": r.vs,
@@ -1484,8 +686,6 @@ pub struct TeamRow {
     pub hits: u32,
     pub damage: u64,
     pub self_damage: u64,
-    pub budget: u32,
-    pub converted: u32,
 }
 
 impl TeamRow {
@@ -1516,8 +716,6 @@ pub struct Seat {
     pub hits: u32,
     pub damage: u64,
     pub self_damage: u64,
-    pub budget: u32,
-    pub converted: u32,
 }
 
 /// One match: `lineup` seated in order, the first half on team 0.
@@ -1537,43 +735,7 @@ fn team_world(salt: u32, tuning: Option<&config::ArenaConfig>, map: &Arena) -> O
     Some(world)
 }
 
-/// Geometry and navigation prepared once for every profile-screen map.
-///
-/// A packed map otherwise gets unpacked and its six landmark tables rebuilt
-/// for every match. The powered screen plays more than a hundred thousand
-/// matches, while both halves are immutable once loaded and can be shared by
-/// every comparison worker.
-struct ProfileMapFixture {
-    map: std::sync::Arc<sim::sim_map>,
-    route: nav::Nav,
-}
-
-impl ProfileMapFixture {
-    fn new(map: std::sync::Arc<sim::sim_map>) -> Self {
-        let route = nav::Nav::build(&map);
-        Self { map, route }
-    }
-
-    fn world(&self, salt: u32, tuning: Option<&config::ArenaConfig>) -> sim::World {
-        // Arena::build uses the same seed transformation before unpacking a
-        // packed map. Reusing its immutable geometry must not change the
-        // simulation stream.
-        let mut world = sim::World::on_map(0x5ea1 ^ salt, std::sync::Arc::clone(&self.map));
-        if let Some(config) = tuning {
-            crate::Room::apply_config(&mut world, config);
-        }
-        world
-    }
-}
-
-#[derive(Clone, Copy)]
-enum TeamMap<'a> {
-    Arena(&'a Arena),
-    Profile(&'a ProfileMapFixture),
-}
-
-struct TeamMatchOptions<'a> {
-    kits: Option<&'a [[u8; sim::SLOT_COUNT]; 2]>,
+struct TeamMatchOptions {
     tick_limit: u32,
     kill_target_per_player: Option<i16>,
 }
@@ -1586,33 +748,14 @@ fn live_team_score(world: &sim::World, ships: &[u8], seats: &[Seat]) -> [i32; 2]
     side
 }
 
-fn dress_team(
-    world: &mut sim::World,
-    ships: &[u8],
-    seats: &mut [Seat],
-    budget: u32,
-    kits: Option<&[[u8; sim::SLOT_COUNT]; 2]>,
-    prng: &mut [u32],
-) -> bool {
-    for i in 0..ships.len() {
-        let converted = match kits {
-            Some(kits) => {
-                let kit = &kits[seats[i].team as usize];
-                if !world.set_kit(ships[i] as usize, kit) {
-                    return false;
-                }
-                sim::World::kit_cost(kit)
-            }
-            None => deal_kit(world, ships[i] as usize, budget, &mut prng[i]),
-        };
-        seats[i].converted += converted;
-        seats[i].budget += budget;
-    }
-
-    // A live match opens after every seat has its kit, then restarts the room:
-    // full bars, loaded charges and authored starts. Spawning first and merely
-    // dealing the kit left the first life at the zero-point energy ceiling,
-    // so the harness measured a fixture the game never deliberately opens.
+/// Open the match once every seat is filled: full bars, loaded charges and
+/// authored starts, exactly as a live room does at the whistle.
+///
+/// It used to dress each seat first, from a random kit or an author's, and
+/// this is what is left of that: a hull deals its own profile at the spawn, so
+/// there is nothing to hand anybody. Spawning and leaving it there measured a
+/// fixture the game never deliberately opens, which is the part worth keeping.
+fn dress_team(world: &mut sim::World) -> bool {
     world.restart();
     crate::room::face_public_teams(world);
     true
@@ -1621,27 +764,17 @@ fn dress_team(
 fn team_match_with_options(
     lineup: &[u8],
     skill: f32,
-    budget: u32,
     salt: u32,
     tuning: Option<&config::ArenaConfig>,
-    map: TeamMap<'_>,
-    options: TeamMatchOptions<'_>,
+    map: &Arena,
+    options: TeamMatchOptions,
 ) -> (Vec<Seat>, bool) {
     let per_side = lineup.len() / 2;
-    let Some(mut world) = (match map {
-        TeamMap::Arena(map) => team_world(salt, tuning, map),
-        TeamMap::Profile(fixture) => Some(fixture.world(salt, tuning)),
-    }) else {
+    let Some(mut world) = team_world(salt, tuning, map) else {
         return (Vec::new(), false);
     };
-    let local_route;
-    let route = match map {
-        TeamMap::Arena(_) => {
-            local_route = nav::Nav::build(&world.map);
-            &local_route
-        }
-        TeamMap::Profile(fixture) => &fixture.route,
-    };
+    let route = nav::Nav::build(&world.map);
+    let route = &route;
 
     let mut seats: Vec<Seat> = Vec::with_capacity(lineup.len());
     let mut ships: Vec<u8> = Vec::with_capacity(lineup.len());
@@ -1667,14 +800,7 @@ fn team_match_with_options(
             ..Default::default()
         });
     }
-    if !dress_team(
-        &mut world,
-        &ships,
-        &mut seats,
-        budget,
-        options.kits,
-        &mut prng,
-    ) {
+    if !dress_team(&mut world) {
         return (Vec::new(), false);
     }
 
@@ -1748,10 +874,6 @@ fn team_match_with_options(
 
         for i in 0..ships.len() {
             let alive = world.state.ships[ships[i] as usize].alive != 0;
-            if alive && !alive_was[i] && options.kits.is_none() {
-                seats[i].converted += deal_kit(&mut world, ships[i] as usize, budget, &mut prng[i]);
-                seats[i].budget += budget;
-            }
             if !alive && alive_was[i] {
                 seats[i].deaths += 1;
             }
@@ -1788,7 +910,6 @@ fn match_reached_target(
 pub fn team_match(
     lineup: &[u8],
     skill: f32,
-    budget: u32,
     salt: u32,
     tuning: Option<&config::ArenaConfig>,
     map: &Arena,
@@ -1796,1224 +917,20 @@ pub fn team_match(
     team_match_with_options(
         lineup,
         skill,
-        budget,
         salt,
         tuning,
-        TeamMap::Arena(map),
+        map,
         TeamMatchOptions {
-            kits: None,
             tick_limit: MATCH_TICKS,
             kill_target_per_player: Some(KILL_TARGET),
         },
     )
 }
 
-/// One full-loadout comparison from mirrored live-format matches.
-#[derive(Clone, Debug, serde::Serialize)]
-pub struct ProfileResult {
-    pub contrast: &'static str,
-    pub a: &'static str,
-    pub b: &'static str,
-    pub paired_seeds: u32,
-    pub matches: u32,
-    pub win_rate: f64,
-    pub win_rate_low: f64,
-    pub win_rate_high: f64,
-    pub kill_difference: f64,
-    pub kill_difference_low: f64,
-    pub kill_difference_high: f64,
-    pub verdict: &'static str,
-    pub powered_fixture: bool,
-    pub fixture_valid: bool,
-    pub fixture_validity: Vec<ProfileMapValidity>,
-    pub observations: Vec<ProfileObservation>,
-}
-
-/// Fixed descriptive fixture checks for one map in one profile comparison.
-///
-/// These fields preserve exploratory diagnostics without turning the checks
-/// into inferential claims. Thresholds and definitions live beside the run in
-/// the report so every measured value has its declared interpretation.
-#[derive(Clone, Debug, serde::Serialize)]
-pub struct ProfileMapValidity {
-    pub map_index: usize,
-    pub map: String,
-    pub paired_seeds: u32,
-    pub matches: u32,
-    pub mean_positive_scored_kills_per_match: f64,
-    pub mean_profile_sensitivity: f64,
-    pub absolute_observed_side_gap: f64,
-    pub valid: bool,
-    pub failures: Vec<&'static str>,
-    pub warnings: Vec<&'static str>,
-}
-
-/// One preregistered confirmatory attempt for a fixed profile-screen design.
-/// A design can appear only once in the append-only registry, so inspecting a
-/// confirmatory result cannot become an invitation to rerun the same design
-/// against a fresh seed stream.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProfileCalibrationAttempt {
-    pub attempt_id: String,
-    pub design_fingerprint: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProfileCalibrationAttemptRegistry {
-    pub schema_version: u32,
-    pub attempts: Vec<ProfileCalibrationAttempt>,
-}
-
-/// Authorization and seed namespace prepared before profile matches begin.
-///
-/// Its fields are private so callers cannot manufacture a powered run. The
-/// collector also recomputes the design fingerprint before the first match,
-/// which prevents a prepared attempt from being reused with changed inputs.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub struct ProfileCalibrationRun {
-    attempt_id: String,
-    design_fingerprint: String,
-    seed_base: u32,
-    powered_fixture: bool,
-}
-
-impl ProfileCalibrationRun {
-    pub fn attempt_id(&self) -> &str {
-        &self.attempt_id
-    }
-
-    pub fn design_fingerprint(&self) -> &str {
-        &self.design_fingerprint
-    }
-
-    pub fn seed_base(&self) -> u32 {
-        self.seed_base
-    }
-
-    pub fn is_powered(&self) -> bool {
-        self.powered_fixture
-    }
-}
-
-/// One paired seed before any interval or verdict is computed.
-#[derive(Clone, Debug, serde::Serialize)]
-pub struct ProfileObservation {
-    pub scenario_seed: u32,
-    pub map_index: usize,
-    pub lineup_index: usize,
-    pub first_win_score: f64,
-    pub mirror_win_score: f64,
-    pub first_kill_difference: f64,
-    pub mirror_kill_difference: f64,
-    /// Positive team scores after suicide penalties, summed across both teams.
-    /// This is match activity that self-destruction alone cannot manufacture.
-    pub first_scored_kills: u32,
-    pub mirror_scored_kills: u32,
-    pub first_deaths: u32,
-    pub mirror_deaths: u32,
-}
-
-#[derive(Clone, Copy)]
-struct ProfileGame {
-    win_score: f64,
-    kill_difference: f64,
-    scored_kills: u32,
-    deaths: u32,
-}
-
-/// Prespecified size for a powered whole-family profile screen.
-///
-/// The declared family has ten contrasts. Its critical values retain the
-/// older fifteen-comparison bound, so 3,384 pairs meet the normal-approximation
-/// union-bound target of at least 90% whole-family power at a true rate of 0.5
-/// and worst-case paired standard deviation of 0.5. The exact confirmatory
-/// sample rounds that minimum up to a complete six-map, seven-lineup block.
-/// Runs at smaller samples remain useful exploration, but cannot issue a
-/// balance verdict. Exploration stops below the confirmatory boundary so it
-/// cannot consume a registered attempt's seed range.
-const PROFILE_POWER_MINIMUM_PAIRS: u32 = 3_384;
-pub const PROFILE_POWERED_PAIRS: u32 = 3_402;
-pub const PROFILE_EXPLORATORY_ATTEMPT: &str = "exploratory";
-const PROFILE_SEED_NAMESPACE: u32 = 0x8F31_0000;
-const PROFILE_POWERED_MAPS: [&str; 6] = [
-    "drydock",
-    "relay",
-    "convoy",
-    "shoal",
-    "breakwater",
-    "switchyard",
-];
-const PROFILE_SIDE_SIZE: usize = 4;
-const PROFILE_LINEUP_SEATS: usize = PROFILE_SIDE_SIZE * 2;
-const PROFILE_LINEUP_ROTATIONS: usize = sim::MAX_CLASSES;
-const PROFILE_POWERED_MAP_BYTES: [&[u8]; 6] = [
-    include_bytes!("../../catalog/zones/melee/drydock.vwmap"),
-    include_bytes!("../../catalog/zones/melee/relay.vwmap"),
-    include_bytes!("../../catalog/zones/melee/convoy.vwmap"),
-    include_bytes!("../../catalog/zones/melee/shoal.vwmap"),
-    include_bytes!("../../catalog/zones/melee/breakwater.vwmap"),
-    include_bytes!("../../catalog/zones/melee/switchyard.vwmap"),
-];
-const PROFILE_POWERED_ZONE: &[u8] = include_bytes!("../../catalog/zones/melee/zone.toml");
-const PROFILE_BALANCE_LOW: f64 = 0.45;
-const PROFILE_BALANCE_HIGH: f64 = 0.55;
-const PROFILE_COMPARISONS: usize = 10;
-const PROFILE_PLANNING_COMPARISONS: usize = 15;
-const PROFILE_JOINT_POWER: f64 = 0.90;
-const PROFILE_WORST_VARIANCE: f64 = 0.25;
-/// Fixed, descriptive fixture checks. Activity and sensitivity block a
-/// powered verdict when the arena cannot expose a profile effect. The side
-/// gap remains a warning rather than an inferential side-equivalence claim.
-const PROFILE_MIN_SCORED_KILLS_PER_MATCH: f64 = 8.0;
-const PROFILE_MIN_SENSITIVITY: f64 = 0.10;
-const PROFILE_SIDE_GAP_WARNING: f64 = 0.10;
-// The central-normal quantile after allocating the ten-percent family beta
-// across fifteen comparisons: P(|Z| <= value) = 1 - 0.10 / 15. The declared
-// family now has ten, so retaining it is conservative.
-const PROFILE_POWER_Z: f64 = 2.713_051_888_472;
-// 3.10 is a conservative two-sided critical value after a fifteen-comparison
-// Bonferroni correction. The ten declared win-rate intervals therefore
-// have conservative approximate family-wise 95% coverage. Kill-difference
-// intervals are descriptive and do not enter this family or a verdict.
-const PROFILE_FAMILY_T: f64 = 3.10;
-const PROFILE_DESCRIPTIVE_T: f64 = 1.96;
-
-fn profile_lineup(rotation: usize) -> [u8; PROFILE_LINEUP_SEATS] {
-    let mut lineup = [0; PROFILE_LINEUP_SEATS];
-    let rotation = rotation % PROFILE_LINEUP_ROTATIONS;
-    for seat in 0..PROFILE_SIDE_SIZE {
-        let class = ((rotation + seat) % sim::MAX_CLASSES) as u8;
-        lineup[seat] = class;
-        lineup[PROFILE_LINEUP_SEATS - 1 - seat] = class;
-    }
-    lineup
-}
-
-fn profile_stratum(sample: u32, map_count: usize) -> (usize, usize) {
-    let sample = sample as usize;
-    (
-        sample % map_count,
-        (sample / map_count) % PROFILE_LINEUP_ROTATIONS,
-    )
-}
-
-fn profile_stratification_block(map_count: usize) -> u32 {
-    (map_count * PROFILE_LINEUP_ROTATIONS) as u32
-}
-
-fn mean_interval_with_critical(samples: &[f64], critical: f64) -> (f64, f64, f64) {
-    if samples.is_empty() {
-        return (0.0, f64::NEG_INFINITY, f64::INFINITY);
-    }
-    let n = samples.len() as f64;
-    let mean = samples.iter().sum::<f64>() / n;
-    if samples.len() < 2 {
-        return (mean, f64::NEG_INFINITY, f64::INFINITY);
-    }
-    let variance = samples
-        .iter()
-        .map(|sample| (sample - mean).powi(2))
-        .sum::<f64>()
-        / (n - 1.0);
-    let margin = critical * (variance / n).sqrt();
-    (mean, mean - margin, mean + margin)
-}
-
-fn family_win_interval(samples: &[f64]) -> (f64, f64, f64) {
-    mean_interval_with_critical(samples, PROFILE_FAMILY_T)
-}
-
-fn descriptive_kill_interval(samples: &[f64]) -> (f64, f64, f64) {
-    mean_interval_with_critical(samples, PROFILE_DESCRIPTIVE_T)
-}
-
-fn profile_verdict(
-    powered_fixture: bool,
-    fixture_valid: bool,
-    low: f64,
-    high: f64,
-) -> &'static str {
-    if !fixture_valid {
-        if powered_fixture {
-            "invalid fixture"
-        } else {
-            "exploratory: fixture checks failed"
-        }
-    } else if !powered_fixture {
-        "exploratory: not prespecified sample"
-    } else if low > PROFILE_BALANCE_HIGH {
-        "overpowered"
-    } else if high < PROFILE_BALANCE_LOW {
-        "underpowered"
-    } else if low >= PROFILE_BALANCE_LOW && high <= PROFILE_BALANCE_HIGH {
-        "balanced"
-    } else {
-        "inconclusive"
-    }
-}
-
-// Kits, lineup, mirror assignment, controller strength, seed, tuning and map
-// stay explicit because each one is a frozen dimension of the profile fixture.
-#[allow(clippy::too_many_arguments)]
-fn profile_game(
-    a: &[u8; sim::SLOT_COUNT],
-    b: &[u8; sim::SLOT_COUNT],
-    lineup: &[u8; PROFILE_LINEUP_SEATS],
-    flip: bool,
-    skill: f32,
-    salt: u32,
-    tuning: Option<&config::ArenaConfig>,
-    map: &ProfileMapFixture,
-) -> Option<ProfileGame> {
-    // Team one is reversed because the authored half-turn spawn pairs appear
-    // in reverse row-major order. Each hull starts opposite its own class
-    // rather than inheriting a lane effect from a different footprint.
-    // Profile, side, spawn and bot seed are the only things a mirrored pair
-    // exchanges.
-    let kits = if flip { [*b, *a] } else { [*a, *b] };
-    let seconds = tuning
-        .and_then(|config| config.match_seconds)
-        .unwrap_or(180) as u32;
-    let (seats, _) = team_match_with_options(
-        lineup,
-        skill,
-        sim::KIT_BUDGET,
-        salt,
-        tuning,
-        TeamMap::Profile(map),
-        TeamMatchOptions {
-            kits: Some(&kits),
-            tick_limit: seconds * 100,
-            // This fixture measures a fixed three-minute exposure, so every
-            // mirrored game runs the complete configured clock.
-            kill_target_per_player: None,
-        },
-    );
-    if seats.len() != lineup.len() {
-        return None;
-    }
-    let deaths = seats.iter().map(|seat| seat.deaths).sum();
-    let mut kills = [0i32; 2];
-    for seat in seats {
-        kills[seat.team as usize] += seat.score;
-    }
-    let (result, kill_difference, scored_kills) = profile_score(kills, flip);
-    Some(ProfileGame {
-        win_score: result,
-        kill_difference,
-        scored_kills,
-        deaths,
-    })
-}
-
-/// Score a profile leg exactly as live Melee presents it. A side can run its
-/// signed ship total below zero with suicides or team kills, but the match
-/// scoreboard clamps that total into its unsigned wire range before it chooses
-/// a winner.
-fn profile_score(kills: [i32; 2], flip: bool) -> (f64, f64, u32) {
-    let score = kills.map(|value| value.clamp(0, u16::MAX as i32));
-    let scored_kills = score
-        .iter()
-        .map(|&value| value as u32)
-        .fold(0u32, u32::saturating_add);
-    let (ours, theirs) = if flip {
-        (score[1], score[0])
-    } else {
-        (score[0], score[1])
-    };
-    let result = match ours.cmp(&theirs) {
-        std::cmp::Ordering::Greater => 1.0,
-        std::cmp::Ordering::Equal => 0.5,
-        std::cmp::Ordering::Less => 0.0,
-    };
-    (result, f64::from(ours - theirs), scored_kills)
-}
-
-/// Compiler, flags and target that turn the fixed calibration sources into an
-/// executable. Source identity alone is not enough: a local binary and the
-/// pinned release image must not authorize the same confirmatory attempt when
-/// they were produced by different toolchains.
-fn calibration_execution_fingerprint() -> String {
-    fingerprint(&[
-        env!("CARGO_PKG_VERSION").as_bytes(),
-        env!("VW_RUSTC_VERSION").as_bytes(),
-        env!("VW_BUILD_PROFILE").as_bytes(),
-        env!("VW_BUILD_OPT_LEVEL").as_bytes(),
-        env!("VW_BUILD_DEBUG").as_bytes(),
-        env!("VW_BUILD_TARGET").as_bytes(),
-        env!("VW_BUILD_HOST").as_bytes(),
-        env!("VW_BUILD_TARGET_FEATURES").as_bytes(),
-        env!("VW_BUILD_RUSTFLAGS").as_bytes(),
-        env!("VW_CC_IDENTITY").as_bytes(),
-        std::env::consts::ARCH.as_bytes(),
-        std::env::consts::OS.as_bytes(),
-        std::env::consts::FAMILY.as_bytes(),
-    ])
-}
-
-fn profile_controller_fingerprint() -> String {
-    profile_controller_fingerprint_with_modes(include_bytes!("modes.rs"))
-}
-
-fn profile_controller_fingerprint_with_modes(modes_source: &[u8]) -> String {
-    fingerprint(&[
-        include_bytes!("ai.rs"),
-        include_bytes!("arena.rs"),
-        include_bytes!("bots.rs"),
-        include_bytes!("calibrate.rs"),
-        include_bytes!("catalog.rs"),
-        include_bytes!("config.rs"),
-        include_bytes!("main.rs"),
-        modes_source,
-        include_bytes!("nav.rs"),
-        include_bytes!("pilots.rs"),
-        include_bytes!("profiles.rs"),
-        include_bytes!("room.rs"),
-        include_bytes!("shopper.rs"),
-        include_bytes!("sim.rs"),
-        include_bytes!("../build.rs"),
-        include_bytes!("../Cargo.toml"),
-        include_bytes!("../Cargo.lock"),
-        include_bytes!("../../Dockerfile"),
-        include_bytes!("../../sim/src/baseline.c"),
-        include_bytes!("../../sim/src/check.c"),
-        include_bytes!("../../sim/src/pack.c"),
-        include_bytes!("../../sim/src/sim.c"),
-        include_bytes!("../../sim/src/sintab.h"),
-        include_bytes!("../../sim/include/sim/baseline.h"),
-        include_bytes!("../../sim/include/sim/pack.h"),
-        include_bytes!("../../sim/include/sim/sim.h"),
-    ])
-}
-
-/// Fingerprint the profile-screen design without its attempt name or seed
-/// namespace. Raw fixture content, loadouts, analysis constants and every
-/// source file that can change match behavior are bound into the digest.
-pub fn profile_design_fingerprint(
-    paired_seeds: u32,
-    zone: &str,
-    zone_source: &str,
-    skill: f32,
-    maps: &[(String, Arena)],
-) -> Result<String, String> {
-    profile_design_fingerprint_with_execution(
-        paired_seeds,
-        zone,
-        zone_source,
-        skill,
-        maps,
-        &calibration_execution_fingerprint(),
-    )
-}
-
-fn profile_design_fingerprint_with_execution(
-    paired_seeds: u32,
-    zone: &str,
-    zone_source: &str,
-    skill: f32,
-    maps: &[(String, Arena)],
-    execution_fingerprint: &str,
-) -> Result<String, String> {
-    let contrasts = profiles::calibration_contrasts();
-    profile_design_fingerprint_for_contrasts(
-        paired_seeds,
-        zone,
-        zone_source,
-        skill,
-        maps,
-        execution_fingerprint,
-        &contrasts,
-    )
-}
-
-fn profile_design_fingerprint_for_contrasts(
-    paired_seeds: u32,
-    zone: &str,
-    zone_source: &str,
-    skill: f32,
-    maps: &[(String, Arena)],
-    execution_fingerprint: &str,
-    contrasts: &[profiles::ProfileContrast],
-) -> Result<String, String> {
-    let definition: catalog::ZoneDef = toml::from_str(zone_source)
-        .map_err(|error| format!("profile calibration cannot parse zone {zone:?}: {error}"))?;
-    validate_profile_contrasts(contrasts, Some(&definition.arena))?;
-    if contrasts.len() != PROFILE_COMPARISONS {
-        return Err(format!(
-            "profile calibration defines {} comparisons; the powered design requires {PROFILE_COMPARISONS}",
-            contrasts.len()
-        ));
-    }
-    let map_fingerprints: Vec<_> = maps
-        .iter()
-        .map(|(name, map)| (name, map.fingerprint()))
-        .collect();
-    let profile_contrasts: Vec<_> = contrasts
-        .iter()
-        .map(|contrast| {
-            (
-                contrast.name,
-                (contrast.a.name, contrast.a.kit),
-                (contrast.b.name, contrast.b.kit),
-            )
-        })
-        .collect();
-    let lineups: Vec<_> = (0..PROFILE_LINEUP_ROTATIONS).map(profile_lineup).collect();
-    let payload = serde_json::json!({
-        "schema_version": 2,
-        "paired_seeds": paired_seeds,
-        "zone": zone,
-        "zone_fingerprint": fingerprint(&[zone_source.as_bytes()]),
-        "maps": map_fingerprints,
-        "contrasts": profile_contrasts,
-        "skill_bits": skill.to_bits(),
-        "match_seconds": definition.arena.match_seconds,
-        "comparisons": PROFILE_COMPARISONS,
-        "planning_comparisons": PROFILE_PLANNING_COMPARISONS,
-        "balance_band": [PROFILE_BALANCE_LOW, PROFILE_BALANCE_HIGH],
-        "family_critical": PROFILE_FAMILY_T,
-        "descriptive_critical": PROFILE_DESCRIPTIVE_T,
-        "target_whole_family_power": PROFILE_JOINT_POWER,
-        "worst_case_paired_variance": PROFILE_WORST_VARIANCE,
-        "per_comparison_central_power_z": PROFILE_POWER_Z,
-        "minimum_powered_paired_seeds": PROFILE_POWER_MINIMUM_PAIRS,
-        "maximum_exploratory_paired_seeds": PROFILE_POWERED_PAIRS - 1,
-        "lineups": lineups,
-        "lineup_index_policy": "floor(sample / map count) modulo seven",
-        "map_index_policy": "sample modulo map count",
-        "stratification_block_paired_seeds": profile_stratification_block(maps.len()),
-        "minimum_mean_scored_kills_per_match_per_map": PROFILE_MIN_SCORED_KILLS_PER_MATCH,
-        "minimum_mean_profile_sensitivity_per_map": PROFILE_MIN_SENSITIVITY,
-        "absolute_observed_side_gap_warning_threshold_per_map": PROFILE_SIDE_GAP_WARNING,
-        "controller_fingerprint": profile_controller_fingerprint(),
-        "execution_fingerprint": execution_fingerprint,
-    });
-    let encoded = serde_json::to_vec(&payload)
-        .map_err(|error| format!("profile design could not be fingerprinted: {error}"))?;
-    Ok(fingerprint(&[&encoded]))
-}
-
-fn valid_profile_attempt_id(attempt_id: &str) -> bool {
-    let mut bytes = attempt_id.bytes();
-    bytes
-        .next()
-        .is_some_and(|byte| byte.is_ascii_alphanumeric())
-        && bytes.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
-}
-
-fn valid_sha256_fingerprint(value: &str) -> bool {
-    value.strip_prefix("sha256:").is_some_and(|digest| {
-        digest.len() == 64
-            && digest
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    })
-}
-
-fn profile_attempt_seed_base(attempt_id: &str) -> u32 {
-    let digest = catalog::sha256_hex(attempt_id.as_bytes());
-    let mut folded = PROFILE_SEED_NAMESPACE;
-    for offset in (0..digest.len()).step_by(8) {
-        let word = u32::from_str_radix(&digest[offset..offset + 8], 16)
-            .expect("a SHA-256 word is hexadecimal");
-        folded = folded
-            .rotate_left(7)
-            .wrapping_add(word)
-            .wrapping_mul(0x9E37_79B1);
-    }
-    // Keep the full powered range away from wrapping and from the seed-zero
-    // exploratory stream. The registry rejects the unlikely case where two
-    // attempt IDs still land on overlapping ranges.
-    let first = PROFILE_POWERED_PAIRS as u64;
-    let choices = u32::MAX as u64 - 2 * PROFILE_POWERED_PAIRS as u64 + 2;
-    (first + u64::from(folded) % choices) as u32
-}
-
-fn parse_profile_attempt_registry(
-    registry_json: &str,
-) -> Result<ProfileCalibrationAttemptRegistry, String> {
-    let registry: ProfileCalibrationAttemptRegistry = serde_json::from_str(registry_json)
-        .map_err(|error| format!("profile attempt registry is invalid: {error}"))?;
-    if registry.schema_version != 1 {
-        return Err(format!(
-            "profile attempt registry schema {} is unsupported",
-            registry.schema_version
-        ));
-    }
-    let mut attempt_ids = HashSet::new();
-    let mut designs = HashSet::new();
-    let mut seed_bases = Vec::<(u32, &str)>::new();
-    for attempt in &registry.attempts {
-        if !valid_profile_attempt_id(&attempt.attempt_id)
-            || attempt.attempt_id == PROFILE_EXPLORATORY_ATTEMPT
-            || !attempt_ids.insert(attempt.attempt_id.as_str())
-            || !valid_sha256_fingerprint(&attempt.design_fingerprint)
-        {
-            return Err(
-                "profile attempt registry has an invalid, reserved or duplicate attempt".into(),
-            );
-        }
-        if !designs.insert(attempt.design_fingerprint.as_str()) {
-            return Err(format!(
-                "profile design {} has more than one registered attempt",
-                attempt.design_fingerprint
-            ));
-        }
-        let base = profile_attempt_seed_base(&attempt.attempt_id);
-        if let Some((_, other)) = seed_bases
-            .iter()
-            .find(|(other_base, _)| base.abs_diff(*other_base) < PROFILE_POWERED_PAIRS)
-        {
-            return Err(format!(
-                "profile attempts {:?} and {:?} have overlapping seed namespaces",
-                other, attempt.attempt_id
-            ));
-        }
-        seed_bases.push((base, &attempt.attempt_id));
-    }
-    Ok(registry)
-}
-
-/// Validate an exploratory or confirmatory profile request before collection.
-/// Exact powered runs fail closed unless the requested attempt is the sole
-/// registry entry for the current design.
-pub fn prepare_profile_calibration(
-    paired_seeds: u32,
-    attempt_id: &str,
-    registry_json: &str,
-    zone: &str,
-    zone_source: &str,
-    skill: f32,
-    maps: &[(String, Arena)],
-) -> Result<ProfileCalibrationRun, String> {
-    if maps.is_empty() {
-        return Err("profile calibration requires at least one readable map".into());
-    }
-    if paired_seeds == 0 {
-        return Err("profile calibration requires at least one paired seed".into());
-    }
-    if !paired_seeds.is_multiple_of(maps.len() as u32) {
-        return Err(format!(
-            "{paired_seeds} paired seeds do not divide evenly across {} maps",
-            maps.len()
-        ));
-    }
-    let definition: catalog::ZoneDef = toml::from_str(zone_source)
-        .map_err(|error| format!("profile calibration cannot parse zone {zone:?}: {error}"))?;
-    let powered_fixture = is_powered_profile_fixture(
-        paired_seeds,
-        zone,
-        zone_source,
-        skill,
-        &definition.arena,
-        maps,
-    );
-    if paired_seeds == PROFILE_POWERED_PAIRS && !powered_fixture {
-        return Err(format!(
-            "the {PROFILE_POWERED_PAIRS}-pair powered screen requires the shipped melee zone, its ordered six-map rotation, seven cyclic lineups, and a 180-second clock"
-        ));
-    }
-    if !powered_fixture && paired_seeds >= PROFILE_POWERED_PAIRS {
-        return Err(format!(
-            "exploratory profile calibration requires fewer than {PROFILE_POWERED_PAIRS} paired seeds so its seed-zero stream cannot overlap confirmatory evidence"
-        ));
-    }
-    let design_fingerprint =
-        profile_design_fingerprint(paired_seeds, zone, zone_source, skill, maps)?;
-    if !powered_fixture {
-        if attempt_id != PROFILE_EXPLORATORY_ATTEMPT {
-            return Err(format!(
-                "profile attempt {attempt_id:?} is confirmatory, but only the exact {PROFILE_POWERED_PAIRS}-pair fixture can use a registered attempt"
-            ));
-        }
-        return Ok(ProfileCalibrationRun {
-            attempt_id: attempt_id.into(),
-            design_fingerprint,
-            seed_base: 0,
-            powered_fixture: false,
-        });
-    }
-    if !valid_profile_attempt_id(attempt_id) || attempt_id == PROFILE_EXPLORATORY_ATTEMPT {
-        return Err(
-            "the powered profile screen requires a valid non-exploratory attempt ID".into(),
-        );
-    }
-    let registry = parse_profile_attempt_registry(registry_json)
-        .map_err(|error| format!("{error}; current profile design is {design_fingerprint}"))?;
-    let matching: Vec<_> = registry
-        .attempts
-        .iter()
-        .filter(|attempt| attempt.design_fingerprint == design_fingerprint)
-        .collect();
-    if matching.len() != 1 || matching[0].attempt_id != attempt_id {
-        return Err(format!(
-            "profile attempt {attempt_id:?} is not preregistered for design {design_fingerprint}"
-        ));
-    }
-    Ok(ProfileCalibrationRun {
-        attempt_id: attempt_id.into(),
-        design_fingerprint,
-        seed_base: profile_attempt_seed_base(attempt_id),
-        powered_fixture: true,
-    })
-}
-
-struct ProfileScreen<'a> {
-    paired_seeds: u32,
-    seed_base: u32,
-    skill: f32,
-    tuning: &'a config::ArenaConfig,
-    maps: &'a [ProfileMapFixture],
-    map_names: Vec<String>,
-    powered_fixture: bool,
-}
-
-fn run_profile_comparison(
-    contrast: &profiles::ProfileContrast,
-    screen: &ProfileScreen<'_>,
-) -> Result<ProfileResult, String> {
-    let a = &contrast.a;
-    let b = &contrast.b;
-    let mut outcomes = Vec::with_capacity(screen.paired_seeds as usize);
-    let mut differences = Vec::with_capacity(screen.paired_seeds as usize);
-    let mut observations = Vec::with_capacity(screen.paired_seeds as usize);
-    for sample in 0..screen.paired_seeds {
-        let (map_index, lineup_index) = profile_stratum(sample, screen.maps.len());
-        let map = &screen.maps[map_index];
-        let lineup = profile_lineup(lineup_index);
-        // Every comparison gets the same map, lineup, spawn and bot streams.
-        // Bonferroni does not require comparisons to be independent, and
-        // common random numbers make differences between rows easier to
-        // attribute to the profiles they name.
-        let scenario_seed = screen.seed_base.wrapping_add(sample);
-        let salt = scenario_seed.wrapping_mul(2654435761);
-        let first = profile_game(
-            &a.kit,
-            &b.kit,
-            &lineup,
-            false,
-            screen.skill,
-            salt,
-            Some(screen.tuning),
-            map,
-        )
-        .ok_or_else(|| {
-            format!(
-                "profile match {} versus {} failed to seat on map {:?}",
-                a.name, b.name, screen.map_names[map_index]
-            )
-        })?;
-        let second = profile_game(
-            &a.kit,
-            &b.kit,
-            &lineup,
-            true,
-            screen.skill,
-            salt,
-            Some(screen.tuning),
-            map,
-        )
-        .ok_or_else(|| {
-            format!(
-                "profile mirror {} versus {} failed to seat on map {:?}",
-                a.name, b.name, screen.map_names[map_index]
-            )
-        })?;
-        outcomes.push((first.win_score + second.win_score) / 2.0);
-        differences.push((first.kill_difference + second.kill_difference) / 2.0);
-        observations.push(ProfileObservation {
-            scenario_seed,
-            map_index,
-            lineup_index,
-            first_win_score: first.win_score,
-            mirror_win_score: second.win_score,
-            first_kill_difference: first.kill_difference,
-            mirror_kill_difference: second.kill_difference,
-            first_scored_kills: first.scored_kills,
-            mirror_scored_kills: second.scored_kills,
-            first_deaths: first.deaths,
-            mirror_deaths: second.deaths,
-        });
-    }
-    let fixture_validity = profile_fixture_validity(&observations, &screen.map_names);
-    let fixture_valid = fixture_validity.iter().all(|map| map.valid);
-    let (win_rate, win_rate_low, win_rate_high) = family_win_interval(&outcomes);
-    let (kill_difference, kill_difference_low, kill_difference_high) =
-        descriptive_kill_interval(&differences);
-    let verdict = profile_verdict(
-        screen.powered_fixture,
-        fixture_valid,
-        win_rate_low,
-        win_rate_high,
-    );
-    Ok(ProfileResult {
-        contrast: contrast.name,
-        a: a.name,
-        b: b.name,
-        paired_seeds: screen.paired_seeds,
-        matches: screen.paired_seeds * 2,
-        win_rate,
-        win_rate_low,
-        win_rate_high,
-        kill_difference,
-        kill_difference_low,
-        kill_difference_high,
-        verdict,
-        powered_fixture: screen.powered_fixture,
-        fixture_valid,
-        fixture_validity,
-        observations,
-    })
-}
-
-/// Run the ten declared marginal-pip contrasts in four-a-side,
-/// configured-length matches on the shipped map and hull rotations. Each seed
-/// is played twice with the two profiles exchanging sides, then treated as one
-/// paired observation.
-pub fn run_profiles(
-    run: &ProfileCalibrationRun,
-    paired_seeds: u32,
-    zone: &str,
-    zone_source: &str,
-    skill: f32,
-    maps: &[(String, Arena)],
-    verbose: bool,
-) -> Result<Vec<ProfileResult>, String> {
-    if maps.is_empty() {
-        return Err("profile calibration requires at least one readable map".into());
-    }
-    if paired_seeds == 0 {
-        return Err("profile calibration requires at least one paired seed".into());
-    }
-    if !paired_seeds.is_multiple_of(maps.len() as u32) {
-        return Err(format!(
-            "{paired_seeds} paired seeds do not divide evenly across {} maps",
-            maps.len()
-        ));
-    }
-    let definition: catalog::ZoneDef = toml::from_str(zone_source)
-        .map_err(|error| format!("profile calibration cannot parse zone {zone:?}: {error}"))?;
-    let tuning = &definition.arena;
-    let mut map_geometries = Vec::with_capacity(maps.len());
-    for (name, map) in maps {
-        let world = team_world(0, Some(tuning), map)
-            .ok_or_else(|| format!("profile calibration cannot build map {name:?}"))?;
-        map_geometries.push(std::sync::Arc::clone(&world.map));
-    }
-    let powered_fixture =
-        is_powered_profile_fixture(paired_seeds, zone, zone_source, skill, tuning, maps);
-    if paired_seeds == PROFILE_POWERED_PAIRS && !powered_fixture {
-        return Err(format!(
-            "the {PROFILE_POWERED_PAIRS}-pair powered screen requires the shipped melee zone, its ordered six-map rotation, seven cyclic lineups, and a 180-second clock"
-        ));
-    }
-    if !powered_fixture && paired_seeds >= PROFILE_POWERED_PAIRS {
-        return Err(format!(
-            "exploratory profile calibration requires fewer than {PROFILE_POWERED_PAIRS} paired seeds so its seed-zero stream cannot overlap confirmatory evidence"
-        ));
-    }
-    let design_fingerprint =
-        profile_design_fingerprint(paired_seeds, zone, zone_source, skill, maps)?;
-    if design_fingerprint != run.design_fingerprint
-        || powered_fixture != run.powered_fixture
-        || (powered_fixture && run.attempt_id == PROFILE_EXPLORATORY_ATTEMPT)
-        || (powered_fixture && run.seed_base != profile_attempt_seed_base(&run.attempt_id))
-        || (!powered_fixture
-            && (run.attempt_id != PROFILE_EXPLORATORY_ATTEMPT || run.seed_base != 0))
-    {
-        return Err(
-            "profile calibration inputs do not match the prepared attempt authorization".into(),
-        );
-    }
-    let contrasts = profiles::calibration_contrasts();
-    validate_profile_contrasts(&contrasts, Some(tuning))?;
-    if contrasts.len() != PROFILE_COMPARISONS {
-        return Err(format!(
-            "profile calibration defines {} comparisons; the powered design requires {PROFILE_COMPARISONS}",
-            contrasts.len()
-        ));
-    }
-    // Navigation is expensive to construct and depends only on immutable map
-    // geometry. Build it after authorization, once per map, before any worker
-    // starts a match.
-    let fixtures: Vec<_> = map_geometries
-        .into_iter()
-        .map(ProfileMapFixture::new)
-        .collect();
-    let screen = ProfileScreen {
-        paired_seeds,
-        seed_base: run.seed_base,
-        skill,
-        tuning,
-        maps: &fixtures,
-        map_names: maps.iter().map(|(name, _)| name.clone()).collect(),
-        powered_fixture,
-    };
-
-    // A contrast owns its entire accumulation stream. Running the ten
-    // streams concurrently changes neither sample order nor floating-point
-    // addition order, and joining in the declared pair order keeps the report
-    // byte-for-byte stable across scheduler decisions.
-    std::thread::scope(|scope| -> Result<Vec<ProfileResult>, String> {
-        let mut workers = Vec::with_capacity(contrasts.len());
-        for contrast in &contrasts {
-            let screen = &screen;
-            workers.push((
-                contrast.name,
-                contrast.a.name,
-                contrast.b.name,
-                scope.spawn(move || run_profile_comparison(contrast, screen)),
-            ));
-        }
-
-        let mut out = Vec::with_capacity(workers.len());
-        let mut first_error = None;
-        for (contrast, a, b, worker) in workers {
-            match worker.join() {
-                Ok(Ok(result)) => {
-                    if verbose {
-                        println!("{contrast} done: {paired_seeds} paired seeds");
-                    }
-                    out.push(result);
-                }
-                Ok(Err(error)) => {
-                    first_error.get_or_insert(error);
-                }
-                Err(_) => {
-                    first_error.get_or_insert_with(|| {
-                        format!("profile contrast {contrast} ({a} versus {b}) worker panicked")
-                    });
-                }
-            }
-        }
-        if let Some(error) = first_error {
-            Err(error)
-        } else {
-            Ok(out)
-        }
-    })
-}
-
-fn validate_profile_contrasts(
-    contrasts: &[profiles::ProfileContrast],
-    tuning: Option<&config::ArenaConfig>,
-) -> Result<(), String> {
-    let mut names = HashSet::new();
-    for contrast in contrasts {
-        if contrast.name.trim().is_empty() || !names.insert(contrast.name) {
-            return Err("profile calibration has a blank or duplicate contrast name".into());
-        }
-        if contrast.a.name.trim().is_empty()
-            || contrast.b.name.trim().is_empty()
-            || contrast.a.name == contrast.b.name
-        {
-            return Err(format!(
-                "profile contrast {:?} does not name both sides unambiguously",
-                contrast.name
-            ));
-        }
-    }
-    let profiles: Vec<_> = contrasts
-        .iter()
-        .flat_map(|contrast| [&contrast.a, &contrast.b])
-        .cloned()
-        .collect();
-    validate_profile_kits(&profiles, tuning)
-}
-
-fn validate_profile_kits(
-    choices: &[profiles::Profile],
-    tuning: Option<&config::ArenaConfig>,
-) -> Result<(), String> {
-    for profile in choices {
-        let cost = sim::World::kit_cost(&profile.kit);
-        if cost != sim::KIT_BUDGET {
-            return Err(format!(
-                "profile {:?} costs {cost} points; expected {}",
-                profile.name,
-                sim::KIT_BUDGET
-            ));
-        }
-        for class in 0..sim::MAX_CLASSES as u8 {
-            let mut world = sim::World::with_map(1, sim::build_pit);
-            if let Some(config) = tuning {
-                crate::Room::apply_config(&mut world, config);
-            }
-            let ship = world.spawn(class, 0, 505, 522, 0);
-            if ship < 0 || !world.set_kit(ship as usize, &profile.kit) {
-                return Err(format!(
-                    "profile {:?} is rejected by hull {class} in the selected zone",
-                    profile.name
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn profile_fixture_validity<S: AsRef<str>>(
-    observations: &[ProfileObservation],
-    maps: &[S],
-) -> Vec<ProfileMapValidity> {
-    let mut validity = Vec::with_capacity(maps.len());
-    for (map_index, map) in maps.iter().enumerate() {
-        let map = map.as_ref();
-        let rows: Vec<_> = observations
-            .iter()
-            .filter(|row| row.map_index == map_index)
-            .collect();
-        if rows.is_empty() {
-            validity.push(ProfileMapValidity {
-                map_index,
-                map: map.into(),
-                paired_seeds: 0,
-                matches: 0,
-                mean_positive_scored_kills_per_match: 0.0,
-                mean_profile_sensitivity: 0.0,
-                absolute_observed_side_gap: 0.0,
-                valid: false,
-                failures: vec!["no_paired_observations"],
-                warnings: Vec::new(),
-            });
-            continue;
-        }
-        let scored_kills: u64 = rows
-            .iter()
-            .map(|row| u64::from(row.first_scored_kills) + u64::from(row.mirror_scored_kills))
-            .sum();
-        let matches = (rows.len() * 2) as f64;
-        let mean_scored_kills = scored_kills as f64 / matches;
-        let mut failures = Vec::new();
-        if mean_scored_kills < PROFILE_MIN_SCORED_KILLS_PER_MATCH {
-            failures.push("mean_positive_scored_kills_per_match_below_minimum");
-        }
-
-        // A owns team 0 in the first leg and team 1 in the mirror. From A's
-        // recentered perspective, first minus mirror is therefore the observed
-        // team-0 score minus team-1 score for the pair.
-        let side_gap = (rows
-            .iter()
-            .map(|row| row.first_win_score - row.mirror_win_score)
-            .sum::<f64>()
-            / rows.len() as f64)
-            .abs();
-        let warnings = if side_gap > PROFILE_SIDE_GAP_WARNING {
-            vec!["absolute_observed_side_gap_above_warning"]
-        } else {
-            Vec::new()
-        };
-
-        // A pair that reads 0.5 can be two draws or one side winning both
-        // legs. Either way it provides no evidence that profiles can affect
-        // the result. Weight partial 0.25/0.75 departures by half so this is a
-        // mean profile-decisiveness score on zero through one.
-        let sensitivity = rows
-            .iter()
-            .map(|row| {
-                let paired = (row.first_win_score + row.mirror_win_score) / 2.0;
-                2.0 * (paired - 0.5).abs()
-            })
-            .sum::<f64>()
-            / rows.len() as f64;
-        if sensitivity < PROFILE_MIN_SENSITIVITY {
-            failures.push("mean_profile_sensitivity_below_minimum");
-        }
-
-        validity.push(ProfileMapValidity {
-            map_index,
-            map: map.into(),
-            paired_seeds: rows.len() as u32,
-            matches: rows.len() as u32 * 2,
-            mean_positive_scored_kills_per_match: mean_scored_kills,
-            mean_profile_sensitivity: sensitivity,
-            absolute_observed_side_gap: side_gap,
-            valid: failures.is_empty(),
-            failures,
-            warnings,
-        });
-    }
-    validity
-}
-
-fn is_powered_profile_fixture(
-    paired_seeds: u32,
-    zone: &str,
-    zone_source: &str,
-    skill: f32,
-    tuning: &config::ArenaConfig,
-    maps: &[(String, Arena)],
-) -> bool {
-    paired_seeds == PROFILE_POWERED_PAIRS
-        && zone == "melee"
-        && zone_source.as_bytes() == PROFILE_POWERED_ZONE
-        && skill.to_bits() == 0.50f32.to_bits()
-        && tuning.match_seconds == Some(180)
-        && maps
-            .iter()
-            .map(|(name, _)| name.as_str())
-            .eq(PROFILE_POWERED_MAPS)
-        && maps
-            .iter()
-            .zip(PROFILE_POWERED_MAP_BYTES)
-            .all(|((_, map), expected)| {
-                matches!(map, Arena::Packed(bytes) if bytes.as_slice() == expected)
-            })
-}
-
-pub fn report_profiles(
-    run: &ProfileCalibrationRun,
-    results: &[ProfileResult],
-    zone: &str,
-    zone_fingerprint: &str,
-    skill: f32,
-    match_seconds: u16,
-    maps: &[(String, Arena)],
-) -> serde_json::Value {
-    let contrasts = profiles::calibration_contrasts();
-    assert_eq!(
-        contrasts.len(),
-        PROFILE_COMPARISONS,
-        "profile report family does not match its declared comparison count"
-    );
-    assert_eq!(
-        results.len(),
-        PROFILE_COMPARISONS,
-        "profile report is missing declared contrast results"
-    );
-    for (result, contrast) in results.iter().zip(&contrasts) {
-        assert_eq!(
-            (result.contrast, result.a, result.b),
-            (contrast.name, contrast.a.name, contrast.b.name),
-            "profile report results do not follow the declared contrast order"
-        );
-    }
-    let paired_seeds = results.first().map_or(0, |result| result.paired_seeds);
-    let stratification_block = profile_stratification_block(maps.len());
-    let lineups: Vec<_> = (0..PROFILE_LINEUP_ROTATIONS).map(profile_lineup).collect();
-    assert!(
-        results
-            .iter()
-            .all(|result| result.paired_seeds == paired_seeds),
-        "profile report results use different paired sample counts"
-    );
-    println!(
-        "\nprofile balance: {zone}, {paired_seeds} paired seeds and {} matches per comparison",
-        paired_seeds * 2
-    );
-    println!(
-        "conservative approximate family-wise 95% win-rate intervals across {} declared contrasts; critical value planned for {}; balance band 45% to 55%; prespecified powered sample {PROFILE_POWERED_PAIRS}",
-        PROFILE_COMPARISONS, PROFILE_PLANNING_COMPARISONS
-    );
-    println!("kill-difference intervals are descriptive and do not enter the verdict");
-    println!(
-        "\n{:<48} {:>7} {:>19} {:>8} {:>19}  verdict",
-        "contrast", "win%", "win family 95%", "kill +/-", "descriptive 95%"
-    );
-    for result in results {
-        println!(
-            "{:<48} {:>7.1} {:>8.1} to {:>7.1} {:>8.2} {:>8.2} to {:>7.2}  {}",
-            result.contrast,
-            result.win_rate * 100.0,
-            result.win_rate_low * 100.0,
-            result.win_rate_high * 100.0,
-            result.kill_difference,
-            result.kill_difference_low,
-            result.kill_difference_high,
-            result.verdict,
-        );
-    }
-    println!(
-        "\nfixture gates: positive scored kills per match and profile sensitivity; absolute observed side gap is a warning"
-    );
-    for result in results {
-        for map in &result.fixture_validity {
-            let notes = map
-                .failures
-                .iter()
-                .chain(&map.warnings)
-                .copied()
-                .collect::<Vec<_>>()
-                .join(", ");
-            println!(
-                "{:<48} {:<12} {:>6.2} {:>7.3} {:>7.3}  {}",
-                result.contrast,
-                map.map,
-                map.mean_positive_scored_kills_per_match,
-                map.mean_profile_sensitivity,
-                map.absolute_observed_side_gap,
-                if notes.is_empty() { "pass" } else { &notes },
-            );
-        }
-    }
-    let fixture_valid = results.iter().all(|result| result.fixture_valid);
-    serde_json::json!({
-        "attempt_id": run.attempt_id(),
-        "design_fingerprint": run.design_fingerprint(),
-        "seed_base": run.seed_base(),
-        "zone": zone,
-        "zone_fingerprint": zone_fingerprint,
-        "maps": maps.iter().map(|(name, map)| serde_json::json!({
-            "name": name,
-            "fingerprint": map.fingerprint()
-        })).collect::<Vec<_>>(),
-        "contrasts": contrasts,
-        "skill": skill,
-        "match_seconds": match_seconds,
-        "paired_seeds": paired_seeds,
-        "matches_per_comparison": paired_seeds * 2,
-        "comparisons": PROFILE_COMPARISONS,
-        "win_rate_confidence": "conservative approximate family-wise 95% Bonferroni paired t intervals across 10 declared contrasts; critical value planned for 15",
-        "kill_difference_confidence": "descriptive approximate 95% paired intervals; excluded from the family and verdict",
-        "family_critical": PROFILE_FAMILY_T,
-        "descriptive_critical": PROFILE_DESCRIPTIVE_T,
-        "balance_band": [PROFILE_BALANCE_LOW, PROFILE_BALANCE_HIGH],
-        "prespecified_powered_paired_seeds": PROFILE_POWERED_PAIRS,
-        "seed_namespace_policy": format!("zero-based and capped below {PROFILE_POWERED_PAIRS} pairs for exploration; SHA-256-derived and registry-checked for a powered attempt"),
-        "fixture_schedule": {
-            "side_size": PROFILE_SIDE_SIZE,
-            "lineups": lineups,
-            "map_index_policy": "sample modulo map count",
-            "lineup_index_policy": "floor(sample / map count) modulo seven",
-            "stratification_block_paired_seeds": stratification_block,
-            "complete_stratification_blocks": paired_seeds / stratification_block,
-            "partial_block_paired_seeds": paired_seeds % stratification_block,
-        },
-        "build": crate::metrics::commit(),
-        "execution_fingerprint": calibration_execution_fingerprint(),
-        "fixture_valid": fixture_valid,
-        "powered_design": {
-            "target_whole_family_power": PROFILE_JOINT_POWER,
-            "comparisons": PROFILE_COMPARISONS,
-            "planning_comparisons": PROFILE_PLANNING_COMPARISONS,
-            "minimum_powered_paired_seeds": PROFILE_POWER_MINIMUM_PAIRS,
-            "worst_case_paired_sd": PROFILE_WORST_VARIANCE.sqrt(),
-            "centered_true_win_rate": 0.5,
-            "per_comparison_central_power_z": PROFILE_POWER_Z,
-            "method": "conservative normal-approximation two-sided union bound; the power minimum and critical values retain a fifteen-comparison planning bound for ten declared contrasts, and the confirmatory sample rounds up to a complete map-by-lineup block",
-            "power_scope": "The design targets at least 90% whole-family power for the ten declared flight-stat contrasts under the stated assumptions because it retains the stricter fifteen-comparison allocation. The fixed fixture-validity gates are unpowered, and no 90% claim covers the chance that the full screen passes.",
-            "fixture_validity": {
-                "kind": "fixed descriptive activity and sensitivity gates, plus an unpowered side-gap warning; not certified side equivalence",
-                "minimum_mean_positive_scored_kills_per_match_per_map": PROFILE_MIN_SCORED_KILLS_PER_MATCH,
-                "minimum_mean_profile_sensitivity_per_map": PROFILE_MIN_SENSITIVITY,
-                "profile_sensitivity_definition": "mean of 2 * abs((first win score + mirror win score) / 2 - 0.5)",
-                "absolute_observed_side_gap_warning_threshold_per_map": PROFILE_SIDE_GAP_WARNING,
-                "side_gap_definition": "absolute mean of first win score - mirror win score"
-            }
-        },
-        "run_kind": if run.is_powered() {
-            "prespecified powered screen"
-        } else {
-            "exploratory"
-        },
-        "results": results,
-    })
-}
-
 /// Fill both sides at random, `matches` times, and read each hull off its seats.
 pub fn run_teams(
     per_side: usize,
     matches: u32,
-    budget: u32,
     skill: f32,
     tuning: Option<&config::ArenaConfig>,
     map: &Arena,
@@ -3037,8 +954,6 @@ pub fn run_teams(
             hits: 0,
             damage: 0,
             self_damage: 0,
-            budget: 0,
-            converted: 0,
         })
         .collect();
 
@@ -3055,7 +970,7 @@ pub fn run_teams(
             rng ^= rng << 5;
             lineup.push((rng % n as u32) as u8);
         }
-        let (seats, decided) = team_match(&lineup, skill, budget, m, tuning, map);
+        let (seats, decided) = team_match(&lineup, skill, m, tuning, map);
         if seats.is_empty() {
             continue;
         }
@@ -3088,8 +1003,6 @@ pub fn run_teams(
             r.engagement_samples += s.engagement_samples;
             r.planned_range += s.planned_range;
             r.planned_range_samples += s.planned_range_samples;
-            r.budget += s.budget;
-            r.converted += s.converted;
             for t in 0..sim::TRIG_COUNT {
                 r.shots[t] += s.shots[t];
             }
@@ -3124,7 +1037,6 @@ pub fn report_teams(
     rows: &[TeamRow],
     per_side: usize,
     skill: f32,
-    budget: u32,
     matches: u32,
     zone: &str,
     map: &str,
@@ -3132,7 +1044,7 @@ pub fn report_teams(
 ) -> serde_json::Value {
     println!(
         "\nteam tournament: {per_side} a side, {zone} tuning on the {map}, skill \
-{skill:.2}, a {budget}-point kit a life, spawn radius {spawn_radius}, {matches} matches, \
+{skill:.2}, spawn radius {spawn_radius}, {matches} matches, \
 lineups drawn at random"
     );
     println!(
@@ -3180,7 +1092,7 @@ is the one to read the board by."
 
     serde_json::json!({
         "per_side": per_side, "tuning": zone, "map": map, "skill": skill,
-        "kit_budget": budget, "spawn_radius": spawn_radius, "matches": matches,
+        "spawn_radius": spawn_radius, "matches": matches,
         "hulls": rows.iter().map(|r| serde_json::json!({
             "name": r.name, "class": r.class, "seats": r.seats, "won": r.won,
             "drawn": r.drawn, "win_rate": r.win_rate(), "win_rate_margin": r.margin(),
@@ -3189,7 +1101,6 @@ is the one to read the board by."
             "mean_planned_range": r.planned_range / r.planned_range_samples.max(1) as f64,
             "mean_engagement_distance": r.engagement_distance / r.engagement_samples.max(1) as f64,
             "hits": r.hits, "damage": r.damage, "self_damage": r.self_damage,
-            "kit_offered": r.budget, "kit_spent": r.converted,
         })).collect::<Vec<_>>(),
     })
 }
@@ -3201,12 +1112,6 @@ is the one to read the board by."
  * with a tournament that measured something nobody plays.
  */
 
-/// A comma-separated list from the environment, or the default.
-///
-/// Sharding, and nothing cleverer. Seven hulls at three economies is
-/// sixty-three thousand bouts, which is most of a day on one core and a
-/// couple of hours split seven ways, so the run has to be splittable
-/// without editing the test between shards.
 pub(crate) fn env_list(key: &str, fallback: &[u32]) -> Vec<u32> {
     match std::env::var(key) {
         Ok(s) if !s.trim().is_empty() => {
@@ -3324,20 +1229,17 @@ pub(crate) fn duel(
     a: &ai::RosterEntry,
     b: &ai::RosterEntry,
     salt: u32,
-    budget: u32,
     handicap: Option<(ai::Knob, f32)>,
 ) -> (i16, i16) {
     let mut world = sim::World::from_packed(0xd0e1 ^ salt, bytes).expect("a map");
-    // The kit is handed out here rather than inherited from the zone, so both
-    // pilots carry exactly `budget` and the only thing left varying between
-    // them is the pilot.
+    // Nothing is handed out. Both pilots fly their own hull's profile, so the
+    // only thing varying between them is the pilot, which is what this
+    // harness exists to rank.
     //
-    // This used to be a bool that meant "let Alpha do what it does", which was
-    // thirty at spawn and forty-two more scattered on the floor. The thirty
-    // were matched and fine. The forty-two were not: whoever scavenged better
-    // carried a kit the other did not have, and that landed on top of every
-    // built number this harness ever printed. A tournament that ranks pilots
-    // cannot also be a race for the floor.
+    // It used to matter a great deal. A bool meaning "let Alpha do what it
+    // does" put thirty upgrades at the spawn and forty-two more on the floor,
+    // and whoever scavenged better carried a kit the other did not have,
+    // which landed on top of every number this harness printed.
     // Always. A scatter of 250 on a map this size throws them apart on
     // the first death and the rest of the bout is two pilots looking for
     // each other.
@@ -3378,17 +1280,6 @@ pub(crate) fn duel(
     // measuring hulls at a matched bounty, and matched on the number while
     // inexact on what it bought is the situation a player is in. This one
     // ranks pilots, so kit luck is not realism here, it is the thing being
-    // controlled for. Identical draws cost nothing and take a whole source
-    // of variance out of a measurement that needs every bout it has.
-    //
-    // Nonzero because xorshift that reaches zero stays there, and would
-    // then deal the same slot for the rest of the bout.
-    let seed = (salt.wrapping_mul(2654435761) ^ 0x9E37_79B9) | 1;
-    let mut prng = [seed, seed];
-    let seats = [s1, s2];
-    for k in 0..2 {
-        deal_kit(&mut world, seats[k] as usize, budget, &mut prng[k]);
-    }
     let mut alive_was = [true; 2];
 
     let n1 = first.name.to_string();
@@ -3419,16 +1310,11 @@ pub(crate) fn duel(
         for (victim, _killer, _paid) in crate::ingest_damage(&world, r, &name_of) {
             r.death(tick, &name_of(victim));
         }
-        // The kit goes back on at the dead-to-alive edge, the way the arena
-        // re-deals one. Without this a bout at a sixty-point budget is one
-        // built exchange followed by four bare ones, which measures
-        // something nobody asked about.
-        for k in 0..2 {
-            let alive = world.state.ships[seats[k] as usize].alive != 0;
-            if alive && !alive_was[k] {
-                deal_kit(&mut world, seats[k] as usize, budget, &mut prng[k]);
-            }
-            alive_was[k] = alive;
+        // The profile goes back on at the dead-to-alive edge, which the core
+        // does at the spawn, so there is nothing to re-deal here. What is
+        // left is watching the edge itself, since a bout counts lives.
+        for (k, s) in [s1, s2].iter().enumerate() {
+            alive_was[k] = world.state.ships[*s as usize].alive != 0;
         }
         let k1 = world.state.ships[s1 as usize].kills;
         let k2 = world.state.ships[s2 as usize].kills;
@@ -3459,12 +1345,12 @@ pub const PILOT_CALIBRATION_SCHEMA: u32 = 4;
 pub const PILOT_ATTESTATION_SCHEMA: u32 = 1;
 pub const PILOT_CONTROLLER_VERSION: &str = "profile-brain-v2";
 pub const PILOT_MAP: &str = "gantry";
-pub const PILOT_ECONOMY: &str = "base-entitlement-personal-builds";
+pub const PILOT_ECONOMY: &str = "preconstructed-hull-profiles";
 const PILOT_ZONE: &str = "melee";
 const PILOT_ZONE_FILE: &str = "catalog/zones/melee/zone.toml";
 const PILOT_MAP_FILE: &str = "catalog/zones/melee/gantry.vwmap";
 const PILOT_ZONE_DECLARED_MAP: &str = "gantry.vwmap";
-const PILOT_ZONE_BYTES: &[u8] = PROFILE_POWERED_ZONE;
+const PILOT_ZONE_BYTES: &[u8] = include_bytes!("../../catalog/zones/melee/zone.toml");
 const PILOT_MAP_BYTES: &[u8] = include_bytes!("../../catalog/zones/melee/gantry.vwmap");
 const PILOT_WORLD_SEED_LABEL: u64 = 0x0077_6f72_6c64;
 const PILOT_BOOTSTRAP_SEED_LABEL: u64 = 0x626f_6f74_7374_7261;
@@ -3578,12 +1464,15 @@ pub struct PilotCalibrationPlan {
 pub struct FixturePilotKit {
     pub pilot_id: u32,
     pub callsign: String,
-    /// The personality this kit was derived from. It was the name of a
-    /// separate build plan; a kit comes off the behavior profile now, so the
-    /// strategy is what a reader of a fixture needs to see beside the slots.
+    /// The personality this pilot flies with. It has nothing to do with what
+    /// the ship carries any more: a hull is preconstructed, so the strategy is
+    /// how this pilot uses the ship it was written into.
     pub strategy: String,
+    /// The hull, by index, and the profile it flies. Recorded rather than
+    /// derived so a saved fixture still says what was actually flown if the
+    /// roster is retuned under it.
+    pub class: u8,
     pub kit: Vec<u8>,
-    pub spent: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -3610,9 +1499,6 @@ pub struct PilotFixtureManifest {
     pub starts_per_team: [usize; 2],
     pub start_pairs: Vec<FixtureStartPair>,
     pub heading_policy: String,
-    pub account_entitlement_policy: String,
-    pub account_entitlement_ceiling: Vec<u8>,
-    pub effective_zone_entitlement_ceiling: Vec<u8>,
     pub pilot_kits: Vec<FixturePilotKit>,
     pub limitations: Vec<String>,
 }
@@ -3630,10 +1516,6 @@ impl PilotFixtureManifest {
             ("mode", self.mode.as_str()),
             ("start policy", self.start_policy.as_str()),
             ("heading policy", self.heading_policy.as_str()),
-            (
-                "account entitlement policy",
-                self.account_entitlement_policy.as_str(),
-            ),
         ] {
             if value.trim().is_empty() {
                 return Err(PilotCalibrationError::InvalidFixture(format!(
@@ -3649,13 +1531,6 @@ impl PilotFixtureManifest {
         if self.regulation_ticks == 0 || self.overtime_safety_ticks == 0 {
             return Err(PilotCalibrationError::InvalidFixture(
                 "the fixture clock is empty".into(),
-            ));
-        }
-        if self.account_entitlement_ceiling.len() != sim::SLOT_COUNT
-            || self.effective_zone_entitlement_ceiling.len() != sim::SLOT_COUNT
-        {
-            return Err(PilotCalibrationError::InvalidFixture(
-                "an entitlement ceiling has the wrong width".into(),
             ));
         }
         let pair_count = self.starts_per_team[0]
@@ -3692,22 +1567,10 @@ impl PilotFixtureManifest {
                 || pilot.callsign.trim().is_empty()
                 || pilot.strategy.trim().is_empty()
                 || pilot.kit.len() != sim::SLOT_COUNT
-                || pilot.spent != pilot.kit.iter().map(|level| u32::from(*level)).sum::<u32>()
-                || pilot.spent > sim::KIT_BUDGET
+                || pilot.class as usize >= sim::MAX_CLASSES
             {
                 return Err(PilotCalibrationError::InvalidFixture(format!(
                     "pilot kit {} is malformed",
-                    pilot.pilot_id
-                )));
-            }
-            if pilot
-                .kit
-                .iter()
-                .zip(&self.effective_zone_entitlement_ceiling)
-                .any(|(level, ceiling)| level > ceiling)
-            {
-                return Err(PilotCalibrationError::InvalidFixture(format!(
-                    "pilot kit {} exceeds the entitlement ceiling",
                     pilot.pilot_id
                 )));
             }
@@ -3730,7 +1593,6 @@ struct PilotFixtureRuntime {
     definition: crate::catalog::ZoneDef,
     map: Vec<u8>,
     route: nav::Nav,
-    effective_entitlement_ceiling: [u8; sim::SLOT_COUNT],
     manifest: PilotFixtureManifest,
 }
 
@@ -3844,25 +1706,18 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
         }
     }
 
-    // Live bot ownership and the human account both constrain a kit. A saved
-    // tournament has neither account, so the fixture prespecifies the base
-    // account ceiling. It is the only ceiling every claimed account has.
-    let account_ceiling = sim::World::base_entitlements();
-    let mut effective_ceiling = probe.kit_ceilings();
-    for (ceiling, owned) in effective_ceiling.iter_mut().zip(account_ceiling) {
-        *ceiling = (*ceiling).min(owned);
-    }
+    // What each pilot flies, which is the hull it was written into and that
+    // hull's own profile. There is nothing an account could own that would
+    // change it, so the two ownership ceilings this used to record are gone
+    // along with the shop that moved them.
     let pilot_kits: Vec<FixturePilotKit> = roster
         .iter()
-        .map(|pilot| {
-            let kit = shopper::build(&shopper::wants(&pilot.behavior), &effective_ceiling);
-            FixturePilotKit {
-                pilot_id: pilot.id.0,
-                callsign: pilot.callsign.clone(),
-                strategy: format!("{:?}", pilot.behavior.strategy),
-                spent: sim::World::kit_cost(&kit),
-                kit: kit.to_vec(),
-            }
+        .map(|pilot| FixturePilotKit {
+            pilot_id: pilot.id.0,
+            callsign: pilot.callsign.clone(),
+            strategy: format!("{:?}", pilot.behavior.strategy),
+            class: pilot.hull,
+            kit: probe.profile(pilot.hull).to_vec(),
         })
         .collect();
     let regulation_ticks = definition.arena.match_seconds.unwrap_or(180) as u32 * 100;
@@ -3873,8 +1728,6 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
         })?;
     let zone_fingerprint = fingerprint(&[&raw]);
     let map_fingerprint = fingerprint(&[&map]);
-    let account_bytes = account_ceiling.to_vec();
-    let effective_bytes = effective_ceiling.to_vec();
     let start_policy = format!(
         "cycle through all {} valid team-zero by team-one Drydock start pairs by scenario seed",
         start_pairs.len()
@@ -3885,8 +1738,6 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
     let fixture_fingerprint = fingerprint(&[
         &raw,
         &map,
-        &account_bytes,
-        &effective_bytes,
         start_policy.as_bytes(),
         start_bytes.as_bytes(),
         heading_policy.as_bytes(),
@@ -3896,7 +1747,6 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
         include_bytes!("config.rs"),
         include_bytes!("pilots.rs"),
         include_bytes!("room.rs"),
-        include_bytes!("shopper.rs"),
         include_bytes!("sim.rs"),
         include_bytes!("modes.rs"),
         include_bytes!("../../sim/src/sim.c"),
@@ -3918,12 +1768,9 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
         starts_per_team,
         start_pairs,
         heading_policy,
-        account_entitlement_policy: "base account ceiling for both pilots".into(),
-        account_entitlement_ceiling: account_bytes,
-        effective_zone_entitlement_ceiling: effective_bytes,
         pilot_kits,
         limitations: vec![
-            "Persistent account purchases are not replayed. Both pilots use the base account entitlement ceiling recorded in this manifest.".into(),
+            "Every pilot flies its own hull's profile, recorded in this manifest. A retune of the roster is a different fixture, which the fingerprint says.".into(),
             "The live game draws at the whistle; this harness flies each leg to a death instead, so an undecided matchup is measured rather than censored. It censors a leg after ten additional regulation clocks, records it, and refuses certification if any leg is censored.".into(),
             "The experiment ranks bot-versus-bot performance. It does not estimate human win probability, retention, or fun.".into(),
         ],
@@ -3933,9 +1780,26 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
         definition,
         map,
         route,
-        effective_entitlement_ceiling: effective_ceiling,
         manifest,
     })
+}
+
+fn calibration_execution_fingerprint() -> String {
+    fingerprint(&[
+        env!("CARGO_PKG_VERSION").as_bytes(),
+        env!("VW_RUSTC_VERSION").as_bytes(),
+        env!("VW_BUILD_PROFILE").as_bytes(),
+        env!("VW_BUILD_OPT_LEVEL").as_bytes(),
+        env!("VW_BUILD_DEBUG").as_bytes(),
+        env!("VW_BUILD_TARGET").as_bytes(),
+        env!("VW_BUILD_HOST").as_bytes(),
+        env!("VW_BUILD_TARGET_FEATURES").as_bytes(),
+        env!("VW_BUILD_RUSTFLAGS").as_bytes(),
+        env!("VW_CC_IDENTITY").as_bytes(),
+        std::env::consts::ARCH.as_bytes(),
+        std::env::consts::OS.as_bytes(),
+        std::env::consts::FAMILY.as_bytes(),
+    ])
 }
 
 fn hypothesis_id(a: &PilotSpec, b: &PilotSpec) -> String {
@@ -4008,17 +1872,12 @@ fn pilot_input_fingerprints(
         name: PILOT_MAP.into(),
         digest: fixture.manifest.map_fingerprint.clone(),
     }];
-    // The zone file, ownership ceiling, derived taste, and simulation rules
-    // decide what each persistent pilot carries into its one life.
-    let account_ceiling = &fixture.manifest.account_entitlement_ceiling;
-    let effective_ceiling = &fixture.manifest.effective_zone_entitlement_ceiling;
+    // The zone file and the simulation rules decide what each persistent
+    // pilot carries into its one life, which is now its hull's own profile.
     let economies = vec![ContentFingerprint {
         name: PILOT_ECONOMY.into(),
         digest: fingerprint(&[
             fixture.definition.raw.as_bytes(),
-            account_ceiling,
-            effective_ceiling,
-            include_bytes!("shopper.rs"),
             include_bytes!("bots.rs"),
             include_bytes!("catalog.rs"),
             include_bytes!("config.rs"),
@@ -4548,18 +2407,8 @@ fn pilot_leg(
         bots[index].reseed(mixed_seed(namespace, seed, seat_specs[index].id.0 as u64));
     }
 
-    // A live persistent pilot asks for the build named by its spec. Account
-    // ownership is the prespecified base ceiling recorded in the fixture.
-    for index in 0..2 {
-        let kit = shopper::build(
-            &shopper::wants(&seat_specs[index].behavior),
-            &fixture.effective_entitlement_ceiling,
-        );
-        assert!(
-            world.set_kit(ships[index] as usize, &kit),
-            "the fixture kit was validated before collection"
-        );
-    }
+    // Nothing to dress. Each pilot flies the hull it was spawned in and the
+    // hull deals its own profile, so what a leg measures is the two pilots.
     restart_pilot_leg(&mut world, ships, actual_positions);
     debug_assert_eq!(
         [
@@ -6634,12 +4483,6 @@ mod pilot_certification_tests {
                 }
             }
         }
-        let ceiling: [u8; sim::SLOT_COUNT] = plan
-            .fixture
-            .effective_zone_entitlement_ceiling
-            .clone()
-            .try_into()
-            .expect("fixture ceiling width");
         let mut tastes = HashSet::new();
         for pilot in &roster {
             let recorded = plan
@@ -6648,8 +4491,12 @@ mod pilot_certification_tests {
                 .iter()
                 .find(|kit| kit.pilot_id == pilot.id.0)
                 .expect("pilot kit");
-            let expected = shopper::build(&shopper::wants(&pilot.behavior), &ceiling);
-            assert_eq!(recorded.kit, expected);
+            assert_eq!(recorded.class, pilot.hull, "the hull it was written in");
+            assert_eq!(
+                recorded.kit,
+                sim::World::baseline_profiles()[pilot.hull as usize].to_vec(),
+                "and that hull's own profile"
+            );
             tastes.insert(recorded.strategy.as_str());
         }
         assert!(tastes.len() > 1, "the fixture contains personal tastes");
@@ -6672,14 +4519,6 @@ mod pilot_certification_tests {
             world.spawn_at(specs[0].hull, 0, positions[0].0, positions[0].1, 0) as u8,
             world.spawn_at(specs[1].hull, 1, positions[1].0, positions[1].1, 32768) as u8,
         ];
-        for index in 0..2 {
-            let kit = shopper::build(
-                &shopper::wants(&specs[index].behavior),
-                &fixture.effective_entitlement_ceiling,
-            );
-            assert!(world.set_kit(ships[index] as usize, &kit));
-        }
-
         restart_pilot_leg(&mut world, ships, positions);
         let headings = [
             crate::room::heading_toward(positions[0], positions[1]),
@@ -7006,745 +4845,10 @@ fn diagnostic_calibration_ladder() {
 mod tests {
     use super::*;
 
-    fn powered_profile_maps() -> Vec<(String, Arena)> {
-        PROFILE_POWERED_MAPS
-            .iter()
-            .zip(PROFILE_POWERED_MAP_BYTES)
-            .map(|(name, bytes)| {
-                (
-                    (*name).into(),
-                    Arena::Packed(std::sync::Arc::new(bytes.into())),
-                )
-            })
-            .collect()
-    }
-
-    #[test]
-    fn profile_balance_requires_the_declared_sample_and_whole_interval() {
-        assert_eq!(
-            profile_verdict(false, true, 0.60, 0.70),
-            "exploratory: not prespecified sample"
-        );
-        assert_eq!(
-            profile_verdict(false, false, 0.46, 0.54),
-            "exploratory: fixture checks failed"
-        );
-        assert_eq!(profile_verdict(true, false, 0.46, 0.54), "invalid fixture");
-        assert_eq!(profile_verdict(true, true, 0.56, 0.63), "overpowered");
-        assert_eq!(profile_verdict(true, true, 0.46, 0.54), "balanced");
-        assert_eq!(profile_verdict(true, true, 0.44, 0.56), "inconclusive");
-    }
-
-    #[test]
-    fn profile_family_matches_its_prespecified_correction() {
-        let contrasts = profiles::calibration_contrasts();
-        assert_eq!(contrasts.len(), PROFILE_COMPARISONS);
-        assert!(contrasts.len() < PROFILE_PLANNING_COMPARISONS);
-
-        let half_width = (PROFILE_BALANCE_HIGH - PROFILE_BALANCE_LOW) / 2.0;
-        let raw = PROFILE_WORST_VARIANCE * (PROFILE_FAMILY_T + PROFILE_POWER_Z).powi(2)
-            / half_width.powi(2);
-        let maps = PROFILE_POWERED_MAPS.len() as u32;
-        let map_stratified = (raw.ceil() as u32).div_ceil(maps) * maps;
-        assert_eq!(map_stratified, PROFILE_POWER_MINIMUM_PAIRS);
-        let full_block = profile_stratification_block(PROFILE_POWERED_MAPS.len());
-        let fixture_stratified = PROFILE_POWER_MINIMUM_PAIRS.div_ceil(full_block) * full_block;
-        assert_eq!(fixture_stratified, PROFILE_POWERED_PAIRS);
-        assert_eq!(PROFILE_POWERED_PAIRS % full_block, 0);
-
-        let conservative_joint_power = 1.0
-            - (1.0 - PROFILE_JOINT_POWER) * PROFILE_COMPARISONS as f64
-                / PROFILE_PLANNING_COMPARISONS as f64;
-        assert!(conservative_joint_power >= PROFILE_JOINT_POWER);
-    }
-
-    #[test]
-    fn only_the_frozen_melee_fixture_can_issue_a_profile_verdict() {
-        let zone_source = std::str::from_utf8(PROFILE_POWERED_ZONE).expect("zone source");
-        let definition: catalog::ZoneDef = toml::from_str(zone_source).expect("shipped zone");
-        let maps = powered_profile_maps();
-        assert!(is_powered_profile_fixture(
-            PROFILE_POWERED_PAIRS,
-            "melee",
-            zone_source,
-            0.50,
-            &definition.arena,
-            &maps
-        ));
-        assert!(!is_powered_profile_fixture(
-            PROFILE_POWERED_PAIRS - 6,
-            "melee",
-            zone_source,
-            0.50,
-            &definition.arena,
-            &maps
-        ));
-        assert!(!is_powered_profile_fixture(
-            PROFILE_POWERED_PAIRS,
-            "ladder",
-            zone_source,
-            0.50,
-            &definition.arena,
-            &maps
-        ));
-        assert!(!is_powered_profile_fixture(
-            PROFILE_POWERED_PAIRS,
-            "melee",
-            "label = 'changed'",
-            0.50,
-            &definition.arena,
-            &maps
-        ));
-        assert!(!is_powered_profile_fixture(
-            PROFILE_POWERED_PAIRS,
-            "melee",
-            zone_source,
-            0.49,
-            &definition.arena,
-            &maps
-        ));
-        let mut changed_maps = maps.clone();
-        changed_maps[0].1 = Arena::Built(sim::build_pit);
-        assert!(!is_powered_profile_fixture(
-            PROFILE_POWERED_PAIRS,
-            "melee",
-            zone_source,
-            0.50,
-            &definition.arena,
-            &changed_maps
-        ));
-        let short = config::ArenaConfig {
-            match_seconds: Some(179),
-            ..Default::default()
-        };
-        assert!(!is_powered_profile_fixture(
-            PROFILE_POWERED_PAIRS,
-            "melee",
-            zone_source,
-            0.50,
-            &short,
-            &maps
-        ));
-    }
-
-    #[test]
-    fn powered_profile_attempt_is_preregistered_before_collection() {
-        let zone_source = std::str::from_utf8(PROFILE_POWERED_ZONE).expect("zone source");
-        let maps = powered_profile_maps();
-        let design =
-            profile_design_fingerprint(PROFILE_POWERED_PAIRS, "melee", zone_source, 0.50, &maps)
-                .expect("a design fingerprint");
-        let empty_registry = serde_json::to_string(&ProfileCalibrationAttemptRegistry {
-            schema_version: 1,
-            attempts: Vec::new(),
-        })
-        .expect("an empty registry");
-        let error = prepare_profile_calibration(
-            PROFILE_POWERED_PAIRS,
-            "flight-eight-v1",
-            &empty_registry,
-            "melee",
-            zone_source,
-            0.50,
-            &maps,
-        )
-        .unwrap_err();
-        assert!(error.contains(&design));
-
-        let registry = serde_json::to_string(&ProfileCalibrationAttemptRegistry {
-            schema_version: 1,
-            attempts: vec![ProfileCalibrationAttempt {
-                attempt_id: "flight-eight-v1".into(),
-                design_fingerprint: design.clone(),
-            }],
-        })
-        .expect("a registry");
-
-        let run = prepare_profile_calibration(
-            PROFILE_POWERED_PAIRS,
-            "flight-eight-v1",
-            &registry,
-            "melee",
-            zone_source,
-            0.50,
-            &maps,
-        )
-        .expect("a registered powered run");
-        assert!(run.is_powered());
-        assert_eq!(run.attempt_id(), "flight-eight-v1");
-        assert_eq!(run.design_fingerprint(), design);
-        assert_eq!(
-            run.seed_base(),
-            profile_attempt_seed_base("flight-eight-v1")
-        );
-        assert_ne!(run.seed_base(), 0);
-    }
-
-    #[test]
-    fn profile_design_fingerprint_binds_fixture_content_and_parameters() {
-        let zone_source = std::str::from_utf8(PROFILE_POWERED_ZONE).expect("zone source");
-        let maps = powered_profile_maps();
-        let design =
-            profile_design_fingerprint(PROFILE_POWERED_PAIRS, "melee", zone_source, 0.50, &maps)
-                .expect("a design fingerprint");
-        let mut reordered = maps.clone();
-        reordered.swap(0, 1);
-        assert_ne!(
-            profile_design_fingerprint(
-                PROFILE_POWERED_PAIRS,
-                "melee",
-                zone_source,
-                0.50,
-                &reordered,
-            )
-            .expect("a reordered design fingerprint"),
-            design
-        );
-        assert_ne!(
-            profile_design_fingerprint(
-                PROFILE_POWERED_PAIRS,
-                "melee",
-                &format!("{zone_source}\n"),
-                0.50,
-                &maps,
-            )
-            .expect("a changed-source design fingerprint"),
-            design
-        );
-        assert_ne!(
-            profile_design_fingerprint(PROFILE_POWERED_PAIRS, "melee", zone_source, 0.49, &maps,)
-                .expect("a changed-skill design fingerprint"),
-            design
-        );
-    }
-
-    #[test]
-    fn profile_design_fingerprint_binds_execution_identity() {
-        let zone_source = std::str::from_utf8(PROFILE_POWERED_ZONE).expect("zone source");
-        let maps = powered_profile_maps();
-        let execution = calibration_execution_fingerprint();
-        let design =
-            profile_design_fingerprint(PROFILE_POWERED_PAIRS, "melee", zone_source, 0.50, &maps)
-                .expect("a design fingerprint");
-        assert_eq!(
-            profile_design_fingerprint_with_execution(
-                PROFILE_POWERED_PAIRS,
-                "melee",
-                zone_source,
-                0.50,
-                &maps,
-                &execution,
-            )
-            .expect("the current execution fingerprint"),
-            design
-        );
-        assert_ne!(
-            profile_design_fingerprint_with_execution(
-                PROFILE_POWERED_PAIRS,
-                "melee",
-                zone_source,
-                0.50,
-                &maps,
-                &format!("{execution}-different-toolchain"),
-            )
-            .expect("a changed execution fingerprint"),
-            design
-        );
-    }
-
-    #[test]
-    fn profile_design_fingerprint_binds_ordered_contrast_family() {
-        let zone_source = std::str::from_utf8(PROFILE_POWERED_ZONE).expect("zone source");
-        let maps = powered_profile_maps();
-        let execution = calibration_execution_fingerprint();
-        let contrasts = profiles::calibration_contrasts();
-        let design = profile_design_fingerprint_for_contrasts(
-            PROFILE_POWERED_PAIRS,
-            "melee",
-            zone_source,
-            0.50,
-            &maps,
-            &execution,
-            &contrasts,
-        )
-        .expect("the declared contrast fingerprint");
-
-        let mut reordered = contrasts.clone();
-        reordered.swap(0, 1);
-        assert_ne!(
-            profile_design_fingerprint_for_contrasts(
-                PROFILE_POWERED_PAIRS,
-                "melee",
-                zone_source,
-                0.50,
-                &maps,
-                &execution,
-                &reordered,
-            )
-            .expect("a reordered contrast fingerprint"),
-            design
-        );
-
-        let mut reversed = contrasts;
-        let first = &mut reversed[0];
-        std::mem::swap(&mut first.a, &mut first.b);
-        assert_ne!(
-            profile_design_fingerprint_for_contrasts(
-                PROFILE_POWERED_PAIRS,
-                "melee",
-                zone_source,
-                0.50,
-                &maps,
-                &execution,
-                &reversed,
-            )
-            .expect("a reversed contrast fingerprint"),
-            design
-        );
-    }
-
-    #[test]
-    fn profile_controller_fingerprint_binds_live_melee_scoring() {
-        let modes = include_bytes!("modes.rs");
-        assert_eq!(
-            profile_controller_fingerprint_with_modes(modes),
-            profile_controller_fingerprint()
-        );
-        let mut changed = modes.to_vec();
-        changed.extend_from_slice(b"\nchanged live Melee scoring");
-        assert_ne!(
-            profile_controller_fingerprint_with_modes(&changed),
-            profile_controller_fingerprint()
-        );
-    }
-
-    #[test]
-    fn profile_report_records_execution_identity() {
-        let maps = powered_profile_maps();
-        let run = ProfileCalibrationRun {
-            attempt_id: "report-test".into(),
-            design_fingerprint: "sha256:report-test".into(),
-            seed_base: 1,
-            powered_fixture: true,
-        };
-        let results: Vec<_> = profiles::calibration_contrasts()
-            .into_iter()
-            .map(|contrast| ProfileResult {
-                contrast: contrast.name,
-                a: contrast.a.name,
-                b: contrast.b.name,
-                paired_seeds: PROFILE_POWERED_PAIRS,
-                matches: PROFILE_POWERED_PAIRS * 2,
-                win_rate: 0.5,
-                win_rate_low: 0.46,
-                win_rate_high: 0.54,
-                kill_difference: 0.0,
-                kill_difference_low: -1.0,
-                kill_difference_high: 1.0,
-                verdict: "balanced",
-                powered_fixture: true,
-                fixture_valid: true,
-                fixture_validity: Vec::new(),
-                observations: Vec::new(),
-            })
-            .collect();
-        let report = report_profiles(
-            &run,
-            &results,
-            "melee",
-            "sha256:zone-test",
-            0.50,
-            180,
-            &maps,
-        );
-        let execution = calibration_execution_fingerprint();
-        assert_eq!(
-            report["execution_fingerprint"].as_str(),
-            Some(execution.as_str())
-        );
-        assert_eq!(
-            report["comparisons"].as_u64(),
-            Some(PROFILE_COMPARISONS as u64)
-        );
-        assert_eq!(
-            report["powered_design"]["planning_comparisons"].as_u64(),
-            Some(PROFILE_PLANNING_COMPARISONS as u64)
-        );
-        assert_eq!(
-            report["powered_design"]["minimum_powered_paired_seeds"].as_u64(),
-            Some(PROFILE_POWER_MINIMUM_PAIRS as u64)
-        );
-        assert_eq!(
-            report["fixture_schedule"]["stratification_block_paired_seeds"].as_u64(),
-            Some(profile_stratification_block(maps.len()) as u64)
-        );
-        assert_eq!(
-            report["fixture_schedule"]["lineups"]
-                .as_array()
-                .map(Vec::len),
-            Some(PROFILE_LINEUP_ROTATIONS)
-        );
-        assert_eq!(
-            report["fixture_schedule"]["partial_block_paired_seeds"].as_u64(),
-            Some(0)
-        );
-        assert_eq!(
-            report["contrasts"].as_array().map(Vec::len),
-            Some(PROFILE_COMPARISONS)
-        );
-    }
-
-    #[test]
-    fn a_profile_design_can_register_only_one_attempt() {
-        let zone_source = std::str::from_utf8(PROFILE_POWERED_ZONE).expect("zone source");
-        let maps = powered_profile_maps();
-        let design =
-            profile_design_fingerprint(PROFILE_POWERED_PAIRS, "melee", zone_source, 0.50, &maps)
-                .expect("a design fingerprint");
-        let registry = serde_json::to_string(&ProfileCalibrationAttemptRegistry {
-            schema_version: 1,
-            attempts: vec![
-                ProfileCalibrationAttempt {
-                    attempt_id: "first-attempt".into(),
-                    design_fingerprint: design.clone(),
-                },
-                ProfileCalibrationAttempt {
-                    attempt_id: "second-attempt".into(),
-                    design_fingerprint: design,
-                },
-            ],
-        })
-        .expect("a registry");
-
-        let error = prepare_profile_calibration(
-            PROFILE_POWERED_PAIRS,
-            "first-attempt",
-            &registry,
-            "melee",
-            zone_source,
-            0.50,
-            &maps,
-        )
-        .unwrap_err();
-        assert!(error.contains("more than one registered attempt"));
-    }
-
-    #[test]
-    fn nonpowered_profile_runs_are_exploratory() {
-        let zone_source = std::str::from_utf8(PROFILE_POWERED_ZONE).expect("zone source");
-        let maps = powered_profile_maps();
-        let paired_seeds = PROFILE_POWERED_PAIRS - maps.len() as u32;
-        let run = prepare_profile_calibration(
-            paired_seeds,
-            PROFILE_EXPLORATORY_ATTEMPT,
-            "not parsed for exploration",
-            "melee",
-            zone_source,
-            0.50,
-            &maps,
-        )
-        .expect("an exploratory run");
-        assert!(!run.is_powered());
-        assert_eq!(run.seed_base(), 0);
-        assert_eq!(
-            profile_verdict(run.is_powered(), true, 0.56, 0.63),
-            "exploratory: not prespecified sample"
-        );
-
-        let error = prepare_profile_calibration(
-            paired_seeds,
-            "unregistered-confirmatory-run",
-            "{}",
-            "melee",
-            zone_source,
-            0.50,
-            &maps,
-        )
-        .unwrap_err();
-        assert!(error.contains("only the exact"));
-
-        let error = prepare_profile_calibration(
-            PROFILE_POWERED_PAIRS + maps.len() as u32,
-            PROFILE_EXPLORATORY_ATTEMPT,
-            "not parsed for exploration",
-            "melee",
-            zone_source,
-            0.50,
-            &maps,
-        )
-        .unwrap_err();
-        assert!(error.contains(&format!("fewer than {PROFILE_POWERED_PAIRS} paired seeds")));
-    }
-
-    #[test]
-    fn profile_attempts_get_distinct_deterministic_seed_namespaces() {
-        assert_eq!(
-            profile_attempt_seed_base("flight-eight-v1"),
-            profile_attempt_seed_base("flight-eight-v1")
-        );
-        assert_ne!(
-            profile_attempt_seed_base("flight-eight-v1"),
-            profile_attempt_seed_base("flight-eight-v2")
-        );
-    }
-
-    #[test]
-    fn calibration_spawn_dressing_fills_the_resolved_bar() {
-        let mut stage_world = sim::World::with_map(1, sim::build_pit);
-        let stage_ship = stage_world.spawn(0, 0, 505, 522, 0) as usize;
-        let stats = STAGES
-            .iter()
-            .find(|stage| stage.name == "stats")
-            .expect("the stats diagnostic");
-        wear(&mut stage_world, stage_ship, stats);
-        assert_eq!(
-            stage_world.state.ships[stage_ship].energy,
-            stage_world.eff_max_energy(stage_ship)
-        );
-
-        let mut hull_world = sim::World::with_map(2, sim::build_pit);
-        let hull_ship = hull_world.spawn(0, 0, 505, 522, 0) as usize;
-        let mut rng = 0x1234_5678;
-        assert_eq!(
-            deal_kit(&mut hull_world, hull_ship, sim::KIT_BUDGET, &mut rng),
-            sim::KIT_BUDGET
-        );
-        assert_eq!(
-            hull_world.state.ships[hull_ship].energy,
-            hull_world.eff_max_energy(hull_ship)
-        );
-    }
-
-    #[test]
-    fn paired_interval_tightens_when_the_same_evidence_repeats() {
-        let noisy = [0.0, 1.0, 0.0, 1.0];
-        let repeated: Vec<f64> = noisy.into_iter().cycle().take(400).collect();
-        let (_, low_small, high_small) = family_win_interval(&noisy);
-        let (mean, low_large, high_large) = family_win_interval(&repeated);
-        assert_eq!(mean, 0.5);
-        assert!(high_large - low_large < high_small - low_small);
-    }
-
     #[test]
     fn clock_only_team_match_never_stops_on_score() {
         assert!(match_reached_target([20, 0], 4, Some(5)));
         assert!(!match_reached_target([20, 0], 4, None));
-    }
-
-    #[test]
-    fn profile_seed_count_must_weight_every_map_equally() {
-        let maps = vec![
-            ("first".into(), Arena::Built(sim::build_pit)),
-            ("second".into(), Arena::Built(sim::build_pit)),
-        ];
-        let run = ProfileCalibrationRun {
-            attempt_id: PROFILE_EXPLORATORY_ATTEMPT.into(),
-            design_fingerprint: "unused".into(),
-            seed_base: 0,
-            powered_fixture: false,
-        };
-        let error = run_profiles(&run, 1, "test", "test", 0.5, &maps, false).unwrap_err();
-        assert!(error.contains("do not divide evenly across 2 maps"));
-    }
-
-    #[test]
-    fn profile_contrast_order_is_stable() {
-        let names: Vec<_> = profiles::calibration_contrasts()
-            .into_iter()
-            .map(|contrast| contrast.name)
-            .collect();
-        assert_eq!(
-            names,
-            [
-                "Starter margin: Energy 6 vs bomb bounce 2",
-                "Starter margin: Recharge 5 vs bomb bounce 2",
-                "Starter margin: Speed 6 vs bomb bounce 2",
-                "Starter margin: Thrust 3 vs bomb bounce 2",
-                "Starter margin: Rotation 3 vs bomb bounce 2",
-                "Top margin: Energy 8 vs bomb bounce 2",
-                "Top margin: Recharge 8 vs bomb bounce 2",
-                "Top margin: Speed 8 vs bomb bounce 2",
-                "Top margin: Thrust 8 vs bomb bounce 2",
-                "Top margin: Rotation 8 vs bomb bounce 2",
-            ]
-        );
-    }
-
-    #[test]
-    fn profile_lineup_pairs_each_hull_with_its_rotated_start() {
-        for rotation in 0..PROFILE_LINEUP_ROTATIONS {
-            let lineup = profile_lineup(rotation);
-            for (name, bytes) in PROFILE_POWERED_MAPS.iter().zip(PROFILE_POWERED_MAP_BYTES) {
-                let mut world = sim::World::from_packed(1, bytes).expect("a shipped Melee map");
-                let mut ships = [0u8; PROFILE_LINEUP_SEATS];
-                for (index, &class) in lineup.iter().enumerate() {
-                    let team = (index / PROFILE_SIDE_SIZE) as u8;
-                    let heading = if team == 0 { 0 } else { 32768 };
-                    let ship = world.spawn_on_map(
-                        class,
-                        team,
-                        (index % PROFILE_SIDE_SIZE) as u32,
-                        heading,
-                    );
-                    assert!(ship >= 0, "{name} seats profile hull {index}");
-                    ships[index] = ship as u8;
-                }
-                world.restart();
-                crate::room::face_public_teams(&mut world);
-
-                let span_x = i32::from(world.map.w) * sim::TILE_PX * 256;
-                let span_y = i32::from(world.map.h) * sim::TILE_PX * 256;
-                for index in 0..PROFILE_SIDE_SIZE {
-                    let opposite = PROFILE_LINEUP_SEATS - 1 - index;
-                    let a = world.state.ships[ships[index] as usize];
-                    let b = world.state.ships[ships[opposite] as usize];
-                    assert_eq!(a.cls, b.cls, "{name} counterpart hull {index}");
-                    assert_eq!(a.x + b.x, span_x, "{name} counterpart x {index}");
-                    assert_eq!(a.y + b.y, span_y, "{name} counterpart y {index}");
-                    assert_eq!(
-                        b.heading,
-                        a.heading.wrapping_add(32768),
-                        "{name} counterpart heading {index}"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn profile_lineup_rotation_covers_every_hull_four_times() {
-        let mut appearances = [0u8; sim::MAX_CLASSES];
-        for rotation in 0..PROFILE_LINEUP_ROTATIONS {
-            let lineup = profile_lineup(rotation);
-            for seat in 0..PROFILE_SIDE_SIZE {
-                let opposite = PROFILE_LINEUP_SEATS - 1 - seat;
-                assert_eq!(lineup[seat], lineup[opposite]);
-                appearances[lineup[seat] as usize] += 1;
-            }
-        }
-        assert_eq!(appearances, [PROFILE_SIDE_SIZE as u8; sim::MAX_CLASSES]);
-    }
-
-    #[test]
-    fn powered_profile_sample_exactly_stratifies_maps_and_lineups() {
-        let mut cells = [[0u32; PROFILE_LINEUP_ROTATIONS]; PROFILE_POWERED_MAPS.len()];
-        for sample in 0..PROFILE_POWERED_PAIRS {
-            let (map, lineup) = profile_stratum(sample, PROFILE_POWERED_MAPS.len());
-            cells[map][lineup] += 1;
-        }
-        assert_eq!(
-            cells,
-            [[81; PROFILE_LINEUP_ROTATIONS]; PROFILE_POWERED_MAPS.len()]
-        );
-    }
-
-    #[test]
-    fn profile_map_fixture_reuses_geometry_without_changing_the_world() {
-        let arena = Arena::Built(sim::build_pit);
-        let prepared = team_world(0, None, &arena).expect("a prepared map");
-        let fixture = ProfileMapFixture::new(std::sync::Arc::clone(&prepared.map));
-        let original = team_world(97, None, &arena).expect("an ordinary world");
-        let cached = fixture.world(97, None);
-        let cached_again = fixture.world(97, None);
-
-        assert_eq!(cached.hash(), original.hash());
-        assert_eq!(cached.packed_map(), original.packed_map());
-        assert_eq!(cached.packed_settings(), original.packed_settings());
-        assert!(std::sync::Arc::ptr_eq(&fixture.map, &cached.map));
-        assert!(std::sync::Arc::ptr_eq(&cached.map, &cached_again.map));
-    }
-
-    #[test]
-    fn profile_fixture_validity_reports_every_map_and_failure() {
-        let observation =
-            |map_index, first_win_score, mirror_win_score, scored_kills| ProfileObservation {
-                scenario_seed: 1,
-                map_index,
-                lineup_index: 0,
-                first_win_score,
-                mirror_win_score,
-                first_kill_difference: 0.0,
-                mirror_kill_difference: 0.0,
-                first_scored_kills: scored_kills,
-                mirror_scored_kills: scored_kills,
-                first_deaths: 8,
-                mirror_deaths: 8,
-            };
-        let observations = [
-            observation(0, 0.5, 0.5, 0),
-            // Team 0 wins both legs. From A's perspective that is one win and
-            // one loss, so the balance outcome alone would hide the side bias.
-            observation(1, 1.0, 0.0, 8),
-            // Opposite side advantages can average away while leaving every
-            // paired profile outcome at 0.5.
-            observation(2, 1.0, 0.0, 8),
-            observation(2, 0.0, 1.0, 8),
-            observation(3, 1.0, 1.0, 8),
-        ];
-        let validity = profile_fixture_validity(
-            &observations,
-            &["dead", "side", "insensitive", "active", "missing"],
-        );
-
-        assert_eq!(validity.len(), 5);
-        assert_eq!(
-            validity[0].failures,
-            [
-                "mean_positive_scored_kills_per_match_below_minimum",
-                "mean_profile_sensitivity_below_minimum"
-            ]
-        );
-        assert_eq!(validity[0].mean_positive_scored_kills_per_match, 0.0);
-        assert_eq!(
-            validity[1].failures,
-            ["mean_profile_sensitivity_below_minimum"]
-        );
-        assert_eq!(
-            validity[1].warnings,
-            ["absolute_observed_side_gap_above_warning"]
-        );
-        assert_eq!(validity[1].absolute_observed_side_gap, 1.0);
-        assert_eq!(
-            validity[2].failures,
-            ["mean_profile_sensitivity_below_minimum"]
-        );
-        assert_eq!(validity[2].absolute_observed_side_gap, 0.0);
-        assert_eq!(validity[2].mean_profile_sensitivity, 0.0);
-        assert!(validity[3].valid);
-        assert!(validity[3].failures.is_empty());
-        assert_eq!(validity[3].mean_positive_scored_kills_per_match, 8.0);
-        assert_eq!(validity[3].mean_profile_sensitivity, 1.0);
-        assert!(!validity[4].valid);
-        assert_eq!(validity[4].failures, ["no_paired_observations"]);
-    }
-
-    #[test]
-    fn profile_preflight_names_a_rejected_full_cost_kit() {
-        let mut profile = profiles::builtins().remove(0);
-        let energy = sim::slot_stat(sim::UP_ENERGY) as usize;
-        let recharge = sim::slot_stat(sim::UP_RECHARGE) as usize;
-        profile.kit[energy] += 4;
-        profile.kit[recharge] -= 4;
-        assert_eq!(sim::World::kit_cost(&profile.kit), sim::KIT_BUDGET);
-
-        let error = validate_profile_kits(&[profile], None).unwrap_err();
-        assert!(error.contains("Gunner"));
-        assert!(error.contains("rejected by hull"));
-    }
-
-    #[test]
-    fn profile_preflight_rejects_ambiguous_contrast_names() {
-        let mut contrasts = profiles::calibration_contrasts();
-        let duplicate = contrasts[0].name;
-        contrasts[1].name = duplicate;
-        let error = validate_profile_contrasts(&contrasts, None).unwrap_err();
-        assert!(error.contains("blank or duplicate contrast name"));
-
-        let mut contrasts = profiles::calibration_contrasts();
-        let duplicate = contrasts[0].a.name;
-        contrasts[0].b.name = duplicate;
-        let error = validate_profile_contrasts(&contrasts, None).unwrap_err();
-        assert!(error.contains("does not name both sides unambiguously"));
     }
 
     #[test]
@@ -7766,94 +4870,6 @@ mod tests {
         ];
 
         assert_eq!(live_team_score(&world, &[first, second], &seats), [-1, 2]);
-    }
-
-    #[test]
-    fn profile_results_use_the_live_melee_score_floor() {
-        assert_eq!(profile_score([-1, -2], false), (0.5, 0.0, 0));
-        assert_eq!(profile_score([-1, 2], false), (0.0, -2.0, 2));
-        assert_eq!(profile_score([-1, 2], true), (1.0, 2.0, 2));
-        assert_eq!(profile_score([70_000, 80_000], false), (0.5, 0.0, 131_070));
-    }
-
-    #[test]
-    fn profile_dressing_opens_on_the_authored_full_match_state() {
-        let kit = profiles::builtins()[0].kit;
-        let mut world = sim::World::with_map(23, sim::build_pit);
-        let first = world.spawn_on_map(0, 0, 0, 0) as u8;
-        let second = world.spawn_on_map(1, 1, 0, 32768) as u8;
-        assert_ne!(first, u8::MAX);
-        assert_ne!(second, u8::MAX);
-        let ships = [first, second];
-        for &ship in &ships {
-            let row = &mut world.state.ships[ship as usize];
-            row.x += 12_345;
-            row.y -= 5_432;
-            row.vx = 777;
-            row.vy = -333;
-            row.energy = 1;
-        }
-        let mut seats = [
-            Seat {
-                team: 0,
-                ..Default::default()
-            },
-            Seat {
-                team: 1,
-                ..Default::default()
-            },
-        ];
-        let mut prng = [1, 2];
-
-        assert!(dress_team(
-            &mut world,
-            &ships,
-            &mut seats,
-            sim::KIT_BUDGET,
-            Some(&[kit, kit]),
-            &mut prng,
-        ));
-
-        for (index, &ship) in ships.iter().enumerate() {
-            let row = &world.state.ships[ship as usize];
-            assert_eq!(row.kit, kit);
-            assert_eq!(row.energy, world.eff_max_energy(ship as usize));
-            assert_eq!((row.vx, row.vy), (0, 0));
-            assert_eq!((row.x, row.y), (row.spawn_x, row.spawn_y));
-            let other = world.state.ships[ships[1 - index] as usize];
-            assert_eq!(
-                row.heading,
-                crate::room::heading_toward((row.x, row.y), (other.x, other.y))
-            );
-            assert_eq!(row.alive, 1);
-            for charge in 0..sim::MAX_CHARGES {
-                assert_eq!(row.charge[charge], kit[sim::slot_charge(charge) as usize]);
-            }
-        }
-    }
-
-    #[test]
-    fn explicit_profiles_are_dealt_once_per_match() {
-        let kit = profiles::builtins()[0].kit;
-        let (seats, _) = team_match_with_options(
-            &[0, 1, 0, 1],
-            0.5,
-            sim::KIT_BUDGET,
-            19,
-            None,
-            TeamMap::Arena(&Arena::Built(sim::build_pit)),
-            TeamMatchOptions {
-                kits: Some(&[kit, kit]),
-                tick_limit: 12_000,
-                kill_target_per_player: Some(KILL_TARGET),
-            },
-        );
-
-        assert!(seats.iter().map(|seat| seat.deaths).sum::<u32>() > 0);
-        for seat in seats {
-            assert_eq!(seat.budget, sim::KIT_BUDGET);
-            assert_eq!(seat.converted, sim::KIT_BUDGET);
-        }
     }
 
     /// What the ladder does do, and a real regression guard: it runs, it
@@ -7907,23 +4923,22 @@ mod tests {
 
     /* ---- the loadout tournament ---- */
 
-    fn row_of(wins: u32, losses: u32) -> StageRow {
-        StageRow {
-            name: "probe",
-            worn: 0,
-            asked: None,
+    /// A row with a win-loss record and nothing else, for the interval tests.
+    fn row_of(wins: u32, losses: u32) -> HullRow {
+        HullRow {
+            name: "test",
+            class: 0,
             wins,
             losses,
             draws: 0,
             kills: 0,
-            shots: [0; sim::TRIG_COUNT],
             hits: 0,
             damage: 0,
             self_hits: 0,
             self_damage: 0,
-            regrants: 0,
+            shots: [0; sim::TRIG_COUNT],
             vs: Vec::new(),
-            mirror: 0.5,
+            mirror: 0.0,
             stalemates: 0,
         }
     }
@@ -7968,90 +4983,6 @@ mod tests {
         assert_eq!(row_of(0, 0).margin(), 0.0);
     }
 
-    /// Bounty is matched a life at a time, which is not the same as matched
-    /// over a bout, and the difference is worth pinning rather than assuming.
-    ///
-    /// Both pilots are handed `budget` at every spawn, so at any moment in the
-    /// fight they have drawn the same number since they last died. Totals come
-    /// apart, because the side that dies more respawns more and is handed the
-    /// opening kit again each time. That is the game's own arrangement and not
-    /// an advantage: those extra points are bought with deaths, and a hull
-    /// that is dying is not winning.
-    ///
-    /// What this guards is the silent version of the failure. A point spent
-    /// against a ceiling grants nothing, so a harness that counted grants
-    /// rather than offers would hand the deeper tech tree more for free and
-    /// report the result as balance.
-    #[test]
-    fn bounty_is_matched_a_life_at_a_time() {
-        // The knife against the fortress: the widest gap in tree shape the
-        // roster has, so the widest gap between offered and converted.
-        let cipher = ai::class_index("Cipher").unwrap() as u8;
-        let anvil = ai::class_index("Anvil").unwrap() as u8;
-        const BUDGET: u32 = 8;
-        for salt in 0..4 {
-            let (_, offered) = hull_bout(
-                [cipher, anvil],
-                0.5,
-                BUDGET,
-                salt,
-                None,
-                &Arena::Built(sim::build_pit),
-            );
-            for (k, got) in offered.iter().enumerate() {
-                assert!(
-                    *got >= BUDGET,
-                    "salt {salt}: side {k} never got its opening"
-                );
-                assert_eq!(
-                    got % BUDGET,
-                    0,
-                    "salt {salt}: the kit is dealt a life at a time"
-                );
-            }
-        }
-
-        // Deliberately not cross-checked against the other side's kills. A
-        // death is not always somebody's kill: a blast has no owner test, so a
-        // pilot can end their own life with their own bomb, respawn, and be
-        // refitted for a death that appears in nobody's column. Trying to
-        // predict the refit count from kills is how that got found.
-
-        // The claim underneath all of this, on its own: the same budget buys
-        // the same amount of ship whatever hull it is spent on.
-        //
-        // It used to be the opposite. A budget bought different hulls
-        // different amounts, because each carried its own ceilings and a hull
-        // with a short ladder and few add-ons ran out of places to spend
-        // before the budget ran out. That difference was defended here as a
-        // real part of what the roster was; it was also what made a bought
-        // upgrade dead on the wrong hull, and it is gone.
-        //
-        // Handed more than any kit can hold, both stop in exactly the same
-        // place, and every unspent point still counts against the budget it
-        // was offered.
-        let mut world = sim::World::with_map(1, sim::build_pit);
-        let ceiling: u32 = world.kit_ceilings().iter().map(|&n| n as u32).sum();
-        let offered = ceiling + 20;
-        let mut converted = Vec::new();
-        for &(class, name) in &[(cipher, "Cipher"), (anvil, "Anvil")] {
-            let ship = world.spawn(class, 0, 505, 522, 0) as usize;
-            let mut rng = 0x1234_5678u32;
-            let spent = deal_kit(&mut world, ship, offered, &mut rng);
-            assert!(spent <= offered, "{name} converted more than it was handed");
-            assert!(
-                spent < offered,
-                "{name} never saturated, so this is not reaching a ceiling at all"
-            );
-            converted.push(spent);
-        }
-        assert_eq!(
-            converted[0], converted[1],
-            "two hulls saturated in different places, so something still tells \
-them apart"
-        );
-    }
-
     /// A zone's spawn scatter stays out of every harness here.
     ///
     /// `spawn_radius` drops a respawning ship on a random tile that far from
@@ -8075,10 +5006,9 @@ them apart"
         // cannot kill each other.
         let mut kills = 0;
         for salt in 0..6 {
-            let (b, _) = hull_bout(
+            let b = hull_bout(
                 [cipher, cipher],
                 0.5,
-                10,
                 salt,
                 Some(&scattered),
                 &Arena::Built(sim::build_pit),
@@ -8109,53 +5039,6 @@ the room"
         assert_eq!(world.cfg.spawn_radius, 60);
     }
 
-    /// A bout deals its kits against the zone's ceiling, not the baseline's.
-    ///
-    /// The ordering hazard this guards used to be about energy: hulls carried
-    /// their own flight, `sim_spawn` read the opening bar out of the class
-    /// table, and seating a ship before the zone was applied gave it the
-    /// baseline's bar. Hulls carry no flight now, so that particular bug
-    /// cannot happen, but the shape of it moved rather than going away. The
-    /// kit ceiling is the zone's, `deal_kit` reads it every time it places a
-    /// point, and a harness that dealt before applying would measure a roster
-    /// nobody plays.
-    ///
-    /// It is worth an assertion for the reason the old one was: nothing in
-    /// any column this harness prints would look wrong.
-    #[test]
-    fn a_zones_kit_ceiling_reaches_the_kits_it_deals() {
-        let cipher = ai::class_index("Cipher").unwrap() as u8;
-        let bare: config::ArenaConfig = toml::from_str("[kit]\ngun_mods = { bounce = 1 }\n")
-            .expect("a zone with one gun add-on");
-
-        let arena = Arena::Built(sim::build_pit);
-        let multi = sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize;
-
-        let plain = arena.build(0).expect("a room");
-        assert!(
-            plain.kit_ceilings()[multi] > 0,
-            "the baseline has multifire to take away"
-        );
-
-        let mut room = arena.build(0).expect("a room");
-        crate::Room::apply_config(&mut room, &bare);
-        let seats = arena.seat(&mut room, 0, [cipher, cipher]).expect("seats");
-        assert_eq!(
-            room.kit_ceilings()[multi],
-            0,
-            "the zone took multifire away and the room did not notice"
-        );
-
-        // And a kit dealt in that room cannot hold what the room does not
-        // have, however much budget it is handed.
-        let mut rng = 0x5eed_u32;
-        deal_kit(&mut room, seats[0] as usize, sim::KIT_BUDGET, &mut rng);
-        assert_eq!(
-            room.state.ships[seats[0] as usize].kit[multi], 0,
-            "a whole budget still found no multifire to buy"
-        );
-    }
-
     /// A hull against itself comes out even, or the pit is doing the deciding.
     ///
     /// The two seats are different places with different headings, so a bout is
@@ -8172,7 +5055,7 @@ the room"
             let c = ai::class_index(name).unwrap() as u8;
             let (mut first, mut n) = (0.0f64, 0.0f64);
             for salt in 0..24 {
-                let (b, _) = hull_bout([c, c], 0.5, 4, salt, None, &Arena::Built(sim::build_pit));
+                let b = hull_bout([c, c], 0.5, salt, None, &Arena::Built(sim::build_pit));
                 first += match b.sides[0].kills.cmp(&b.sides[1].kills) {
                     std::cmp::Ordering::Greater => 1.0,
                     std::cmp::Ordering::Less => 0.0,
@@ -8189,209 +5072,11 @@ which is the pit talking",
             );
         }
     }
-
-    /// A stage has to be one thing under one name, or the matrix has two
-    /// columns for the same kit and no way to say so.
-    #[test]
-    fn stages_are_named_once_each() {
-        for (i, a) in STAGES.iter().enumerate() {
-            for b in STAGES.iter().skip(i + 1) {
-                assert_ne!(a.name, b.name, "two stages called {:?}", a.name);
-            }
-        }
-        assert!(
-            STAGES.iter().filter(|s| s.kit.is_empty()).count() >= 2,
-            "the control is a second empty kit, and it is what the noise floor \
-             is measured from"
-        );
-    }
-
-    /// The kit goes on, and the ceiling is where it stops.
-    #[test]
-    fn a_kit_is_worn_up_to_the_hull_s_ceiling() {
-        let mut world = sim::World::with_map(1, sim::build_pit);
-        // Spawned bare, so what this measures is the stage's kit and nothing
-        // the baseline put on the hull ahead of it.
-        let ship = world.spawn(0, 0, 505, 522, 0) as usize;
-
-        const ONE: &[(u8, u8)] = &[(sim::slot_level(sim::TRIG_GUN), 1)];
-        const NINE: &[(u8, u8)] = &[(sim::slot_level(sim::TRIG_GUN), 9)];
-
-        let one = Stage {
-            name: "t",
-            kit: ONE,
-        };
-        assert_eq!(wear(&mut world, ship, &one), 1);
-        assert_eq!(world.state.ships[ship].level[sim::TRIG_GUN], 1);
-
-        // Asking for more rungs than the ladder has is answered honestly: an
-        // Apex climbs to rung 2 and the rest of the ask does not land.
-        let greedy = Stage {
-            name: "t",
-            kit: NINE,
-        };
-        let worn = wear(&mut world, ship, &greedy);
-        assert!(
-            worn < 9,
-            "a nine-rung gun ladder does not exist; wore {worn}"
-        );
-        assert_eq!(world.state.ships[ship].level[sim::TRIG_GUN], 2);
-
-        // And dressing a pilot does not make them worth more to kill, which
-        // is the one way a kit could quietly change what this measures.
-        // Bounty is the run now, so it cannot: a pilot who has not killed
-        // anybody is worth the base whatever they are wearing.
-        assert_eq!(world.state.ships[ship].run, 0);
-    }
-
-    /// Death clears the tech tree, so a bout that does not re-outfit measures
-    /// one loaded life and four bare ones. This is that claim, and it is the
-    /// one the harness cannot survive being wrong about.
-    #[test]
-    fn the_kit_goes_back_on_after_a_death() {
-        // Two kits an Apex can actually wear, and close enough that both sides
-        // will die: a stage that wins five to nothing never respawns, and the
-        // property under test would go unexercised.
-        let (a, b) = (&STAGES[2], &STAGES[1]);
-        assert_eq!((a.name, b.name), ("gun 2", "gun 1"), "the stage list moved");
-        let bout = stage_bout([a, b], 0, 0.5, 3, None);
-
-        assert!(
-            bout.sides[0].regrants + bout.sides[1].regrants > 0,
-            "nobody was re-outfitted in a bout with {} deaths in it",
-            bout.sides[0].kills + bout.sides[1].kills
-        );
-        for k in 0..2 {
-            let (died, worn, again) = (
-                bout.sides[1 - k].kills,
-                bout.sides[k].worn,
-                bout.sides[k].regrants,
-            );
-            assert!(worn > 0, "an Apex wears both of these");
-            // Every life after the first is one whole kit. The last death does
-            // not get one, because the bout ends on it and the pilot never
-            // comes back, so the count sits in that one-kit band.
-            assert!(
-                again >= died.saturating_sub(1) * worn && again <= died * worn,
-                "side {k} died {died} times wearing {worn} and was re-issued {again}"
-            );
-        }
-    }
-
-    /// A zone's tuning has to actually reach the bout, or the report names a
-    /// zone over numbers that came from the compiled baseline. Nothing else
-    /// would show it: the tournament runs, prints and looks entirely normal.
-    #[test]
-    fn a_zone_s_tuning_reaches_the_pit() {
-        // Two settings a zone plausibly moves, chosen because the baseline's
-        // values are known here and neither is what this asks for.
-        let mut c = config::ArenaConfig {
-            mod_spread: Some(5), // degrees, against the baseline's fifteen
-            respawn_delay: Some(123),
-            ..Default::default()
-        };
-
-        let mut world = sim::World::with_map(1, sim::build_pit);
-        assert_ne!(
-            world.cfg.respawn_delay, 123,
-            "pick a value the baseline lacks"
-        );
-        let spread_before = world.cfg.mod_spread;
-
-        crate::Room::apply_config(&mut world, &c);
-        assert_eq!(world.cfg.respawn_delay, 123);
-        assert_ne!(
-            world.cfg.mod_spread, spread_before,
-            "a five-degree fan is not a fifteen-degree one"
-        );
-
-        // And the harness still overrides the one it must, whatever the zone
-        // asks for. A spawn scatter is the setting that would quietly erase
-        // what is being measured: 250 px of it on a pit thirty-two tiles wide
-        // throws both pilots off the map at the first death.
-        c.spawn_radius = Some(250);
-        let b = stage_bout([&STAGES[1], &STAGES[0]], 0, 0.5, 1, Some(&c));
-        assert!(b.ticks > 0, "the bout ran");
-        assert_eq!(
-            b.sides[1].worn, 0,
-            "the bare side stayed bare: a stage's kit is the whole of what it flies"
-        );
-        assert!(
-            b.sides[0].kills + b.sides[1].kills > 0,
-            "the pilots still found each other, so the scatter was overridden"
-        );
-    }
-
-    /// Aggregation records each bout once on each side and makes the matrix
-    /// complementary without running a tournament to prove its own arithmetic.
-    #[test]
-    fn the_matrix_is_the_same_read_either_way() {
-        let bout = |first, second, decided| Bout {
-            sides: [
-                Side {
-                    kills: first,
-                    worn: 2,
-                    ..Default::default()
-                },
-                Side {
-                    kills: second,
-                    worn: 3,
-                    ..Default::default()
-                },
-            ],
-            ticks: 17,
-            decided,
-        };
-        let mut rows = stage_rows();
-        let mut pair = PairTally::default();
-        pair.record(&mut rows, 0, 1, bout(3, 1, true));
-        pair.record(&mut rows, 0, 1, bout(2, 2, false));
-        pair.finish(&mut rows, 0, 1);
-
-        assert_eq!((rows[0].wins, rows[0].losses, rows[0].draws), (1, 0, 1));
-        assert_eq!((rows[1].wins, rows[1].losses, rows[1].draws), (0, 1, 1));
-        assert_eq!((rows[0].kills, rows[1].kills), (5, 3));
-        assert_eq!((rows[0].worn, rows[1].worn), (2, 3));
-        assert_eq!(rows[0].bouts(), 2);
-        assert_eq!(rows[1].bouts(), 2);
-        assert_eq!(rows[0].vs[1], Some(0.75));
-        assert_eq!(rows[1].vs[0], Some(0.25));
-
-        let mut mirror = PairTally::default();
-        mirror.record(&mut rows, 2, 2, bout(4, 1, true));
-        mirror.record(&mut rows, 2, 2, bout(1, 4, false));
-        mirror.finish(&mut rows, 2, 2);
-        assert_eq!(rows[2].mirror, 0.5);
-        assert_eq!(rows[2].stalemates, 1);
-        assert_eq!(rows[2].vs[2], None);
-    }
-
-    #[test]
-    fn one_stage_bout_runs_the_simulation() {
-        let bout = stage_bout_for([&STAGES[0], &STAGES[12]], 0, 0.5, 7, None, 1);
-        assert_eq!(bout.ticks, 1);
-        assert_eq!((bout.sides[0].worn, bout.sides[1].worn), (0, 0));
-    }
 }
 
 mod skill_tests {
     use super::*;
 
-    /// Does the skill dial separate pilots at all?
-    ///
-    ///     cargo run --release --manifest-path server/Cargo.toml -- \
-    ///       calibrate diagnostics skill-ladder
-    ///
-    /// This fights a few hundred five-kill matches and takes minutes. The
-    /// answer matters: `docs/design/ai-players.md` promises "a single skill dial from 0
-    /// to 1" driving reaction, aim, discipline, awareness, greed and map use,
-    /// and the whole population director rests on a 0.35 pilot being an easier
-    /// evening than a 0.85 one.
-    ///
-    /// The committed ladder cannot answer it, because all eight calibrated
-    /// pilots fly different hulls, so `zone/ladder.json` measures hull and
-    /// skill together and cannot say which moved. This holds the hull still
-    /// and varies only the dial, which is the one arrangement that can.
     pub(super) fn skill_alone_should_make_a_ladder() {
         // One hull for everybody. Class 1 is the anchor's own, so this is a
         // shape the roster already flies.
@@ -8444,27 +5129,6 @@ mod skill_tests {
 mod real_map_tests {
     use super::*;
 
-    /// The same question the pit asks, asked on the map people play.
-    ///
-    ///     cargo run --release --manifest-path server/Cargo.toml -- \
-    ///       calibrate diagnostics real-map
-    ///
-    /// Three things the pit run could not do, and the reasons it could not
-    /// are exactly the objections to believing it:
-    ///
-    /// Alpha rather than a thirty-two tile box, so map use, awareness and
-    /// route choice have somewhere to happen. Spawns twenty-four tiles apart
-    /// and a scatter of zero, so the pilots have each other from the first
-    /// tick and the tournament measures fighting instead of walking. And
-    /// enough bouts for the answer to be worth reading: three hundred a pair,
-    /// which puts the ninety-five per cent interval on a win rate at about
-    /// six points, so a real advantage cannot hide inside the noise and a
-    /// coin cannot look like one.
-    ///
-    /// Run twice over, with no kit and with one. The first is the pit's own
-    /// control, holding the loadout still the way the hull is held. The second is the game as it ships, because greed and build
-    /// planning are two of the six traits the dial is supposed to drive and
-    /// a pilot with no kit cannot show either.
     pub(super) fn skill_on_a_real_map() {
         // Every hull, because the first two disagreed about nearly everything
         // and there is no reason the other five agree with either. Class 1 is
@@ -8583,8 +5247,7 @@ mod real_map_tests {
                     };
                     let mut s = salt;
                     for _ in 0..per_pair {
-                        let (ka, kb) =
-                            duel(&bytes, &route, at, &mut null, &mid, &same, s, budget, None);
+                        let (ka, kb) = duel(&bytes, &route, at, &mut null, &mid, &same, s, None);
                         s = s.wrapping_add(1);
                         match ka.cmp(&kb) {
                             std::cmp::Ordering::Greater => nw += 1,
@@ -8604,8 +5267,7 @@ mod real_map_tests {
                         let (a, b) = (&roster[i], &roster[j]);
                         let (mut wa, mut wb, mut drew) = (0u32, 0u32, 0u32);
                         for _ in 0..per_pair {
-                            let (ka, kb) =
-                                duel(&bytes, &route, at, &mut r, a, b, salt, budget, None);
+                            let (ka, kb) = duel(&bytes, &route, at, &mut r, a, b, salt, None);
                             salt = salt.wrapping_add(1);
                             match ka.cmp(&kb) {
                                 std::cmp::Ordering::Greater => wa += 1,
@@ -8766,10 +5428,6 @@ mod real_map_tests {
         }
     }
 
-    /// What one bout costs on the real map, so a run can be sized.
-    ///
-    ///     cargo run --release --manifest-path server/Cargo.toml -- \
-    ///       calibrate diagnostics time-bout
     pub(super) fn time_one_real_map_bout() {
         let bytes = real_map();
         let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
@@ -8790,7 +5448,7 @@ mod real_map_tests {
         let t = std::time::Instant::now();
         let mut kills = (0u32, 0u32);
         for salt in 0..10u32 {
-            let (a, b) = duel(&bytes, &route, at, &mut r, &weak, &strong, salt, 0, None);
+            let (a, b) = duel(&bytes, &route, at, &mut r, &weak, &strong, salt, None);
             kills.0 += a as u32;
             kills.1 += b as u32;
         }
@@ -8807,15 +5465,6 @@ mod ablation {
 
     use super::*;
 
-    /// Which of the dial's six parameters is doing the work?
-    ///
-    ///     cargo run --release --manifest-path server/Cargo.toml -- \
-    ///       calibrate diagnostics ablation
-    ///
-    /// Two pilots at 0.90 in every respect but one, where one of them is held
-    /// at 0.30. A knob that matters shows up as a win rate away from half; a
-    /// knob that does nothing shows up as a coin. The tournament could not ask
-    /// this, because moving the dial moves all six at once.
     pub(super) fn which_knob_carries_the_dial() {
         const PER_KNOB: u32 = 200;
         // Both hulls, for the reason the ladder tournament grew a second one:
@@ -8836,11 +5485,8 @@ mod ablation {
                 skill: 0.90,
             };
 
-            for budget in env_list("VW_KIT", &[0, 30, 60]).iter().copied() {
-                println!(
-                    "\n=== {hull_name}: one knob at 0.30, the rest at 0.90, \
-                     a {budget}-point kit a life ==="
-                );
+            {
+                println!("\n=== {hull_name}: one knob at 0.30, the rest at 0.90 ===");
                 println!("  knob          handicapped wins   rate      95% ci");
                 for knob in [
                     // Nothing handicapped at all, which this had no business
@@ -8864,7 +5510,6 @@ mod ablation {
                             &strong,
                             &same,
                             salt,
-                            budget,
                             knob.map(|k| (k, 0.30)),
                         );
                         salt = salt.wrapping_add(1);
@@ -8893,21 +5538,6 @@ mod stability {
 
     use super::*;
 
-    /// Is the built field's ladder a small effect, or an unsteady number?
-    ///
-    ///     cargo run --release --manifest-path server/Cargo.toml -- \
-    ///       calibrate diagnostics stability
-    ///
-    /// It has read -52, +4, +19, +28, +32, +39, +58 and +60 across
-    /// configurations, several of which could not touch it, while the bare
-    /// field's stayed inside a band of forty. Two readings are worth telling
-    /// apart, and they want opposite responses: a real gap estimated noisily,
-    /// which more bouts would settle, or an unsteady statistic, which more
-    /// bouts would not.
-    ///
-    /// So: the same pilots, the same map, five separate tournaments on
-    /// disjoint salts. If the gap is a measurement its five values sit near
-    /// each other whatever their mean; if it is weather, they do not.
     pub(super) fn is_the_built_ladder_a_measurement() {
         const PER_PAIR: u32 = 120;
         const RUNS: u32 = 5;
@@ -8921,7 +5551,7 @@ mod stability {
             })
             .collect();
 
-        for budget in env_list("VW_KIT", &[0, 30]).iter().copied() {
+        {
             let mut gaps: Vec<f64> = Vec::new();
             for run in 0..RUNS {
                 let mut r = rating::Rating::new();
@@ -8930,8 +5560,7 @@ mod stability {
                     for j in (i + 1)..roster.len() {
                         for _ in 0..PER_PAIR {
                             duel(
-                                &bytes, &route, at, &mut r, &roster[i], &roster[j], salt, budget,
-                                None,
+                                &bytes, &route, at, &mut r, &roster[i], &roster[j], salt, None,
                             );
                             salt = salt.wrapping_add(1);
                         }
@@ -8945,7 +5574,7 @@ mod stability {
             let sd =
                 (gaps.iter().map(|g| (g - mean).powi(2)).sum::<f64>() / gaps.len() as f64).sqrt();
             println!(
-                "\n  {budget} points: gaps {:?}",
+                "\n  gaps {:?}",
                 gaps.iter().map(|g| g.round() as i64).collect::<Vec<_>>()
             );
             println!("  mean {mean:+.0}, spread {sd:.0}");
@@ -8957,17 +5586,6 @@ mod draws {
 
     use super::*;
 
-    /// What a drawn bout in a built field actually looks like.
-    ///
-    ///     cargo run --release --manifest-path server/Cargo.toml -- \
-    ///       calibrate diagnostics draws
-    ///
-    /// Half the bouts with a kit on end level, and a level bout carries no
-    /// information, so the built economy is measured on half the sample the
-    /// bare one gets. Whether that is worth fixing depends entirely on what
-    /// the draws are: nought-all means two pilots that never found each other,
-    /// which is the fixture's problem, and three-all means they found each
-    /// other and ran out of clock, which is the match length's.
     pub(super) fn what_a_draw_is_made_of() {
         let (bytes, route, at) = real_map_fixture();
         let a = ai::RosterEntry {
@@ -8984,7 +5602,7 @@ mod draws {
         let mut tally: std::collections::BTreeMap<i16, u32> = Default::default();
         let mut decided = 0u32;
         for salt in 0..60u32 {
-            let (ka, kb) = duel(&bytes, &route, at, &mut r, &a, &b, salt, 30, None);
+            let (ka, kb) = duel(&bytes, &route, at, &mut r, &a, &b, salt, None);
             if ka == kb {
                 *tally.entry(ka).or_default() += 1;
             } else {
@@ -9002,24 +5620,6 @@ mod fixture {
 
     use super::*;
 
-    /// Where the twelve points the null row keeps reading actually come from.
-    ///
-    ///     cargo run --release --manifest-path server/Cargo.toml -- \
-    ///       calibrate diagnostics fixture
-    ///
-    /// Two pilots identical in class, skill, tuning and everything else, and
-    /// one of them takes 62% of the decided bouts in a bare field. It has been
-    /// written down as unexplained since the ablation grew a null row, and
-    /// living with it was a mistake: it is larger than most of the effects
-    /// being measured against it, and it is the reason a pair reading 63.7%
-    /// cannot be told from a pair of equals.
-    ///
-    /// `duel` alternates four things on the salt, and the argument for the
-    /// bias being harmless was that all four cancel. So split the same bouts
-    /// by what the salt decided and see which slice is lopsided. A bias that
-    /// really is positional shows up as two halves at 62 and 38 that a caller
-    /// is folding wrongly; a bias in every slice is not positional at all and
-    /// the four alternations are beside the point.
     pub(super) fn what_the_coin_is_weighted_by() {
         const BOUTS: u32 = 400;
         let (bytes, route, at) = real_map_fixture();
@@ -9033,14 +5633,14 @@ mod fixture {
             class: 1,
             skill: 0.60,
         };
-        for budget in env_list("VW_KIT", &[0, 30]).iter().copied() {
+        {
             // Indexed by salt % 4, which is what picks the start tile and the
             // facing between them.
             let mut won = [0u32; 4];
             let mut lost = [0u32; 4];
             let mut r = rating::Rating::new();
             for salt in 0..BOUTS {
-                let (ka, kb) = duel(&bytes, &route, at, &mut r, &a, &b, salt, budget, None);
+                let (ka, kb) = duel(&bytes, &route, at, &mut r, &a, &b, salt, None);
                 let s = (salt % 4) as usize;
                 match ka.cmp(&kb) {
                     std::cmp::Ordering::Greater => won[s] += 1,
@@ -9048,7 +5648,7 @@ mod fixture {
                     std::cmp::Ordering::Equal => {}
                 }
             }
-            println!("\n=== two pilots at 0.60, nothing between them, a {budget}-point kit ===");
+            println!("\n=== two pilots at 0.60, nothing between them ===");
             println!("   salt%4   a starts   a faces     a won   a lost    rate");
             for s in 0..4 {
                 let decided = (won[s] + lost[s]).max(1) as f64;
@@ -9085,62 +5685,37 @@ mod kit {
 
     use super::*;
 
-    /// Does a pilot in this harness actually carry what it was handed?
-    ///
-    ///     cargo run --release --manifest-path server/Cargo.toml -- \
-    ///       calibrate diagnostics kit
-    ///
-    /// A budget that silently grants nothing would make every economy in the
-    /// sweep the bare one and the tables would still look plausible, so this
-    /// counts what is on the hull rather than what was asked for. The
-    /// interesting numbers are that the count rises with the offer, that both
-    /// sides get the same, and that the ceiling is reached at sixty.
     pub(super) fn the_kit_is_matched_and_real() {
         let (bytes, route, at) = real_map_fixture();
         let _ = route;
-        for budget in [0u32, 30, 60] {
+        let mut seen = std::collections::HashSet::new();
+        for class in 0..sim::MAX_CLASSES as u8 {
             let mut world = sim::World::from_packed(0xd0e1, &bytes).expect("a map");
             world.cfg.spawn_radius = 0;
-            let s1 = world.spawn(0, 0, at.0 .0, at.0 .1, 0) as u8;
-            let s2 = world.spawn(0, 1, at.1 .0, at.1 .1, 32768) as u8;
-            let seed = 0x9E37_79B9u32 | 1;
-            let mut prng = [seed, seed];
-            for (k, s) in [s1, s2].iter().enumerate() {
-                deal_kit(&mut world, *s as usize, budget, &mut prng[k]);
-            }
-            let held = |s: u8| {
-                let sh = &world.state.ships[s as usize];
-                let ups: u32 = sh.up.iter().map(|u| *u as u32).sum();
-                let lvl: u32 = sh.level.iter().map(|l| *l as u32).sum();
-                // Two bits a rung, six add-ons a trigger, which is the same
-                // packing `sim_mod_get` reads.
-                let mods: u32 = (0..sim::TRIG_COUNT)
-                    .flat_map(|t| (0..sim::MOD_COUNT).map(move |m| (t, m)))
-                    .map(|(t, m)| ((sh.mods[t] >> (m * 2)) & 3) as u32)
-                    .sum();
-                let ch: u32 = sh.charge.iter().map(|c| *c as u32).sum();
-                (ups, lvl, mods, ch)
-            };
-            let (u1, l1, m1, c1) = held(s1);
-            let (u2, l2, m2, c2) = held(s2);
+            let s = world.spawn(class, 0, at.0 .0, at.0 .1, 0) as u8;
+            let sh = &world.state.ships[s as usize];
+            let lvl: u32 = sh.level.iter().map(|l| *l as u32).sum();
+            // Two bits a rung, six add-ons a trigger, which is the same
+            // packing `sim_mod_get` reads.
+            let mods: u32 = (0..sim::TRIG_COUNT)
+                .flat_map(|t| (0..sim::MOD_COUNT).map(move |m| (t, m)))
+                .map(|(t, m)| ((sh.mods[t] >> (m * 2)) & 3) as u32)
+                .sum();
+            let ch: u32 = sh.charge.iter().map(|c| *c as u32).sum();
+            let spray = (sh.mods[sim::TRIG_GUN] & 7) as u32;
             println!(
-                "  {budget:>2} points: a has {u1} stat steps, gun+bomb {l1}, {m1} add-ons, \
-                 {c1} charges; b has {u2}/{l2}/{m2}/{c2}"
+                "  {:<9} gun+bomb {lvl}, {mods} add-ons, spray {spray}, {ch} charges",
+                crate::pilots::CLASS_NAMES[class as usize]
             );
-            if budget == 0 {
-                assert_eq!(
-                    (u1, l1, m1, c1),
-                    (0, 0, 0, 0),
-                    "a bare pilot should carry nothing"
-                );
-            } else {
-                assert!(u1 + l1 + m1 + c1 > 0, "{budget} points bought nothing");
-            }
-            assert_eq!(
-                (u1, l1, m1, c1),
-                (u2, l2, m2, c2),
-                "at {budget} points the two pilots drew different kit"
+            assert!(
+                world.eff_max_energy(s as usize) > 0,
+                "every hull arrives with a bar"
             );
+            seen.insert((lvl, mods, spray, ch, world.eff_max_energy(s as usize)));
         }
+        assert!(
+            seen.len() > 1,
+            "a roster where every hull reads the same is a roster of one ship"
+        );
     }
 }

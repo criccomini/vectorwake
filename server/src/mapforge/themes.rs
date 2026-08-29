@@ -92,9 +92,9 @@ impl Theme {
 
     fn contact_window(self) -> (f64, f64) {
         match self {
-            Self::Maze => (9.0, 26.0),
-            Self::TwinFortresses | Self::Rings => (9.0, 22.0),
-            _ => (9.0, 17.6),
+            Self::Maze => (6.0, 17.2),
+            Self::TwinFortresses | Self::Rings => (6.0, 14.5),
+            _ => (6.0, 11.6),
         }
     }
 

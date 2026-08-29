@@ -116,17 +116,8 @@ pub(crate) const C2S_INVITE: u8 = 8;
 /// to the channel; then same-side follow and the staff grant went too, and a
 /// byte whose every value meant the channel is a byte saying nothing.
 pub(crate) const C2S_WATCH: u8 = 9;
-/// `[C2S_KIT, kit[0..SLOT_COUNT]]`: what this pilot wants to fly, over the
-/// core's flat kit space, one byte a slot.
-///
-/// Refused whole rather than clamped. A kit over the budget, over the hull's
-/// row, or over what the account owns leaves the pilot in what they were
-/// already flying, because a truncated kit is a ship nobody chose.
-///
-/// Applied at once at a join and between matches, and held until the next
-/// whistle during one: the hull is locked for a match and the kit with it.
-/// The answer either way is the next snapshot, which carries what was dealt.
-pub(crate) const C2S_KIT: u8 = 10;
+/// 10 was `C2S_KIT`, the kit a pilot chose. Ships are preconstructed, so
+/// what a pilot picks is a hull and `C2S_JOIN` already carries it.
 /// `[C2S_SAY, phrase]`: say one of the fixed things. One byte, and it names a
 /// line rather than carrying one, which is the whole design:
 /// [decision 28](../../docs/architecture/decisions.md) says no chat, and this
@@ -215,7 +206,13 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// its house opponents against. A client built for 29 would go looking for a
 /// card behind a flag bit nothing sets, and would write a join header one byte
 /// long for this door.
-pub(crate) const CLIENT_PROTOCOL: u8 = 30;
+///
+/// 31 makes a ship preconstructed. `C2S_KIT` is gone, and so are the two
+/// numbers a kill used to pay: `S2C_ROSTER` drops points and bounty, and
+/// `S2C_KILL` drops what the kill was worth. A client built for 30 would read
+/// four bytes of somebody else's row out of every roster and print a payout
+/// off the end of a kill.
+pub(crate) const CLIENT_PROTOCOL: u8 = 31;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
@@ -233,7 +230,10 @@ pub(crate) const SNAPSHOT_FLYING: u8 = 0;
 pub(crate) const SNAPSHOT_WATCHING: u8 = 1;
 pub(crate) const S2C_ROSTER: u8 = 3;
 /// `[S2C_KILL, victim, killer, victim rating, killer rating, contributors,
-/// paid, tick, you helped]`, the ratings and the payout little-endian.
+/// tick, you helped]`, the ratings little-endian.
+///
+/// Nothing about a payout, because a kill pays nothing: bounty priced one and
+/// points banked it, and both went with the shop.
 ///
 /// Broadcast, with one exception: the last byte is built per recipient and is
 /// 1 only on the copy sent to a pilot the core credited with an assist for

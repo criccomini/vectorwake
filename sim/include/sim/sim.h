@@ -1088,6 +1088,9 @@ int sim_door_open(const sim_settings *cfg, uint32_t tick, uint8_t variant);
 
 int32_t sim_units_speed(int32_t v);    /* px/s/10 -> Q16 px/tick */
 int32_t sim_units_energy(int32_t e);   /* energy units -> Q10 */
+int32_t sim_units_thrust(int32_t t);   /* tenths of the unit -> Q16 px/tick^2 */
+int32_t sim_units_rotation(int32_t r); /* 400 to a turn a second -> per tick */
+int32_t sim_units_recharge(int32_t r); /* energy a second x10 -> Q10 a tick */
 
 /* A hull's flight stats in settings-file units: what zero profile steps give,
  * what one point adds, and the ceiling. All three are explicit because each

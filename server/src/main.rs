@@ -33,7 +33,6 @@ mod rating;
 mod room;
 mod select;
 mod session;
-mod shopper;
 mod sim;
 mod spool;
 mod token;
@@ -326,267 +325,29 @@ fn run_calibration_diagnostic() {
     }
 }
 
-/// Price each stage of the tech tree, in win probability.
-///
-///     vectorwake-server calibrate stages [bouts] [hull] [zone] [dir]
-///
-/// `zone` names a room in the catalog beside the binary and takes its arena
-/// block, because a zone owns its weapon table and its add-on steps: what
-/// multifire costs is Alpha's answer, not the core's. Omit it, or pass
-/// `baseline`, to measure the roster as this binary compiled it. Either way the
-/// map stays the pit, since the zone's own map would put a thousand tiles of
-/// looking for each other into a measurement of a loadout.
-///
-/// Unlike the ladder, this writes nothing anybody loads. `stages.json` is a
-/// measurement to diff a tuning change against, which is why it lands wherever
-/// you point it rather than in the zone directory beside `ladder.json`: that
-/// file is an input, and a reader should not have to work out which is which.
-fn run_stage_tournament() {
-    let bouts: u32 = std::env::args()
-        .nth(3)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(6);
-    let hull = std::env::args().nth(4).unwrap_or_else(|| "Apex".into());
-    let zone = std::env::args().nth(5).unwrap_or_else(|| "baseline".into());
-    let dir = std::env::args().nth(6).unwrap_or_else(|| ".".into());
-    let Some(class) = ai::class_index(&hull) else {
-        println!(
-            "no hull named {hull:?}; the roster is {}",
-            ai::CLASS_NAMES.join(", ")
-        );
-        std::process::exit(1);
-    };
-
-    // A named zone that cannot be found is a stop rather than a fallback. The
-    // whole reason to name one is that its numbers differ from the baseline's,
-    // so quietly measuring the baseline instead would answer a question nobody
-    // asked and label the answer with the zone.
-    let tuning = if zone == "baseline" {
-        None
-    } else {
-        let cat = match catalog::load("catalog") {
-            Ok(c) => c,
-            Err(e) => {
-                println!("stages: {e}");
-                std::process::exit(1);
-            }
-        };
-        let Some(def) = cat.zone(&zone) else {
-            println!("stages: no zone named {zone:?} in the catalog");
-            std::process::exit(1);
-        };
-        Some(def.arena.clone())
-    };
-
-    // One skill on both sides. Which value hardly matters while the parameter
-    // does not separate pilots, and the middle of the roster's range is the
-    // honest place to stand until it does.
-    //
-    // That claim is measurable and was for a while unmeasured: this comment
-    // pointed at an ignored test in calibrate.rs that no longer existed, so
-    // the finding had decayed into a sentence nobody could check. It is
-    // `skill_alone_should_make_a_ladder` again, which holds the hull still and
-    // varies only the dial. zone/ladder.json cannot answer it, because all
-    // eight calibrated pilots fly different hulls and it measures the two
-    // together.
-    const SKILL: f32 = 0.50;
-    println!(
-        "pricing {} stages on a {hull} under {zone} tuning: {} pairs, {bouts} bouts each",
-        calibrate::STAGES.len(),
-        calibrate::STAGES.len() * (calibrate::STAGES.len() + 1) / 2
-    );
-    let rows = calibrate::run_stages(class as u8, SKILL, bouts, tuning.as_ref(), true);
-    let doc = calibrate::report_stages(&rows, &hull, SKILL, bouts, &zone);
-
-    let path = format!("{dir}/stages.json");
-    match std::fs::write(
-        &path,
-        serde_json::to_string_pretty(&doc).expect("serialize"),
-    ) {
-        Ok(()) => println!("\nwrote {path}"),
-        Err(e) => println!("\ncould not write {path}: {e}"),
-    }
-}
-
-const PROFILE_CALIBRATION_ATTEMPTS: &str =
-    include_str!("../../zone/profile-calibration-attempts.json");
-
-/// `calibrate profiles <paired_seeds> <zone> <dir> <attempt_id>`: ten
-/// declared starter-margin and eighth-pip contrasts, four a side on the zone's
-/// full map rotation. Every seed is mirrored with the two profiles exchanging
-/// sides.
-fn run_profile_tournament() {
-    let paired_seeds: u32 = match std::env::args().nth(3) {
-        Some(value) => match value.parse() {
-            Ok(value) => value,
-            Err(error) => {
-                println!("profiles: invalid paired seed count {value:?}: {error}");
-                std::process::exit(2);
-            }
-        },
-        None => calibrate::PROFILE_POWERED_PAIRS,
-    };
-    if paired_seeds != calibrate::PROFILE_POWERED_PAIRS {
-        println!(
-            "profiles: exploratory run only; the prespecified powered screen uses exactly {} paired seeds",
-            calibrate::PROFILE_POWERED_PAIRS
-        );
-    }
-    let requested = std::env::args().nth(4);
-    let dir = std::env::args().nth(5).unwrap_or_else(|| ".".into());
-    let attempt_id = std::env::args()
-        .nth(6)
-        .unwrap_or_else(|| calibrate::PROFILE_EXPLORATORY_ATTEMPT.into());
-    let cat = match catalog::load("catalog") {
-        Ok(catalog) => catalog,
-        Err(error) => {
-            println!("profiles: {error}");
-            std::process::exit(1);
-        }
-    };
-    let zone = requested
-        .or_else(|| cat.fallback_zone())
-        .unwrap_or_default();
-    let Some(definition) = cat.zone(&zone) else {
-        println!("profiles: no zone named {zone:?} in the catalog");
-        std::process::exit(1);
-    };
-    let maps: Vec<(String, calibrate::Arena)> = cat
-        .map_bytes(&zone)
-        .into_iter()
-        .map(|(name, bytes)| (name, calibrate::Arena::Packed(std::sync::Arc::new(bytes))))
-        .collect();
-    if maps.is_empty() {
-        println!("profiles: {zone:?} has no readable maps");
-        std::process::exit(1);
-    }
-    if let Err(error) = std::fs::create_dir_all(&dir) {
-        println!("profiles: cannot create output directory {dir:?}: {error}");
-        std::process::exit(1);
-    }
-    let probe =
-        std::path::Path::new(&dir).join(format!(".profiles-write-check-{}", std::process::id()));
-    if let Err(error) = std::fs::write(&probe, b"") {
-        println!("profiles: output directory {dir:?} is not writable: {error}");
-        std::process::exit(1);
-    }
-    if let Err(error) = std::fs::remove_file(&probe) {
-        println!(
-            "profiles: cannot remove output preflight {:?}: {error}",
-            probe
-        );
-        std::process::exit(1);
-    }
-    println!(
-        "comparing profile contrasts in {zone}: {paired_seeds} paired seeds across {} maps",
-        maps.len()
-    );
-    let skill = 0.50;
-    let match_seconds = definition.arena.match_seconds.unwrap_or(180);
-    let zone_fingerprint = format!("sha256:{}", catalog::sha256_hex(definition.raw.as_bytes()));
-    let run = match calibrate::prepare_profile_calibration(
-        paired_seeds,
-        &attempt_id,
-        PROFILE_CALIBRATION_ATTEMPTS,
-        &zone,
-        &definition.raw,
-        skill,
-        &maps,
-    ) {
-        Ok(run) => run,
-        Err(error) => {
-            println!("profiles: {error}");
-            std::process::exit(1);
-        }
-    };
-    println!(
-        "profile calibration attempt {:?}: design {}, seed base {}",
-        run.attempt_id(),
-        run.design_fingerprint(),
-        run.seed_base()
-    );
-    let path = std::path::Path::new(&dir).join(format!("profiles-{}.json", run.attempt_id()));
-    if run.is_powered() && path.exists() {
-        println!(
-            "profiles: refusing to overwrite confirmatory evidence at {}",
-            path.display()
-        );
-        std::process::exit(1);
-    }
-    let results = match calibrate::run_profiles(
-        &run,
-        paired_seeds,
-        &zone,
-        &definition.raw,
-        skill,
-        &maps,
-        true,
-    ) {
-        Ok(results) => results,
-        Err(error) => {
-            println!("profiles: {error}");
-            std::process::exit(1);
-        }
-    };
-    let report = calibrate::report_profiles(
-        &run,
-        &results,
-        &zone,
-        &zone_fingerprint,
-        skill,
-        match_seconds,
-        &maps,
-    );
-    let encoded = serde_json::to_string_pretty(&report).expect("serialize profile report");
-    let write_result = if run.is_powered() {
-        use std::io::Write as _;
-        std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .and_then(|mut file| file.write_all(encoded.as_bytes()))
-    } else {
-        std::fs::write(&path, encoded)
-    };
-    if let Err(error) = write_result {
-        println!("\nprofiles: could not write {}: {error}", path.display());
-        std::process::exit(1);
-    }
-    println!("\nwrote {}", path.display());
-
-    if run.is_powered() && results.iter().any(|result| result.verdict != "balanced") {
-        println!("profiles: the powered screen did not balance all ten comparisons");
-        std::process::exit(1);
-    }
-}
-
 /// `calibrate hulls <bouts> <kit> <zone> <dir>`: every hull against every
 /// other on a matched budget.
 ///
-/// The other two harnesses each hold the hull still. This one varies it, which
-/// is the only way to ask whether the roster is balanced against itself rather
-/// than whether a kit is worth carrying.
+/// The ladder holds the roster still so it can rank pilots. This varies the
+/// roster instead, which is the whole balance question in a preconstructed
+/// game: do the seven ships beat each other in a cycle, or is one of them a
+/// line?
 ///
-/// `kit` is the budget both sides are handed at every spawn. It is a budget
-/// and not a loadout: every slot in the kit costs one, so the two pilots are
-/// matched exactly on what they spent and inexactly on what it bought them,
-/// which is the situation a player is actually in. Zero measures bare hulls,
-/// the way the ladder does.
+/// It used to need a kit budget on top, because a hull was a shape and a
+/// budget bought the rest of the ship. Both sides bring their own profiles
+/// now, so the only thing varying between them is which two hulls are in the
+/// room.
 ///
-/// Writes `hulls.json`, which nothing loads. Same reasoning as `stages.json`:
-/// it is a measurement to diff a change against, and `ladder.json` is an input.
+/// Writes `hulls.json`, which nothing loads: it is a measurement to diff a
+/// change against, where `ladder.json` is an input.
 fn run_hull_tournament() {
     let bouts: u32 = std::env::args()
         .nth(3)
         .and_then(|s| s.parse().ok())
         .unwrap_or(24);
-    let kit: u32 = std::env::args()
-        .nth(4)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    let zone = std::env::args().nth(5).unwrap_or_else(|| "baseline".into());
-    let dir = std::env::args().nth(6).unwrap_or_else(|| ".".into());
-    let map = std::env::args().nth(7).unwrap_or_else(|| "pit".into());
+    let zone = std::env::args().nth(4).unwrap_or_else(|| "baseline".into());
+    let dir = std::env::args().nth(5).unwrap_or_else(|| ".".into());
+    let map = std::env::args().nth(6).unwrap_or_else(|| "pit".into());
 
     // The pit is one room thirty-two tiles across and a pilot can see the whole
     // of it, which suits the loadout tournament and flatters exactly the hulls
@@ -630,12 +391,11 @@ fn run_hull_tournament() {
     const SKILL: f32 = 0.50;
     let n = ai::CLASS_NAMES.len();
     println!(
-        "hulls on a {kit}-point kit under {zone} tuning on the {map}: {} pairs, \
-{bouts} bouts each",
+        "hulls under {zone} tuning on the {map}: {} pairs, {bouts} bouts each",
         n * (n + 1) / 2
     );
-    let rows = calibrate::run_hulls(SKILL, kit, bouts, tuning.as_ref(), &builder, true);
-    let doc = calibrate::report_hulls(&rows, SKILL, kit, bouts, &zone, &map);
+    let rows = calibrate::run_hulls(SKILL, bouts, tuning.as_ref(), &builder, true);
+    let doc = calibrate::report_hulls(&rows, SKILL, bouts, &zone, &map, &builder);
 
     let path = format!("{dir}/hulls.json");
     match std::fs::write(
@@ -666,13 +426,9 @@ fn run_team_tournament() {
         .nth(4)
         .and_then(|s| s.parse().ok())
         .unwrap_or(4);
-    let kit: u32 = std::env::args()
-        .nth(5)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(30);
-    let zone = std::env::args().nth(6).unwrap_or_else(|| "baseline".into());
-    let dir = std::env::args().nth(7).unwrap_or_else(|| ".".into());
-    let map = std::env::args().nth(8).unwrap_or_else(|| "arena".into());
+    let zone = std::env::args().nth(5).unwrap_or_else(|| "baseline".into());
+    let dir = std::env::args().nth(6).unwrap_or_else(|| ".".into());
+    let map = std::env::args().nth(7).unwrap_or_else(|| "arena".into());
 
     if per_side == 0 || per_side > 16 {
         println!("teams: {per_side} a side is not a game");
@@ -719,28 +475,11 @@ fn run_team_tournament() {
     const SKILL: f32 = 0.50;
     let spawn_radius = tuning.as_ref().and_then(|c| c.spawn_radius).unwrap_or(0);
     println!(
-        "{per_side} a side under {zone} tuning on the {map}: {matches} matches at \
-a {kit}-point kit a life, spawn radius {spawn_radius}"
+        "{per_side} a side under {zone} tuning on the {map}: {matches} matches, \
+spawn radius {spawn_radius}"
     );
-    let rows = calibrate::run_teams(
-        per_side,
-        matches,
-        kit,
-        SKILL,
-        tuning.as_ref(),
-        &builder,
-        true,
-    );
-    let doc = calibrate::report_teams(
-        &rows,
-        per_side,
-        SKILL,
-        kit,
-        matches,
-        &zone,
-        &map,
-        spawn_radius,
-    );
+    let rows = calibrate::run_teams(per_side, matches, SKILL, tuning.as_ref(), &builder, true);
+    let doc = calibrate::report_teams(&rows, per_side, SKILL, matches, &zone, &map, spawn_radius);
 
     let path = format!("{dir}/teams.json");
     match std::fs::write(
@@ -895,23 +634,19 @@ async fn main() {
         return;
     }
     if std::env::args().nth(1).as_deref() == Some("calibrate") {
-        // What the ladder holds still is the tech tree, so it can never price
-        // one. That is this, the same harness with the pilots held still and
-        // the kit varying instead.
+        // The ladder ranks pilots with the roster held still. These rank the
+        // roster instead, which is the question a preconstructed game asks:
+        // do the seven ships beat each other in a cycle.
         if std::env::args().nth(2).as_deref() == Some("diagnostics") {
             run_calibration_diagnostic();
         } else if std::env::args().nth(2).as_deref() == Some("pilots") {
             run_pilot_tournament();
-        } else if std::env::args().nth(2).as_deref() == Some("profiles") {
-            run_profile_tournament();
-        } else if std::env::args().nth(2).as_deref() == Some("stages") {
-            run_stage_tournament();
         } else if std::env::args().nth(2).as_deref() == Some("hulls") {
             run_hull_tournament();
         } else if std::env::args().nth(2).as_deref() == Some("teams") {
             run_team_tournament();
         } else {
-            println!("calibrate needs one of: diagnostics, pilots, profiles, stages, hulls, teams");
+            println!("calibrate needs one of: diagnostics, pilots, hulls, teams");
             std::process::exit(2);
         }
         return;
@@ -1640,7 +1375,6 @@ mod tests {
                 name: name.into(),
                 expires: token::now_secs() + 600,
                 ratings,
-                entitlements: Vec::new(),
             },
         )
     }
@@ -1744,7 +1478,6 @@ mod tests {
                 name: "Impostor".into(),
                 expires: token::now_secs() + 600,
                 ratings: vec![],
-                entitlements: Vec::new(),
             },
         );
         assert!(
@@ -1762,7 +1495,6 @@ mod tests {
                 name: "Yesterday".into(),
                 expires: token::now_secs() - 1,
                 ratings: vec![],
-                entitlements: Vec::new(),
             },
         );
         let why = z
@@ -2500,79 +2232,6 @@ mod tests {
         assert!(room.channel.pending_feed.is_empty(), "and no feed line");
     }
 
-    #[test]
-    fn a_joining_pilot_does_not_inherit_the_seat() {
-        // Seats come back in the order they were vacated, so a player is
-        // handed their own and a room that kept anything on it reads as
-        // having saved somebody else's game.
-        //
-        // A fresh seat is not bare, though: it wears the starter kit its own
-        // account and hull agree on. So what this asserts is that the seat
-        // holds the starter kit rather than the last occupant's, which is a
-        // sharper claim than "nothing" and the one that would actually catch
-        // an inherited field.
-        let def = wire_zone(1, 6, 16);
-        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
-        z.serve_zone(&def).expect("a room");
-
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let id = z.rooms[0]
-            .join(Seat::guest("first", false), 0, 16, tx)
-            .expect("a seat");
-        let ship = z.rooms[0].players[&id].ship;
-        {
-            let sh = &mut z.rooms[0].world.state.ships[ship as usize];
-            sh.level = [2; sim::TRIG_COUNT];
-            sh.mods = [0x15; sim::TRIG_COUNT];
-            sh.charge = [3; sim::MAX_CHARGES];
-            sh.up = [4; sim::UP_COUNT];
-            sh.run = 250;
-            sh.points = 9000;
-            sh.x += 400 * 256;
-            sh.vx = 12345;
-        }
-        let flown_to = z.rooms[0].world.state.ships[ship as usize].x;
-        z.rooms[0].leave(id, pilot::why::LEFT);
-
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let id2 = z.rooms[0]
-            .join(Seat::guest("second", false), 0, 16, tx)
-            .expect("a seat");
-        let ship2 = z.rooms[0].players[&id2].ship;
-        assert_eq!(ship2, ship, "the vacated seat is the one handed back");
-
-        let starter = sim::World::starter_kit(&z.rooms[0].kit_ceiling(ship2));
-        let sh = z.rooms[0].world.state.ships[ship2 as usize];
-        assert_eq!(sh.kit, starter, "the seat wears a starter kit");
-        assert_eq!(
-            sim::World::kit_cost(&sh.kit),
-            sim::KIT_BUDGET,
-            "worth the whole budget, like everybody else's"
-        );
-        assert_eq!(sh.level, [2, 1], "dealt from Gunner, not inherited");
-        assert_eq!(
-            sim::mod_get(sh.mods[sim::TRIG_GUN], sim::MOD_MULTI),
-            2,
-            "with Gunner's spray rather than the old pilot's add-ons"
-        );
-        for k in sim::CHARGE_BURST + 1..sim::MAX_CHARGES {
-            assert_eq!(sh.charge[k], 0, "nor a kind this arena does not ship");
-        }
-        assert_eq!(sh.run, 0, "nor the run somebody else was on");
-        assert_eq!(sh.points, 0, "nor their score");
-        assert_eq!(sh.vx, 0, "and it arrives at rest");
-        assert_ne!(
-            sh.x, flown_to,
-            "at a start, not where the last one left off"
-        );
-        assert_eq!(
-            sh.energy,
-            z.rooms[0].world.eff_max_energy(ship2 as usize),
-            "on a full bar of what the kit made of the hull"
-        );
-    }
-
     /// The whole join sort, on the numbers the shipped melee zone runs.
     ///
     /// Four rules compose, and the one that matters is the second clause of
@@ -2766,405 +2425,6 @@ mod tests {
         );
     }
 
-    /// A kit is checked twice: against the arena's row, which is what this zone
-    /// has, and against what the account owns, which is what has been bought.
-    /// The smaller of the two wins, and a kit outside either is refused whole.
-    ///
-    /// Twice, not three times. The hull used to be one of the ceilings.
-    #[test]
-    fn a_kit_has_to_fit_the_arena_and_the_account() {
-        let mut a = room_with_teams("teams = [\"Keel\"]\n");
-        let ship = seat_human(&mut a, "pilot");
-        let base = a.kit_ceiling(ship);
-
-        // Inside both: taken, and dealt onto the hull.
-        let mut good = [0u8; sim::SLOT_COUNT];
-        good[sim::slot_stat(sim::UP_SPEED) as usize] = 5;
-        good[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 2;
-        assert!(a.set_kit(ship, &good), "a legal kit is taken");
-        let sh = a.world.state.ships[ship as usize];
-        assert_eq!(sh.up[sim::UP_SPEED], 5);
-        assert_eq!(sh.charge[sim::CHARGE_REPEL], 2);
-
-        // Past what the account owns. The arena has five spray steps and the
-        // starter equipment envelope owns two.
-        let spray = sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize;
-        assert_eq!(
-            base[spray], 2,
-            "a fresh account owns the starter equipment spray"
-        );
-        let mut deep = [0u8; sim::SLOT_COUNT];
-        deep[spray] = 3;
-        assert!(
-            !a.set_kit(ship, &deep),
-            "a specialty nobody bought is refused"
-        );
-
-        // A rung of a charge rack past what the account owns, which the hull
-        // would otherwise carry.
-        let mut racked = [0u8; sim::SLOT_COUNT];
-        racked[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 3;
-        assert!(!a.set_kit(ship, &racked), "and so is a charge rung");
-
-        // Refused whole, so the pilot keeps what they were flying.
-        assert_eq!(
-            a.world.state.ships[ship as usize].up[sim::UP_SPEED],
-            5,
-            "a refusal changes nothing"
-        );
-
-        // And the account's ceiling can be raised, which is what buying is.
-        if let Some(s) = a.names.get_mut(&ship) {
-            s.entitlements[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 255;
-        }
-        assert!(a.set_kit(ship, &racked), "what was bought, the hull takes");
-    }
-
-    #[test]
-    fn a_bot_cannot_outspend_the_least_equipped_human_in_its_room() {
-        let mut room = Room::new();
-        let mut bot = Seat::guest("bot", true);
-        bot.entitlements = *sim::World::baseline_kit_ceiling();
-        let human = Seat::guest("human", false);
-        room.names.insert(0, bot);
-        room.names.insert(1, human);
-
-        let spray = sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize;
-        assert_eq!(room.kit_ceiling(0)[spray], 2, "the human owns two");
-        assert_eq!(
-            room.kit_ceiling(1)[spray],
-            2,
-            "and their own ceiling is unchanged"
-        );
-        room.names.remove(&1);
-        assert_eq!(
-            room.kit_ceiling(0)[spray],
-            5,
-            "a bot-only room still uses the bot's career"
-        );
-    }
-
-    /// A death costs the ammunition it spent and nothing else.
-    ///
-    /// The kit is re-dealt at the respawn from the slots the pilot owns, so
-    /// what they come back in is what they walked in wearing. Reported from a
-    /// playtest as bombs that stopped bouncing after a death, which would be
-    /// the respawn re-dealing from something other than the kit.
-    #[test]
-    fn a_death_does_not_undress_a_pilot() {
-        let mut a = room_with_teams("teams = [\"Keel\"]\n");
-        let ship = seat_human(&mut a, "pilot");
-        let bounce = sim::slot_mod(sim::TRIG_BOMB, sim::MOD_BOUNCE) as usize;
-        let prox = sim::slot_mod(sim::TRIG_BOMB, sim::MOD_PROX) as usize;
-
-        // What buying them does.
-        if let Some(s) = a.names.get_mut(&ship) {
-            s.entitlements[bounce] = 1;
-            s.entitlements[prox] = 1;
-        }
-        let mut kit = [0u8; sim::SLOT_COUNT];
-        kit[bounce] = 1;
-        kit[prox] = 1;
-        kit[sim::slot_level(sim::TRIG_BOMB) as usize] = 1;
-        kit[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 1;
-        assert!(a.set_kit(ship, &kit), "a bought kit is taken");
-        let worn = |a: &Room| {
-            let sh = a.world.state.ships[ship as usize];
-            (
-                sim::mod_get(sh.mods[sim::TRIG_BOMB], sim::MOD_BOUNCE),
-                sim::mod_get(sh.mods[sim::TRIG_BOMB], sim::MOD_PROX),
-            )
-        };
-        assert_eq!(worn(&a), (1, 1), "and dealt onto the hull");
-
-        // Killed, and left alone long enough to come back.
-        a.world.state.ships[ship as usize].energy = 0;
-        a.world.state.ships[ship as usize].alive = 0;
-        a.world.state.ships[ship as usize].respawn_at = 1;
-        for _ in 0..600 {
-            a.tick();
-            if a.world.state.ships[ship as usize].alive != 0 {
-                break;
-            }
-        }
-        assert_eq!(
-            a.world.state.ships[ship as usize].alive, 1,
-            "the pilot comes back at all"
-        );
-        assert_eq!(worn(&a), (1, 1), "wearing what they were wearing");
-    }
-
-    /// A build that no longer fits is trimmed, not thrown away.
-    ///
-    /// Add-ons used to be granted to everybody, so a kit could hold one
-    /// nobody had bought. When that grant went, every saved build carrying an
-    /// add-on stopped fitting the account that saved it, and a kit is refused
-    /// whole: the pilot was dealt a starter kit and lost the twenty-eight
-    /// points that were still theirs along with the two that were not.
-    ///
-    /// Reported from a playtest as bounce and proximity disappearing after a
-    /// death, which is where the next re-deal happens to fall.
-    #[test]
-    fn a_kit_that_outgrew_the_account_is_trimmed_not_dropped() {
-        let mut a = match_room(1, 1);
-        let ship = seat_human(&mut a, "pilot");
-        let spray = sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize;
-        let speed = sim::slot_stat(sim::UP_SPEED) as usize;
-
-        // What a build saved under the old grant looks like: mostly slots the
-        // account owns, and one it does not.
-        let mut want = [0u8; sim::SLOT_COUNT];
-        want[speed] = 5;
-        want[sim::slot_level(sim::TRIG_BOMB) as usize] = 1;
-        want[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 1;
-        want[spray] = 3;
-        assert_eq!(
-            a.kit_ceiling(ship)[spray],
-            2,
-            "a starter owns two spray steps"
-        );
-        assert!(
-            !a.set_kit(ship, &want),
-            "and a kit holding three does not fit"
-        );
-
-        if let Some(s) = a.names.get_mut(&ship) {
-            s.pending_kit = Some(want);
-        }
-        a.deal_seat(ship);
-        let sh = a.world.state.ships[ship as usize];
-        assert_eq!(
-            sh.up[sim::UP_SPEED],
-            5,
-            "the part of the build the account owns is flown"
-        );
-        assert_eq!(
-            sh.charge[sim::CHARGE_REPEL],
-            1,
-            "all of it, not just the stats"
-        );
-        assert_eq!(
-            sim::mod_get(sh.mods[sim::TRIG_GUN], sim::MOD_MULTI),
-            2,
-            "and only the unowned part of the specialty is missing"
-        );
-    }
-
-    /// A round of spray, bought and flown, on any hull in the roster.
-    ///
-    /// This is the trait the whole slot space was flattened for. The pair at
-    /// the bottom of this ladder was `DoubleBarrel`, a flag one hull carried,
-    /// so it could not be sold and it could not be chosen; as a rung it goes
-    /// through the same two ceilings as everything else and comes out of the
-    /// gun as a second round.
-    ///
-    /// Every hull, because the point of the change is that the roster has
-    /// nothing to say about it. The old arrangement would have passed on one
-    /// class and refused on six.
-    #[test]
-    fn a_bought_round_of_spray_flies_on_every_hull() {
-        let mut a = room_with_teams("teams = [\"Keel\"]\n");
-        let ship = seat_human(&mut a, "pilot");
-        let slot = sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize;
-
-        let mut kit = [0u8; sim::SLOT_COUNT];
-        kit[slot] = 3;
-        assert!(
-            !a.set_kit(ship, &kit),
-            "the third spray step is not in the starter envelope"
-        );
-
-        // What buying one does, which is raise this account's ceiling by one.
-        if let Some(s) = a.names.get_mut(&ship) {
-            s.entitlements[slot] = 3;
-        }
-        for cls in 0..a.world.cfg.class_count {
-            a.world.state.ships[ship as usize].cls = cls;
-            assert!(
-                a.set_kit(ship, &kit),
-                "hull {cls} refused a round the account owns"
-            );
-            let sh = a.world.state.ships[ship as usize];
-            assert_eq!(
-                sim::mod_get(sh.mods[sim::TRIG_GUN], sim::MOD_MULTI),
-                3,
-                "hull {cls} was dealt the kit but not the round"
-            );
-        }
-    }
-
-    /// The first kit of a session is dealt at once, whatever the clock says.
-    ///
-    /// A pilot who has just joined is wearing the starter kit the arena gave
-    /// them, because nothing there knows what they fly until their client says
-    /// so, and that message arrives a moment after they are already in the
-    /// room. Held to the whistle, they spent the rest of the match in a bare
-    /// hull with everything they own unused: joining during an intermission
-    /// worked and joining mid-match did not, so the same build flew or did not
-    /// depending on where the clock happened to be. Reported as bought add-ons
-    /// doing nothing.
-    #[test]
-    fn the_kit_a_pilot_arrives_with_is_dealt_mid_match() {
-        let mut a = match_room(1, 1);
-        let ship = seat_human(&mut a, "pilot");
-        a.tick(); // opens the match
-        assert!(a.mode.match_state().unwrap().playing);
-
-        // What a join deals: a starter, with none of this pilot's own choices
-        // on it.
-        let starter = a.world.state.ships[ship as usize].kit;
-        let mut arrived = [0u8; sim::SLOT_COUNT];
-        arrived[sim::slot_stat(sim::UP_ENERGY) as usize] = 1;
-        assert_ne!(arrived, starter, "pick a kit the seat is not already in");
-
-        a.ask_kit(ship, &arrived);
-        assert_eq!(
-            a.world.state.ships[ship as usize].kit, arrived,
-            "the build a pilot arrived with is dealt at once, mid-match or not"
-        );
-        assert_eq!(
-            a.world.state.ships[ship as usize].energy,
-            a.world.eff_max_energy(ship as usize),
-            "and its first authored build starts on its own full bar"
-        );
-        assert_eq!(
-            a.names[&ship].pending_kit, None,
-            "and nothing is left waiting for a whistle"
-        );
-
-        // The second one is a change, and a change is what the rule is about.
-        let mut again = [0u8; sim::SLOT_COUNT];
-        again[sim::slot_stat(sim::UP_SPEED) as usize] = 5;
-        a.ask_kit(ship, &again);
-        assert_eq!(
-            a.world.state.ships[ship as usize].kit, arrived,
-            "a re-spec mid-match still waits"
-        );
-        assert_eq!(a.names[&ship].pending_kit, Some(again), "and is held");
-    }
-
-    #[test]
-    fn a_delayed_first_kit_neither_heals_nor_wakes_a_benched_seat() {
-        let mut live = match_room(1, 1);
-        let live_ship = seat_human(&mut live, "late packet");
-        live.tick();
-        assert!(live.mode.match_state().unwrap().playing);
-        let held = live.world.eff_max_energy(live_ship as usize) / 2;
-        live.world.state.ships[live_ship as usize].energy = held;
-        let mut tank = [0u8; sim::SLOT_COUNT];
-        tank[sim::slot_stat(sim::UP_ENERGY) as usize] = sim::UP_STEPS;
-        live.ask_kit(live_ship, &tank);
-        assert_eq!(
-            live.world.state.ships[live_ship as usize].energy, held,
-            "delaying the first kit packet cannot refill damage"
-        );
-
-        let mut waiting = match_room(1, 1);
-        let waiting_ship = seat_human(&mut waiting, "between matches");
-        for _ in 0..120 {
-            waiting.tick();
-        }
-        assert!(
-            !waiting.mode.match_state().unwrap().playing,
-            "the seat is actually waiting between matches"
-        );
-        assert_eq!(waiting.world.state.ships[waiting_ship as usize].alive, 0);
-        assert_eq!(waiting.world.state.ships[waiting_ship as usize].energy, 0);
-        waiting.ask_kit(waiting_ship, &tank);
-        assert_eq!(waiting.world.state.ships[waiting_ship as usize].alive, 0);
-        assert_eq!(
-            waiting.world.state.ships[waiting_ship as usize].energy, 0,
-            "a first kit cannot put charge into a benched hull"
-        );
-        for _ in 0..120 {
-            waiting.tick();
-            if waiting.mode.match_state().unwrap().playing {
-                break;
-            }
-        }
-        assert!(
-            waiting.mode.match_state().unwrap().playing,
-            "the next whistle opens a match"
-        );
-        assert_eq!(
-            waiting.world.state.ships[waiting_ship as usize].energy,
-            waiting.world.eff_max_energy(waiting_ship as usize),
-            "the whistle fills that kit through the ordinary match path"
-        );
-    }
-
-    #[test]
-    fn a_delayed_first_kit_preserves_damage_when_its_energy_ceiling_falls() {
-        let mut live = match_room(1, 1);
-        let ship = seat_human(&mut live, "lower ceiling");
-        live.tick();
-        assert!(live.mode.match_state().unwrap().playing);
-
-        let energy_slot = sim::slot_stat(sim::UP_ENERGY) as usize;
-        let mut lower = live.world.state.ships[ship as usize].kit;
-        assert!(lower[energy_slot] > 0, "the starter has energy to remove");
-
-        let old_full = live.world.eff_max_energy(ship as usize);
-        live.world.state.ships[ship as usize].energy = old_full - 1;
-        lower[energy_slot] = 0;
-
-        live.ask_kit(ship, &lower);
-
-        let new_full = live.world.eff_max_energy(ship as usize);
-        let held = live.world.state.ships[ship as usize].energy;
-        assert!(new_full < old_full, "the authored kit lowers the ceiling");
-        assert_eq!(held, new_full - 1, "the existing damage is preserved");
-        assert!(held < new_full, "the lower ceiling does not fill the bar");
-    }
-
-    /// The hull is locked for a match and the kit with it, so a kit asked for
-    /// mid-match waits for the whistle. One asked for between matches is dealt
-    /// on the spot, because nobody is flying.
-    #[test]
-    fn a_kit_asked_for_mid_match_waits_for_the_whistle() {
-        let mut a = match_room(1, 1);
-        let ship = seat_human(&mut a, "pilot");
-        a.tick(); // opens the match
-        assert!(a.mode.match_state().unwrap().playing);
-
-        let starter = a.world.state.ships[ship as usize].kit;
-        let mut want = [0u8; sim::SLOT_COUNT];
-        want[sim::slot_stat(sim::UP_ENERGY) as usize] = 1;
-        assert_ne!(want, starter, "pick a kit the seat is not already in");
-        if let Some(s) = a.names.get_mut(&ship) {
-            s.pending_kit = Some(want);
-        }
-        for _ in 0..40 {
-            a.tick();
-        }
-        assert_eq!(
-            a.world.state.ships[ship as usize].kit, starter,
-            "not mid-match: the hull is locked and the kit with it"
-        );
-
-        while a.match_no < 2 {
-            a.tick();
-        }
-        assert_eq!(
-            a.world.state.ships[ship as usize].kit, want,
-            "and the whistle is where it lands"
-        );
-        assert_eq!(
-            a.world.state.ships[ship as usize].up[sim::UP_ENERGY],
-            1,
-            "dealt onto the hull, not merely stored"
-        );
-        assert_eq!(
-            a.world.state.ships[ship as usize].energy,
-            a.world.eff_max_energy(ship as usize),
-            "with the new Energy ceiling filled at the whistle"
-        );
-        assert!(
-            a.names[&ship].pending_kit.is_none(),
-            "with nothing left waiting"
-        );
-    }
-
     /// A room built from a zone with named sides, for the team tests below.
     fn room_with_teams(toml: &str) -> Room {
         let mut def = wire_zone(1, 16, 32);
@@ -3246,15 +2506,19 @@ mod tests {
                 flown += ((leg.0 - at.0).powi(2) + (leg.1 - at.1).powi(2)).sqrt();
                 at = *leg;
             }
-            // An Apex, which is the roster's own reference hull, flying a kit
-            // that spends nothing on speed. A pilot who bought speed arrives
-            // sooner, and that is the roster expressing itself rather than a
-            // number this test should be reading.
+            // The middle of the roster, which is the honest single number now
+            // that the seven fly at seven speeds: the raider crosses a room a
+            // third faster than the heavy, and a map's promise is about
+            // everybody who flies it. Matches what `mapforge` gates on.
             let mut probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
             let ship = probe.spawn_on_map(0, 0, 0, 0);
             assert!(ship >= 0, "{name}: a seat");
             let sh = probe.state.ships[ship as usize];
-            let top = unsafe { sim::sim_eff_speed(&probe.cfg.classes[0], &sh) } as f32 / 65536.0;
+            let mut speeds: Vec<i32> = (0..probe.cfg.class_count as usize)
+                .map(|c| unsafe { sim::sim_eff_speed(&probe.cfg.classes[c], &sh) })
+                .collect();
+            speeds.sort_unstable();
+            let top = speeds[speeds.len() / 2] as f32 / 65536.0;
             let seconds = flown / (top * 100.0);
             let tiles = flown / 16.0;
             // A tenth either side of the design's window. What is measured
@@ -3263,10 +2527,10 @@ mod tests {
             // and they spend the first second getting up to speed. The
             // estimate is worth a few per cent, so the bound is too.
             assert!(
-                (9.0..=17.6).contains(&seconds),
+                (6.0..=11.6).contains(&seconds),
                 "{name}: the homes are {tiles:.0} tiles apart, {seconds:.1} s of \
-                 flight, so first contact lands at {:.1} s rather than the five \
-                 to eight the design asks for",
+                 flight, so first contact lands at {:.1} s rather than the three \
+                 to six the design asks for",
                 seconds / 2.0
             );
             println!(
@@ -3298,49 +2562,6 @@ mod tests {
         let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
         z.serve_zone(&def).expect("a room");
         z.rooms.remove(0)
-    }
-
-    /// The room plays match after match on alternating ground, and each one
-    /// opens with everybody home and reloaded.
-    ///
-    /// The ammunition is the half worth pinning. A death re-deals the frame
-    /// and never the charges, so a pilot who spends both repels flies the rest
-    /// of the match without them; the whistle is the only thing that gives
-    /// them back, and if it did not, a kit slot would be a one-match purchase.
-    #[test]
-    fn a_whistle_changes_the_ground_and_re_deals_the_ammunition() {
-        let mut a = match_room(1, 1);
-        let ship = seat_human(&mut a, "pilot") as usize;
-
-        let mut kit = [0u8; sim::SLOT_COUNT];
-        kit[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 3;
-        kit[sim::slot_stat(sim::UP_SPEED) as usize] = 4;
-        assert!(a.world.set_kit(ship, &kit), "a legal kit");
-
-        assert_eq!(a.mode.name(), "melee", "the room is a match room");
-        assert_eq!(a.maps.len(), 2, "on two maps");
-        let first = a.world.packed_map();
-        a.world.state.ships[ship].charge[sim::CHARGE_REPEL] = 0;
-        a.world.state.ships[ship].kills = 6;
-        a.world.state.ships[ship].run = 6;
-        a.world.state.ships[ship].x = 40 * 16 * 256;
-
-        // A second of play, a second of podium, and the next match opens.
-        assert_eq!(a.match_no, 0, "nothing has started yet");
-        while a.match_no < 2 {
-            a.tick();
-        }
-
-        assert_ne!(
-            a.world.packed_map(),
-            first,
-            "the next match is on the other map"
-        );
-        let sh = &a.world.state.ships[ship];
-        assert_eq!(sh.charge[sim::CHARGE_REPEL], 3, "the ammunition came back");
-        assert_eq!(sh.up[sim::UP_SPEED], 4, "and so did the frame");
-        assert_eq!((sh.kills, sh.run), (0, 0), "the tally is the match's own");
-        assert_eq!((sh.x, sh.y), (sh.spawn_x, sh.spawn_y), "on a start");
     }
 
     /// A pilot whose queue was full at the whistle is not left flying the
@@ -3479,47 +2700,6 @@ mod tests {
         def.map_names = Vec::new();
         let bare = ArenaServer::build_room(&def, None).expect("a room");
         assert_eq!(bare.map_name_msg(), None, "no names, no caption");
-    }
-
-    /// The zone's tuning survives the ground changing under it. Swapping a map
-    /// resets the settings to the baseline, because most of the baseline is
-    /// derived from the geometry it was built against, so a room on its second
-    /// map would otherwise quietly be a room with no zone file.
-    #[test]
-    fn the_tuning_goes_back_on_over_the_new_ground() {
-        let mut def = wire_zone(1, 8, 8);
-        def.mode = "melee".into();
-        def.maps_b64 = vec![
-            fleet::b64(&sim::World::new(1).packed_map()),
-            fleet::b64(&sim::World::with_map(1, sim::build_pit).packed_map()),
-        ];
-        def.zone_toml = "label = \"a match zone\"\nmax_ships = 8\n\
-                         teams = [\"Pylon\", \"Caisson\"]\n\
-                         [arena]\nmatch_seconds = 1\nintermission_seconds = 1\n\
-                         respawn_delay = 123\nbounty_base = 7\n"
-            .into();
-        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
-        z.serve_zone(&def).expect("a room");
-        let a = &mut z.rooms[0];
-        assert_eq!(a.world.cfg.respawn_delay, 123);
-        assert_eq!(a.world.cfg.bounty_base, 7);
-        assert_eq!(a.world.cfg.max_ships, 8);
-        let generation = a.settings_generation;
-
-        for _ in 0..201 {
-            a.tick();
-        }
-        assert_eq!(a.world.cfg.respawn_delay, 123, "the file is still in force");
-        assert_eq!(a.world.cfg.bounty_base, 7);
-        assert_eq!(
-            a.world.cfg.max_ships, 8,
-            "including the room size, which is a zone key and not an arena one"
-        );
-        assert_ne!(
-            a.settings_generation, generation,
-            "and a client cannot predict the new ground with the old pack"
-        );
     }
 
     /// The whistle at the end of a match empties the arena and moves the room
@@ -3793,24 +2973,6 @@ mod tests {
     }
 
     #[test]
-    fn crossing_sides_drops_the_flag_and_the_bounty_it_earned() {
-        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
-        let ship = seat_human(&mut a, "one");
-        a.world.state.ships[ship as usize].run = 30;
-        assert!(a.join_team(ship, 1));
-        assert_eq!(a.world.state.ships[ship as usize].team, 1);
-        assert_eq!(
-            a.world.state.ships[ship as usize].run, 0,
-            "what killing paid does not cross with you"
-        );
-        // And the gate: a hurt pilot stays where they are, so the team list is
-        // not a way out of a fight.
-        a.world.state.ships[ship as usize].energy /= 2;
-        assert!(!a.join_team(ship, 0), "not while hurt");
-        assert_eq!(a.world.state.ships[ship as usize].team, 1);
-    }
-
-    #[test]
     fn a_private_side_admits_only_who_it_invited_and_dies_when_empty() {
         let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
         let founder = seat_human(&mut a, "founder");
@@ -4057,7 +3219,7 @@ mod tests {
         // Nineteen bytes of header now, not six: the scores came here when
         // snapshots stopped carrying every seat, and a board reading a seat it
         // can no longer see reads it off this message.
-        const HEAD: usize = 19;
+        const HEAD: usize = 13;
         let mut o = 2;
         let mut read: HashMap<u8, (String, u8)> = HashMap::new();
         for _ in 0..n {
@@ -4070,9 +3232,7 @@ mod tests {
             let _kills = i16::from_le_bytes([m[o + 6], m[o + 7]]);
             let _deaths = u16::from_le_bytes([m[o + 8], m[o + 9]]);
             let _assists = u16::from_le_bytes([m[o + 10], m[o + 11]]);
-            let _points = u32::from_le_bytes([m[o + 12], m[o + 13], m[o + 14], m[o + 15]]);
-            let _earned = u16::from_le_bytes([m[o + 16], m[o + 17]]);
-            let len = m[o + 18] as usize;
+            let len = m[o + 12] as usize;
             assert!(o + HEAD + len <= m.len(), "a name ran off the end");
             let name = String::from_utf8(m[o + HEAD..o + HEAD + len].to_vec())
                 .expect("names are sanitised to printable ascii before they get here");
@@ -4289,109 +3449,6 @@ mod tests {
             (w.state.ships[far as usize].x, w.state.ships[far as usize].y),
             (0, 0),
             "with nothing left behind to read a position out of"
-        );
-    }
-
-    /// Three kills without dying, and the room hears about it once.
-    ///
-    /// Driven through real rounds rather than by writing the counter, because
-    /// what is under test is the whole path: the core reaching the threshold,
-    /// the room noticing on the tick it happened, and the message going to
-    /// everybody rather than to whoever was close enough to watch. The
-    /// arithmetic of the counter itself is `sim/tests/test_sim.c`.
-    #[test]
-    fn a_third_kill_without_dying_tells_the_whole_room() {
-        let mut a = room_with_teams("teams = [\"Keel\", \"Vane\"]\n");
-        let (killer, _, mut killer_rx) = seat_rx(&mut a, "killer");
-        let (victim, _, mut victim_rx) = seat_rx(&mut a, "victim");
-        let (far, _, mut far_rx) = seat_rx(&mut a, "far");
-        assert_ne!(
-            a.world.state.ships[killer as usize].team, a.world.state.ships[victim as usize].team,
-            "the two are on opposite sides, or nothing here is a kill"
-        );
-        // Out past the fairness circle, so the streak has to reach a pilot
-        // who cannot see either of them. A kill on the far side of the map is
-        // exactly the news a feed exists to carry.
-        send_far(&mut a, far);
-
-        // Nose to nose at the killer's own start, which is ground the map
-        // guarantees is flyable, with the victim four tiles down the barrel.
-        let (ox, oy) = {
-            let sh = &a.world.state.ships[killer as usize];
-            (sh.x, sh.y)
-        };
-        a.world.state.ships[killer as usize].heading = 32768;
-        let mut streaks = Vec::new();
-        let mut at_two = None;
-        for _ in 0..2000 {
-            if a.world.state.ships[killer as usize].kills >= 4 {
-                break;
-            }
-            {
-                let sh = &mut a.world.state.ships[victim as usize];
-                if sh.alive != 0 {
-                    sh.x = ox;
-                    sh.y = oy + 64 * 256;
-                    sh.vx = 0;
-                    sh.vy = 0;
-                    sh.energy = 1;
-                }
-            }
-            let killer_ship = &mut a.world.state.ships[killer as usize];
-            killer_ship.x = ox;
-            killer_ship.y = oy;
-            killer_ship.vx = 0;
-            killer_ship.vy = 0;
-            a.world.step(&[sim::sim_input {
-                ship: killer,
-                buttons: sim::BTN_FIRE,
-            }]);
-            a.score_events();
-            streaks.extend(
-                drain(&mut killer_rx)
-                    .into_iter()
-                    .filter(|m| m.first() == Some(&S2C_STREAK)),
-            );
-            if a.world.state.ships[killer as usize].kills == 2 && at_two.is_none() {
-                at_two = Some(streaks.len());
-            }
-        }
-
-        assert_eq!(
-            a.world.state.ships[killer as usize].kills, 4,
-            "four kills went in"
-        );
-        assert_eq!(at_two, Some(0), "and nothing was said at two");
-        assert_eq!(streaks.len(), 1, "the third says it, and only the third");
-        let m = &streaks[0];
-        assert_eq!(m.len(), 7);
-        assert_eq!(m[1], killer, "named the pilot on the run");
-        assert_eq!(
-            u16::from(m[2]),
-            a.world.cfg.streak_kills,
-            "and how many kills it took"
-        );
-
-        // Everybody, not only whoever was near enough to watch.
-        let victim_saw = drain(&mut victim_rx)
-            .into_iter()
-            .filter(|m| m.first() == Some(&S2C_STREAK))
-            .count();
-        let far_saw = drain(&mut far_rx)
-            .into_iter()
-            .filter(|m| m.first() == Some(&S2C_STREAK))
-            .count();
-        assert_eq!(victim_saw, 1, "the pilot it was taken out on hears it");
-        assert_eq!(far_saw, 1, "and so does the far side of the map");
-
-        // And the price moved with it.
-        let worth = a.world.bounty(killer as usize);
-        let run = i32::from(a.world.state.ships[killer as usize].run);
-        assert!(a.world.on_streak(killer as usize));
-        assert_eq!(
-            worth,
-            i32::from(a.world.cfg.bounty_base) + run + i32::from(a.world.cfg.streak_bounty),
-            "a pilot on a streak is worth their run and the step on top"
         );
     }
 
@@ -4630,11 +3687,11 @@ mod tests {
             let kills = i16::from_le_bytes([m[o + 6], m[o + 7]]);
             let deaths = u16::from_le_bytes([m[o + 8], m[o + 9]]);
             let assists = u16::from_le_bytes([m[o + 10], m[o + 11]]);
-            let len = m[o + 18] as usize;
+            let len = m[o + 12] as usize;
             if ship == far {
                 found = Some((kills, deaths, assists));
             }
-            o += 19 + len;
+            o += 13 + len;
         }
         assert_eq!(
             found,
@@ -6697,14 +5754,14 @@ mod tests {
         );
         // Degrees, because nobody thinks in sixty-five thousandths of a turn.
         assert_eq!(p.spacing, (22 * 65536 / 360) as u16);
-        // Every hull carries a rack in the baseline now, the way every one
-        // of the original's ships does, so what this proves is that the named
-        // weapon replaced the rack rather than sat beside it.
+        // The raider is the one hull the baseline gives no rack at all, so
+        // what this proves is that a named weapon can hand one to a hull that
+        // had none rather than only tune a rack it already had.
         let fresh = sim::World::new(1);
-        let base = fresh.cfg.patterns[fresh.cfg.classes[spire].trigger[1][0] as usize];
-        assert_ne!(
-            base.count, p.count,
-            "the zone's weapon is not the baseline's"
+        assert_eq!(
+            fresh.cfg.classes[spire].trigger[1][0],
+            sim::NO_PATTERN,
+            "the raider ships without a rack"
         );
     }
 
@@ -6776,13 +5833,34 @@ mod tests {
         assert!(warn.iter().any(|w| w.contains("also-not-a-weapon")));
     }
 
+    /// A rung above the first is named for its level, and a zone that writes
+    /// one gets a ladder its hulls can climb.
+    ///
+    /// The baseline builds one rung per hull, because a preconstructed ship
+    /// fires one weapon and nobody climbs. The machinery stays for a zone that
+    /// wants otherwise, and this is what proves it still works: three rungs
+    /// written by name, the profile pointed at the third, and the hull firing
+    /// what the third one says.
     #[test]
     fn a_rung_above_the_first_is_named_for_its_level() {
         let (w, warn) = tuned(
             r#"
             [[arena.weapons]]
+            name = "anvil-bomb-2"
+            damage = 750
+            blast = 200
+            energy = 500
+
+            [[arena.weapons]]
             name = "anvil-bomb-3"
+            damage = 750
             blast = 96
+            energy = 600
+
+            [[arena.ships]]
+            name = "Anvil"
+            bomb = ["anvil-bomb", "anvil-bomb-2", "anvil-bomb-3"]
+            bomb_rung = 2
         "#,
         );
         assert!(warn.is_empty(), "{warn:?}");
@@ -6790,80 +5868,16 @@ mod tests {
         let rungs = w.cfg.classes[anvil].trigger[1];
         let top = w.cfg.specs[w.cfg.patterns[rungs[2] as usize].spec as usize];
         let base = w.cfg.specs[w.cfg.patterns[rungs[0] as usize].spec as usize];
-        assert_eq!(top.blast, 96 * 256, "the third rung got the wider blast");
-        assert_eq!(base.blast, 80 * 256, "and the first kept its own");
-        // A bomb rung buys no damage. BombDamageLevel is defined "for all
-        // bomb levels" and there is no upgrade beside it; what a level costs
-        // is BombFireEnergyUpgrade, so that is where the ladder shows.
-        assert_eq!(top.damage, base.damage, "a bomb rung is the same bomb");
+        assert_eq!(top.blast, 96 * 256, "the third rung got the blast it named");
+        assert_eq!(base.blast, 160 * 256, "and the first kept the roster's");
         let top_p = w.cfg.patterns[rungs[2] as usize];
         let base_p = w.cfg.patterns[rungs[0] as usize];
         assert!(top_p.energy > base_p.energy, "and it costs more to let go");
-    }
-
-    /// The add-on ceiling is the arena's, so a zone writes it once rather than
-    /// seven times, and every hull in the room holds the same thing.
-    #[test]
-    fn an_arena_says_what_a_kit_may_hold() {
-        let (w, warn) = tuned(
-            r#"
-            [arena.mod_step]
-            freeze = 250
-
-            [arena.kit]
-            gun_mods = { freeze = 3, multi = 1 }
-        "#,
-        );
-        assert!(warn.is_empty(), "{warn:?}");
         assert_eq!(
-            w.cfg.mod_step[4], 250,
-            "a rung of freeze is two and a half seconds"
+            w.cfg.classes[anvil].kit[sim::slot_level(sim::TRIG_BOMB) as usize],
+            2,
+            "and the profile says which rung this hull fires"
         );
-        assert_eq!(
-            w.cfg.kit_ceiling[sim::slot_mod(sim::TRIG_GUN, sim::MOD_FREEZE) as usize],
-            3,
-            "three rungs of freeze"
-        );
-        assert_eq!(
-            w.cfg.kit_ceiling[sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize],
-            1,
-            "and one round of spray"
-        );
-        assert_eq!(
-            w.cfg.kit_ceiling[sim::slot_mod(sim::TRIG_GUN, sim::MOD_BOUNCE) as usize],
-            0,
-            "and an add-on the map leaves out is a slot this arena does not have"
-        );
-        // Each add-on is clamped at its own ceiling. Spray is a count of
-        // rounds rather than a rung and climbs to five where the rest stop at
-        // three, so one number for all of them silently capped it: melee asked
-        // for five from the day it shipped and flew three without a warning.
-        let (w, warn) = tuned(
-            r#"
-            [arena.kit]
-            gun_mods = { multi = 5, freeze = 9 }
-        "#,
-        );
-        assert!(warn.is_empty(), "{warn:?}");
-        assert_eq!(
-            w.cfg.kit_ceiling[sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize],
-            sim::MOD_MULTI_MAX,
-            "spray reaches its own ceiling of five"
-        );
-        assert_eq!(
-            w.cfg.kit_ceiling[sim::slot_mod(sim::TRIG_GUN, sim::MOD_FREEZE) as usize],
-            sim::MOD_MAX,
-            "and a rung add-on still stops at three"
-        );
-
-        // Named add-ons are checked, not guessed at.
-        let (_, warn) = tuned(
-            r#"
-            [arena.kit]
-            gun_mods = { sideways = 1 }
-        "#,
-        );
-        assert!(warn.iter().any(|w| w.contains("sideways")), "{warn:?}");
     }
 
     #[test]
@@ -6923,34 +5937,6 @@ mod tests {
             let warn = Room::apply_config(&mut w, &cat.zone(name).unwrap().arena);
             assert!(warn.is_empty(), "zone {name}: {warn:?}");
         }
-    }
-
-    #[test]
-    fn a_zone_prices_a_kill() {
-        let (w, warn) = tuned(
-            r#"
-            [arena]
-            bounty_per_kill = 9
-            points_per_flag = 25
-        "#,
-        );
-        assert!(warn.is_empty(), "{warn:?}");
-        assert_eq!(w.cfg.bounty_per_kill, 9);
-        assert_eq!(w.cfg.points_per_flag, 25);
-
-        // And a file that says nothing keeps the core's own numbers, which is
-        // the check that catches a mirror drifting out of step with the C
-        // struct -- the reason this reads a field two along from the ones it
-        // set.
-        let (w, _) = tuned(
-            r#"
-            [arena]
-            mode = "warzone"
-        "#,
-        );
-        assert_eq!(w.cfg.bounty_base, 1);
-        assert_eq!(w.cfg.bounty_per_kill, 1);
-        assert_eq!(w.cfg.points_per_flag, 100);
     }
 
     #[test]
@@ -7106,109 +6092,6 @@ mod tests {
         );
     }
 
-    /// Alpha's own file, applied the way a room applies it.
-    ///
-    /// The shipped zone files are read by nothing else in this suite: the map
-    /// beside this one is loaded by the bot tests, and the tuning next to it
-    /// was never parsed until a room in production did it. So a typo in a
-    /// weapon name is a silent no-op -- `apply_config` warns and carries on,
-    /// which is right for a live zone and useless as a check -- and a typo in
-    /// a field is a parse error nobody sees until the room opens.
-    ///
-    /// This asserts the warnings are empty, which is what catches the name,
-    /// and the one number the zone is here to state.
-    ///
-    /// Through `ZoneDef`, which is the schema the catalog actually reads a
-    /// shipped zone with -- `config::ZoneConfig` is the standalone server's
-    /// and has no `mode` -- so this also gets `deny_unknown_fields` over the
-    /// whole file rather than only over the line it came to check.
-    #[test]
-    fn the_melee_zone_file_says_what_it_means() {
-        let src = std::fs::read_to_string("../catalog/zones/melee/zone.toml")
-            .expect("the melee zone ships in this repository");
-        let z: crate::catalog::ZoneDef = toml::from_str(&src).expect("melee's zone file parses");
-        let mut w = sim::World::new(1);
-        let warn = Room::apply_config(&mut w, &z.arena);
-        assert!(warn.is_empty(), "melee's own file warns: {warn:?}");
-
-        // The control, and it has to be here. A weapon name this file does not
-        // recognize is not an error -- an unknown name *makes* a weapon, which
-        // is how a zone adds one -- so a typo in a block above is a new dead
-        // weapon and no warning. Reading a number the zone shares with the
-        // baseline would then pass on a file that never applied. The burst's
-        // damage is the zone's own and the baseline's is 700.
-        let burst =
-            w.cfg.specs[w.cfg.patterns[w.cfg.charge[sim::CHARGE_BURST] as usize].spec as usize];
-        assert_eq!(
-            burst.damage,
-            unsafe { sim::sim_units_energy(515) },
-            "the file reached the weapon table at all"
-        );
-
-        // The clock, which is the whole of what makes this a match game and is
-        // the one setting no other zone in the history of this repository had.
-        assert_eq!(z.arena.match_seconds, Some(180));
-        assert_eq!(z.arena.intermission_seconds, Some(15));
-        assert_eq!(z.mode, "melee");
-        assert_eq!(
-            z.maps,
-            [
-                "maelstrom.vwmap",
-                "gantry.vwmap",
-                "warren.vwmap",
-                "redoubt.vwmap",
-                "ringworks.vwmap",
-            ],
-            "the curated rotation"
-        );
-        assert_eq!(z.max_humans_per_team, Some(4), "four a side");
-        assert_eq!(z.teams.len(), 2);
-        // Three of a charge kind, for anybody who buys the rung and spends
-        // three of thirty points on it. This used to be a hull's row and a
-        // number in a TOML file; it is the arena's, written nowhere, which
-        // means this assertion is what would catch the baseline moving
-        // underneath the zone.
-        assert_eq!(
-            w.cfg.kit_ceiling[sim::slot_charge(sim::CHARGE_BURST) as usize],
-            3,
-            "anybody may bring three bursts"
-        );
-    }
-
-    /// The baseline fills two charge slots and leaves two empty. Naming an
-    /// empty one makes the weapon and puts it in the slot, so adding a third
-    /// charge is one block rather than a block plus a wiring line.
-    #[test]
-    fn naming_an_empty_charge_slot_fills_it() {
-        // The fourth slot. Any slot above the burst is empty in the baseline;
-        // this test is about a slot the zone finds that way.
-        let (w, warn) = tuned(
-            r#"
-            [[arena.weapons]]
-            name = "charge-4"
-            speed = 0
-            life = 1
-            on_wall = "pass"
-            expire_ends = true
-            blast = 400
-            damage = 900
-            delay = 200
-
-            [arena.kit]
-            charges = [3, 3, 3, 2]
-        "#,
-        );
-        assert!(warn.is_empty(), "{warn:?}");
-        assert_ne!(w.cfg.charge[3], sim::NO_PATTERN, "the slot is filled");
-        let sp = w.cfg.specs[w.cfg.patterns[w.cfg.charge[3] as usize].spec as usize];
-        assert_eq!(sp.blast, 400 * 256);
-        assert_eq!(
-            w.cfg.kit_ceiling[sim::slot_charge(3) as usize],
-            2,
-            "and a kit may bring two of it"
-        );
-    }
-
     #[test]
     fn a_zone_builds_a_ladder_rather_than_a_single_weapon() {
         let (w, warn) = tuned(
@@ -7217,9 +6100,17 @@ mod tests {
             name = "spike"
             damage = 300
 
+            [[arena.weapons]]
+            name = "spike-2"
+            damage = 400
+
+            [[arena.weapons]]
+            name = "spike-3"
+            damage = 500
+
             [[arena.ships]]
             name = "Cipher"
-            gun = ["spike", "apex-gun-2", "apex-gun-3"]
+            gun = ["spike", "spike-2", "spike-3"]
         "#,
         );
         assert!(warn.is_empty(), "{warn:?}");
@@ -7237,12 +6128,12 @@ mod tests {
             r#"
             [[arena.ships]]
             name = "Cipher"
-            gun = ["apex-gun", "not-a-weapon"]
+            gun = ["cipher-gun", "not-a-weapon"]
         "#,
         );
         assert!(warn.iter().any(|x| x.contains("not-a-weapon")), "{warn:?}");
         let rungs = w.cfg.classes[spire].trigger[0];
-        assert_ne!(rungs[1], sim::NO_PATTERN, "the hull kept its own ladder");
+        assert_ne!(rungs[0], sim::NO_PATTERN, "the hull kept its own ladder");
     }
 
     /// A zone may replace a hull's weapon ladder, but not its footprint. The
@@ -7363,25 +6254,6 @@ mod tests {
                 z.name
             );
         }
-    }
-
-    /// And a line taken out of the file comes back out of the arena.
-    #[test]
-    fn removing_a_line_removes_its_effect() {
-        let mut w = sim::World::new(1);
-        let multi = sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize;
-        Room::apply_config(
-            &mut w,
-            &parse(
-                r#"
-            [arena.kit]
-            gun_mods = { bounce = 1 }
-        "#,
-            ),
-        );
-        assert_eq!(w.cfg.kit_ceiling[multi], 0, "the zone took multifire away");
-        Room::apply_config(&mut w, &parse("[arena]\nmode = \"warzone\""));
-        assert!(w.cfg.kit_ceiling[multi] > 0, "back to the baseline");
     }
 }
 

@@ -102,25 +102,14 @@ wormhole_range = 220
 # match_seconds = 180
 # intermission_seconds = 15
 
-# What a kill is worth. A killer is paid the victim's whole bounty, and a
-# bounty is `bounty_base` plus `bounty_per_kill` for every kill since that
-# pilot last died. So the number over a ship is the length of its current run
-# and nothing else: it says nothing about what the pilot owns, and a fresh
-# spawn is worth `bounty_base` whatever they are flying. Camping is priced by
-# that arithmetic rather than by a rule about farming.
+# A streak: kills without dying. Reaching it tells the room, marks the hull
+# gold, and holds until somebody takes them. Set `streak_kills = 0` for a zone
+# that wants none of it.
 #
-# points_per_flag is the bonus for each flag the victim was holding. See
-# docs/design/bounty.md.
-bounty_base = 1
-bounty_per_kill = 3
-points_per_flag = 100
-
-# A streak: kills without dying, counted rather than priced, so this threshold
-# does not move when `bounty_per_kill` does. Reaching it tells the room, marks
-# the hull, and adds `streak_bounty` to what the pilot is worth until somebody
-# takes them. Set `streak_kills = 0` for a zone that wants none of it.
+# The one thing this game says about how a pilot is doing right now. There were
+# two more, and they were the same number twice: a bounty priced a kill and
+# points banked it. Both went with the shop.
 streak_kills = 3
-streak_bounty = 2
 
 # Connection diagnostics come from selective receipt windows. They describe
 # round trip, jitter and snapshot delivery, but never restrict gameplay. The
@@ -132,33 +121,37 @@ input_sample_ticks = 50
 combat_idle_ticks = 500
 spectate_silence_ticks = 500
 
-# Per-hull weapon tuning. A hull has a fixed silhouette and a ladder a zone may
-# replace.
+# Per hull: a flight row, a weapon ladder, and a profile. Anything left out
+# keeps the shipped roster's.
 #
-# A hull used to carry flight as well: a ceiling, a floor and a step for each
-# of five stats, so a zone could make one ship faster than another. That is
-# gone, and so is the tech tree that sat beside it. Thirty points has to buy
-# the same ship whatever you are flying or a kit is not a fair trade, and an
-# add-on ceiling that lives on a hull is an upgrade the shop can never sell.
-# See docs/design/ships.md.
+# A hull used to carry flight this way, then stopped: a kit was thirty points
+# and thirty points had to buy the same ship whatever you were sitting in, so
+# every hull flew the shared row and a hull was only a shape. There is no kit
+# now, so the hulls have their engines back and this is where they live.
 #
-# What is left is the shape. Every collision rectangle occupies exactly 625
-# square pixels, and the client art is fitted around it. A zone cannot override
-# that shared target budget. It may replace a hull's weapon ladder.
+# What a zone cannot override is the footprint. Every collision rectangle
+# occupies exactly 625 square pixels and the client art is fitted around it.
+#
+# Flight is in the file's own units: px/s/10, tenths of the documented thrust
+# unit, 400 to a full turn a second, energy, and energy a second times ten.
+# Flat, because nobody upgrades one.
+#
+# The profile is what the hull carries. A block that names any add-on for a
+# trigger names all of them, so what it leaves out is an add-on this hull does
+# not carry. `charges` is the rack by slot, at most two kinds, since a third
+# would bind to no key.
 #
 # [[arena.ships]]
-# name = "Apex"
-# gun = ["apex-gun", "apex-gun-2"]
-
-# What a kit may hold here, over the flat slot space, for every hull alike.
-# Anything left out keeps the baseline's, which is the union of what the seven
-# hull rows used to allow. An add-on left out of a map that names any is a slot
-# this arena does not have.
-#
-# [arena.kit]
-# gun_mods = { multi = 2, bounce = 1, freeze = 1, barrel = 2 }
-# bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, push = 2 }
-# charges = [3, 3, 6]
+# name = "Facet"
+# gun = ["facet-gun"]
+# speed = 3050
+# thrust = 175
+# rotation = 265
+# energy = 1400
+# recharge = 1100
+# gun_mods = { multi = 4, bounce = 1 }
+# bomb_mods = { }
+# charges = [2, 0]
 
 # Weapons, by name.
 #

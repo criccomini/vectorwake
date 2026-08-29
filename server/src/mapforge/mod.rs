@@ -847,13 +847,28 @@ pub(crate) fn assess(
     let bytes = sim::pack_map(map)?;
     let shared = sim::unpack_map(&bytes)?;
     let mut probe = sim::World::on_shared_map(gauge.seed as u32, Arc::clone(&shared));
+    // Timed against the middle of the roster rather than whichever hull is
+    // index zero.
+    //
+    // A map's promise is about everybody who flies it, and the seven no longer
+    // fly alike: the raider crosses a room a third faster than the heavy. This
+    // read class zero, which was fine while every hull shared one speed and
+    // became a gate that quietly measured an Apex the moment they stopped.
+    // The median is the honest single number, and it moves only when the
+    // roster's shape does rather than when its first row is retuned.
+    let mut speeds: Vec<i32> = Vec::with_capacity(sim::MAX_CLASSES);
     let ship = probe.spawn_on_map(0, 0, 0, 0);
-    let top = if ship >= 0 {
-        (unsafe { sim::sim_eff_speed(&probe.cfg.classes[0], &probe.state.ships[ship as usize]) })
-            as f64
-            / 65536.0
-    } else {
-        1.0
+    if ship >= 0 {
+        for class in 0..probe.cfg.class_count as usize {
+            speeds.push(unsafe {
+                sim::sim_eff_speed(&probe.cfg.classes[class], &probe.state.ships[ship as usize])
+            });
+        }
+    }
+    speeds.sort_unstable();
+    let top = match speeds.get(speeds.len() / 2) {
+        Some(&v) => v as f64 / 65536.0,
+        None => 1.0,
     };
     let contact = shortest * sim::TILE_PX as f64 / (top * 100.0);
     let material = materials(map);

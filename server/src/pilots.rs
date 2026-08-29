@@ -470,19 +470,6 @@ pub fn roster() -> Vec<PilotSpec> {
 mod tests {
     use super::*;
 
-    /// Every strategy the game ships, so a test over all of them stays over
-    /// all of them when a ninth is written.
-    const STRATEGIES: [Strategy; 8] = [
-        Strategy::Duelist,
-        Strategy::Bombardier,
-        Strategy::Skirmisher,
-        Strategy::Heavy,
-        Strategy::Ambusher,
-        Strategy::Brawler,
-        Strategy::Denier,
-        Strategy::Runner,
-    ];
-
     #[test]
     fn shipped_pilots_keep_their_careers() {
         let expected = [
@@ -502,50 +489,6 @@ mod tests {
             assert_eq!(spec.hull, hull);
             let midpoint = (spec.competence.aim + spec.competence.judgment) / 2.0;
             assert!((midpoint - skill).abs() < 0.000_001);
-        }
-    }
-
-    /// A pilot whose brain opens the bombing gates owns a bomb.
-    ///
-    /// `choose_weapon` gives Bombardier and Heavy the short cadence and the
-    /// energy license that let them initiate with the weapon; every other
-    /// strategy waits for a crowd or a finisher. A pilot in that pair without a
-    /// bomb spends the match asking for one it never bought, which is what the
-    /// old separate build plan let happen to two thirds of them.
-    #[test]
-    fn the_bombing_strategies_own_a_bomb() {
-        let bomb = crate::sim::slot_level(crate::sim::TRIG_BOMB) as usize;
-        for strategy in STRATEGIES {
-            let profile = BehaviorProfile::for_strategy(strategy);
-            let owns = crate::shopper::wants(&profile).contains(&bomb);
-            let opens_the_gates = matches!(strategy, Strategy::Bombardier | Strategy::Heavy);
-            assert!(
-                !opens_the_gates || owns,
-                "{strategy:?} initiates with a bomb it never buys"
-            );
-        }
-    }
-
-    /// And no two personalities buy the same thing, which is the whole claim
-    /// `docs/design/ai-players.md` makes for taste: a room is not eight of one
-    /// ship, and what a pilot throws is a fact worth learning about that pilot.
-    #[test]
-    fn every_strategy_has_a_kit_of_its_own() {
-        let ceiling = *crate::sim::World::baseline_kit_ceiling();
-        let mut seen: Vec<(Strategy, [u8; crate::sim::SLOT_COUNT])> = Vec::new();
-        for strategy in STRATEGIES {
-            let profile = BehaviorProfile::for_strategy(strategy);
-            let kit = crate::shopper::build(&crate::shopper::wants(&profile), &ceiling);
-            let spent: u32 = kit.iter().map(|n| *n as u32).sum();
-            assert_eq!(
-                spent,
-                crate::sim::KIT_BUDGET,
-                "{strategy:?} left points unspent"
-            );
-            if let Some((other, _)) = seen.iter().find(|(_, k)| *k == kit) {
-                panic!("{strategy:?} and {other:?} fly the same thirty points");
-            }
-            seen.push((strategy, kit));
         }
     }
 

@@ -9,28 +9,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::arena::ArenaServer;
-use crate::presence::{Presence, PresenceHandle};
+use crate::presence::PresenceHandle;
 use crate::protocol::input_packet;
-
-pub(super) async fn kit(zone: &Arc<Mutex<ArenaServer>>, presence: &PresenceHandle, data: &[u8]) {
-    if data.len() <= crate::sim::SLOT_COUNT {
-        return;
-    }
-    let mut kit = [0u8; crate::sim::SLOT_COUNT];
-    kit.copy_from_slice(&data[1..1 + crate::sim::SLOT_COUNT]);
-    let Presence::Flying { room, member } = presence.current() else {
-        return;
-    };
-    let mut zone = zone.lock().await;
-    let Some(arena) = zone.rooms.iter_mut().find(|arena| arena.number == room) else {
-        return;
-    };
-    let Some(ship) = arena.players.get(&member).map(|player| player.ship) else {
-        return;
-    };
-    // The room decides whether this lands now or at the next whistle.
-    arena.ask_kit(ship, &kit);
-}
 
 pub(super) async fn say(zone: &Arc<Mutex<ArenaServer>>, presence: &PresenceHandle, data: &[u8]) {
     let Some(&phrase) = data.get(1) else { return };
