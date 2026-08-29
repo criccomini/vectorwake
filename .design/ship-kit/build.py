@@ -903,12 +903,12 @@ def flat_reset():
 # The Apex default: spray 2, repel 2, burst 1 is four picks of seven, so a
 # fresh player holds three free credits and their first edit is spending
 # one rather than trading.
-def flat_body():
+def flat_body(cursor=True):
     return (
         flat_tray(3)
         + sect("gun", mt=10)
         + '<div style="margin-top:2px">'
-        + flat_row("Spray", "2", state="cursor",
+        + flat_row("Spray", "2", state="cursor" if cursor else None,
                    note="How many rounds one pull of the trigger throws.")
         + flat_toggle_row("Bounce", False)
         + flat_toggle_row("Freeze", False)
@@ -1173,6 +1173,43 @@ def land_tune_board():
           + land_frame(1440, 810, card))
 
 
+# -- The pager: Chris's cut through the list. The ship stop expands into
+# one hull at a time, paged by left and right on the name, its five bars
+# under it and its tune rows directly below, no TUNE press and no list.
+# Comparison rides the bars being relative to the roster: a full bar
+# already means best of the seven. Spectate is the eighth page, past
+# Lattice, the helmet with no stats.
+def big_tri(direction, k=15):
+    pts = ("2,7.5 12,1.5 12,13.5" if direction < 0 else "13,7.5 3,1.5 3,13.5")
+    return (f'<svg width="{k}" height="{k}" viewBox="0 0 15 15" '
+            f'style="flex:none"><polygon points="{pts}" '
+            'fill="rgba(79,214,255,.9)"/></svg>')
+
+
+def land_pager(tops):
+    head = ('<div class="row" style="height:48px;gap:16px;margin:0 -14px;'
+            'padding:0 14px;justify-content:center;border-bottom:1px solid '
+            'rgba(63,88,120,.45)">'
+            + big_tri(-1)
+            + thumb("Apex", "#4fd6ff")
+            + '<span style="font-size:17px;color:#4fd6ff">Apex</span>'
+            + big_tri(1) + '</div>')
+    bars = ('<div style="padding:12px 0 4px">'
+            + bars_strip((.76, .86, .48, .14, .57), "#4fd6ff") + '</div>')
+    bottom = tops["SHIP"] + 36 + 6
+    return (f'<div style="position:absolute;left:50%;'
+            f'transform:translateX(-50%);bottom:{bottom}px;width:390px;'
+            'background:#070b12;border:1px solid rgba(63,88,120,.85);'
+            'padding:0 14px 8px;z-index:5">'
+            + head + bars + flat_body(cursor=False) + '</div>')
+
+
+def land_pager_board():
+    write("LandPager.dc.html",
+          '<style>' + PLAY_CSS + '</style>'
+          + land_frame(1440, 810, land_pager))
+
+
 main_board()
 tune_board()
 tune_states_board()
@@ -1188,4 +1225,5 @@ flat_board()
 flat_spent_board()
 land_board()
 land_tune_board()
-print("fifteen boards written")
+land_pager_board()
+print("sixteen boards written")
