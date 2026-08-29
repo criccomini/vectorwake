@@ -206,7 +206,7 @@ Deriving it from the hull the camera is behind is the obvious reading and the
 wrong one, because the camera moves: it repainted your own side as hostile
 whenever the channel crossed the line.
 
-The pilot being observed wears their call sign and their bounty at their
+The pilot being observed wears their call sign at their
 hull's lower right, exactly as every other pilot on screen does, because the
 one hull that goes unlabeled is your own and a watcher has none. That is the
 answer to the only question a spectator has constantly, and it belongs on the

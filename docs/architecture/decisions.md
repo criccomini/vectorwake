@@ -2169,8 +2169,9 @@ not by trusting a client receipt bitmap again.
 
 ## 50. A hull is a shape, and everything else is on the shelf
 
-**Status:** accepted; the unrestricted footprint areas are superseded by
-decision 57
+**Status:** superseded by
+[decision 97](#97-ships-are-preconstructed-and-nothing-is-bought); the
+unrestricted footprint areas were superseded by decision 57
 
 Seven hulls carried a row apiece: how far each weapon climbed, which add-ons
 they could hold and how deep, how many of each charge they carried. Four things
@@ -2859,7 +2860,9 @@ between matches, which is the whole argument for keeping the fight visible.
 
 ## 64. The ship page is the shelf
 
-**Status:** accepted, superseding the split between ship and upgrades
+**Status:** superseded by
+[decision 97](#97-ships-are-preconstructed-and-nothing-is-bought); it
+superseded the split between ship and upgrades
 
 **Decision:** the upgrades tab is gone and every slot the arena has is a row of
 the ship page. A slot's ladder is circles: solid is a point equipped, a ring in
@@ -4778,3 +4781,83 @@ class a pilot has flown most.
 back as this: the pieces worth keeping are the pairing rule at the door and the
 card, and both were built around a zone whose rooms hold two seats, which is
 the constraint that made every other piece necessary.
+
+---
+
+## 97. Ships are preconstructed, and nothing is bought
+
+**Status:** accepted, superseding
+[decision 50](#50-a-hull-is-a-shape-and-everything-else-is-on-the-shelf)
+and [decision 64](#64-the-ship-page-is-the-shelf)
+
+**Decision:** every hull is a whole ship. Its flight row, its gun, its bomb and
+what those weapons carry all belong to the hull and are set by the zone, and a
+pilot picks one off a roster of seven. The kit, the thirty point budget, the
+shelf, the wallet, the bounty and the points are all removed. Chris asked for
+preconstructed profiles back, balanced, and asked for rivets, points and bounty
+to go with them.
+
+Decision 50 deleted the per-hull rows on the argument that a trait one hull
+holds is a trait a shop can never sell. That was correct, and it named its own
+reconsider clause: uniform flight was what made a thirty point kit a fair
+trade, so if the budget ever went, the argument for uniform flight went with
+it. This is that trade being made deliberately.
+
+What the budget was really costing is easier to see now. Thirty points against
+one shared flight row means every pilot in the room starts from the same ship
+and spends the same thirty, so the only thing a hull could be was a rectangle.
+Seven silhouettes with identical engines is a thinner roster than seven ships,
+and "you cannot shape your ship to your liking" is better answered by seven
+real ships than by one ship with thirty sliders on it.
+
+So `sim_ship_class` gains a `kit` vector, which is the same twenty-three slot
+space the kit used to spend points on, moved from the ship record to the class.
+`sim_spawn` deals it. `sim_settings` loses `kit_ceiling`, because `sim_grant`
+clamps to the core's own maxima and a zone that wants a shallower hull writes a
+shallower hull. The flight row is per class again, with the floor equal to the
+cap and the step at zero, so a profile can name a stat slot and it buys
+nothing.
+
+Bounty and points go together because they were one number by the time this
+started: a bounty was the length of a run, points were what a kill paid, and
+rivets were points banked. With nothing to buy, the wallet has nothing to be
+for, and with the wallet gone the two numbers a kill moved are a kill and an
+assist. `SIM_EV_DEATH` carries nothing, `S2C_KILL` is thirteen bytes, and the
+pilot log files a run rather than a bounty.
+
+Two live bugs surfaced on the way and are fixed here. The AI weighted a target
+by `bounty / 60.0` against a bounty that had not been a sum over held counts
+for months, so the term was dead; it reads the streak now. And the map gate
+that holds every melee map to a home-to-home flight time was timing class
+zero's *floor* speed, which is a speed nobody flew because every pilot spent
+points on it: the gate is the roster's median now and every window is rescaled
+by the same factor.
+
+The client's ship page loses four pages and a carousel. What is left is the
+roster, one row a ship, carrying its name, the shape it presents, its flight as
+five bars against the rest of the roster and what it flies with. Pressing a row
+flies it. The podium grows a rating column, which is what a match is worth now
+that nothing is paid; it is drawn at the whistle and never during the fight,
+because a rating is a standing and a number climbing over somebody's head while
+they are being shot at is the shape the bounty had.
+
+**Cost:** balance is harder, and it is the point. Seven ships that are actually
+different have to be held level against each other with nothing a pilot could
+have spent to answer a bad matchup, so `calibrate hulls` is the primary harness
+now and the kit's profile experiment, with its ten preregistered marginal-pip
+contrasts, is gone with the question it answered.
+
+A pilot on two kills looks exactly like a pilot on none, since the bounty over
+a hull was the only thing that said otherwise below the streak threshold. Chris
+accepted that: the streak at three is the one thing this game says about how
+somebody is doing right now, and a second quieter marker would be the bounty in
+a smaller font.
+
+And a new account has nothing to look forward to but a rating. The drip is
+gone, the shop that was its point is gone, and the bet is that a game worth
+playing does not need one.
+
+**Reconsider if:** the roster cannot be balanced, in which case the answer is
+fewer ships rather than a budget coming back. Or if the game needs something to
+earn, in which case it is something that is not strength: livery, a name, a
+mark. Strength behind a price is what came out.

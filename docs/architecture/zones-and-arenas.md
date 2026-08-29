@@ -413,7 +413,7 @@ max_bots_per_team = 26       # and the ballast dial
 arrival is seated on a side of their own. It was `teams = 1` once, which reads
 as "everybody on side zero" and did exactly that: every hostility test in the
 stack asks whether two teams differ, so a weapon skipped every ship, a kill
-paid no points and no bounty, a repel pushed nobody, and a bot did not so much
+scored nothing, a repel pushed nobody, and a bot did not so much
 as look at anybody. Chaos shipped that way and ran for a day with combat
 switched off, nine pilots holding perfectly still because there was nothing any
 of them could see or shoot. The seat-per-side arrangement fits because ship

@@ -150,7 +150,7 @@ manufactures it out of nothing.
 ### The game narrating itself
 
 An arena knows when something notable happened, and the notable ones have a
-story: a large bounty falling, a streak ending, a pilot taking the top human
+story: a streak ending, a pilot taking the top human
 place. Not every kill, which would be noise at nearly two a second, but a
 threshold worth of them, posted as they land. A trickle like that makes the
 server feel inhabited on an afternoon when the fight is mostly bots.

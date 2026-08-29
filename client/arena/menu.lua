@@ -1903,25 +1903,21 @@ local function escape()
     return nil, true
 end
 
--- Whether this guest has anything a lost account would cost: an upgrade
--- bought past the baseline, or a rated game flown. This is
--- what arms the banner and the rail dot; before there is anything to lose
--- they stay away, because a warning over an empty account is nagging.
+-- Whether this guest has anything a lost account would cost, which is a rated
+-- game flown. That is what arms the banner and the rail dot; before there is
+-- anything to lose they stay away, because a warning over an empty account is
+-- nagging.
+--
+-- An upgrade bought past the baseline was the other half of this, and there
+-- are no upgrades. A rating is the only durable thing a pilot has now, so the
+-- question is simply whether they have started earning one.
 --
 -- Up here rather than beside the view that reads it, because `M.tick` reads
 -- it too: the career this asks about is fetched once a session, which is a
 -- session too late for the guest who flies their first game in it.
 local function guest_stakes()
     if account.base == "" or account.claimed then return false end
-    if ((account.career or {}).games or 0) > 0 then return true end
-    local own = account.entitlements or {}
-    local core = _G.sim
-    local base = (core and core.base_entitlements and core.base_entitlements())
-        or {}
-    for i = 1, simn("SLOT_COUNT", 23) do
-        if (tonumber(own[i]) or 0) > (base[i] or 0) then return true end
-    end
-    return false
+    return ((account.career or {}).games or 0) > 0
 end
 
 -- Put the cursor on the game you were in last, once the directory has

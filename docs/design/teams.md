@@ -70,7 +70,7 @@ could not have offered a text field anyway.
 
 The selection happens in the info box rather than in a menu of its own. Open
 the scoreboard, click whoever it is, and the panel that says who they are
-carries the invitation under their bounty. A separate invite menu was the
+carries the invitation under their name. A separate invite menu was the
 first version and it was a second roster to keep in step with the first, sorted
 its own way, listing the same people; a player deciding to invite somebody is
 usually already reading about them when they decide. The control appears only
@@ -119,7 +119,7 @@ Changing teams is gated exactly like changing hulls, for exactly the same
 reasons: only alive, only at a full bar, and it is a respawn. A weapon in
 flight carries the team that fired it, so a change that took effect in place
 would turn incoming fire friendly mid-air; respawning ends the question. The
-change drops any flag the pilot carries and clears their earned bounty, which
+change drops any flag the pilot carries and ends any run they were on, which
 closes the laundering the original also had to close, where two friends swap
 sides to farm each other. Ratings need no protection at all, because rating
 is pairwise between accounts per [rating.md](rating.md) and never mentions a

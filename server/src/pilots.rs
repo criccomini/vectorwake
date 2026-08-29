@@ -4,9 +4,9 @@
 //! This module owns the first four. Rating remains a career result in the
 //! meta-layer rather than a number a designer writes into a pilot.
 //!
-//! What a pilot buys is not among them. That was a build plan named beside the
-//! behavior and drawn independently of it; it is now read off the behavior
-//! itself, in `shopper::wants`.
+//! What a pilot flies with is not among them either, and no longer can be: a
+//! hull is a whole ship, so choosing the hull chooses the ship. A behavior
+//! that wants a bomb picks a hull with a rack.
 
 pub const PILOT_SPEC_VERSION: u16 = 1;
 /// Distinct ordinary house pilots the population director may claim.

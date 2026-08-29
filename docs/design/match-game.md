@@ -1,17 +1,23 @@
 # The match game
 
+> **The kit, the shop and the bounty are gone.** Ships are preconstructed:
+> every hull is a whole ship with its own flight, gun, bomb and profile, and a
+> pilot picks one. Nothing is spent, nothing is bought and nothing is banked,
+> so gripes 3 and 6 below are answered differently than this document first
+> proposed. The sections that described them have been rewritten rather than
+> deleted, because the reasoning that led here is worth keeping. See
+> [ships.md](ships.md) and [decisions.md](../architecture/decisions.md).
+
 > **The week's table is gone.** The standings tab came out of the client, so
 > gripe 5 is answered outside the game again: the site publishes the ladder at
-> `/pilots` and nothing inside a session ranks you. What still accumulates is
-> the kit, the wallet and the rating. See
-> [decision 65](../architecture/decisions.md).
+> `/pilots` and nothing inside a session ranks you. What accumulates is the
+> rating. See [decision 65](../architecture/decisions.md).
 
 > **Built, for Melee.** Everything below through the week is running: three
-> minute matches with an intermission, the kit and the shop that sells slots
-> for it, bounty paid as rivets, six match maps, and the six tabs. Capture and
-> Holdfast are named here and not written; so are parties and livery. Friends
-> was built and then removed, per decision 95.
-> Alpha did not survive this document, and greens, gunners and turrets went
+> minute matches with an intermission, seven preconstructed ships, six match
+> maps, and the six tabs. Capture and Holdfast are named here and not written;
+> so are parties and livery. Friends was built and then removed, per decision
+> 95. Alpha did not survive this document, and greens, gunners and turrets went
 > with it.
 >
 > It replaces the six-gripe proposal that used to live at `progression.md`,
@@ -45,18 +51,25 @@ practice room, and no lobby to wait in. You pick a mode, you are in a match
 within seconds, and three minutes later it ends with a score, a payout and a
 next one.
 
-Around that sit three things:
+Around that sit two things:
 
-- **A kit** you build and own, dealt to your hull at every spawn. Gripe 3.
-- **Bounty** that starts at one and grows with your run, paid to whoever
-  ends it. Gripes 1 and 6.
-- **Rivets**, which are bounty taken, spent on what you may slot and on what
-  you wear. Gripe 6.
+- **A ship you chose off a roster of seven**, each a whole ship rather than a
+  shape, dealt to you whole at every spawn. Gripe 3.
+- **A rating** that moves on every kill and every death, and a podium that
+  says what the match did to it. Gripes 1, 5 and 6.
 
-Gripe 4 is answered by the match itself. A death still empties the hull, and
-the hull refills from your kit at the next spawn, so what a death costs is
-the seconds it takes to fly back. Nothing you built goes away, because you
-own it.
+Three of those gripes used to be answered by an economy: a thirty point kit,
+a bounty that grew with a run, and rivets to spend on slots. That is gone, and
+the argument for going is in [decisions.md](../architecture/decisions.md). The
+short version: a budget every pilot spends the same thirty points against
+forces every hull onto one flight row, and once it does, the thing a player
+picks is a silhouette. Seven real ships is a better answer to "you cannot
+shape your ship" than one ship with thirty sliders.
+
+Gripe 4 is answered by the match itself. A death empties the hull, and the
+hull comes back whole at the next spawn, so what a death costs is the seconds
+it takes to fly back. There is nothing to lose, because there was nothing to
+accumulate inside the match.
 
 ## The match
 
@@ -83,9 +96,9 @@ then.
 match with the intermission between them: the server stays alive between
 matches rather than being built for each one. The match is only what the room
 is doing right now. So a join never waits for anything to finish. If a match
-is running you spawn into it with your own kit at bounty 1 and the score
-standing; if the room is between matches you land on the podium and the next
-one starts in a few seconds.
+is running you spawn into it in your own ship with the score standing; if the
+room is between matches you land on the podium and the next one starts in a
+few seconds.
 
 That replaces a rule saying humans join at match boundaries and open a new
 room when they cannot find one. Those two sentences together guaranteed the
@@ -125,8 +138,8 @@ arrive there too, so three paths produce one state rather than three.
 [spectating.md](spectating.md) has the gallery, including what happens to a
 seat that frees while people are watching.
 
-**The hull is locked for the match.** Kit and hull change in the hangar
-between matches. This is not ceremony: charges
+**The hull is locked for the match.** A ship is chosen between matches. This
+is not ceremony: charges
 are match-scoped below, and a mid-match hull change would have to answer what
 happens to a half-spent charge ledger across two different charge rows. The
 honest answer is to not let the question exist.
@@ -147,9 +160,12 @@ spans the window up to a thousand and forty points, the two sides stand abreast
 where there is room for them and stack where there is not, and each group under
 the scoreline wears its name over a rule.
 
-What the match paid is not on it. That was BANKED and a rivet in the corner,
-and it reads better where the wallet already is: an ending is about the match,
-and a running total belongs on the page that spends it. The film has no key either. A second key of equal
+What the match did to your rating is on it, as a column on the board: signed,
+green for a climb and the other side's color for a slide, and a zero where the
+match did not move you. A rating is the one number that outlives the three
+minutes, so the ending is where it belongs, and it is drawn nowhere during the
+fight. BANKED and a rivet stood in that corner once; both went with the shop.
+The film has no key either. A second key of equal
 weight on the one screen with a countdown running made the ending a choice
 between leaving and staying, so what remains is the one key that hands the
 match to somebody else.
@@ -178,9 +194,8 @@ been wiped rather than that time was up.
 
 Nothing you own, and a walk.
 
-This is the load-bearing consequence of owning a kit, and it makes spawn
-geometry the only thing pricing a death, so the maps carry the weight the
-prize table used to.
+A ship comes back whole, so spawn geometry is the only thing pricing a death
+and the maps carry the weight the prize table used to.
 
 **Each side spawns in its own pocket, at its own end of the map.** Not a
 shared scatter with a radius. Two homes, far apart, with real ground between
@@ -196,51 +211,47 @@ anywhere.
 **No safe zones in a home pocket.** Nowhere to hide, in anything played
 against a clock: a safe pocket is where a leading team goes to stall. Respawn
 invulnerability stays long enough to orient and short enough to be useless
-offensively. Camping a spawn is
-already close to worthless, because a pilot who has just died is worth one.
+offensively.
 
 ## Spray is one ladder
 
-How many rounds a pull throws. Nothing is one; a rung is a round; the top is
-six.
+How many rounds a pull throws, and it is a number on the hull rather than a
+thing a pilot climbs. The Lattice throws one, the Apex two, the Chord three
+and the Facet five.
 
-It was two add-ons. "Gun spray" opened a wide fan and charged energy and
-cooldown; "gun double barrel" put a tight pair abreast and charged energy
-alone. Both of them read, on the page that sells them, as *more bullets*, and
-nobody could say what the difference bought. So they are one ladder and the
-tradeoff moved: it is no longer which add-on but how many rounds, against
-everything else thirty points could buy.
+It was two add-ons on a shelf. "Gun spray" opened a wide fan and charged energy
+and cooldown; "gun double barrel" put a tight pair abreast and charged energy
+alone. Both read, on the page that sold them, as *more bullets*, and nobody
+could say what the difference bought. So they became one ladder, and then the
+shelf went and the ladder became a row in each hull's profile.
 
-What survives of the difference is the spacing. One rung is the pair, and it
-leaves at the tighter angle a pair is supposed to, so two abreast still read as
-two abreast; three or more open out to the zone's fan. A pilot climbing the
-ladder feels the group widen, which is the thing the second add-on was really
-about.
-
-Every rung costs energy and cooldown, at a quarter and a half of the shot's
-own. That lands a spray of three exactly where the original priced multifire,
-and the rest of the ladder climbs from there rather than from a number invented
-for the top of it. What the merge cost, and what it bought, is [decision
+What survives of the difference is the spacing. Two rounds leave at the tighter
+angle a pair is supposed to, so the Apex's pair lands together out to three
+hundred pixels; three or more open out to the zone's fan, which is what makes
+the Facet a shotgun rather than a heavier gun. Every round past the first costs
+energy and cooldown, at a quarter and a half of the shot's own, so five rounds
+is two and a quarter times the energy and three and a half times the wait. That
+lands a spray of three exactly where the original priced multifire. What the
+merge cost, and what it bought, is [decision
 54](../architecture/decisions.md#54-barrels-and-multifire-are-one-ladder-called-spray).
 
-## Two charges, and which two is the choice
+## Two charges, and which two is the hull's
 
-A kit carries two kinds of charge. Which two is a decision made on the ship
-page, and which key spends which is decided there too.
+A ship carries two kinds of charge, and which two is the hull's: the Anvil
+carries three repels and one burst, the Cipher one and two, the Lattice three
+of each. What is left for the pilot is which key throws which.
 
-Each charge row carries a box beside its pips reading "charge 1 (Q)" or
-"charge 2 (W)", and pressing either one trades them. Before that the order was
-the core's numbering of the kinds, which meant the lower-numbered kind took Q
-whether the pilot wanted it there or not, and the only sign of it was a lone
-letter at the far right edge of the page. What key throws what is a preference
-about a keyboard rather than a fact about a ship, so it is kept on the device
-beside the bindings and nothing about the kit changes when it moves.
+That is a row on the ship page, beside the wake, reading "repel first" or
+"burst first" and stepped by the arrows. Before it existed the order was the
+core's numbering of the kinds, so the lower-numbered kind took Q whether the
+pilot wanted it there or not. What key throws what is a preference about a
+keyboard rather than a fact about a ship, so it is kept on the device beside
+the bindings and nothing about the ship changes when it moves. The row is not
+drawn on a hull that carries one kind, because there is nothing to trade.
 
-Two kinds ship today, a repel and a burst, and the rack above the account's
-two of each is what the shelf sells. The rack holds four, so a zone may write
-more; the arena refuses a kit that names a third kind and the page will not
-offer one, because carrying every kind at once would mean there was nothing to
-decide.
+Two kinds ship today, a repel and a burst. The rack holds four, so a zone may
+write more; the arena refuses a profile naming a third kind, because carrying
+every kind at once would mean there was nothing to decide.
 
 The keys are named for their positions rather than for weapons. A key named
 for a weapon does nothing on a ship not carrying it, and puts a row on the
@@ -272,19 +283,16 @@ in a match, the podium card, the corner readout, and the week's table. See
 
 ## What a misfire costs
 
-A kill, and a rivet.
+A kill.
 
 Killing yourself with your own bomb, or killing a wingman with it, takes one
-off your kills and one off your wallet. The kill count goes under zero and is
-meant to: clamping it at nothing makes the first mistake free and every one
-after it visible, which is the wrong way round, and a pilot who has spent a
-match bombing their own side should be able to read that off the card. The
-wallet does not go under zero, because a negative score is a fact about a match
-and a negative balance is a debt, and this game does not have those.
+off your kills. The count goes under zero and is meant to: clamping it at
+nothing makes the first mistake free and every one after it visible, which is
+the wrong way round, and a pilot who has spent a match bombing their own side
+should be able to read that off the card.
 
-One rivet is not a fine calibrated against anything. A kill is worth dozens, so
-this is the smallest amount a wallet can move by, and the point is that the
-number goes the other way rather than that it hurts.
+It cost a rivet as well while there was a wallet to take it out of. That was
+never a fine calibrated against anything, and it went with the wallet.
 
 Flying into a rock is free. It is a death and not a mistake anybody aimed, and
 the walk back is already what it costs. The two that are charged are the two
@@ -336,121 +344,121 @@ such as whether cover feels purposeful, visible before it joins the rotation.
 
 The flight time between the homes is held by a test rather than by a comment.
 `the_melee_maps_are_two_homes_with_ground_between_them` routes a hull from one
-pocket to the other on each shipped file and flies the polyline at an Apex's
-top speed with a kit that spends nothing on speed. Every map stays between
-nine and seventeen and a half seconds of home-to-home flight. First contact
-therefore lands inside the five-to-eight second design window when both sides
-leave together.
+pocket to the other on each shipped file and flies the polyline at the
+roster's median top speed. Every map stays between six and eleven and a half
+seconds of home-to-home flight. First contact therefore lands inside the design
+window when both sides leave together.
 
-## The kit
+The median rather than class zero's floor, which is what it used to be. That
+floor was the bottom of a shared flight row nobody flew: every pilot spent
+points on speed, so the gate was timing a ship that did not exist and every
+window was scaled to it. Seven ships fly at seven speeds now and the middle of
+them is the honest one to measure against.
 
-**A kit is thirty upgrades you choose, dealt to your hull at every spawn.**
+## The roster
 
-Alpha deals thirty random greens to every fresh spawn today (`spawn_prizes =
-30`). A kit is those same thirty, chosen once in the hangar instead of rolled
-at the pad. Nothing is added to the ship, which is what keeps this cheap: the
-sim already holds these as counts, the snapshot already carries them, and the
-drill harness already measures matched thirty-upgrade kits.
+**A ship is preconstructed, and a pilot picks one of seven.**
 
-The space is the one the tech tree already defines, and everything in it
-costs exactly one:
+Alpha dealt thirty random greens to every fresh spawn (`spawn_prizes = 30`).
+The first answer to that was a kit: those same thirty, chosen once in a hangar
+instead of rolled at the pad, over a flat space where a step of a stat, a rung
+of a weapon, an add-on and a charge each cost exactly one. It shipped, it
+worked, and it was the wrong shape.
 
-| kind | ceiling |
-|---|---|
-| a step of a stat | eight useful steps on each of five ladders |
-| a rung of a trigger's ladder | the arena's row |
-| an add-on on a trigger | the arena's row |
-| a charge carried | the arena's row |
+The reason is a constraint it dragged behind it. Thirty points is only a fair
+trade if every pilot spends thirty against the same starting ship, so every
+hull had to sit on one flight row: same speed, same thrust, same turn, same
+energy, same recharge. What separated the seven was the rectangle each one put
+between a bullet and the pilot, and nothing else. That is a real difference and
+it is not enough of one. A player who has picked a silhouette has not picked a
+ship, and the thirty sliders they picked afterwards were the same thirty
+sliders in every cockpit.
 
-**Two ceilings, and neither is the hull.** The arena says what it has; the
-account says what it has bought; the smaller wins, inside the budget. There
-used to be a third, a row per hull saying which add-ons that hull would hold
-and how deep, and it is gone. It meant a pilot could buy an upgrade and then
-find the ship they wanted to fly it on would not take it, and it meant four
-traits could never be sold at all because they existed on one hull each. See
-[ships.md](ships.md#the-tech-tree).
+So the budget goes, and with it the constraint. Each hull now carries its own
+flight row, its own gun, its own bomb, and its own profile over the same flat
+slot space the kit used to spend points on. The Anvil is slow and hits for 500
+a round; the Cipher outruns everything and has no bomb rack at all; the Facet
+throws five bouncing rounds; the Lattice cannot kill you and carries six
+charges to move you with. The whole roster is four tables in
+`sim/src/baseline.c` and it is documented in [ships.md](ships.md).
 
-**Everyone deals thirty**, new pilot and veteran alike. A new account owns
-three complete profiles: Gunner, Bomber and Control. Choosing one takes a
-press; changing its slots makes a custom build, and that build can be saved
-under a new profile name, renamed later, or dropped. The three the game ships
-are not a pilot's to rename or drop, since those names are the code's.
-Profiles are ordinary hull-independent kits, so there is no second balance
-system hiding behind the convenience.
+Nothing is added to the ship to make this work. The core already held a profile
+as counts over that flat space, the snapshot already carried them, and the only
+change is which record they hang off: the class rather than the ship.
 
-The old flight row clamped after seven Energy points, five Recharge, five
-Speed, one Thrust and one Rotation. Hiding those dead points made the page
-honest, but it also erased most of the flight build space. The row now gives
-all five stats eight useful steps. The standard `5/4/5/2/2` allocation still
-resolves to 1600 Energy, 1150 Recharge, 3250 Speed, 17 Thrust and 230 Rotation,
-so the starter still flies the same. Moving away from it is the new choice.
+**Everyone flies the same seven.** No account owns anything another does not,
+because there is nothing to own. A new pilot's Apex is a veteran's Apex, which
+is the property the shop spent its whole existence failing to have: an economy
+that sells strength has to sell it to somebody who does not have it yet, and
+that pilot is by definition the one who most needs the fight to be fair.
 
-The five ladders contain forty useful points against a budget of thirty. A
-pilot may spend the whole kit on flight, with only the base gun and bomb, but
-cannot maximize every stat. The starter spends eighteen on flight and leaves
-twelve for weapons and charges. Each extra pip therefore has both a physical
-effect and a visible opportunity cost.
+**Death re-deals the frame, never the ammunition.** Flight, weapons and add-ons
+come back at every spawn, because they are what your ship is. Charge counts do
+not: you start a match with the charges your hull carries, and when they are
+gone they are gone until the next match.
 
-**Death re-deals the frame, never the ammunition.** Stats, rungs and add-ons
-come back at every spawn, because they are what your ship is. Charge counts
-do not: you start a match with the charges your kit slotted, and when they
-are gone they are gone until the next match.
-
-That rule earns its place twice. It closes an exploit, since a refill on
-death means a pilot out of repels can suicide into the nearest enemy to
-reload, and at a bounty of one that costs nothing. And it turns one kit slot
-into a three minute budget rather than a per-life allowance: spend both
-repels in the opening joust and you fly the last minute with no way out of a
-corner.
+That rule earns its place twice. It closes an exploit, since a refill on death
+means a pilot out of repels can suicide into the nearest enemy to reload, and
+dying costs nothing but the walk. And it turns the rack into a three minute
+budget rather than a per-life allowance: spend both repels in the opening joust
+and you fly the last minute with no way out of a corner.
 
 The corner stack already draws spent charges as empty rings. It needs no
 change, it just stops refilling.
 
-## Bounty, and rivets
+**Balance is now a roster question.** `calibrate hulls` flies the seven against
+each other and reports the matrix, and it is the harness that matters: with no
+kit in the way, a hull that beats the field beats the field, and there is
+nothing a pilot could have spent to answer it. The kit had a profile harness
+that measured ten marginal-pip contrasts among legal thirty-point builds, with
+a preregistered powered seed stream and a family-wise interval on each. That
+question no longer exists, and the machinery that answered it went with it.
 
-**Bounty starts at one and rises by one for every kill. Your killer takes it,
-as rivets. Dying puts you back to one.**
+## What a match is worth
 
-So a pilot's bounty is the length of their current run, and the number over a
-ship says exactly how good a prize it is. A fresh spawn is worth one, which
-is the anti-farming property `bounty.md` prizes, arrived at by arithmetic a
-player can do in their head rather than by a rule about camping.
+**Kills, deaths, assists, and a streak. That is all a match counts.**
 
-This collapses two numbers into one. There is no separate score banked into a
-separate wallet: rivets are what killing pays, they arrive at the kill, and
-nothing takes them back. `sim_bounty` stops being a sum over held counts and
-becomes a counter the server owns.
+Three of those are on the board all match and on the podium at the whistle. The
+fourth is the announcement in the next section.
 
-**Objectives raise your bounty rather than paying around it.** In a mode with
-a flag, carrying it makes you worth more while you hold it, and capping banks
-it. A flag runner should be the most valuable thing on the field, and this is
-the way to say so without inventing a second currency for objective play.
+A bounty stood here once: a number over every hull, starting at one on a fresh
+spawn and climbing one a kill, paid to whoever ended the run. It did a real
+job, and its anti-farming property was arrived at by arithmetic a player could
+do in their head rather than by a rule about camping. It also meant that a
+pilot two kills into a run looked exactly like a pilot on none unless you were
+close enough to read a small figure over their hull, which is most of what the
+streak announcement was invented to fix. With the streak doing that job at
+three kills, the figure underneath it was a second, quieter answer to a
+question already answered loudly.
 
-**The ending always pays a participant.** Thirty seconds in the match earns
-five rivets at the whistle. Winning adds three, and each assist adds one up to
-five. Bounty still pays continuously. The completion grant means a first
-session advances before its first kill; the win and assist pieces reward
-helping the side; the time floor keeps the closing seconds from becoming a
-login bonus.
+Rivets went with it. They were bounty taken, banked in a wallet, and spent on
+what an account could slot; with nothing to buy there is nothing for them to
+be. The whistle used to pay five for finishing, three for a win and one an
+assist, and none of that is filed any more.
 
-Every price in the shop is denominated in this, which means prices are tens
-rather than thousands. A match pays a pilot something in the low tens.
+What is left durable is the rating. It moves on every kill and every death,
+against humans and machines alike, and the podium carries a column saying what
+the match did to it. See [rating.md](rating.md). One number that outlives the
+match beats two that do not.
 
 ## Kill streaks
 
-**Three kills without dying is a streak. The room is told, the hull is marked,
-and the pilot is worth two more until somebody takes them.**
+**Three kills without dying is a streak. The room is told and the hull is
+marked.**
 
-A run is already priced, one point a kill, and that is a slope: at three kills
-a pilot is worth four rather than one, and nobody in the room has been told
-anything. What the slope cannot do is name a moment. A streak is a step, and a
-step is what a room can react to.
+It is the only thing this game says about how a pilot is doing right now, and
+that is deliberate. A bounty said it continuously, one point a kill, which is a
+slope: at three kills a pilot was worth four rather than one and nobody in the
+room had been told anything. What a slope cannot do is name a moment. A streak
+is a step, and a step is what a room reacts to.
 
 So three kills is a threshold rather than a curve. It is the shortest run that
 cannot be luck and it is reachable inside a three minute match, which are the
-two things the number has to be at once. Counted in kills rather than in
-bounty, so a zone that decides a kill pays three has not thereby decided a
-streak starts at one.
+two things the number has to be at once.
+
+The cost is real and it is accepted: below three, a pilot on two kills looks
+exactly like a pilot on none. A second, quieter marker for the pilots under the
+threshold would be the bounty again, in a smaller font.
 
 Three things happen at once, and each of them reaches a pilot who is missing
 the other two. The feed is read, the hull is caught out of the corner of an
@@ -469,96 +477,45 @@ eye, and the sound needs no looking at all.
   arena makes noise about. This one is an announcement, and an announcement
   that fades with range is a rumor.
 
-**And two more bounty.** The step has to move the price by more than one more
-kill would, or the bonus says nothing the run was not already saying. Two is
-that: a pilot three kills into a run jumps from four to six, and the pilot who
-ends the run is paid for having ended it rather than merely for a kill.
+Nothing is paid for ending one. There is nothing to pay in, and the reward for
+taking down the pilot everybody in the room is hunting is that you were the one
+who did it, in front of them.
 
-All four are after the thing `bounty.md` asks for: the pilot who is winning
-should be the pilot everybody else is hunting. Bounty said it quietly, in a
-figure over a hull that you had to be close enough to read. This says it across
-the room.
+All three are after one thing: the pilot who is winning should be the pilot
+everybody else is hunting. A bounty said that quietly, in a figure over a hull
+you had to be close enough to read. This says it across the room.
 
-## What rivets buy
+## What is not for sale
 
-**Slots, and looks. Never strength.** Everything trades against the same
-thirty. The profile harness declares ten comparisons among legal 30-point
-builds: one matched margin for each stat beside the starter allocation and one
-matched seventh-to-eighth margin for each stat.
-Every stat margin spends its last point on that pip or the same bomb-bounce pip,
-so it asks about one price instead of a bundle. Fixed bots and controllers play
-mirrored four-a-side matches for the full 180 seconds, with seeds spread evenly
-over the six Melee maps and seven cyclic lineups. Every hull occupies four
-lineup seats per cycle. Each declared contrast has a conservative approximate
-family-wise 95% paired t interval and a verdict against the 45 to 55 band. The
-fifteen-comparison planning bound needs 3,384 pairs for the stated 90% power
-target under worst-case paired variance. The frozen screen rounds that minimum
-to 3,402, or 81 complete map-by-lineup blocks. Other sample counts are
-exploratory. The powered seed stream belongs
-to one preregistered attempt for an exact content and analysis fingerprint, so
-tuning cannot reuse the confirmatory evidence. Every map and build pair must
-also clear fixed activity and mirrored sensitivity gates. A gross observed
-side gap is reported as a warning rather than a blocker because the estimator
-averages both side assignments. None of those diagnostics is a powered
-side-equivalence claim. Kill intervals are descriptive.
+**Nothing, because there is no shop.**
 
-That experiment estimates the ten marginal-pip questions
-under its bot, controller, map and match fixture. It does not establish that
-every legal kit is balanced, nor does it measure fun or perceived fairness for
-people.
+There was one, and this section listed what it sold: rungs and add-ons the
+arena allowed but an account had not bought, the last rung of each charge rack,
+charge kinds past the first two, livery, and eventually a name of your own. The
+first three are gone with the kit they slotted into. Livery and names are worth
+keeping as ideas and need a currency that no longer exists, so they wait for
+one or for a different way of earning them.
 
-- **Add-ons and rungs** the arena allows but your account has not bought. Those
-  are the purchasable combat upgrades. First the roster held several of them:
-  the second barrel, the third bomb rung and the deepest rung of shrapnel were
-  one hull's each, and nothing can be sold that exists on one hull.
-  A new account owns the three starter profiles, every stat step and the
-  established second gun and spray rungs used by saved remixes. The shop begins
-  beyond that base equipment envelope, where deeper weapons, add-ons and racks
-  create specialization rather than basic competitiveness.
-- **Deeper racks.** Two repels and two bursts support the starters, against
-  the three the arena allows, so the last rung of each is bought.
-- **Charge kinds** beyond those two.
-- **Livery.** Decoration, under the art direction's law: hull paint is the
-  team read and weapon hues are semantic bands, so livery lives on the wake,
-  the nameplate badge and the podium card. You should recognize a pilot by
-  their wake before you read the name.
-- **A name of your own**, eventually. Not now, and worth writing down: a name
-  bought with earned rivets costs time, which makes a throwaway offensive
-  name expensive and a ban something that actually takes something. Freeform
-  names need review whatever they cost, so the cheap version builds from the
-  call sign generator's word pool and the expensive one is freeform behind
-  the admin panel's rename tooling. It also needs a reserved list, because
-  the tier names and the team names are words that must not become people.
+The argument against the first three is worth writing down, because it is the
+one that took the shop with it. An economy that sells combat strength has to
+sell it to the pilot who does not have it, and that pilot is the one whose
+first match most needs to be fair. Every mechanism the shop grew was an attempt
+to manage that: a base equipment envelope so nothing essential was behind a
+price, a ceiling clamp so a veteran machine could not gear-check a new pilot,
+a page that drew what you did not own so the shelf could say what existed.
+All of it was scaffolding around a hole in the middle.
 
-The two pages divide by ownership. The ship page carries what this account can
-actually fly, and nothing else: a ladder stops at the rung you own, and a slot
-you own none of has no row. It used to draw the arena's whole row with the
-rest locked, so the page could say "this exists and is not yours", and what
-that produced was four unreachable chips in every group, backed off far enough
-to be unreadable and still taking the room a legible one would have.
-
-The page listing all of it shows every slot the game has, not what is left to
-buy. A list of what is for sale shrinks as a pilot gets stronger, and the last
-purchase in a ladder takes the whole ladder off the page that was selling it:
-a shop that empties as you succeed cannot say what you have. So a row carries
-the ladder with the rungs you own filled in, the rungs you do not left hollow,
-and what everybody is dealt drawn as a bar rather than as rungs, since nobody
-bought those and nobody can. Buying is watching a hollow rung fill.
-
-`/v1/upgrades` is where that comes from. Its ceiling is built from the game the
-pilot selected, through the same config path as a live room, so a narrowed
-zone cannot leave an unusable slot on the shelf. Bots read the same reply: a
-row with no price on it is a slot with nothing left to sell, and they skip it.
-Inside a mixed room, a bot's usable ceiling is also clamped slot by slot to
-what every human there owns. Bot careers still progress in bot-only play, but
-a veteran machine cannot turn a new pilot's first match into a gear check.
-See [ai-players.md](ai-players.md).
+Livery keeps its rule for whenever it arrives. Hull paint is the team read and
+weapon hues are semantic bands, so decoration lives on the wake, the nameplate
+badge and the podium card. You should recognize a pilot by their wake before
+you read the name. The wake already works that way and costs nothing.
 
 ## Charges
 
-Two slots to start, four in the core (`SIM_MAX_CHARGES`). Two repels and two
-bursts are in the starter union, against the three of each the arena allows;
-the last rung of both racks, and every other kind, are bought.
+Two kinds, four in the core (`SIM_MAX_CHARGES`), and which two a hull carries
+is the hull's. A repel and a burst ship today. The depth is the hull's too: one
+of each on the Cipher's terms, three of each on the Lattice's. See
+[ships.md](ships.md#the-profile).
 
 ## Friends
 
@@ -576,34 +533,29 @@ back.
 
 ## Dropping mid-match
 
-**A bot takes the seat, in place.** Same hull, same kit, the charge ledger as
-the leaver left it. The match stays four a side.
+**A bot takes the seat, in place.** Same ship, and the charge ledger as the
+leaver left it. The match stays four a side.
 
 The seat is what persists, so there is no reconnect timer to tune: come back
 any time before the final whistle and you take your ship back from the bot.
-Come back after it and you land on the podium with whatever you banked.
+Come back after it and you land on the podium.
 
 Forfeiting is right for a game where your absence only hurts you, and wrong
 here, where it would punish three teammates for a fourth person's wifi.
 Substitution punishes nobody.
 
-Three rules compose:
+Two rules compose:
 
 - **Rating** settles at the socket exactly as it does today, so a drop in the
   middle of a losing fight is a death on your record. From there the seat
   flies **unrated**, which keeps a bot's career clean of inherited doomed
   hulls and closes any angle where farming a substitute pays.
-- **Rivets** already earned are yours, because bounty pays at the kill. What
-  you forfeit is the ending. Enemies who kill the substitute take its bounty
-  as usual, because the ship on the field is real even if the rating book is
-  not watching.
 - **The lag ladder** feeds the same path. A connection bad enough to bench
   becomes an early substitution rather than a weaponless ship drifting while
   its team plays three against four.
 
-No penalty box beyond the forfeited bonuses. The tactical dodge is already
-priced, the social damage is already absorbed, and a game this size does not
-need one. The pilot log should count leaves so the question can be answered
+No penalty box. The tactical dodge is already priced by the rating, the social
+damage is already absorbed, and a game this size does not need one. The pilot log should count leaves so the question can be answered
 with a number later.
 
 ## The menu, and where the screens live
@@ -618,19 +570,14 @@ surfaces now rather than one:
   your account, and your call sign at the far end of the row opens the same
   page. Standings was one of
   them until the week's table came out, and friends was one until decision 95.
-  Upgrades was another for a while,
-  drawing the same slots in the same order for the
-  other question; the ship page is the shelf now, with the price of the next
-  rung on the row that spends the point and the wallet on the reading that
-  row opens. The old worry, a wallet and a budget on one screen with "spend"
-  meaning both, is answered by shape: points are circles, prices wear the
-  rivet mark, and nothing is bought except on the reading. See
+  Upgrades was another, selling rungs for the kit, and it went with the kit;
+  the ship page is the roster now, one row a ship, and nothing behind it. See
   [menu.md](menu.md) and [decision 64](../architecture/decisions.md).
 - **Two tabs in a match**: play and settings. Same row in the same
   place, carrying what you can act on from a cockpit. It was settings and
   leave once; the games list is on it now because the way out of the game you
-  are in is a button on that game's own row, and the hangar stays off it
-  because a hull is locked for the match.
+  are in is a button on that game's own row, and the roster stays off it
+  because a ship is locked for the match.
 
 Settings holds everything that is about the machine rather than about a
 match, in one column: audio, video, the control bindings, and about. Help
@@ -639,11 +586,8 @@ the rebinding screen were always the same list read two ways, and `about` is
 three lines that never deserved a destination.
 
 Pilot is the one tab about you rather than about a match: your call sign and
-its reroll, whether the account is claimed, your career, the hulls you fly and
-what you are wearing. It is also where a bought name lands, which is the
-moderation argument as much as the vanity one. A call sign that cost six
-hundred rivets is a name a ban actually takes something from, and rivets are
-earned by flying rather than bought with money, so the cost is time.
+its reroll, whether the account is claimed, and your career. It carried a
+wallet until there was nothing to spend.
 
 **It is one surface, and in a match it carries two tabs: play and
 settings.** Same chrome as the front end, full screen, with the tab row on top;
@@ -659,7 +603,7 @@ that does.
 Nothing you cannot act on right now is on that row, which follows from a rule
 [menu.md](menu.md) already has and is proud of: nothing pauses, you can be
 shot while reading, and opening a menu is a risk rather than a timeout. In a
-three minute match a menu deep enough to browse a shop in costs a real
+three minute match a menu deep enough to read a roster in costs a real
 fraction of the match.
 
 It stays a menu rather than a bare leave button for one reason that does not
@@ -668,9 +612,9 @@ fullscreen and to the controls reference, and a leave button alone would
 strand a player who needs to mute the game.
 
 **The match shows through it.** A scrim rather than a curtain, and the topbar
-carries the score and the clock where the front end carries your call sign and
-your wallet, so the right-hand slot always answers "how are you doing in the
-thing you are in". Hiding the fight would be a lie about what is happening,
+carries the score and the clock where the front end carries your call sign, so
+the right-hand slot always answers "how are you doing in the thing you are
+in". Hiding the fight would be a lie about what is happening,
 which is the same reason the interface stays up today.
 
 None of this needs a new mechanism. `menu.home` already builds rows from the
@@ -695,17 +639,16 @@ this rather than inventing a focus order of its own. The one thing it costs is
 that a page needs a first row and a last row that are obvious, which is a
 layout constraint worth having anyway.
 
-Two consequences for [menu.md](menu.md). Changing hull is a respawn today and
-becomes a front-end action, because the hull is locked for the match. And the
+Two consequences for [menu.md](menu.md). Changing ship is a respawn today and
+becomes a front-end action, because a ship is locked for the match. And the
 games list stops being a menu node, because picking a mode is a screen now.
 
 ## The week
 
 Rating answers "how good am I" on a career scale and moves slowly. The week
 is the short ladder beside it: kills, deaths, the ratio, the best run anybody
-ended, what the week's bounties banked, and how long each pilot was actually
-in a room. It resets Monday 00:00 UTC, with livery paid to the top of a
-closing week.
+ended, the matches a pilot was still in at the whistle and their side took, and
+how long each pilot was actually in a room. It resets Monday 00:00 UTC.
 
 Rating measures skill and ignores attendance. The week measures what you did
 with it lately, and starts again often enough that tonight is worth playing.
@@ -748,9 +691,9 @@ The direction is mostly subtraction. Named here because a design document
 that only adds is lying about its cost.
 
 **Greens, entirely.** The pickup, the prize table and its weights, rust, the
-death drop, the spawn deal. What survives is the upgrade *space*, which is
-the kit's coordinate system. This is a deletion of the delivery mechanism,
-not of the state, which is why it is cheap.
+death drop, the spawn deal. What survives is the upgrade *space*, which is how
+the core still writes down what a ship carries. This is a deletion of the
+delivery mechanism, not of the state, which is why it is cheap.
 
 It also retires a class of bug this repository has fixed twice: a green sown
 through a door and sealed inside a wall, and the point-versus-box confusions
@@ -767,7 +710,9 @@ the drone ring and `gunners.md`, all now deleted.
 
 **Mode rotation**, before it was ever built.
 
-**Points as a separate number**, folded into bounty.
+**Points, bounty, rivets, the shop and the kit**, in that order over several
+months. Points folded into bounty, then bounty and rivets folded into nothing
+at all, and the kit they were spent on became seven preconstructed ships.
 
 Nothing here is irreversible, and that is worth saying plainly: a zone is a
 row in a catalog. If the open arena is ever wanted back, it comes back as
@@ -794,16 +739,17 @@ Each step leaves a running game. The first five are done, for Melee.
    during the podium, so five matches back to back cost nobody a keystroke.
    The number this exists to move is the median first-session career, three
    games when this was written.
-2. **The kit**, and greens out. A spawn is dealt the thirty its pilot chose,
-   or the starter kit the core works out for the hull when they have chosen
-   nothing. The prize table, the pickup and the death drop are gone.
-3. **Bounty and rivets.** One counter, one wallet, prices in tens. Kill bounty
-   and the completion, win and assist grant are banked from the pilot log. Its
-   unique event index makes an at-least-once delivery pay once.
-4. **Maps.** Two pockets, point symmetry, two layouts, and the zone rotates
+2. **The roster**, and greens out. A spawn is dealt the ship its pilot picked,
+   whole. The prize table, the pickup and the death drop are gone. This was
+   built first as a thirty point kit with a shop selling slots for it, and
+   rebuilt as seven preconstructed ships when the budget turned out to be what
+   was forcing all seven onto one flight row.
+3. **Maps.** Two pockets, point symmetry, two layouts, and the zone rotates
    between them.
-5. **Charges.** Match-scoped counts, and the shop selling the rungs of a rack
-   above what an account is dealt.
+4. **Charges.** Match-scoped counts, and the depth of each rack a fact about
+   the hull.
+5. **The podium's rating column**, which is what a match is worth now that
+   nothing is paid.
 6. **Parties** into a match. Not built. Friends was, and came out again per
    decision 95.
 
@@ -815,9 +761,9 @@ Whether a three minute match rates per kill, as today, or per match, since a
 match result is a stronger signal than the correlated outcomes inside it.
 Probably both, and probably worth measuring.
 
-Whether the kit budget starts at thirty or climbs to it over a first few
-matches. Climbing gives a new account something to feel; starting flat is
-honest and keeps every match matched.
+Whether seven ships that are genuinely different can be kept balanced. It is a
+harder problem than seven silhouettes on one flight row, and `calibrate hulls`
+exists so the answer is measured rather than argued.
 
 How a party of three is seated against a fair opposing side, which is the
 matchmaking question a party brings with it.
@@ -836,7 +782,8 @@ game at four a side on a small map, and the one room is the better version
 because it forces contact. If a fourth is ever wanted, the one structural
 axis nothing uses is an objective that moves.
 
-Every price, which no harness can measure.
-
-The name "rivets", which is a proposal in the house register rather than an
-attachment.
+What a new account has to look forward to, now that nothing accumulates but a
+rating. The bet is that the rating and the ladder are enough, and that a game
+worth playing does not need a drip. If it turns out not to be, the answer is
+something worth earning that is not strength, because strength behind a price
+is the thing that just came out.

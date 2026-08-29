@@ -1,10 +1,10 @@
 # Bot ecosystem
 
 The house roster is a population of named pilots, not a row of difficulty
-settings. Each pilot has a stable identity, a way of trying to win, a way of
-spending its upgrade budget, and a measured level of execution. Those parts
-can vary independently, so two pilots can be equally hard while asking the
-player to solve different problems.
+settings. Each pilot has a stable identity, a way of trying to win, a ship it
+flies, and a measured level of execution. Those parts can vary independently,
+so two pilots can be equally hard while asking the player to solve different
+problems.
 
 All of them still use the common controller described in
 [ai-runtime.md](../architecture/ai-runtime.md). They see through the same
@@ -18,10 +18,9 @@ and obey the same weapon and movement rules as a human.
 | Part | Fields | Meaning |
 |---|---|---|
 | Identity | version, pilot ID, call sign | The durable answer to "which bot is this?" |
-| Ship | hull | The class this pilot flies |
+| Ship | hull | The whole ship this pilot flies, since a hull is one |
 | Competence | aim, judgment | How reliably the pilot executes the shared controller |
 | Behavior | strategy and preference weights | Which fights, ranges, objectives, and exits the pilot prefers |
-| Taste | derived from the behavior profile | What the pilot buys and how it spends a kit budget |
 | Configuration | stable seed | Repeatable variation that belongs to the pilot |
 
 The pilot ID owns identity. A call sign is a display name and can change later
@@ -57,10 +56,12 @@ the same value. That permits a careful shooter who spends badly, or a discipline
 pilot whose shots are unreliable. Neither field is an Elo rating. Elo is an
 estimate produced by matches, while competence values are controller inputs.
 
-Build plans are separate for the same reason. A bomber is not hard merely
-because it buys bombs, and a pilot does not change personality because its
-wallet happens to afford another rung. The explicit plan replaces a purchase
-order inferred from the pilot's name.
+There is no separate build. A hull is a whole ship, so the ship field answers
+what a pilot flies with and nothing else has to: a bomber is a pilot on a hull
+with a rack. There was a build plan here, drawn beside the behavior and
+uncorrelated with it, which is how a pilot whose strategy was Bombardier ended
+up flying a kit with no bomb ladder at all. Reading the ship off the behavior
+makes the claim true rather than aspirational.
 
 ## Stable character, fresh matches
 
@@ -71,7 +72,7 @@ a match gives a recognizable pilot without making it replay the same errors in
 the same order forever.
 
 No result may depend on a call sign hash. Renaming a pilot must not alter its
-build, behavior, or random stream. Those choices live in the versioned
+ship, behavior, or random stream. Those choices live in the versioned
 specification.
 
 ## Population and rating
@@ -85,8 +86,7 @@ one.
 Ladder has one rung for each of the eight authored archetypes and 1,024
 persistent replica identities per rung. Replicas let concurrent rooms use
 separate accounts without changing the measured controller. Their IDs and call
-signs differ; their hull, competence, behavior, build, configuration seed, and
-Ladder kit do not.
+signs differ; their hull, competence, behavior and configuration seed do not.
 
 The authored weak-to-strong order is provisional until a powered calibration report passes
 its holdout, multiplicity, practical-effect, side-equivalence, and content
@@ -94,9 +94,9 @@ fingerprint gates. A plain list of Elo values cannot change the live order.
 The experiment tests that prespecified sequence in validation and the final
 holdout. A verified report preserves the sequence instead of choosing a new
 one from final Elo point estimates. Live careers still move through ordinary
-rated play, but Ladder freezes each rival to the base-account entitlement
-ceiling used by the experiment and does no shopping. A popular low rung cannot
-quietly become stronger because its replicas earned more purchases.
+rated play, and a rung's ships are fixed by construction now: what a replica
+flies is its hull's, and there is nothing to earn that changes it. A popular
+low rung cannot quietly become stronger.
 
 ## Social boundary
 
@@ -123,6 +123,6 @@ uncertainty around ordering and matchup results before those results can seed a
 Ladder. The current live order remains provisional because no powered report is
 checked in. A tournament can show that two pilots differ and estimate who wins
 more often under its exact fixture. It cannot show that either one is fun to
-fight. It also does not isolate aim, judgment, behavior, hull, or build because
-a whole-pilot comparison changes those inputs together. Causal claims about one
+fight. It also does not isolate aim, judgment, behavior or hull, because a
+whole-pilot comparison changes those inputs together. Causal claims about one
 axis need a separate powered ablation or factorial experiment.

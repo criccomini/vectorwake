@@ -21,7 +21,7 @@ halves of a mirrored bout are correlated observations inside that unit.
 One scenario fixes everything that should not favor either controller:
 
 - map and arena settings
-- hulls and each pilot's deterministic base-account kit
+- hulls, which is the whole of what each pilot flies with
 - spawn positions and headings
 - economy and pickup stream
 - controller configuration and opponent
@@ -242,16 +242,16 @@ assignments.
 These are fixed, unpowered diagnostics. They do not certify side equivalence,
 and the 90% target applies only to the ten declared contrasts. The result
 estimates those marginal-pip questions under that fixture. It does
-not cover every legal kit and cannot establish human fun or perceived
+not cover every matchup and cannot establish human fun or perceived
 fairness.
 
 Powered bot experiments can establish whole-pilot outcome ordering,
 per-matchup side neutrality, matchup structure, and uncertainty under the
 scenarios they ran. The world has to resemble the game for those claims to travel. Current
 calibration runs the shipped single-life Ladder rules on Drydock. Each pilot
-uses the deterministic build named by its specification under the base-account
-entitlement ceiling. The match restart deals that build, fills the upgraded
-energy bar and ammunition, and then places both pilots on the sampled starts.
+flies the hull its specification names. The match restart deals that ship,
+fills its energy bar and its rack, and then places both pilots on the sampled
+starts.
 Scenario seeds cycle every valid pair of team starts, and the mirror exchanges
 pilots between the fixed opposing headings. Live Ladder uses the same start
 policy. A same-tick mutual death scores one half, and any leg that reaches the

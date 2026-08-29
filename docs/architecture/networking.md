@@ -600,8 +600,8 @@ different shapes.
 
 A public record contains the facts needed to draw and read a fight: identity,
 side, position, velocity, heading, current energy, energy capacity, shove
-state, score, bounty, and carrier. Cooldowns, spawn state, other upgrades,
-weapon rungs, add-ons, charges, toggle edges, and earned-bounty composition
+state, score, and carrier. Cooldowns, spawn state, weapon rungs, add-ons,
+charges and toggle edges
 travel only in the owner tail. A spectator camera does not confer ownership,
 so the channel's frame does not include the subject's tail. House bots may
 receive every private tail through their signed label, but an ordinary client

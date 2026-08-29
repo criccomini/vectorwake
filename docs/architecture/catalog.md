@@ -114,13 +114,14 @@ intermission_seconds = 15
 bounce = 12
 friction = 12
 respawn_delay = 200
-bounty_base = 1
-bounty_per_kill = 1
+streak_kills = 3
 
-[arena.kit]
-gun_mods = { multi = 5, bounce = 1, freeze = 1 }
-bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, freeze = 1 }
-charges = [3, 3, 6]
+[[arena.ships]]
+name = "Anvil"
+speed = 2650
+gun_mods = { }
+bomb_mods = { }
+charges = [3, 1]
 
 [[arena.weapons]]
 name = "burst"
@@ -149,9 +150,14 @@ The zone fields are:
 `[arena]` is the simulation settings overlay. Missing values keep the core
 baseline, while zero remains a real value. The current field set is defined by
 `ArenaConfig` in `server/src/config.rs`, and the shipped Melee file is the full
-working example. Hull flight tuning and collision footprints are not zone
-fields. Hull-specific entries can choose gun and bomb ladders, while kit limits
-are shared by every hull.
+working example.
+
+`[[arena.ships]]` is one hull, named, and it is where a zone writes a whole
+ship: its flight row, which weapon rungs it fires, what those weapons carry,
+and how many of each charge. A hull left out keeps the baseline's row for it,
+so a zone overrides one ship without restating the other six. Collision
+footprints are not zone fields; every hull occupies the same 625 square pixels
+and the shapes are the core's.
 
 Unknown keys are refused at every level. That strictness is deliberate: a
 misspelled setting that silently falls back is a deployment that appears to

@@ -75,7 +75,7 @@ ticks wait in a bounded per-pilot map. A repeated tick replaces the earlier
 record. A late record applies where it arrives, and a lead beyond the accepted
 window is clamped.
 
-Ship, kit, team, watch, invite, and fixed-phrase messages are requests. The room
+Ship, team, watch, invite, and fixed-phrase messages are requests. The room
 validates them and the next authoritative message says what happened. A client
 cannot submit a position, hit, death, score, or arbitrary chat line.
 

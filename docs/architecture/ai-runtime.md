@@ -149,18 +149,16 @@ and a hysteresis margin stops the bot from flapping between two near-equal
 choices.
 
 The first useful slice is in the shipped brain. A pilot scores hostile contacts
-by exposure, distance, energy, carried value and flag possession instead of
-always selecting the nearest one. Flags, fights and greens compete on risk and
-value. A fresh life searches farther for greens to assemble a kit; a built life
-takes only cheap detours. Low energy raises a green's value, but a nearby hostile
-turns the same situation into a disengagement instead of a scavenger run.
+by exposure, distance, energy, the run they are on and flag possession instead
+of always selecting the nearest one. Flags and fights compete on risk and
+value. Greens competed with them until greens were removed, and a fresh life
+used to detour farther than a built one to assemble a kit out of them.
 
 Disengagement is a state with separate entry and exit thresholds. Energy, local
-numbers, incoming fire, bounty, upgrades and a carried flag decide when it
+numbers, incoming fire, the run it is on and a carried flag decide when it
 starts. The pilot uses gunfire only while a close pursuer prevents a clean
-break, then picks a reachable point away from visible hostiles, prefers a safe
-zone, and may collect a clear green on the way when the firing line is distant.
-It stays in recovery until its bar is substantially
+break, then picks a reachable point away from visible hostiles and prefers a
+safe zone. It stays in recovery until its bar is substantially
 rebuilt and immediate pressure is gone. The gap between the two thresholds is
 what stops one point of recharge from making a pilot turn around twice a second.
 
@@ -343,9 +341,9 @@ on. Being one binary is the same guarantee with nothing to arrange.
 The tournament in `calibrate.rs` calls the brain against a `World`, with no
 server and no socket, because it is a measuring instrument that wants thousands
 of matches at CPU speed rather than a seat in the fleet. Its fixture is the
-shipped single-life Ladder on Drydock. Each pilot receives the deterministic
-build from its specification, limited by the base-account entitlement ceiling
-used for live Ladder rivals. Scenario seeds cycle every valid team start pair,
+shipped single-life Ladder on Drydock. Each pilot flies the hull its
+specification names, which is the whole of what it flies with. Scenario seeds
+cycle every valid team start pair,
 and the mirror exchanges pilots between the two opposing headings. The live
 room uses the same start policy.
 

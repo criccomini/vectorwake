@@ -36,7 +36,7 @@ validated zone definition to interchangeable arena processes.
 ## Zone settings
 
 `zone.toml` is the game. It names the mode and map rotation, room and team caps,
-match timing, bot fill, lag policy, hull settings, kit ceilings, and weapon
+match timing, bot fill, lag policy, per-hull ship settings, and weapon
 tables. Host concerns such as listen addresses, certificates, and instance caps
 belong to the process or catalog instead.
 

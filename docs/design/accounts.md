@@ -92,18 +92,16 @@ build be the same pilot.
 
 The client offers the claim on the pilot page and never blocks play on it. A
 player who declines stays a guest and loses nothing but durability. Once a
-guest has something a sweep would cost them, an upgrade bought past the
+guest has something a sweep would cost them, a rating earned past the
 baseline or a rated game flown, the menu carries a banner on every tab but the
 pilot page itself: you are using a guest account, press here to set your
 password. Before there is anything to lose it stays away, because a warning
 over an empty account is nagging.
 
-One of those two arrives on its own. The entitlements are re-read while the
-panel is open, so a rung bought arms the banner within seconds. Rated games do
-not: the career is one request, and for most of a session the client's copy of
-it was fetched before the game that would have armed the warning was flown. So
-the panel asks again, on a slow beat, for as long as a guest's answer is still
-nothing to lose. That is the population the ask is cheap for, and it stops the
+Neither arrives on its own. The career is one request, and for most of a
+session the client's copy of it was fetched before the game that would have
+armed the warning was flown. So the panel asks again, on a slow beat, for as
+long as a guest's answer is still nothing to lose. That is the population the ask is cheap for, and it stops the
 moment the answer changes.
 
 A seat is bound to one identity for the life of its connection. The zone
@@ -114,7 +112,7 @@ seat carrying two accounts' halves of one life is a ledger nobody can settle.
 So when the client's identity moves under a live game -- a login, a reroll, a
 logout whose fresh guest has landed -- the client rejoins the same game as
 whoever it now is. The rejoin costs the ship, which is the honest price: the
-old pilot's bounty, kit and score were never the new one's to keep. Claiming
+old pilot's score was never the new one's to keep. Claiming
 is the one identity event that costs nothing, because it changes no name and
 no account: the pilot you claimed is the pilot you were.
 

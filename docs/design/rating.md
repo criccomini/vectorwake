@@ -6,9 +6,15 @@
 > flies unrated from that moment.
 
 Every player carries a skill rating that moves when they kill and when they die,
-against humans and against AI alike. It is separate from score: bounty and points
-are gameplay, configured per zone, and they stay exactly as the zone author wants
-them -- see [bounty.md](bounty.md). Rating is a cross-zone estimate of how good you are.
+against humans and against AI alike. It is separate from a match's own score,
+which is kills, deaths and assists and lasts three minutes. Rating is a
+cross-zone estimate of how good you are, and it is the only number in this game
+that outlives the match it was earned in.
+
+That makes the ending its one readout. The podium's board carries a column
+saying what the match did to each pilot's rating, signed, and nothing carries it
+during the fight: a rating is a standing, and a number climbing over somebody's
+head while they are being shot at is the shape the bounty had.
 
 ## The hard part
 
@@ -47,9 +53,9 @@ on death(victim):
 ```
 
 **No killing-blow bonus.** The killing blow's damage is already counted, and a
-bonus on top of it creates a kill-stealing incentive that fights the in-game
-bounty award, which already pays the finisher in points. Rating and score do
-different jobs; let them.
+bonus on top of it creates a kill-stealing incentive. The match board already
+credits the finisher with the kill and everybody else with an assist; rating and
+score do different jobs, and let them.
 
 **No support credit outside damage.** A pilot earns rating from their own
 weapons and nothing else. The game has no carrier, rider, or gunner role, and a
@@ -257,7 +263,7 @@ A dropped socket and a menu leave are treated alike, since intent is
 unknowable at the socket, and a pilot who was dead to rights when their wifi
 died was dead to rights. The ledger is consumed exactly once, so a killing
 blow racing a disconnect settles whichever lands first and the other finds
-nothing. The sim is not told: no mode hook fires and no bounty pays, because
+nothing. The sim is not told: no mode hook fires and nothing scores, because
 this is bookkeeping about a fight that already happened, not a death in the
 world. The kill feed carries the line, credited to the largest contributor
 still seated.

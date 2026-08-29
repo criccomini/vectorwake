@@ -412,57 +412,20 @@ leave the scoreboard disagreeing with the roster that seeded its rating.
 takes effect within one token lifetime because this is where tokens are
 minted.
 
-**A wallet is editable**, and it is the one number on this page that is. A
-rivet is what a kill pays and what a rung on the shelf costs, so every other
-way one moves involves somebody having played for it: an operator refunding a
-lost purchase, handing out a prize, or correcting a mistake has nothing else
-to reach for. The field arrives holding what the pilot has, so setting it is
-typing over a number rather than into a blank, and the confirmation says both
-ends and the difference, because the mistake worth guarding against is a digit
-and a digit is invisible in one number and obvious in three.
+A wallet and a table of upgrades stood here, and both are gone with the shop
+they belonged to. The wallet was the one number on this page an operator could
+set, for refunding a lost purchase or handing out a prize; upgrades were
+granted and revoked a rung at a time in a table under the card. Nothing is
+bought in this game any more, and a hull is a whole ship, so there is nothing
+for either control to move.
 
-It lands in the pilot log as a `wallet` event carrying both figures and who
-moved them, for the reason `bought` exists: the wallet keeps no history of its
-own, so without the log a balance that grew by five hundred overnight is a
-number nobody can account for, not the player who did not earn it and not the
-next operator who cannot tell a correction from a compromise.
-
-The ceiling on it is a million, which is not a rule about the economy. A
-wallet earned through play has no ceiling and the column is a bigint. It is a
-rule about typing, and what it stops is the number with an extra digit on the
-end.
-
-A bot is refused, on the same argument as the rename: a house bot buys its own
-kit out of what it has killed for, which is the whole of
-[ai-players.md](../design/ai-players.md), so handing one a balance is deciding
-what it flies, and that is a decision the roster and the shelf make between
-them.
-
-**Upgrades are granted and revoked a rung at a time**, in a table under the
-card: every slot the game actually has, what this account owns in it, and how
-far it goes. Two buttons and no field, because an operator granting one is
-deciding one step at a time rather than entering a number, a stepper cannot be
-typed wrong, and either direction is undone by the button beside it. There is
-no confirmation for the same reason: the wallet asks because a stray digit is
-invisible in a number somebody typed, and a rung is one rung with its own
-count on the row.
-
-The floor is the baseline rather than zero. An upgrade is a rung above what
-everybody is dealt, so revoking one means taking back a purchase; setting a
-slot below the baseline is not revoking an upgrade, it is crippling an
-account, and the game has no concept for a pilot who owns less than a fresh
-one. Where the baseline is zero, the two are the same number. Slots the game
-does not have are left out of the table entirely: a
-bullet with a proximity fuse has a ceiling of zero, and a row offering to
-grant one could only ever refuse.
-
-Nothing is refunded. This is an operator deciding rather than a trade being
-unwound, and the wallet sits above it for an operator who means to hand the
-rivets back as well. It lands in the log as an `entitlement` event, kept apart
-from the `bought` a purchase writes: one is a pilot spending what they earned
-and the other is an operator deciding, and a log that called both "bought"
-would hide the second inside the first. A bot is refused, on the argument the
-wallet is refused on.
+Two rules from them are worth keeping for whatever comes next. A number an
+operator types gets a confirmation naming both ends and the difference, because
+the mistake worth guarding against is a digit and a digit is invisible in one
+number and obvious in three. A stepper does not, because a step cannot be typed
+wrong. And anything an operator changes lands in the pilot log as its own kind
+of event, kept apart from the same change made by a player, so a log cannot
+hide an operator's decision inside somebody's play.
 
 Three things stay uneditable on purpose. A rating is maintained by transactional
 event settlement, so setting one by hand would leave the number disagreeing

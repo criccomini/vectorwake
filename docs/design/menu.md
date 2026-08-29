@@ -1,5 +1,18 @@
 # Landing, and the menu
 
+> **The ship page is the roster.** Every note below about a kit, a shelf, a
+> build library, a wallet or a price describes a page that no longer exists.
+> Seven hulls are seven whole ships and the page is a list of them: one row a
+> ship, carrying its name, the shape it presents, its flight as five bars
+> against the rest of the roster, and what it flies with. Pressing a row flies
+> it. Sitting out is the last row, and the wake and the charge-key order are a
+> flair section under them. Nothing on it is a control except the rows: no
+> ladder, no price, no key that buys anything, and nothing behind it. The four
+> pages that stood behind it (the shelf's reading, the build library, the
+> naming field and the page explaining what thirty points were) are all gone.
+> See [ships.md](ships.md) and
+> [decisions.md](../architecture/decisions.md).
+
 > **Friends is gone.** The tab, the page, the add field and the band at its
 > foot are out of the menu, and so are the wire and the tables behind them.
 > The home row is play, ship, pilot and settings; the row a match gets is
@@ -222,19 +235,17 @@ is lit. Left and right walk the row; down or up enters the page, and up from
 its first row or down off its last comes back to the row, which makes the
 column a ring a thumb can walk either way. Left and right on a row set that
 row's value.
-The exception is a row drawn as a chip rather than as a ladder: the ship
-page's add-ons are a line of boxes across the page, so left and right go to
-the box beside this one and enter throws the one you are on. An arrow points
-at what is next to a thing; on a chip that is another chip.
 
 ```
 vectorwake
 ├ play        the zones a directory is running, each with a sentence saying
 │             what its game is
-├ ship        every slot the arena has, as circles, and the thirty points you
-│             spend on them. A rung you do not own is dim with its price on
-│             the end of the row; pressing the row reads it and buys it.
-│             Slots, never strength: see match-game.md
+├ ship        the roster: one row a ship, with its name and the shape it
+│             presents on the first line, its flight as five bars against the
+│             rest of the roster on the second, and what it flies with on the
+│             third. Pressing a row flies it. Sitting out is the last row.
+│             Under them, flair: the wake, and which charge key throws which
+│             kind where the ship carries two. See ships.md
 ├ pilot       who you are and the way to keep it: the name large with a NEW
 │             NAME key beside it, the career as bare totals under a ship-page
 │             section rule, and the account acts at the foot. A guest gets
@@ -265,9 +276,9 @@ Five inputs, which is exactly what a d-pad has, what a phone can draw as four
 arrows and a button, and what a keyboard already sends. It is two axes rather
 than the stack's one, and it costs nothing on any of the three: the row is
 horizontal, the page is vertical, and nothing needs a pointer. A page still
-descends where it has somewhere to go, though the ship page no longer does:
-picking a hull and spending its thirty points are the same act seen twice, so
-the carousel and the ladders are one page rather than two levels.
+descends where it has somewhere to go, and the ship page does not: a row is
+the whole of what there is to say about a ship, so there is nothing behind it
+to open.
 
 ### A page you cannot stand on is not a page you can enter
 
@@ -404,9 +415,8 @@ which draws over every mesh the interface lays down, so nothing behind a
 heading can cover a row that has slid under it. What a row does at the edge is
 appear whole or not at all.
 
-The ship page keeps its band pinned and slides the kit under it, because the
-band carries the budget every row below it is spent against. The week's table
-keeps its heading for the same reason. A list still follows the cursor as well,
+The week's table keeps its heading pinned and slides its rows under it,
+because the heading is what every column below it is being read against. A list still follows the cursor as well,
 so the arrows and a d-pad drag the page rather than walking off the edge of it.
 
 Adding a level costs a table in `client/arena/menu.lua` and nothing in the
@@ -449,7 +459,7 @@ have to elapse before that corrected itself.
 
 What a row is called is the zone's label, and what a press on it names is the
 zone's own key. They were one string, so the game a player reads and the game a
-join, a rating and a kit ceiling are filed under could not differ: renaming
+join and a rating are filed under could not differ: renaming
 Melee to Team Battle would have moved all of them. A zone that sets no label
 reads as its key, which is what every zone did before labels existed.
 
@@ -497,9 +507,8 @@ at its right; a rail cell sets the question over the answer, with the caret on
 the question's line. Account opens the drawer on the pilot page. Zone drops the
 games list in place; picking one re-dials the stands to it, so the fight behind
 the glass becomes the one the key would join, and PLAY NOW stays the press that
-commits. Ship drops the pilot's saved builds by the names they gave them, no
-hulls anywhere in it, with SPECTATE as the last row; picking a build saves it
-as the hull's kit exactly as the ship page's own row does. A list opens upward
+commits. Ship drops the roster by name with SPECTATE as the last row; picking
+one arrives in that ship exactly as the ship page's own row does. A list opens upward
 from the stop it belongs to, and what it covers stands down, the wordmark
 included, the same way the clock band stands down under the drawer. Down the
 column that is the stops above the open one; along the rail nothing stands
@@ -606,35 +615,30 @@ The interface stays up underneath, scoreboard and radar and feed and your own
 status, because hiding it would be a lie about what is happening. Only the two
 big centered lines step aside, since they sit exactly where the menu does.
 
-## Changing hull is a front-end act
+## Changing ship is a front-end act
 
-The hull is locked for a match, so the ship page is a place you stand between
-them: turn the carousel to a hull, spend your thirty points, and arrive in that
-ship at the next spawn. At home the turn is the choice, since a hull there is
-only what you will arrive in and turning again undoes it. In a game the turn is
-a browse and the press is the choice, because there a hull is a request the
-room answers and sitting out despawns you.
+A ship is locked for a match, so the ship page is a place you stand between
+them: press a row and arrive in that ship at the next spawn. At home the press
+is the whole choice, since a ship there is only what you will arrive in and
+pressing another undoes it. In a game it is a request the room answers, and
+sitting out despawns you.
 
-What the ship page saves is a kit per hull, and that is a convenience now rather
-than a requirement. It used to be neither: a kit was checked against the hull's
-own row, so the same thirty points bought a different ship on a Chord than on
-an Anvil and the two questions could not be asked apart. The rows are gone
-(see [ships.md](ships.md#the-tech-tree)), so any kit is legal on any hull, and
-saving one per hull is just a place to keep the build you like flying that
-shape with.
+There is one thing to remember per hull, and it is not a build: which of the
+two charge keys throws which kind. That is a preference about a keyboard rather
+than a fact about a ship, so it lives on the device beside the bindings.
 
 `sim_set_ship_class` still puts a pilot in a different hull in place, and the
 zone protocol still carries the change, because that is how a seat is dealt
 its hull when a match starts and how a watcher takes one. What went is the
 row that offered it mid-fight.
 
-The reasoning for the old rule is worth keeping, because it is why the hull
-is locked at all. Changing hull in place cost exactly what dying cost: back
-to your start, at rest, a full bar of the new ship, everything you had built
-up gone. That priced a mid-fight swap honestly while a ship accumulated
-things during a life. A kit is owned rather than accumulated, so the same
-swap would now cost nothing at all, and a pilot could answer every matchup by
-dying into a counter.
+The reasoning for the old rule is worth keeping, because it is why a ship is
+locked at all. Changing hull in place cost exactly what dying cost: back to
+your start, at rest, a full bar of the new ship, everything you had built up
+gone. That priced a mid-fight swap honestly while a ship accumulated things
+during a life. A ship comes back whole now, so the same swap would cost
+nothing at all, and a pilot could answer every matchup by dying into a
+counter.
 
 ### The core still guards it
 

@@ -15,7 +15,7 @@
 | M6 meta-layer | Done in code: calibrated bot ladder, visible tiers, touch controls, zone directory and the games list in the menu |
 | M6 platforms | Accounts live on the fleet. Steam and consoles still wait on credentials |
 | M7 the fleet | Live on vectorwake.net: catalog, directory, arena selection, bots, meta-layer, admin, and deployment automation |
-| M8 the match game | Live: three-minute 4v4 Melee, owned kits, rivets, seven hulls, six maps, and six tabs. Capture and Holdfast remain designs |
+| M8 the match game | Live: three-minute 4v4 Melee, seven preconstructed ships, six maps, and four tabs. Capture and Holdfast remain designs |
 
 What M6 asked for that is code has landed. The bot ladder is calibrated by
 an offline tournament and seeds every zone; ratings show as tiers once a
@@ -127,7 +127,7 @@ arenas than full ones.
 ## M4: a game, not a sandbox
 
 Flag and ball modes as sandboxed zone modules, with the adviser hooks the
-modules need. Scoring, kill rewards, bounty, and persistence. Lag
+modules need. Scoring, kill credit, and persistence. Lag
 measurement and the four-threshold response.
 
 Damage ledgers and the rated event log start here, since rating is computed from
@@ -316,7 +316,8 @@ A Continuum compatibility gateway, which stays a proposal in
 [decisions.md](decisions.md) until there is a game worth connecting to.
 
 Anything resembling a persistent world. Progression and an economy were on
-this list until playtesting took them off it: the case is
-[design/match-game.md](../design/match-game.md), and what came of it is
-owned kits, bounty as a run that pays its ender, rivets, and a shop that
-sells which slots a pilot may fill and never how many.
+this list, came off it after playtesting, were built as a thirty point kit
+with a bounty and a shop, and went back on it: the case for building them is
+[design/match-game.md](../design/match-game.md) and the case for taking them
+out again is in [decisions.md](decisions.md). What survives is the rating,
+which is the one thing that outlives a match.

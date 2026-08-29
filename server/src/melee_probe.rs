@@ -9,9 +9,8 @@
 //! standing in.
 //!
 //! So this runs the shipped format exactly: the authored pilots at their own
-//! competences, in their own hulls, wearing the kit `shopper` derives from
-//! their behavior, four a side, three minutes, under melee tuning on a melee
-//! map.
+//! competences, in their own hulls and therefore in their hulls' own ships,
+//! four a side, three minutes, under melee tuning on a melee map.
 //! It reports each pilot's score beside the skill they were written with, how
 //! many rounds were in the air while they did it, how many guns were on them
 //! when they died, and how often they died without a fight to lose.

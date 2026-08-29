@@ -283,25 +283,20 @@ across a look and scaled by the thing being estimated: a misread of where the
 target will be, which grows with how fast they cross and how far the round must
 fly, and is zero against something standing still.
 
-## Survival and greening
+## Survival
 
 Energy is both ammunition and health, so survival is part of weapon discipline.
-A pilot breaks contact earlier when it is outnumbered, carrying a flag, or
-protecting upgrades and bounty. It uses short-range defensive fire to make room,
-then flies for cover or a safe zone and does not re-enter on the first tick above
-its danger threshold. A fresh pilot has little to lose and accepts more risk. A built pilot
-should look like it knows what death costs.
+A pilot breaks contact earlier when it is outnumbered, carrying a flag, or on a
+run somebody is hunting. It uses short-range defensive fire to make room, then
+flies for cover and does not re-enter on the first tick above its danger
+threshold.
 
-Greens are not incidental pickups. A fresh life searches its radar for reachable
-greens and uses them to build a ship before taking a marginal fight. As the kit
-fills, the search radius and willingness to detour shrink. A low bar makes a
-nearby green attractive because energy and recharge prizes can rescue the life,
-but immediate enemy pressure wins the decision and sends the pilot away instead.
-The type is still unknown until pickup, so the bot never chooses a green with
-information a player does not have.
+Greens are gone and so is the section that described searching for them. What
+is left in its place is the charge budget below, which is the only thing a
+pilot now accumulates and spends inside a match.
 
-Charges are spent against the match rather than the moment. A rack of three is
-dealt at the start of a match and never at a spawn, so a repel is a third of a
+Charges are spent against the match rather than the moment. The rack the hull
+carries is dealt at the start of a match and never at a spawn, so a repel is a third of a
 three-minute supply rather than something a life comes with. A pilot prices one
 accordingly: near the whistle, with the whole match still to cover, only a round
 that would end the life is worth spending on, and in the last thirty seconds a
@@ -312,9 +307,9 @@ because in a room of eight there is always a round arriving.
 ## The roster: bots as long-lived individuals
 
 The bot server holds one deterministic roster for the deployment. Each
-individual keeps a stable pilot ID, versioned specification, account, rating,
-wallet, and upgrades. "Bot A" is somebody because it flies under the same
-identity and carries its record across restarts.
+individual keeps a stable pilot ID, versioned specification, account and
+rating. "Bot A" is somebody because it flies under the same identity and
+carries its record across restarts.
 
 **One individual, one place.** An individual never appears in two arenas at
 once, and never twice in one arena. This is the rule that makes it an
@@ -334,9 +329,9 @@ report and its current-content fingerprints ship together. See
 and claims an unused individual when an arena needs a seat. The director does
 not keep hours or a weekly schedule.
 
-**Careers.** Rating, wallet, and purchased upgrades change through ordinary
-play. Hull, competence, behavior, and build remain fixed for a pilot
-specification version.
+**Careers.** Rating changes through ordinary play. Hull, competence and
+behavior remain fixed for a pilot specification version, and the hull is the
+whole ship, so what a familiar pilot flies is stable by construction.
 There is no automatic competence progression, plateau, retirement, or
 replacement policy today. Those systems need rules for timing and account
 history before they can be added without quietly changing who a familiar pilot
@@ -346,57 +341,29 @@ is.
 bots do not perform humanity: no fake excuses, no fake typing, no pretending to
 have a life the label contradicts. Recognition never becomes deception.
 
-## They buy their own ships
+## They fly what their behavior asks for
 
-An individual banks the bounty it takes and spends it on the same shelf a
-player spends theirs on. It is the visible half of the career above: a pilot
-you met a month ago comes back in a ship it paid for.
+A pilot's hull is read off its behavior profile rather than drawn beside it.
+Where it wants to fight, how hard it chases, whether it stands or leaves and
+how much it likes a bomb are the same questions a ship answers, so choosing
+the ship is choosing all of them at once. Eight personalities fly eight
+different hulls, and a test refuses two that come out the same.
 
-Nothing about this is privileged. A bot walks the three endpoints a person's
-client walks, holding its own account's secret: `/v1/upgrades` for the catalog,
-`/v1/buy` for a rung, and `C2S_KIT` to the arena for what it is flying. The
-meta-layer prices it, checks the wallet and refuses what the account cannot
-afford, and the arena checks the kit against the zone's ceiling and the
-account's entitlements, exactly as it does for a person. A bot that has bought
-nothing flies what a new player flies.
+There was a shop, and this section described a bot walking `/v1/upgrades`,
+`/v1/buy` and `C2S_KIT` with its own account's secret to spend the bounty it
+had banked, so a pilot you met a month ago came back in a ship it had paid
+for. The whole apparatus is gone with the shop, and the claim it existed to
+make is now structural: a Bombardier flies a hull with a rack because it
+picked one, not because it saved up for one.
 
-**Bots earn by killing, like everybody.** Rivets are bounty taken, and a kill
-row is where a bounty is taken. Bot kills used to be left out of the pilot log
-on the argument that machines killing machines is most of every hour and none
-of it is anybody's story. That was cheap and it was the whole reason a bot's
-wallet was permanently empty. They file now. The rows are marked as machines
-and the week's table reads `where not bot`, so what this adds is a wallet and a
-log, not a bot in the standings.
+Which fixes the bug that section was written about. A generated pilot drew its
+build plan from different bits of the same hash that drew its strategy, so the
+two were uncorrelated: only a third of the pilots whose brains opened the
+bombing gates owned a bomb, and Ozone, whose strategy is Bombardier, flew a
+runner kit with no bomb ladder on it at all.
 
-**At most one rung per completed-flight cycle.** Shopping happens before a
-flight and never during one. A new individual may buy before its first flight.
-After a purchase, a successful flight makes the next connection eligible to buy
-again. Failed dials, refused joins, and reconnect churn do not turn one flight
-into several purchases. One rung at a time keeps saved bounty from changing a
-ship all at once.
-
-**Taste, so a room is not eight of one ship.** What a pilot buys is read off
-its behavior profile. Where it wants to fight, how hard it chases, whether it
-stands or leaves, and how much it likes a bomb are the same questions a kit
-answers, so the kit is derived from them: `shopper::wants` weighs every slot
-against those numbers and hands back an order, and the same order decides what
-to save for next and how the thirty points are spent once the rungs are owned.
-Eight personalities therefore buy eight different things, and a test refuses
-two that come out the same.
-
-It was a separate gunner, bomber or runner plan named beside the behavior, and
-that is what "Ozone throws shrapnel" was supposed to rest on. It could not. A
-generated pilot drew its plan from different bits of the same hash that drew
-its strategy, so the two were uncorrelated: only a third of the pilots whose
-brains open the bombing gates owned a bomb, and Ozone, whose strategy is
-Bombardier, flew a runner kit with no bomb ladder on it at all. Three plans
-across eight strategies also meant the game held three kits. Deriving from the
-profile makes the claim true rather than aspirational, and keeps the behavior
-numbers the one place a pilot is described.
-
-A bought-up bot may win more, and its account rating then moves with its record.
-Fill does not select by rating, so a long-lived individual can still meet a
-first-week player.
+A bot's rating moves with its record, and fill does not select by rating, so a
+long-lived individual can still meet a first-week player.
 
 ## The population director
 

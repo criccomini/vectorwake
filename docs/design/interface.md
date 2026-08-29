@@ -32,7 +32,7 @@ into the strings themselves: case is how a thing is set, not what it says.
 
 Three kinds of string opt out of both voices, and they are quoted rather than
 said. A name keeps the case its owner gave it, everywhere: a call sign on a
-nameplate, a side's name on the team list, a hull spelled the way the shop
+nameplate, a side's name on the team list, a hull spelled the way the roster
 spells it, a zone spelled the way the catalog spells it (Team Battle, never
 team battle). And no line is set all lower case: a sentence opens on a
 capital wherever it is drawn, per Chris. A reading off a machine is verbatim: a key cap, a build number, a
@@ -91,8 +91,8 @@ Past those, a hue means one thing, one thing per hue, across every screen:
 | violet | `#c27bff`, `#a06bff` | a place, not a player: the burst's rounds, a wormhole |
 | green | `#35e0a0` | a door (the open state is a darker step of the same band) |
 | pale green | `#8dffb0` | what you were paid, and `#5aa874` a step down from it for a kill you only helped with |
-| gold | `#ffd166` | a charge you carry and spend, and a price you can afford |
-| deep gold | `#ffe08a` | bounty: what a pilot is worth |
+| gold | `#ffd166` | a charge you carry and spend |
+| deep gold | `#ffe08a` | a pilot on a streak, on the hull and in the feed |
 | red | `#ff505a` | you are being hurt, or about to lose something |
 | slate | `#3f5878` | structure: rules, panel edges, terrain on the dial |
 
@@ -245,7 +245,7 @@ makes disparate marks read as one set.
 **Selection is a wash**: a translucent cyan field across the whole of what is
 selected, a shade brighter where it meets its rule, plus a brightened rule
 segment (`wash`). Your own row on a table wears it in cyan; a row being read
-about wears it in bounty gold. Never a glyph in front of the name, never a
+about wears it in the deep gold. Never a glyph in front of the name, never a
 box around the row. A cursor and a hover are the same mark at two weights,
 because they are the same fact reported by two hands.
 
@@ -257,14 +257,12 @@ texture, so the menu does not use them between groups.
 
 **Counts are marks, not numerals**, wherever the count is small enough to
 read as a shape. Charges are pips: filled discs for what you hold, rings for
-the empty places. Kit ladders are diamonds, filled where spent, outlined
-where a step remains, because a row of squares is a progress bar and a kit is
-not progress, it is choices out of a budget. A range too long to count (the
-thirty-point budget) is a bar. A switch you throw is a chip: a small stroked
-box with its word inside, on or off, lit when held.
+the empty places. A range too long to count, like where a hull stands on a
+flight row against the rest of the roster, is a bar. A switch you throw is a
+chip: a small stroked box with its word inside, on or off, lit when held.
 
 **Everything that points is drawn.** Sort order is a triangle, never a caret
-character or a letter v. The carousel's arrows, the week stepper, the back
+character or a letter v. The wake stepper's arrows, the week stepper, the back
 caret on a page a phone has drilled into, the "you are here" wedge in a row's
 gutter, the watching play-mark, the board's arrow keys: all triangles from
 the mesh layer, weighted like the line work around them. A "<" set in type is
@@ -279,11 +277,7 @@ The rail's play stop is a world with a ring around it; settings is a gauge off
 the panel in front of you, dark in the body and lit at the rim with a needle up
 among its graduations, because that stop is the one thing on the row about the
 machine rather than the match; leave is a doorway with the arrow going out the
-open side. The ship stop
-is the hull you are flying, drawn as itself. When a mark cannot be a picture of
-its object it is
-the object's own instrument: upgrades is the rivet, the mark that stands in
-front of every price.
+open side. The ship stop is the hull you are flying, drawn as itself.
 
 A drawing that appears in two places is one function. The weapon marks live
 in `marks.lua` because the corner stack and the touch pads both draw them,
@@ -307,16 +301,12 @@ layer floors a frame's stroke at one device pixel (`vec.lua`), after the
 podium's chips, stroked at 0.9 on a density-1 screen, drew three edges each
 and lost their tops.
 
-The rivet deserves its own note because it is the currency. It is the
-fastener seen from the side, cap, shank, two strikes through, following the
-convention that a glyph struck through reads as money. Two strikes rather
-than one because one bar through a shape is a "no entry" sign, and seen from
-the side because face-on the bars closed up at price sizes and became exactly
-that sign. A price is always the mark plus the figure, sized to the figure;
-"40 rivets" in words was a word doing a glyph's job. The arena is not an
-exception. The bounty under a nameplate is what killing that hull pays, so it
-is set as a price like any other, and the mark is what tells it apart from the
-kills, deaths and points that are drawn as bare figures elsewhere.
+There was a currency and it had a mark: the rivet, a fastener seen from the
+side with two strikes through it, standing in front of every price and under
+every nameplate. Nothing is bought now and the mark is gone with the wallet.
+It is worth keeping the rule it demonstrated, because the next currency will
+need it: a unit is a glyph, never a word, and a glyph struck through twice is
+what reads as money.
 
 The wordmark is the drawn logo (an orange lambda and a cyan W sharing a
 chevron, black separator derived from one centerline) beside the name in the
@@ -478,8 +468,8 @@ beside them, because a player is better off seeing that Chaos exists and is
 down than wondering whether they misread the list.
 
 Numbers are shown as the shape of the thing where they can be: a volume is
-lit steps, not the word "half"; a kit level is a position on a ladder read as
-L2. Where a number must be words it comes with its noun ("4 playing, 3 AI",
+lit steps, not the word "half"; where a hull stands on a flight row is a bar
+against the rest of the roster, not a figure in the core's units. Where a number must be words it comes with its noun ("4 playing, 3 AI",
 spelled out rather than "4/3"). Addresses, wire URLs, and the client's own
 diagnostics never reach a player's screen; the debug readout exists, deliberately
 plain, behind the LINK bars.
@@ -530,13 +520,12 @@ grouping (what a trigger does is drawn in its round's rung color, what you
 carry is gold). Two numbers are not in it, and for the same reason: the
 corner is what a press changes. Energy is not, because your own hull carries
 the same pip every hull carries and a corner bar was the same number twice in
-the place you least look. Your bounty is not, because it is what other people
-see when they look at you rather than anything you can spend, and it is
-already said over every nameplate and in the scoreboard column that sorts by
-it. Damage is the vignette, red
-creeping in from the edges, which never hides the ship shooting you. The
-words for any row are an ask away: rest the pointer and a card names it,
-lists what the greens taught it, and says which key spends it.
+the place you least look. Your rating is not, because it is what other people
+see when they look at you rather than anything you can act on, and the podium
+says what a match did to it. Damage is the vignette, red creeping in from the
+edges, which never hides the ship shooting you. The words for any row are an
+ask away: rest the pointer and a card names it, says what it does, and says
+which key spends it.
 
 Panels appear because they were asked for. The scoreboard is a toggle, and
 the run log comes up with it; the pilot box opens from a scoreboard row and

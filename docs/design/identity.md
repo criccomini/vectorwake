@@ -8,10 +8,15 @@ refuse to ship.
 
 **We inherit the system.** Frictionless inertial flight. Energy as health and
 ammunition in one pool. A tick-based simulation at centisecond resolution. Teams
-called freqs. Arenas whose rules come from configuration. Prizes that upgrade a
-ship and vanish on death. Bounty that makes a winning player a target. The lag
-response model that degrades a bad connection proportionally instead of banning
-it.
+called freqs. Arenas whose rules come from configuration. The lag response
+model that degrades a bad connection proportionally instead of banning it.
+
+Two things on that list are inherited and then declined. Prizes that upgrade a
+ship and vanish on death were greens, and a match game with a fixed ship has no
+use for either half. Bounty that makes a winning player a target is the idea
+behind the streak, which says the same thing louder and at a threshold instead
+of continuously. Both are in
+[decisions.md](../architecture/decisions.md).
 
 **And the numbers, which is the part people expect to be told otherwise.** How
 much energy a bullet costs against the bar it draws from, how long a bomb waits

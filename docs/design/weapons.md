@@ -1,11 +1,14 @@
 # Weapons
 
 > **Two parts of this changed.** [match-game.md](match-game.md) removed greens
-> entirely, keeping the upgrade space below as the coordinate system a chosen
-> kit is built in. What the pickup, its weights and rust were is in
+> entirely, keeping the upgrade space below as the coordinate system a ship's
+> profile is written in. What the pickup, its weights and rust were is in
 > `docs/research/` with the rest of the original's tables. Mines are gone as
 > well; decision 62 says why, and the original's own tables for them stay in
 > `docs/research/`.
+>
+> Nothing in that space is bought or spent now. A hull carries a fixed row of
+> it and a pilot picks the hull; see [ships.md](ships.md).
 
 Everything that leaves a ship is the same thing.
 
@@ -183,7 +186,8 @@ bar still has to count as a hit, which is what made the first attempt land
 silently.
 
 **Levels.** Not a field. A level is another spec with a bigger `damage`, and a
-rung in the kit that swaps which pattern the trigger points at. See the tech tree below.
+slot in the profile that swaps which pattern the trigger points at. See the
+tech tree below.
 
 ## Writing one
 
@@ -261,10 +265,12 @@ tree needed.
 | add-on | how much of that add-on | the arena's row |
 | charge | how many you are carrying | the arena's row |
 
-One shape, four meanings. A kit slot is one byte naming a place in that space:
+One shape, four meanings. A slot is one byte naming a place in that space:
 five stats, then a level per trigger, then an add-on per trigger per kind, then
-a charge apiece. Every slot in it costs the same one point, which is what makes
-a budget of thirty a sentence a player can reason about.
+a charge apiece. A hull carries a row of twenty-three of them and that row is
+the ship. The flat, one-byte-per-slot shape is left from when a pilot spent
+thirty points across it; nobody spends anything now, and the shape survived
+because it is a good way to write down what a ship has.
 
 ### Add-ons are per trigger
 
@@ -369,9 +375,16 @@ shrapnel-loaded bomb still gets the bomb they threw.
 
 ### The matrix
 
-One row, for the arena, in `sim_settings::kit_ceiling`. It says how far each
-weapon climbs and how deep each add-on goes, and it says the same thing to
-every hull in the room.
+What the space can hold, which is what the core's own maxima allow rather than
+a row any zone writes: a weapon climbs to `SIM_MAX_RUNGS`, an add-on to
+`SIM_MOD_MAX`, and spray to `SIM_MOD_MULTI_MAX`. A hull's profile is clamped to
+those where it is dealt, so a zone that writes a hull past them gets the
+ceiling rather than a refusal.
+
+There was a settings row here, `sim_settings::kit_ceiling`, saying how far each
+weapon climbed and how deep each add-on went for every hull in the room. It
+existed to bound a budget a pilot was spending. With nothing to spend, a zone
+that wants a shallower hull writes a shallower hull.
 
 **Availability follows the original; ceilings are ours.** `MultiFire`,
 `BouncingBullets`, `Proximity` and `Shrapnel` appear nowhere in the original's
@@ -381,11 +394,12 @@ bear on this are `MaxBombs` (3 on the Leviathan, 2 elsewhere), `ShrapnelMax` (8
 everywhere, 31 on the Shark), `BombBounceCount` (1 on the Lancaster alone) and
 `DoubleBarrel` (the Terrier alone).
 
-Those four were a row per hull here too, and they are not any more. A trait one
-hull holds is a trait the shop can never sell, so the deepest of each is the
-arena's ceiling and everything below it is a purchase. A bomber is not the hull
-that holds the most shrapnel; a bomber is a pilot who bought three rungs of it.
-See [ships.md](ships.md#the-tech-tree).
+Those four were a row per hull here too, and they are again. For a while they
+were not: a trait on one hull was a trait a shop could never sell, so the
+deepest of each became the arena's ceiling and everything below it a purchase.
+There is no shop, so the argument is spent, and a bomber is once more the hull
+that carries the shrapnel. Which hull carries what is in
+[ships.md](ships.md#the-profile).
 
 The barrel is on the matrix now, inside spray. `DoubleBarrel` was the one
 weapon setting with no home in this space, being neither a ladder nor an
@@ -401,60 +415,57 @@ whether the group reads as a pair or as a fan.
 | **gun** | 2 | multi ×5, bounce, freeze |
 | **bomb** | 2 | prox, shrapnel ×3, bounce ×2, freeze |
 
-Those are the deepest each of the seven hull rows used to reach, so nothing was
-granted and nothing taken away when the rows collapsed into one. A Wedge could
-always hold three rungs of shrapnel; now anyone who buys them can.
+That is the space, and it is what the core can express rather than what any
+hull holds. The shipped roster names rung zero for every weapon and spends the
+add-ons per hull.
 
 **Freeze and push are the exception**, and the only part of this table that is
 ours: the original has no such upgrade, so there is nothing to copy. Freeze
 hangs off both triggers, because stalling a recharge is a thing a hit does and
-the core reads it off whichever trigger's add-ons carried it. Push is off the
-shelf until the shove has had a look of its own, so the bomb row does not
-mention it and no arena grants it.
+the core reads it off whichever trigger's add-ons carried it. Push is unused
+until the shove has had a look of its own, so no hull carries it.
 
-The names a player reads are not these. `multi` is **Spray** on the ship page
-and in upgrades; the words in this table are the core's, and the core's are
-what a zone file writes.
+The names a player reads are not these. `multi` is **spray** on the ship page;
+the words in this table are the core's, and the core's are what a zone file
+writes.
 
 **A trigger's add-ons stay a trigger's.** Bullets do not carry a fuse and do
 not break up, because a bullet with a proximity fuse is a bomb and that weapon
 already exists. Bombs do not fan and do not come in pairs, because a rack that
 throws three at a pull is a different game. Those four are zeroes in the
-arena's row, and a zero is a slot that does not exist: it is not on the shelf
-and it is not in the hangar.
+arena's row, and a zero is a slot that does not exist: no hull can carry it and
+no zone can write it.
 
 The other way a weapon goes missing is having **no rack**. An add-on is a
 transform on a trigger, and a trigger that does not exist cannot be
-transformed. Every hull on the shipped roster carries one, so this is a rule
-for a zone that takes a rack away rather than a fact about any of them.
+transformed. The Cipher is the roster's one hull with no rack, so this is a
+fact about a shipped ship rather than a rule held in reserve.
 
 **Charges are not on this matrix**, and that is the original's rule rather than
 an omission -- see below.
 
-A rung is 40% more damage and costs the same to fire. A level is a straight
-upgrade, which is what makes it worth crossing the map for; what stops it
-running away with a match is that the pilot holding it is carrying a bounty
-everyone can see.
+A rung is 40% more damage and costs the same to fire. The shipped roster names
+rung zero on every hull and separates the guns by their base damage instead, so
+the ladder is machinery a zone may use rather than something a pilot climbs.
 
-### A kit is thirty of these
+### A profile is a row of these
 
-Nothing rolls. A pilot spends thirty points in the hangar, one per step, and
-the ship is dealt that kit at every spawn: stats, rungs, add-ons and charge
-counts, inside the arena's own row. The space above is the coordinate system
-that kit is written in, which is why it survived the pickup being deleted
-whole. [match-game.md](match-game.md) has the budget and what rivets buy.
+Nothing rolls and nothing is spent. Each hull carries a fixed row over the
+space above, and the ship is dealt it whole at every spawn: rungs, add-ons and
+charge counts. That row is why the space survived the pickup being deleted:
+it is still how the core writes down what a ship has. [ships.md](ships.md) has
+the roster and [match-game.md](match-game.md) has why nobody spends anything.
 
-Two properties the pickup used to provide are now structural rather than
-tuned. A pilot cannot hold what the arena has no ladder for, because the
-ceiling is checked where the kit is dealt rather than where a green is rolled.
-And what a death costs is the walk back, because the frame is re-dealt from
-something the pilot owns.
+Two properties the pickup used to provide are structural rather than tuned. A
+ship cannot hold what the arena has no ladder for, because the row is clamped
+where it is dealt rather than rolled at a pad. And what a death costs is the
+walk back, because the frame comes back whole.
 
 **Charge counts are the exception, and the only one.** They come back at the
 start of a match and never at a spawn, so a repel spent in the opening joust
 is a repel gone for three minutes. Refilling them on death would mean a pilot
-out of repels could suicide into the nearest enemy to reload, and at a bounty
-of one that costs nothing.
+out of repels could suicide into the nearest enemy to reload, and dying costs
+nothing but the walk.
 
 ### Charges
 
@@ -474,13 +485,12 @@ them ship filled; a zone is free to write the others.
 none of them. Charges are not a roster trait there; they are loot, and the
 hull does not gate them.
 
-The ceiling is the arena's. Charges are not a hull trait here for the same
-reason nothing else is, plus one of their own:
+How many of which kinds is the hull's, and two kinds is the ceiling:
 
-- **A hull carries no traits at all.** Ladders, add-ons and flight are the
-  arena's; the hull is a footprint. A trait one hull holds is a trait the shop
-  cannot sell, which is what made the roster's version of this a dead end. See
-  [ships.md](ships.md#the-tech-tree).
+- **Two, because a keyboard has two keys for them.** The rack holds four kinds
+  in the core, so a zone may write a hull that carries a third; the shipped
+  roster does not, and the arena refuses one. See
+  [ships.md](ships.md#the-profile).
 - **A mixed inventory is the whole point of the cycle key.** An earlier roster
   gave each hull exactly one kind, which meant nobody could ever hold two,
   which meant the key that cycles them and the pad that draws them could never
@@ -545,12 +555,12 @@ the zone has shut. The corner rail and the touch pads wash a kind's row down
 when its key shuts and bring it back as the clock runs out, so a key that does
 nothing looks like one.
 
-### Thirty is a loud opening, and that is a choice
+### A loaded opening is a choice, and it flattens skill
 
-Every ship spawns carrying thirty steps. That number is the strongest single
-lever in the tuning, and it does more than make openings livelier. Running the
-bot calibration ladder over a 48-round round-robin, same hull, three pilots at
-skill 0.15, 0.50 and 0.95, the kills come out:
+Every ship spawns carrying its profile, which is a loud opening on purpose.
+That is the strongest single lever in the tuning. Running the bot calibration
+ladder over a 48-round round-robin, same hull, three pilots at skill 0.15, 0.50
+and 0.95, the kills came out:
 
 | | low | mid | high |
 |---|---|---|---|
@@ -558,15 +568,16 @@ skill 0.15, 0.50 and 0.95, the kills come out:
 | thirty dealt | 313 | 290 | 299 |
 
 A two-to-one skill gap becomes flat, and the total number of kills triples.
-With everyone carrying multifire from the first second, time to kill collapses
-and the fight is over before flying it decides anything.
+With everyone carrying spray from the first second, time to kill collapses and
+the fight is over before flying it decides anything.
 
-That was measured when the thirty were rolled, and choosing them rather than
-rolling them does not move it: the flattening comes from how loaded a ship is
-at the whistle, not from where the load came from. It is a choice for a game
-that wants its openings loud. The offline calibration in
-`server/src/calibrate.rs` deals nothing for exactly this reason, because a
-ladder has to be able to rank pilots.
+That was measured when a ship was dealt thirty random greens, and it did not
+move when the thirty became a chosen kit, and it does not move now that they
+are a hull's fixed row: the flattening comes from how loaded a ship is at the
+whistle, not from where the load came from. It is a choice for a game that
+wants its openings loud. The offline calibration in `server/src/calibrate.rs`
+strips the profiles for exactly this reason, because a ladder has to be able to
+rank pilots.
 
 ### Writing a tree
 
@@ -582,16 +593,17 @@ blast = 96
 freeze = 250              # ticks
 prox = 24                 # px of fuse
 
-[arena.kit]               # and how many rungs of each a kit may hold
-gun_mods = { multi = 5, bounce = 1, freeze = 1 }
-bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, freeze = 1 }
-charges = [3, 3]          # repels, bursts
+[[arena.ships]]           # and what one hull carries
+name = "Anvil"
+gun_mods = { }            # a plain heavy round
+bomb_mods = { }           # and a plain wide bomb
+charges = [3, 1]          # three repels, one burst
 ```
 
-An add-on left out of a map that names any is a slot this arena does not have,
-which is how "bombs do not fan here" gets said. Leaving the section out
-entirely keeps the baseline's, which is the union of what the seven hull rows
-used to allow.
+A hull left out of the ships list keeps the baseline's row for it, so a zone
+overrides one ship without restating the other six. An add-on left out of a
+`gun_mods` or `bomb_mods` table that names any is zero on that hull, which is
+how "this ship's bombs do not fan" gets said.
 
 ## What is deliberately out
 
@@ -616,10 +628,10 @@ number, and none of the seven originals needs one.
 Two rows per hull, built from the roster in `sim/src/baseline.c`: a bolt and a
 gun pattern, and for the six hulls with a rack, a shell and a bomb pattern.
 
-No *base* weapon bounces, splinters, stalls or pushes -- every one of those
-arrives as an add-on out of the kit and composes onto whichever rung the
-trigger is on. So a pilot who spent nothing there fires a plain bolt, and a
-pilot who spent one point fires a bouncing one.
+No *base* weapon bounces, splinters, stalls or pushes. Every one of those
+arrives as an add-on out of the hull's profile and composes onto whichever rung
+the trigger is on, so an Anvil fires a plain bolt and a Facet fires a bouncing
+one.
 
 The bolt and the shell do carry a `bounces` of 255 while their `on_wall` is
 still `end`, which is not an exception to that: a budget is spent only once
