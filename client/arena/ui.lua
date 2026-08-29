@@ -4274,6 +4274,13 @@ local FLIGHT_ROWS = {"speed", "thrust", "turn", "energy", "recharge"}
 -- position carried between them would open one where the other was left.
 M.land_scroll = 0
 
+-- The row the panel last scrolled itself to. `M.cursor_moved` is the
+-- drawer's own answer, computed off its page and its row, and the landing
+-- has neither: this is the same idea kept where the cursor it is about
+-- lives. Without it the panel would haul itself back to the lit row on every
+-- frame, which is a finger dragging a page it cannot keep.
+local land_followed = nil
+
 -- One row of the ship panel: a section band, a slot, or the way back to the
 -- hull's own row.
 --
@@ -4474,6 +4481,31 @@ local function land_panel(kx, kw, bottom, top, panel, drh)
     end
     local over = math.max(0, content - (ry1 - ry0))
     M.land_scroll = math.max(0, math.min(M.land_scroll, over))
+    -- The panel follows the cursor, since walking it with a pad or the
+    -- arrows is how it is read without a pointer: a row lit under the fold
+    -- is a row nobody can see themselves spending on. Whole rows only, the
+    -- same rule the drawing follows, so the panel never stops halfway down
+    -- one. On the frame the cursor moved and no other, which is what keeps a
+    -- finger dragging it from being hauled back.
+    if M.land_sel == "land_kit_row" and land_followed ~= M.land_sel_value then
+        land_followed = M.land_sel_value
+        local at = 0
+        for _, r in ipairs(panel.rows or {}) do
+            local rh = r.kind == "sect" and 24 * F.scale or rowh
+            if r.kind == "slot" and r.slot == M.land_sel_value then
+                if at < M.land_scroll then
+                    M.land_scroll = at
+                elseif at + rh > M.land_scroll + (ry1 - ry0) then
+                    M.land_scroll = at + rh - (ry1 - ry0)
+                end
+                break
+            end
+            at = at + rh
+        end
+        M.land_scroll = math.max(0, math.min(M.land_scroll, over))
+    elseif M.land_sel ~= "land_kit_row" then
+        land_followed = nil
+    end
     local cy = ry0 - M.land_scroll
     if panel.rows then
         for _, r in ipairs(panel.rows) do

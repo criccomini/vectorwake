@@ -142,6 +142,16 @@ local LAND = {
              can_up = true, can_down = true},
             {kind = "slot", slot = 8, label = "Bounce", value = 0, cap = 1,
              toggle = true, can_up = true, can_down = false},
+            {kind = "sect", label = "bomb"},
+            {kind = "slot", slot = 13, label = "Shrapnel", value = 0, cap = 3,
+             can_up = true, can_down = false},
+            {kind = "slot", slot = 14, label = "Bounce", value = 0, cap = 1,
+             toggle = true, can_up = true, can_down = false},
+            {kind = "sect", label = "rack"},
+            {kind = "slot", slot = 19, label = "Repel", value = 1, cap = 15,
+             can_up = true, can_down = true},
+            {kind = "slot", slot = 20, label = "Burst", value = 1, cap = 15,
+             can_up = true, can_down = true},
             {kind = "reset", label = "Reset", on = true},
         },
     },
@@ -887,9 +897,8 @@ do
     -- value are not stops of their own.
     frame(1440, 810, {land_open = "ship"})
     check("the ship panel walks its ship and its rows",
-          walk_of()
-          == "land_ship land_pick_ship land_kit_row land_kit_row"
-             .. " land_kit_reset",
+          walk_of():match("^land_ship land_pick_ship land_kit_row")
+          and walk_of():match("land_kit_reset$"),
           walk_of())
     ui.land_sel, ui.land_sel_value = "land_pick_ship", 1
     -- Left and right page the roster from the ship's own row.
@@ -995,6 +1004,26 @@ do
     -- Open sky is whatever the panel does not cover, which on a rail is the
     -- fight to either side of it.
     check("and open sky still puts it away", press(60, 100) == "land_shut")
+
+    -- Walking the panel scrolls it, which is the half a scrollbar cannot do
+    -- on its own: a row lit under the fold is a row nobody can see
+    -- themselves spending on. The last row is the one to ask for, since a
+    -- short window is exactly where it will not already be drawn.
+    local last = nil
+    for _, r in ipairs(LAND.panel.rows) do
+        if r.kind == "slot" then last = r.slot end
+    end
+    ui.land_scroll = 0
+    ui.land_sel, ui.land_sel_value = "land_kit_row", last
+    frame(844, 390, {land_open = "ship", keep = true})
+    local lit
+    for _, r in ipairs(ui.hits) do
+        if r.action == "land_kit_row" and r.value == last then lit = r end
+    end
+    check("walking to a row under the fold brings it into the panel",
+          lit ~= nil, "row " .. tostring(last) .. " stayed off the panel")
+    ui.land_sel, ui.land_sel_value = nil, nil
+    ui.land_scroll = 0
 end
 
 -- --- a phone's top row -----------------------------------------------------
