@@ -230,9 +230,9 @@ async function weekPageTest() {
     since: "2026-08-17",
     week: [
       {name: "Aster 1", kills: 9, deaths: 2, rating: 1510,
-       swing: 14, breaker: 3, seconds: 720},
+       swing: 14, wins: 1, seconds: 720},
       {name: "Rook 2", kills: 4, deaths: 5, rating: 1480,
-       swing: -6, breaker: 8, seconds: 180},
+       swing: -6, wins: 3, seconds: 180},
     ],
   };
   const fetch = async (path, options) => {

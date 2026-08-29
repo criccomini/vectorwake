@@ -669,36 +669,9 @@ pub(super) fn validate_pilot_event(event: &serde_json::Value) -> Result<(), Stri
     Ok(())
 }
 
-fn rivets_earned(kind: &str, detail: &serde_json::Value) -> i64 {
-    if kind == crate::pilot::KILL {
-        return detail
-            .get("bounty")
-            .and_then(|value| value.as_i64())
-            .unwrap_or(0)
-            .clamp(0, u16::MAX as i64);
-    }
-    if kind != crate::pilot::MATCH
-        || !detail
-            .get("completed")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false)
-    {
-        return 0;
-    }
-    let win = detail
-        .get("won")
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false) as i64;
-    let assists = detail
-        .get("assists")
-        .and_then(|value| value.as_i64())
-        .unwrap_or(0)
-        .clamp(0, crate::pilot::MATCH_ASSIST_RIVETS_MAX);
-    crate::pilot::MATCH_COMPLETE_RIVETS + win * crate::pilot::MATCH_WIN_RIVETS + assists
-}
-
-/// One line of the pilot log and any wallet movement it causes. Both commit
-/// together so a retry either finds all of the work or performs all of it.
+/// One line of the pilot log. A kill, a misfire and a whistle used to move a
+/// wallet on the way through here as well, which is why the write is still a
+/// transaction: nothing is paid for any more, so the row is the whole of it.
 async fn ingest_pilot(
     db: &mut Client,
     zone: &str,
@@ -776,47 +749,6 @@ async fn ingest_pilot(
             .map_err(|error| format!("cannot commit: {error}"));
     }
 
-    // Rivets come from bounty taken and from reaching the whistle. The match
-    // grant gives a new pilot progress even before their first kill, while
-    // the win and assist pieces still reward helping the side.
-    //
-    // Banked here rather than summed out of the log on demand, because the
-    // log is swept and a wallet that shrank when a row aged out would be a
-    // wallet nobody could trust. `rows` is what makes it safe: delivery is
-    // at-least-once and the unique index refuses the second copy, so a retry
-    // inserts nothing and pays nothing.
-    if let Some(account) = pilot {
-        let paid = rivets_earned(kind, &detail);
-        if paid > 0 {
-            db.execute(
-                "insert into wallets (account, rivets)
-                 select id, $2 from accounts where id = $1
-                 on conflict (account) do update set rivets = wallets.rivets + $2",
-                &[&account, &paid],
-            )
-            .await
-            .map_err(|error| format!("cannot bank rivets: {error}"))?;
-        }
-    }
-    // And a misfire costs one, which is the smallest amount a wallet can move
-    // by. It is not a fine calibrated against anything: it is there so that
-    // bombing your own feet is a number going the other way rather than a
-    // blank line, and one rivet against a kill worth dozens says exactly that.
-    //
-    // Floored at zero, unlike the kill count in the arena. A negative score is
-    // a fact about a match; a negative balance is a debt, and this game does
-    // not have those. Same `rows > 0` guard: delivery is at-least-once and a
-    // retry must not charge twice.
-    if kind == crate::pilot::MISFIRE {
-        if let Some(account) = pilot {
-            db.execute(
-                "update wallets set rivets = greatest(0, rivets - 1) where account = $1",
-                &[&account],
-            )
-            .await
-            .map_err(|error| format!("cannot charge rivets: {error}"))?;
-        }
-    }
     db.commit()
         .await
         .map_err(|error| format!("cannot commit: {error}"))
@@ -840,34 +772,4 @@ async fn apply(db: &Transaction<'_>, account: i64, class: &str, delta: f64) -> R
     .await
     .map(|_| ())
     .map_err(|error| format!("cannot apply rating: {error}"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_match_pays_for_completion_win_and_no_more_than_five_assists() {
-        assert_eq!(
-            rivets_earned(
-                crate::pilot::MATCH,
-                &serde_json::json!({"completed": true, "won": true, "assists": 12})
-            ),
-            13
-        );
-        assert_eq!(
-            rivets_earned(
-                crate::pilot::MATCH,
-                &serde_json::json!({"completed": true, "won": false, "assists": 2})
-            ),
-            7
-        );
-        assert_eq!(
-            rivets_earned(
-                crate::pilot::MATCH,
-                &serde_json::json!({"completed": false, "won": true, "assists": 5})
-            ),
-            0
-        );
-    }
 }

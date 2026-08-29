@@ -3527,7 +3527,7 @@ mod tests {
             etype: sim::EV_DEATH,
             a: victim,
             b: finisher,
-            v: 12,
+            v: 0,
         };
         a.world.events.e[1] = sim::sim_event {
             etype: sim::EV_ASSIST,
@@ -3543,9 +3543,9 @@ mod tests {
                 .iter()
                 .find(|m| m.first() == Some(&S2C_KILL))
                 .expect("the death itself reaches every seat");
-            assert_eq!(m.len(), 15, "the kill carries the private byte");
+            assert_eq!(m.len(), 13, "the kill carries the private byte");
             assert_eq!((m[1], m[2]), (victim, finisher), "and reads the same");
-            m[14]
+            m[12]
         };
         assert_eq!(helped(&mut helper_rx), 1, "the pilot who helped is told");
         assert_eq!(helped(&mut finisher_rx), 0, "a kill is not also an assist");
@@ -3555,7 +3555,7 @@ mod tests {
             "the pilot who died reads a death"
         );
         assert_eq!(
-            a.channel.pending_feed[0][14], 0,
+            a.channel.pending_feed[0][12], 0,
             "and the copy the stands watch claims nothing"
         );
     }
@@ -4994,9 +4994,8 @@ mod tests {
 
     /// Combat is the story of a session, and the log left it out for a day:
     /// a join and a leave with an hour of silence between them. A death files
-    /// a row for each pilot in it, machines included: a roster individual is
-    /// an account with a career, and a kill row is where a bounty is taken,
-    /// so skipping them was the whole reason a bot's wallet stayed empty.
+    /// a row for each pilot in it, machines included, because a roster
+    /// individual is an account with a career.
     #[test]
     fn a_death_is_two_rows_for_every_pilot_in_it() {
         let (mut z, pilots, d) = logging_arena("death");
@@ -5009,7 +5008,7 @@ mod tests {
         let (hs, ps) = (a.players[&hunter].ship, a.players[&prey].ship);
         let bots = seat_bots(a, 2);
 
-        a.note_death(ps, hs, 120, 119);
+        a.note_death(ps, hs, 119);
         let filed = rows(&pilots);
         let combat: Vec<(&str, &str)> = filed
             .iter()
@@ -5022,7 +5021,7 @@ mod tests {
             "Hunter",
         );
 
-        a.note_death(bots[0], bots[1], 60, 59);
+        a.note_death(bots[0], bots[1], 59);
         let with_bots = rows(&pilots);
         assert_eq!(
             with_bots.len(),
@@ -5038,10 +5037,9 @@ mod tests {
 
         // A self-kill is a death and a misfire, and the misfire is filed
         // against the pilot who threw it, which is the same pilot. Not a
-        // kill: crediting the victim with their own destruction would say it
-        // twice, and it is not a thing anybody should be paid for. The
-        // meta-layer takes a rivet off the wallet for this row.
-        a.note_death(hs, hs, 0, 0);
+        // kill: crediting the victim with their own destruction would say
+        // it twice.
+        a.note_death(hs, hs, 0);
         let after = rows(&pilots);
         assert_eq!(after.len(), filed.len() + 2);
         assert_eq!(
@@ -5070,7 +5068,7 @@ mod tests {
         // table counted as a kill.
         let team = a.world.state.ships[hs as usize].team;
         a.world.state.ships[ps as usize].team = team;
-        a.note_death(ps, hs, 0, 0);
+        a.note_death(ps, hs, 0);
         let after = rows(&pilots);
         assert_eq!(after.len(), filed.len() + 2);
         assert_eq!(

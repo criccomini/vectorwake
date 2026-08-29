@@ -106,7 +106,7 @@ async function weekPage() {
   stories.innerHTML = [
     story("top gun", best("kills"), `${best("kills")?.kills || 0} kills`, "The week’s largest total"),
     story("biggest climb", best("swing"), `+${best("swing")?.swing || 0}`, "Rating gained this week"),
-    story("streak breaker", best("breaker"), `${best("breaker")?.breaker || 0}`, "Largest bounty collected"),
+    story("most wins", best("wins"), `${best("wins")?.wins || 0}`, "Matches taken this week"),
     story("most time in the black", best("seconds"), `${Math.round((best("seconds")?.seconds || 0) / 60)} min`, "Time in live rooms"),
   ].join("");
   const ladder = document.querySelector("[data-ladder]");

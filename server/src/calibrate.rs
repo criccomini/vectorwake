@@ -1307,7 +1307,7 @@ pub(crate) fn duel(
         ];
         world.step(&inputs);
         let tick = world.state.tick;
-        for (victim, _killer, _paid) in crate::ingest_damage(&world, r, &name_of) {
+        for (victim, _killer) in crate::ingest_damage(&world, r, &name_of) {
             r.death(tick, &name_of(victim));
         }
         // The profile goes back on at the dead-to-alive edge, which the core

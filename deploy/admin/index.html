@@ -224,21 +224,6 @@
             <button id="name-button">rename</button>
             <button id="reroll-button" type="button">reroll</button>
           </form>
-          <!-- The wallet, set by hand.
-               A rivet is what a kill pays and what a rung costs, so an
-               operator refunding a bug or handing out a prize has no other way
-               to move one: everything else in the economy is earned. Absolute
-               rather than a delta, and the field arrives holding what they
-               have, so what you are about to make it is on screen while you
-               type it. -->
-          <form id="rivets-form" class="row">
-            <div class="field grow">
-              <label for="rivets-count">rivets</label>
-              <input id="rivets-count" type="number" min="0" max="1000000"
-                     step="1" inputmode="numeric">
-            </div>
-            <button id="rivets-button">set</button>
-          </form>
           <form id="ban-form" class="row">
             <div class="field grow">
               <label for="ban-reason">standing</label>
@@ -249,30 +234,6 @@
             <button id="admin-button" type="button"></button>
           </form>
         </div>
-      </div>
-
-      <!-- ------------------------------------------------------- upgrades -->
-      <!-- What this account may slot, a rung at a time.
-           Its own section rather than rows in the card, because it is
-           eighteen of them and the card is read far more often than it is
-           edited. A rung is granted or revoked with the two buttons beside it
-           and nothing is typed, which is the shape of the thing: an operator
-           is deciding one step at a time, not entering a number. -->
-      <h3 id="owns-head">Upgrades</h3>
-      <p id="owns-none" class="dim">No pilot loaded.</p>
-      <div id="owns" hidden>
-        <p id="owns-note" class="note" role="status" aria-live="polite"></p>
-        <table id="owns-table">
-          <caption class="sr">What this pilot owns in each slot</caption>
-          <thead>
-            <tr>
-              <th scope="col">slot</th>
-              <th scope="col">owns</th>
-              <th scope="col"><span class="sr">grant or revoke</span></th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
       </div>
 
       <!-- What the fleet saw this pilot do, drawn with the card above and
@@ -352,8 +313,6 @@
             <label><input type="checkbox" name="kind" value="on_air"> on air</label>
             <label><input type="checkbox" name="kind" value="login"> login</label>
             <label><input type="checkbox" name="kind" value="rename"> rename</label>
-            <label><input type="checkbox" name="kind" value="wallet"> wallet</label>
-            <label><input type="checkbox" name="kind" value="entitlement"> upgrade</label>
             <label><input type="checkbox" name="kind" value="ban"> ban</label>
           </div>
         </fieldset>

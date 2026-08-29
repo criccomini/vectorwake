@@ -454,7 +454,7 @@ pub(crate) fn ingest_damage(
     world: &sim::World,
     rating: &mut rating::Rating,
     name_of: &dyn Fn(u8) -> String,
-) -> Vec<(u8, u8, i32)> {
+) -> Vec<(u8, u8)> {
     let tick = world.state.tick;
     let ev = &*world.events;
     let mut deaths = Vec::new();
@@ -472,7 +472,7 @@ pub(crate) fn ingest_damage(
             // clients: the feed is drawn from this message rather than from
             // each client's own prediction, which used to print the same
             // death once per rollback that revived and re-killed the victim.
-            sim::EV_DEATH => deaths.push((e.a, e.b, e.v)),
+            sim::EV_DEATH => deaths.push((e.a, e.b)),
             _ => {}
         }
     }
@@ -2393,23 +2393,16 @@ impl Room {
     /// deliberately left to the rated log: one death is at most two rows here,
     /// not one per contributor.
     ///
-    /// Bots file too. They used to be skipped, which was cheap and was the
-    /// reason a bot's wallet was permanently empty: rivets are bounty taken,
-    /// and a kill row is where a bounty is taken. A roster individual is an
-    /// account with a career, and now it earns on that account the way a
-    /// person does. The week's table reads `where not bot`, so what this adds
-    /// is a wallet and a log, not a machine in the standings. See
-    /// docs/design/ai-players.md.
-    pub(crate) fn note_death(&self, victim: u8, killer: u8, paid: i32, run: u16) {
-        let bounty = paid.clamp(0, u16::MAX as i32);
+    /// Bots file too. They used to be skipped, which was cheap and left a
+    /// roster individual with no log at all. It is an account with a career,
+    /// so it files the way a person does. The week's table reads
+    /// `where not bot`, so what this adds is a log, not a machine in the
+    /// standings. See docs/design/ai-players.md.
+    pub(crate) fn note_death(&self, victim: u8, killer: u8, run: u16) {
         // The run the victim was on, handed in rather than worked back out of
-        // what the kill paid. It used to be `bounty - bounty_base`, on the
-        // reasoning that a bounty is the base plus the run and nothing else.
-        // A streak is now the something else: it adds a step to the bounty
-        // without lengthening the run, and a subtraction that does not know
-        // about it files every streaking pilot's last run two long. Filed on
-        // the death rather than on the kill because the run belongs to
-        // whoever was on it, and a pilot's best week is the longest one of
+        // anything: a death clears it and the live state no longer has it.
+        // Filed on the death rather than on the kill because the run belongs
+        // to whoever was on it, and a pilot's best week is the longest one of
         // theirs that anybody managed to end.
         let run = run as i32;
         if let Some(seat) = self.names.get(&victim) {
@@ -2419,21 +2412,18 @@ impl Room {
                 &seat,
                 serde_json::json!({
                     "by": self.name_of(killer),
-                    "bounty": bounty,
                     "run": run,
                 }),
             );
         }
         // Whose mistake it was, if it was one. Two shapes of the same thing:
         // your own bomb at your own feet, and your own bomb at your wingman's.
-        // Both file a misfire against whoever threw it rather than a kill, and
-        // a misfire costs a rivet on the way through the meta-layer, the way
-        // the arena has already taken a kill off the board for it.
+        // Both file a misfire against whoever threw it rather than a kill,
+        // the way the arena has already taken a kill off the board for it.
         //
         // A wall death has no thrower at all: seat 255 is nobody and
-        // `self.names` has no row for it, so nothing is filed and nothing is
-        // charged. Flying into a rock is a death and not a mistake anybody
-        // aimed.
+        // `self.names` has no row for it, so nothing is filed. Flying into a
+        // rock is a death and not a mistake anybody aimed.
         let own = victim == killer;
         let friendly = !own
             && (killer as usize) < self.world.state.ships.len()
@@ -2457,7 +2447,7 @@ impl Room {
             self.note(
                 pilot::KILL,
                 &seat,
-                serde_json::json!({ "of": self.name_of(victim), "bounty": bounty }),
+                serde_json::json!({ "of": self.name_of(victim) }),
             );
         }
     }
@@ -3152,11 +3142,10 @@ impl Room {
         }
     }
 
-    /// File one settlement event per occupied seat at the whistle. Five
-    /// rivets are for completing the match, three for the winning side, and
-    /// up to five for assists. Thirty seconds of field time keeps this a
-    /// dependable participation reward without turning the closing seconds
-    /// into a login bonus.
+    /// File one settlement event per occupied seat at the whistle: whether
+    /// they stayed to the end, whether their side took it, and what they
+    /// helped with. Thirty seconds of field time is what counts as having
+    /// been in the match, so the closing seconds are not worth arriving for.
     fn note_match_results(&self) {
         const MIN_PLAY_TICKS: u32 = 30 * 100;
         let Some(state) = self.mode.match_state().filter(|state| !state.playing) else {
@@ -3461,7 +3450,7 @@ impl Room {
                 open_match: false,
                 close_match: false,
             };
-            for &(victim, killer, _) in &deaths {
+            for &(victim, killer) in &deaths {
                 self.mode.on_death(&mut ctx, victim, killer);
             }
             self.banner = std::mem::take(&mut ctx.banner);
@@ -3469,7 +3458,7 @@ impl Room {
             close_match |= ctx.close_match;
             open_match |= ctx.open_match;
         }
-        for (victim, killer, paid) in deaths {
+        for (victim, killer) in deaths {
             // Rating is filed under the pilot's id, which is their account
             // where they have one. The display name is a different question
             // and is answered separately below.
@@ -3485,7 +3474,7 @@ impl Room {
             // Read before the note, because a death clears the run and the
             // live state no longer has it.
             let run = self.world.run_before(victim as usize);
-            self.note_death(victim, killer, paid, run);
+            self.note_death(victim, killer, run);
             let mut m = vec![S2C_KILL];
             m.push(victim);
             m.push(killer);
@@ -3495,10 +3484,6 @@ impl Room {
             m.extend_from_slice(&vr.to_le_bytes());
             m.extend_from_slice(&kr.to_le_bytes());
             m.push(rated.as_ref().map_or(0, |r| r.credits.len() as u8));
-            // What the kill paid, for the feed line. Clamped into a u16
-            // because a bounty is a few dozen points and the field should
-            // not inherit i32 from the event struct.
-            m.extend_from_slice(&(paid.clamp(0, u16::MAX as i32) as u16).to_le_bytes());
             m.extend_from_slice(&tick.to_le_bytes());
             // Everyone the core credited for this particular death.
             let assisted: Vec<u8> = assists

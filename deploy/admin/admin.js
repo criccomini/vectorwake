@@ -260,7 +260,6 @@ const NOTES = {
   bans: "bans-note",
   admins: "admins-note",
   activity: "activity-note",
-  owns: "owns-note",
   errors: "errors-note",
   debug: "debug-note",
 };
@@ -1154,12 +1153,6 @@ function describe(e) {
                   ["by", d.by === "self" ? "self" : d.by && `#${d.by}`]);
     case "ban":
       return bits(["by", d.by && `#${d.by}`], [null, d.reason]);
-    case "wallet":
-      return bits([null, `${d.from} rivets`], ["to", d.to],
-                  ["by", d.by && `#${d.by}`]);
-    case "entitlement":
-      return bits([null, d.label], [null, `${d.from} to ${d.to}`],
-                  ["by", d.by && `#${d.by}`]);
     case "unban":
     case "grant":
     case "revoke":
@@ -1246,85 +1239,6 @@ async function drawEvents() {
   }
 }
 
-// ---------------------------------------------------------------- upgrades
-
-// What this account may slot, a rung at a time.
-//
-// Two buttons and no field, because an operator granting an upgrade is
-// deciding one step at a time rather than entering a number: a stepper cannot
-// be typed wrong, and either direction is undone by the button next to it. No
-// confirmation for the same reason. The wallet asks because it takes a number
-// somebody typed and a stray digit is invisible in it; a rung is one rung, it
-// says so on the row, and it is in the log either way.
-async function drawOwns() {
-  const box = el("owns");
-  el("owns-none").hidden = Boolean(shown);
-  if (!shown) { box.hidden = true; return; }
-  // A bot buys its own kit out of what it has killed for, which is the whole
-  // of ai-players.md, so the server refuses one and the section is not drawn
-  // for one.
-  if (shown.kind !== "human") {
-    box.hidden = true;
-    el("owns-none").hidden = false;
-    el("owns-none").textContent =
-      "A bot buys its own kit out of what it has killed for.";
-    return;
-  }
-  el("owns-none").textContent = "No pilot loaded.";
-  box.hidden = false;
-  const who = shown.account;
-  const r = await post("/v1/admin/entitlements", { secret, account: who });
-  // The pilot moved out from under a slow answer. Drawing it would put one
-  // pilot's rows under another one's name.
-  if (!shown || shown.account !== who) return;
-  const body = el("owns-table").querySelector("tbody");
-  body.textContent = "";
-  for (const s of r.slots) {
-    const tr = document.createElement("tr");
-    const name = document.createElement("td");
-    name.textContent = s.label;
-    const owns = document.createElement("td");
-    owns.className = "n";
-    owns.textContent = `${s.owned} / ${s.ceiling}`;
-    // What is bought rather than dealt, so an operator can see at a glance
-    // which rows this account has moved off the baseline.
-    if (s.owned > s.base) owns.classList.add("good");
-    const act = document.createElement("td");
-    const step = (to, label, on) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = label;
-      b.disabled = !on;
-      b.setAttribute("aria-label", `${label === "+" ? "grant" : "revoke"} ${s.label}`);
-      b.addEventListener("click", () => entitle(s.slot, to, s.label));
-      act.append(b);
-    };
-    step(s.owned - 1, "\u2212", s.owned > s.base);
-    step(s.owned + 1, "+", s.owned < s.ceiling);
-    tr.append(name, owns, act);
-    body.append(tr);
-  }
-  const moved = r.slots.filter((s) => s.owned > s.base).length;
-  tell("owns-note", moved
-    ? `${moved} slot${moved === 1 ? "" : "s"} above the baseline`
-    : "everything at the baseline everybody is dealt");
-}
-
-// One rung, granted or revoked. Re-read rather than guess, the way the ban
-// does: what the page shows is what the database holds, including anything
-// another operator did in between.
-async function entitle(slot, n, label) {
-  if (!shown) return;
-  try {
-    await post("/v1/admin/entitle", { secret, account: shown.account, slot, n });
-    await drawOwns();
-    paint("activity", drawEvents);
-    tell("owns-note", `${label} is now ${n}`, "ok");
-  } catch (e) {
-    tell("owns-note", e.message);
-  }
-}
-
 // ------------------------------------------------------------------- pilot
 
 function drawPilot(p) {
@@ -1349,7 +1263,6 @@ function drawPilot(p) {
   row("last seen", p.last_seen);
   row("standing", p.banned ? `banned: ${p.reason || "no reason recorded"}` : "in good standing",
       p.banned ? "bad" : "good");
-  row("rivets", (p.rivets ?? 0).toLocaleString());
   if (p.admin) row("admin", "yes", "good");
 
   el("pilot-card").hidden = false;
@@ -1358,13 +1271,6 @@ function drawPilot(p) {
   // it in a refusal.
   el("name-text").value = "";
   el("name-form").hidden = p.kind !== "human";
-
-  // The wallet, in a field already holding what they have, so setting it is
-  // typing over a number rather than into a blank. A bot buys its own kit out
-  // of what it has killed for, which is the whole of ai-players.md, so the
-  // server refuses one and the form is not drawn for one.
-  el("rivets-count").value = String(p.rivets ?? 0);
-  el("rivets-form").hidden = p.kind !== "human";
 
   const form = el("ban-form"), button = el("ban-button");
   form.hidden = false;
@@ -1389,7 +1295,6 @@ function drawPilot(p) {
   // whichever stay the last one was opened to.
   if (!shownWas || shownWas !== p.account) stay = null;
   shownWas = p.account;
-  paint("owns", drawOwns);
   paint("activity", drawEvents);
 }
 
@@ -1604,49 +1509,6 @@ el("reroll-button").addEventListener("click", () => {
       "goes back into it.",
     ok: "reroll",
   });
-});
-
-// The wallet, set. Rivets are earned by killing and spent on the shelf, so
-// this is the only way one moves without somebody having played for it: a
-// refund, a prize, a correction. Which is exactly why it asks, says both
-// numbers while it does, and lands in the pilot log afterwards.
-el("rivets-form").addEventListener("submit", async (ev) => {
-  ev.preventDefault();
-  if (!shown) return;
-  const field = el("rivets-count");
-  const want = Number(field.value);
-  if (!Number.isInteger(want) || want < 0) {
-    tell("lookup-note", "rivets are a whole count, zero or more");
-    return;
-  }
-  const was = shown.rivets ?? 0;
-  if (want === was) {
-    tell("lookup-note", `${shown.name} already has ${was.toLocaleString()}`);
-    return;
-  }
-  const up = want > was;
-  const yes = await ask({
-    title: "Set this wallet?",
-    // Both numbers and the difference between them, because the mistake this
-    // is guarding against is a digit, and a digit is invisible in one number
-    // and obvious in three.
-    body: `${shown.name} has ${was.toLocaleString()} rivets and will have ` +
-      `${want.toLocaleString()}, which is ${up ? "an extra " : "a loss of "}` +
-      `${Math.abs(want - was).toLocaleString()}. Nothing else moves: their ` +
-      "kit, their rating and what they already own are untouched.",
-    ok: up ? "add them" : "take them",
-  });
-  if (yes === null) return;
-  try {
-    await post("/v1/admin/rivets", { secret, account: shown.account, rivets: want });
-    // Re-read rather than guess, the way the ban does: what the page shows is
-    // what the database holds, including anything another operator did in
-    // between.
-    await lookup(`#${shown.account}`);
-    tell("lookup-note", `now holds ${want.toLocaleString()} rivets`, "ok");
-  } catch (e) {
-    tell("lookup-note", e.message);
-  }
 });
 
 el("ban-form").addEventListener("submit", async (ev) => {

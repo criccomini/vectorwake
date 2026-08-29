@@ -1333,15 +1333,8 @@ async fn route(
                                 -- that is the pilot it belonged to.
                                 coalesce(max((detail->>'run')::int)
                                          filter (where kind = 'died'), 0) as run,
-                                -- The largest bounty they took. A bounty is a
-                                -- fresh hull's base plus the run it was on, so
-                                -- this is the longest streak this pilot broke.
-                                coalesce(max((detail->>'bounty')::int)
-                                         filter (where kind = 'kill'), 0) as breaker,
-                                -- Every bounty they collected, which is what a
-                                -- week's play came to.
-                                coalesce(sum((detail->>'bounty')::int)
-                                         filter (where kind = 'kill'), 0) as points
+                                count(*) filter (where kind = 'match'
+                                       and (detail->>'won')::boolean) as wins
                            from wk group by name
                      ),
                      rating_participants as (
@@ -1392,10 +1385,9 @@ async fn route(
                                   group by account, class) c
                           order by account, n desc, class
                      )
-                     select t.name, t.kills, t.deaths, t.run, t.breaker,
+                     select t.name, t.kills, t.deaths, t.run, t.wins,
                             coalesce(extract(epoch from p.span), 0)::bigint,
                             coalesce(m.delta, 0)::double precision,
-                            t.points,
                             coalesce(g.rating, 0)::double precision,
                             coalesce(s.n, 0)::bigint
                        from tally t
@@ -1424,13 +1416,17 @@ async fn route(
                         "kills": r.get::<_, i64>(1),
                         "deaths": r.get::<_, i64>(2),
                         // Kills they were part of and did not finish.
-                        "assists": r.get::<_, i64>(9),
-                        // A bounty taken is the length of the run it ended,
-                        // so the biggest one somebody collected is the
-                        // longest streak they broke. Their own best run is a
-                        // different number and nothing files it yet.
+                        "assists": r.get::<_, i64>(8),
+                        // The longest run of their own that anybody managed
+                        // to end. Their own best run is a different number
+                        // and nothing files it yet.
                         "run": r.get::<_, i32>(3),
-                        "breaker": r.get::<_, i32>(4),
+                        // Matches they were still in at the whistle and their
+                        // side took. It stood where the largest bounty
+                        // collected used to, which was the same idea a
+                        // different way: the one number on the row that is
+                        // about winning rather than about shooting.
+                        "wins": r.get::<_, i64>(4),
                         "seconds": r.get::<_, i64>(5),
                         // How far the rating moved this week: every point
                         // taken off a victim and every point paid to a
@@ -1438,9 +1434,6 @@ async fn route(
                         // these rows, so the sum of the week's rows is the
                         // week's change.
                         "swing": r.get::<_, f64>(6).round() as i64,
-                        // What the week's kills paid, which is the number a
-                        // pilot's rivets came out of.
-                        "banked": r.get::<_, i64>(7),
                         // And what they are rated at now. Two different
                         // facts and the table wants both: the rating says
                         // how good somebody is and moves slowly, the swing
@@ -1448,7 +1441,7 @@ async fn route(
                         // account to keep a rating under and comes back
                         // zero, which the page draws as nothing rather than
                         // as a very bad pilot.
-                        "rating": r.get::<_, f64>(8).round() as i64,
+                        "rating": r.get::<_, f64>(7).round() as i64,
                     })
                 })
                 .collect();
@@ -1980,11 +1973,9 @@ async fn route(
                             to_char(a.created at time zone 'utc', 'YYYY-MM-DD'),
                             to_char(a.last_seen at time zone 'utc', 'YYYY-MM-DD HH24:MI'),
                             exists (select 1 from credentials c
-                                    where c.account = a.id and c.method <> 'secret'),
-                            coalesce(w.rivets, 0)
+                                    where c.account = a.id and c.method <> 'secret')
                      from accounts a
-                     left join names n on n.account = a.id
-                     left join wallets w on w.account = a.id";
+                     left join names n on n.account = a.id";
             let row = match by_id {
                 Some(id) => db.query_opt(&format!("{q} where a.id = $1"), &[&id]).await,
                 None => {
@@ -2014,10 +2005,6 @@ async fn route(
                             "created": r.get::<_, String>(6),
                             "last_seen": r.get::<_, String>(7),
                             "claimed": r.get::<_, bool>(8),
-                            // What they have banked. No row is a balance of
-                            // zero, which is what an account that has never
-                            // been paid has.
-                            "rivets": r.get::<_, i64>(9),
                         }),
                     )
                 }
@@ -2571,19 +2558,7 @@ async fn route(
             }
         }
 
-        // A wallet, set by hand.
-        //
-        // Absolute rather than a delta: an operator typing into a field
-        // pre-filled with the current balance can see what they are about to
-        // make it, and a delta box is a subtraction done in somebody's head
-        // over an account they cannot see the history of. The log records
-        // both ends anyway, so a correction is still readable as one
-        // afterwards.
-        //
-        // Refused for a bot. A house bot buys its own kit out of what it has
-        // killed for, which is the whole of docs/design/ai-players.md: handing
-        // one a balance is deciding what it flies, and that is a decision the
-        // roster and the shelf make between them.
+        // Every account the fleet has banned, for the panel that lists them.
         "/v1/admin/bans" => {
             if let Err(reply) = require_admin(&db, &s("secret")).await {
                 return reply;

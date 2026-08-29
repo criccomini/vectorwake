@@ -114,23 +114,19 @@ pub const LEAVE: &str = "leave";
 /// one says that it happened to this person in this room. Bot-on-bot deaths,
 /// the overwhelming bulk, still never enter.
 pub const DIED: &str = "died";
-/// This pilot destroyed somebody. `detail`: who, and what it paid.
+/// This pilot destroyed somebody. `detail`: who.
 pub const KILL: &str = "kill";
 /// This pilot reached a match whistle. `detail`: whether they played long
 /// enough to complete it, whether their side won, their assists, and the match
-/// number. Settlement turns those fields into the participation payout.
+/// number.
 pub const MATCH: &str = "match";
-pub const MATCH_COMPLETE_RIVETS: i64 = 5;
-pub const MATCH_WIN_RIVETS: i64 = 3;
-pub const MATCH_ASSIST_RIVETS_MAX: i64 = 5;
 /// This pilot destroyed themselves or a teammate. `detail`: who, and whether
 /// it was their own hull.
 ///
 /// A kind of its own rather than a `kill` with a zero on it, because it is not
-/// one: the arena takes a kill off the board for it and the meta-layer takes a
-/// rivet, and both of those are arithmetic somebody has to be able to audit
-/// out of the log. A teamkill used to file a `kill` paying nothing, which made
-/// the week's table count it as a kill.
+/// one: the arena takes a kill off the board for it, and that is arithmetic
+/// somebody has to be able to audit out of the log. A teamkill used to file a
+/// `kill` paying nothing, which made the week's table count it as a kill.
 pub const MISFIRE: &str = "misfire";
 
 /// The two combat kinds do not spend the session budget. The budget exists
