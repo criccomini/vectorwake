@@ -593,10 +593,11 @@ pub(crate) async fn serve_client(
                     let spent = data[2] as usize;
                     let mut kit = [0u8; crate::sim::SLOT_COUNT];
                     if data.len() >= 3 + spent * 2 {
-                        for pair in data[3..3 + spent * 2].chunks_exact(2) {
-                            if (pair[0] as usize) < crate::sim::SLOT_COUNT {
-                                kit[pair[0] as usize] =
-                                    kit[pair[0] as usize].saturating_add(pair[1]);
+                        for at in 0..spent {
+                            let slot = data[3 + at * 2] as usize;
+                            let count = data[4 + at * 2];
+                            if slot < crate::sim::SLOT_COUNT {
+                                kit[slot] = kit[slot].saturating_add(count);
                             }
                         }
                         if let Presence::Flying { room, member } = presence.current() {
