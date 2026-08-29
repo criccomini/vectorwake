@@ -523,16 +523,15 @@ pub(crate) async fn serve_client(
                 {
                     credential_expires = presented_expires;
                     let ship = a.players[&new_id].ship;
-                    let mut m = vec![S2C_MAP];
-                    m.extend_from_slice(&a.world.packed_map());
-                    let mut landed = tx.try_send(Message::Binary(m)).is_ok();
+                    // The room's own accessors rather than the same two
+                    // headers written out a second time. They were spelled
+                    // inline here, which made this the one place a wire could
+                    // change on the broadcast path and not on the door.
+                    let mut landed = tx.try_send(Message::Binary(a.map_msg())).is_ok();
                     if let Some(n) = a.map_name_msg() {
                         landed &= tx.try_send(Message::Binary(n)).is_ok();
                     }
-                    let mut c = vec![S2C_SETTINGS];
-                    c.extend_from_slice(&a.settings_generation.to_le_bytes());
-                    c.extend_from_slice(&a.world.packed_settings());
-                    landed &= tx.try_send(Message::Binary(c)).is_ok();
+                    landed &= tx.try_send(Message::Binary(a.settings_msg())).is_ok();
                     // A fresh socket has an empty queue, so this practically
                     // always lands. When it does not, the room owes them the
                     // ground and keeps offering it rather than seating a pilot

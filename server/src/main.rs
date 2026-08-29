@@ -5052,6 +5052,148 @@ mod tests {
         );
     }
 
+    /// A pilot joins a room, reads back what the room sent them the way a
+    /// client reads it, and spends a charge.
+    ///
+    /// This is the seam two shipped bugs came through, and both were invisible
+    /// to the tests either side of it. The room's own tests assert what the
+    /// room holds; the client's tests stub the simulation and assert what a
+    /// stubbed one answers. Nothing joined a room, took the bytes it sent, and
+    /// read them back with the core the client links.
+    ///
+    /// So this does the client's half in Rust. The map, the settings and the
+    /// snapshot go through the same three unpack calls the client makes, in
+    /// the same order, and the body offsets are read out of the client's own
+    /// source rather than written down here. A header that moves on one side
+    /// and not the other is what a join hang is made of.
+    ///
+    /// One of the two is beyond it: a C export deleted with a Lua caller still
+    /// on it, which no amount of Rust can see. `constant_drift_test.lua`
+    /// guards that side.
+    #[test]
+    fn a_pilot_joins_reads_the_wire_and_spends_a_charge() {
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vane\"]\n");
+        // A match already running when this pilot arrives, which is both the
+        // ordinary way to join a busy arena and the case the shipped bug
+        // lived in. A whistle deals every seat in the room, so a pilot who
+        // arrives on one is dealt twice and the second deal covers for the
+        // first; a pilot who walks into a match in progress is dealt once,
+        // and that once is the only chance their rack has to be filled.
+        // Their receiver is held rather than dropped, because a closed queue
+        // is a refused send and a room reads that as a client owed the map.
+        let (_, _, _bystander) = seat_rx(&mut a, "Bystander");
+        a.open_match();
+        let (me, id, mut rx) = seat_rx(&mut a, "Arrival");
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        for _ in 0..8 {
+            a.tick();
+        }
+        a.broadcast_snapshot(&mut buf);
+        let msgs = drain(&mut rx);
+
+        // The ground and the tuning as the door hands them out. `Room::join`
+        // seats a pilot; the socket around it sends these two, through these
+        // same accessors, before the first snapshot goes anywhere.
+        let map_msg = a.map_msg();
+        let settings_msg = a.settings_msg();
+        assert_eq!(map_msg.first(), Some(&S2C_MAP));
+        assert_eq!(settings_msg.first(), Some(&S2C_SETTINGS));
+        // Addressed to this seat. A snapshot names its subject in byte two,
+        // and a room sends one per recipient.
+        let snap = msgs
+            .iter()
+            .find(|m| m.first() == Some(&S2C_SNAPSHOT) && m.get(1) == Some(&me))
+            .expect("the room sent this seat no snapshot")
+            .clone();
+
+        // Where each body begins, read off the client rather than asserted
+        // here. `net.lua` slices both, and if it starts slicing somewhere else
+        // this test wants to know before a player does.
+        let client = std::fs::read_to_string("../client/arena/net.lua")
+            .or_else(|_| std::fs::read_to_string("client/arena/net.lua"))
+            .expect("the client's net.lua, which this test reads its offsets from");
+        let body_at = |after: &str, what: &str| -> usize {
+            let at = client
+                .find(after)
+                .unwrap_or_else(|| panic!("cannot find the client's {what} in net.lua"));
+            let tail = &client[at + after.len()..];
+            let digits: String = tail.chars().take_while(|c| c.is_ascii_digit()).collect();
+            let one_based: usize = digits
+                .parse()
+                .unwrap_or_else(|_| panic!("the client's {what} is not a number"));
+            one_based - 1
+        };
+        // `local body = string.sub(s, 33)` and `sim.apply_settings(string.sub(s, 6))`.
+        let snap_body = body_at("local body = string.sub(s, ", "snapshot body offset");
+        let settings_body = body_at("sim.apply_settings(string.sub(s, ", "settings body offset");
+
+        // The gate that drops a snapshot in silence: a client keeps the
+        // generation the settings arrived under and ignores every snapshot
+        // that does not carry it. Disagreeing here is a join that hangs with
+        // no error anywhere.
+        let u32_at = |m: &[u8], at: usize| -> u32 {
+            u32::from_le_bytes([m[at], m[at + 1], m[at + 2], m[at + 3]])
+        };
+        assert_eq!(
+            u32_at(&settings_msg, 1),
+            u32_at(&snap, 7),
+            "the settings generation and the snapshot's disagree, so a client \
+             would drop every snapshot without saying why"
+        );
+
+        // The client's half now, through the core the client links.
+        let mut seen = sim::World::from_packed(1, &map_msg[1..]).expect("the room's map");
+        assert!(
+            seen.apply_settings(&settings_msg[settings_body..]),
+            "the room's settings did not unpack"
+        );
+        assert!(
+            seen.apply_snapshot(&snap[snap_body..]),
+            "the room's snapshot did not unpack"
+        );
+
+        // What a pilot who just joined is actually holding.
+        let sh = &seen.state.ships[me as usize];
+        assert_eq!(sh.active, 1, "the seat is occupied");
+        assert_eq!(sh.alive, 1, "and alive");
+        assert!(sh.energy > 0, "with a bar");
+
+        let profile = seen.profile(sh.cls);
+        let want: Vec<u8> = (0..sim::MAX_CHARGES)
+            .map(|k| profile[sim::slot_charge(k) as usize])
+            .collect();
+        assert!(
+            want.iter().any(|n| *n > 0),
+            "the hull under test carries no charges, so this proves nothing"
+        );
+        assert_eq!(
+            sh.charge.to_vec(),
+            want,
+            "a pilot arrives holding their hull's rack, and the snapshot says so"
+        );
+
+        // And can spend one.
+        let kind = (0..sim::MAX_CHARGES)
+            .find(|k| want[*k] > 0)
+            .expect("a kind to spend");
+        let before = a.world.state.ships[me as usize].charge[kind];
+        for _ in 0..24 {
+            let now = a.world.state.tick.wrapping_add(1);
+            if let Some(p) = a.players.get_mut(&id) {
+                p.schedule(now, sim::btn_charge(kind), now);
+            }
+            a.tick();
+            if a.world.state.ships[me as usize].charge[kind] < before {
+                break;
+            }
+        }
+        assert!(
+            a.world.state.ships[me as usize].charge[kind] < before,
+            "pressing the charge key spent nothing: held {before}, still {}",
+            a.world.state.ships[me as usize].charge[kind]
+        );
+    }
+
     /// Combat is the story of a session, and the log left it out for a day:
     /// a join and a leave with an hour of silence between them. A death files
     /// a row for each pilot in it, machines included, because a roster
