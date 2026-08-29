@@ -14,6 +14,12 @@ deploy/.env
 deploy/deploy-log/
 sandbox-ca.crt
 
+# What the calibration harnesses write where they were run. Both are
+# measurements to diff a change against rather than inputs anything loads, so
+# a tuning session should not leave the tree dirty.
+hulls.json
+ladder.json
+
 # Built by hand when somebody wants to hear the kit outside the game, and by
 # `make -C client/tools check` when CI wants to measure it.
 client/tools/sfxdump
