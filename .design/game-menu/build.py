@@ -345,9 +345,14 @@ DIM = ('<div style="position:absolute;inset:0;'
        'background:rgba(5,7,12,.42)"></div>')
 
 
-def hud():
+def hud(three=False):
     """The score band and a radar, said small: this is a fight, not a
-    front page."""
+    front page. `three` adds a third side, for the boards whose point is
+    a zone holding more than two."""
+    tail = ('<span class="mono" style="font-size:30px;color:#ffa552">4'
+            '</span>'
+            '<span class="mono" style="font-size:11px;color:#ffa552">'
+            'MERIDIAN</span>') if three else ''
     return [
         '<div style="position:absolute;top:14px;left:50%;'
         'transform:translateX(-50%);display:flex;align-items:center;'
@@ -357,7 +362,7 @@ def hud():
         '<span class="mono" style="font-size:34px">1:47</span>'
         '<span class="mono" style="font-size:30px;color:#ffa552">5</span>'
         '<span class="mono" style="font-size:11px;color:#ffa552">CAISSON</span>'
-        '</div>',
+        + tail + '</div>',
         '<div style="position:absolute;right:14px;top:14px;width:168px;'
         'height:168px;background:rgba(6,10,16,.55);border:1px solid '
         'rgba(63,88,120,.5)"></div>',
@@ -400,24 +405,59 @@ def settings_open_board():
 
 # ============= CornerPanel: the docked panel, fight live =============
 #
-# The small answer: the corner key docks a panel on the left and the
-# match keeps running undimmed beside it. Cheapest interruption, and the
-# panel is the same rows; but on a phone the fight underneath is what a
-# stray thumb hits.
-def corner_panel_board():
-    rows = (
+# The corner key docks a panel on the left and the match keeps running
+# undimmed beside it. Nothing is hidden while the menu stands.
+#
+# Side is a list rather than a stepper, because a stepper walks: in a
+# zone holding more than two sides, arrows would drag a pilot through
+# every team between here and the one they want. A row per side says
+# them all at once, marks the one you fly for, and any other is one
+# press. The counts are what you weigh when you switch, so they ride
+# along; the board holds three sides so the reason is visible.
+def side_rows(cursor=None):
+    sides = [("Pylon", "#4fd6ff", "8 &middot; yours"),
+             ("Caisson", "#ffa552", "7"),
+             ("Meridian", "#ffa552", "6")]
+    out = band("side")
+    for name, col, right in sides:
+        out += srow(f'<span style="color:{col}">{name}</span>', val(right),
+                    state="cursor" if cursor == name else None)
+    return out
+
+
+def corner_panel_rows(cursor="Meridian"):
+    return (
         srow("Leave", '<span class="key" style="height:24px;padding:0 11px;'
-             'font-size:10px">to the stands</span>', state="cursor")
-        + srow("Side", stepper("Pylon"))
+             'font-size:10px">to the stands</span>')
+        + side_rows(cursor=cursor)
         + settings_rows(cursor=None)
     )
-    parts = hud() + [
+
+
+def corner_panel_board():
+    parts = hud(three=True) + [
         corner_key(lit=True),
         '<div style="position:absolute;left:14px;top:48px;width:300px;'
         'background:#070b12;border:1px solid rgba(63,88,120,.85);'
-        'padding:0 14px 10px;z-index:5">' + rows + '</div>',
+        'padding:0 14px 10px;z-index:5">' + corner_panel_rows() + '</div>',
     ]
     write("CornerPanel.dc.html", board(1440, 810, parts))
+
+
+# ============== CornerPhone: the same panel under a thumb ==============
+#
+# The panel at a phone's width: 300 on a 390 glass leaves a strip of the
+# fight showing, which is the direction's promise kept even here. The
+# stray-thumb worry lives on this board too: everything to the right of
+# the panel is live game.
+def corner_phone_board():
+    parts = hud_phone() + [
+        corner_key(lit=True, word=False, x=12, y=12),
+        '<div style="position:absolute;left:12px;top:46px;width:300px;'
+        'background:#070b12;border:1px solid rgba(63,88,120,.85);'
+        'padding:0 14px 10px;z-index:5">' + corner_panel_rows() + '</div>',
+    ]
+    write("CornerPhone.dc.html", board(390, 844, parts))
 
 
 # ================= CenterCard: the classic pause card =================
@@ -564,4 +604,5 @@ radial_board()
 menu_key_board()
 phone_board()
 phone_open_board()
-print("eight boards written")
+corner_phone_board()
+print("nine boards written")

@@ -6,8 +6,9 @@
     { "file": "Phone.dc.html", "title": "Phone, at rest", "x": 4680, "y": 0, "w": 390, "h": 844 },
     { "file": "PhoneOpen.dc.html", "title": "Phone, column open", "x": 5190, "y": 0, "w": 390, "h": 844 },
     { "file": "CornerPanel.dc.html", "title": "Corner panel", "x": 0, "y": 1010, "w": 1440, "h": 810 },
-    { "file": "CenterCard.dc.html", "title": "Center card", "x": 1560, "y": 1010, "w": 1440, "h": 810 },
-    { "file": "Radial.dc.html", "title": "Radial", "x": 3120, "y": 1010, "w": 1440, "h": 810 }
+    { "file": "CornerPhone.dc.html", "title": "Corner panel, phone", "x": 1560, "y": 1010, "w": 390, "h": 844 },
+    { "file": "CenterCard.dc.html", "title": "Center card", "x": 2070, "y": 1010, "w": 1440, "h": 810 },
+    { "file": "Radial.dc.html", "title": "Radial", "x": 3630, "y": 1010, "w": 1440, "h": 810 }
   ],
   "annotations": [
     {
@@ -15,35 +16,42 @@
       "x": 0,
       "y": -240,
       "w": 480,
-      "text": "The chosen direction: the landing column's grammar carried into the match. Nothing pauses; opening the column only takes the controls, and the ship stays live below it, so the wash is thin enough to watch trouble coming. It opens with Esc on a keyboard and the corner MENU key on glass, both of which already mean menu today."
+      "text": "The in-game menu: leave, side and settings, opened by Esc or the corner MENU key, with nothing paused and the ship live below. Two candidates are drawn in full: the column carried in from the landing, and the corner panel below it. Whichever wins, side is a list, not a stepper."
     },
     {
       "id": "menu-key",
       "x": 490,
       "y": -170,
       "w": 390,
-      "text": "The button, as the client already draws it: the key box every pressable thing wears, three bars for the mark, the word MENU beside them on a desktop because that corner is read. Dim until pressed, friend blue while the column stands. PLAYERS keeps it company in the row."
-    },
-    {
-      "id": "settings-open",
-      "x": 3120,
-      "y": -170,
-      "w": 400,
-      "text": "The settings stop opens the way the ship stop opens at home. This is the only home settings has: the landing keeps saying only who, where and what."
+      "text": "The button, as the client already draws it: the key box every pressable thing wears, three bars for the mark, the word MENU beside them on a desktop because that corner is read. Dim until pressed, friend blue while the menu stands."
     },
     {
       "id": "phones",
       "x": 4680,
       "y": -170,
       "w": 400,
-      "text": "On a phone the word drops and the mark stands alone in a square of the same box; a thumb that has met this screen does not need the word. The column's 320 fits a 390 glass with margin, and RESUME lands where a thumb already lives."
+      "text": "On a phone the word drops and the mark stands alone in a square of the same box. The column's 320 fits a 390 glass with margin, and RESUME lands where a thumb already lives."
     },
     {
-      "id": "alternatives",
+      "id": "corner-panel",
       "x": 0,
       "y": 1880,
       "w": 460,
-      "text": "The roads not taken, kept for the record: the corner-docked panel that never dims the fight, the console center card with settings a page deeper, and the hold-and-flick radial that costs a new grammar."
+      "text": "The corner panel, explored: the fight stays live and undimmed beside it. Side is a list because a stepper walks: in a zone with more than two sides, arrows drag you through every team between here and the one you want. A row per side says them all at once, marks yours, and any other is one press; the counts you weigh before switching ride along."
+    },
+    {
+      "id": "corner-phone",
+      "x": 1560,
+      "y": 1880,
+      "w": 400,
+      "text": "The same panel at a phone's width leaves a strip of live fight showing, the direction's promise kept even here. The strip is also the tradeoff: everything right of the panel is live game under a stray thumb."
+    },
+    {
+      "id": "alternatives",
+      "x": 2070,
+      "y": 1880,
+      "w": 420,
+      "text": "The roads not taken, kept for the record: the console center card with settings a page deeper, and the hold-and-flick radial that costs a new grammar."
     }
   ],
   "launch": { "view": "canvas" }
