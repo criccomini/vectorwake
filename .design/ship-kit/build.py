@@ -822,6 +822,130 @@ def exp_tray_board():
     write("ACostTray.dc.html", board(body, head=hull_head("Apex")))
 
 
+# ========================= Flat: one credit each =========================
+#
+# Chris's cut through the cost-home question: shrink the tray and price
+# every step at one build credit. There is no price to draw anywhere, so
+# the rows carry nothing but their controls: plus and minus keys on the
+# laddered slots, toggles on the on/off add-ons. Seven chips, drawn big.
+# Balance moves from prices to caps and effect tuning, and seven picks
+# over a dozen steps is a build space calibrate can sweep whole.
+def flat_tray(free, total=7):
+    cells = []
+    for i in range(total):
+        if i < free:
+            cells.append('<span style="width:11px;height:11px;flex:none;'
+                         'background:#ffd166;transform:rotate(45deg)">'
+                         '</span>')
+        else:
+            cells.append('<span style="width:11px;height:11px;flex:none;'
+                         'border:1.2px solid rgba(255,209,102,.3);'
+                         'transform:rotate(45deg)"></span>')
+    return ('<div class="row" style="height:40px;gap:14px;'
+            'border-bottom:1px solid rgba(63,88,120,.45);'
+            'margin:0 -14px;padding:0 14px">'
+            '<span class="lbl" style="color:#ffd166;opacity:.8;flex:none">'
+            'build credits</span>'
+            '<div class="row" style="gap:7px">' + "".join(cells)
+            + '</div></div>')
+
+
+def pm_keys(minus=True, plus=True):
+    def k(sign, on):
+        style = ("" if on
+                 else "opacity:.35;border-color:rgba(63,88,120,.4);")
+        return (f'<span class="key" style="width:40px;height:34px;'
+                f'font-size:17px;{style}">{sign}</span>')
+    return ('<span class="row" style="gap:8px;flex:none">'
+            + k("&#8722;", minus) + k("+", plus) + '</span>')
+
+
+def flat_row(label, value, minus=True, plus=True, state=None, zero=False):
+    hot = state == "cursor"
+    vcol = "rgba(108,122,144,.9)" if zero else "#4fd6ff"
+    return bleed(
+        '<div class="row" style="height:46px;gap:14px">'
+        f'<span style="font-size:14px;color:rgba(223,233,245,'
+        f'{1 if hot else .85})">{label}</span>'
+        '<div style="flex:1"></div>'
+        f'<span class="mono" style="font-size:12.5px;color:{vcol}">'
+        f'{value}</span>' + pm_keys(minus, plus) + '</div>', state=state)
+
+
+def flat_toggle_row(label, on, can_raise=True, state=None):
+    hot = state == "cursor"
+    t = toggle(on)
+    if not on and not can_raise:
+        t = f'<span style="opacity:.35">{t}</span>'
+    return bleed(
+        '<div class="row" style="height:46px;gap:14px">'
+        f'<span style="font-size:14px;color:rgba(223,233,245,'
+        f'{1 if hot else .85})">{label}</span>'
+        '<div style="flex:1"></div>' + t + '</div>', state=state)
+
+
+def flat_reset():
+    return (sect("", mt=8)
+            + bleed('<div class="row" style="height:44px">'
+                    '<span style="font-size:14px;color:#dfe9f5">reset</span>'
+                    '</div>'))
+
+
+# The Apex default: spray 2, repel 2, burst 1 is four picks of seven, so a
+# fresh player holds three free credits and their first edit is spending
+# one rather than trading.
+def flat_board():
+    body = (
+        flat_tray(3)
+        + sect("gun", mt=10)
+        + '<div style="margin-top:2px">'
+        + flat_row("spray", "2 rounds", state="cursor")
+        + flat_toggle_row("bounce", False)
+        + flat_toggle_row("freeze", False)
+        + '</div>'
+        + sect("bomb", mt=8)
+        + '<div style="margin-top:2px">'
+        + flat_toggle_row("fuse", False)
+        + flat_row("shrapnel", "none", minus=False, zero=True)
+        + flat_toggle_row("bounce", False)
+        + '</div>'
+        + sect("rack", mt=8)
+        + '<div style="margin-top:2px">'
+        + flat_row("repel", "2")
+        + flat_row("burst", "1")
+        + '</div>'
+        + flat_reset())
+    write("Flat.dc.html", board(body, head=hull_head("Apex")))
+
+
+# The same page with all seven spent: every way to spend an eighth stands
+# down by itself, plus keys and off toggles alike, which is the whole of
+# what "out of credits" needs to say.
+def flat_spent_board():
+    body = (
+        flat_tray(0)
+        + sect("gun", mt=10)
+        + '<div style="margin-top:2px">'
+        + flat_row("spray", "3 rounds", plus=False)
+        + flat_toggle_row("bounce", False, can_raise=False)
+        + flat_toggle_row("freeze", True)
+        + '</div>'
+        + sect("bomb", mt=8)
+        + '<div style="margin-top:2px">'
+        + flat_toggle_row("fuse", True)
+        + flat_row("shrapnel", "none", minus=False, plus=False, zero=True,
+                   state="cursor")
+        + flat_toggle_row("bounce", False, can_raise=False)
+        + '</div>'
+        + sect("rack", mt=8)
+        + '<div style="margin-top:2px">'
+        + flat_row("repel", "2")
+        + flat_row("burst", "1", plus=False)
+        + '</div>'
+        + flat_reset())
+    write("FlatSpent.dc.html", board(body, head=hull_head("Apex")))
+
+
 main_board()
 tune_board()
 tune_states_board()
@@ -833,4 +957,6 @@ exp_selects_board()
 exp_selects_open_board()
 exp_inline_board()
 exp_tray_board()
-print("eleven boards written")
+flat_board()
+flat_spent_board()
+print("thirteen boards written")
