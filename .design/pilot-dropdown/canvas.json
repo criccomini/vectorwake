@@ -1,0 +1,21 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "Guest · account open", "x": 0, "y": 0, "w": 1440, "h": 810 },
+    { "file": "Claimed.dc.html", "title": "Claimed · account open", "x": 1520, "y": 0, "w": 1440, "h": 810 },
+    { "file": "Closed.dc.html", "title": "Closed", "x": 0, "y": 950, "w": 1440, "h": 810 },
+    { "file": "Phone.dc.html", "title": "Guest · phone", "x": 1520, "y": 950, "w": 390, "h": 844 }
+  ],
+  "annotations": [
+    {
+      "id": "note-proposal",
+      "x": -430, "y": 0, "w": 370,
+      "text": "The account stop stops being a door.\n\nToday a press on ACCOUNT opens the drawer on the pilot page. Here it opens a list in place, exactly the way ZONE and SHIP already do: same upward panel, same row states, same press-again-to-shut.\n\nThe list holds only the account acts. No career, no stats: those stay on the pilot page, which the drawer still has.\n\nA guest reads CLAIM ACCOUNT in the offer green with KEEP YOUR POINTS beside it, then under a rule the two ways of being somebody else: SIGN UP for a fresh account, LOG IN for one that already exists. A claimed pilot reads SET PASSWORD and LOG OFF, the pair the pilot page keeps at its foot today."
+    },
+    {
+      "id": "note-open",
+      "x": -430, "y": 620, "w": 370,
+      "text": "Open questions.\n\nFor a guest, SIGN UP and CLAIM ACCOUNT are nearly one act in the account model: claiming is setting a password on the account you were already handed. If they collapse, one row survives and the rule goes.\n\nAccount is the top stop, so its list opening upward covers the lockup, which stands down like it does when the zone list climbs. Opening downward would cover the zone and ship stops instead.\n\nWhat a row press opens is not drawn here: LOG IN and the two password acts need fields, in the drawer or inline over the glass."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}
