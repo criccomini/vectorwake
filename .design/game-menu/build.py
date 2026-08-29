@@ -389,7 +389,8 @@ def bottom_key(bottom=14):
             f'transform:translateX(-50%);bottom:{bottom}px;height:22px;'
             'padding:0 8px;border-color:rgba(108,122,144,.35);'
             'background:rgba(108,122,144,.05)">' + burger(ink, 11)
-            + '</div>')
+            + f'<span style="font-size:9.5px;color:{ink}">MENU</span>'
+            '</div>')
 
 
 # ============== Main: the pause takeover, column grammar ==============
