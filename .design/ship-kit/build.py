@@ -860,7 +860,18 @@ def pm_keys(minus=True, plus=True):
             + k("&#8722;", minus) + k("+", plus) + '</span>')
 
 
-def flat_row(label, value, minus=True, plus=True, state=None, zero=False):
+def flat_note(note):
+    """The active row says what its slot does, in one sentence under the
+    controls, the way the menu's rows carry their wrapping notes."""
+    if not note:
+        return ""
+    return ('<div style="padding:0 0 12px;margin-top:-4px">'
+            f'<span style="font-size:13px;color:#9fb6d4;line-height:1.45">'
+            f'{note}</span></div>')
+
+
+def flat_row(label, value, minus=True, plus=True, state=None, zero=False,
+             note=None):
     hot = state == "cursor"
     vcol = "rgba(108,122,144,.9)" if zero else "#4fd6ff"
     return bleed(
@@ -869,10 +880,11 @@ def flat_row(label, value, minus=True, plus=True, state=None, zero=False):
         f'{1 if hot else .85})">{label}</span>'
         '<div style="flex:1"></div>'
         f'<span class="mono" style="font-size:12.5px;color:{vcol}">'
-        f'{value}</span>' + pm_keys(minus, plus) + '</div>', state=state)
+        f'{value}</span>' + pm_keys(minus, plus) + '</div>'
+        + flat_note(note if hot else None), state=state)
 
 
-def flat_toggle_row(label, on, can_raise=True, state=None):
+def flat_toggle_row(label, on, can_raise=True, state=None, note=None):
     hot = state == "cursor"
     t = toggle(on)
     if not on and not can_raise:
@@ -881,7 +893,8 @@ def flat_toggle_row(label, on, can_raise=True, state=None):
         '<div class="row" style="height:46px;gap:14px">'
         f'<span style="font-size:14px;color:rgba(223,233,245,'
         f'{1 if hot else .85})">{label}</span>'
-        '<div style="flex:1"></div>' + t + '</div>', state=state)
+        '<div style="flex:1"></div>' + t + '</div>'
+        + flat_note(note if hot else None), state=state)
 
 
 def flat_reset():
@@ -899,20 +912,21 @@ def flat_board():
         flat_tray(3)
         + sect("gun", mt=10)
         + '<div style="margin-top:2px">'
-        + flat_row("spray", "2 rounds", state="cursor")
-        + flat_toggle_row("bounce", False)
-        + flat_toggle_row("freeze", False)
+        + flat_row("Spray", "2 rounds", state="cursor",
+                   note="How many rounds one pull of the trigger throws.")
+        + flat_toggle_row("Bounce", False)
+        + flat_toggle_row("Freeze", False)
         + '</div>'
         + sect("bomb", mt=8)
         + '<div style="margin-top:2px">'
-        + flat_toggle_row("fuse", False)
-        + flat_row("shrapnel", "none", minus=False, zero=True)
-        + flat_toggle_row("bounce", False)
+        + flat_toggle_row("Proximity detonation", False)
+        + flat_row("Shrapnel", "0", minus=False, zero=True)
+        + flat_toggle_row("Bounce", False)
         + '</div>'
         + sect("rack", mt=8)
         + '<div style="margin-top:2px">'
-        + flat_row("repel", "2")
-        + flat_row("burst", "1")
+        + flat_row("Repel", "2")
+        + flat_row("Burst", "1")
         + '</div>'
         + flat_reset())
     write("Flat.dc.html", board(body, head=hull_head("Apex")))
@@ -926,21 +940,23 @@ def flat_spent_board():
         flat_tray(0)
         + sect("gun", mt=10)
         + '<div style="margin-top:2px">'
-        + flat_row("spray", "3 rounds", plus=False)
-        + flat_toggle_row("bounce", False, can_raise=False)
-        + flat_toggle_row("freeze", True)
+        + flat_row("Spray", "3 rounds", plus=False)
+        + flat_toggle_row("Bounce", False, can_raise=False)
+        + flat_toggle_row("Freeze", True)
         + '</div>'
         + sect("bomb", mt=8)
         + '<div style="margin-top:2px">'
-        + flat_toggle_row("fuse", True)
-        + flat_row("shrapnel", "none", minus=False, plus=False, zero=True,
-                   state="cursor")
-        + flat_toggle_row("bounce", False, can_raise=False)
+        + flat_toggle_row("Proximity detonation", True)
+        + flat_row("Shrapnel", "0", minus=False, plus=False, zero=True,
+                   state="cursor",
+                   note="Fragments thrown by the blast, each carrying the "
+                        "gun&#39;s damage.")
+        + flat_toggle_row("Bounce", False, can_raise=False)
         + '</div>'
         + sect("rack", mt=8)
         + '<div style="margin-top:2px">'
-        + flat_row("repel", "2")
-        + flat_row("burst", "1", plus=False)
+        + flat_row("Repel", "2")
+        + flat_row("Burst", "1", plus=False)
         + '</div>'
         + flat_reset())
     write("FlatSpent.dc.html", board(body, head=hull_head("Apex")))
