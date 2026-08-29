@@ -1,10 +1,11 @@
 {
   "artboards": [
-    { "file": "MenuKey.dc.html", "title": "Menu button, at rest", "x": 0, "y": 0, "w": 1440, "h": 810 },
-    { "file": "Main.dc.html", "title": "Pause column", "x": 1560, "y": 0, "w": 1440, "h": 810 },
-    { "file": "SettingsOpen.dc.html", "title": "Pause column, settings open", "x": 3120, "y": 0, "w": 1440, "h": 810 },
-    { "file": "Phone.dc.html", "title": "Phone, at rest", "x": 4680, "y": 0, "w": 390, "h": 844 },
-    { "file": "PhoneOpen.dc.html", "title": "Phone, column open", "x": 5190, "y": 0, "w": 390, "h": 844 },
+    { "file": "MenuKey.dc.html", "title": "Menu key, at rest", "x": 0, "y": 0, "w": 1440, "h": 810 },
+    { "file": "MidSlide.dc.html", "title": "Column, sliding in", "x": 1560, "y": 0, "w": 1440, "h": 810 },
+    { "file": "Main.dc.html", "title": "Column, standing", "x": 3120, "y": 0, "w": 1440, "h": 810 },
+    { "file": "SettingsOpen.dc.html", "title": "Column, settings open", "x": 4680, "y": 0, "w": 1440, "h": 810 },
+    { "file": "Phone.dc.html", "title": "Phone, at rest", "x": 6240, "y": 0, "w": 390, "h": 844 },
+    { "file": "PhoneOpen.dc.html", "title": "Phone, column standing", "x": 6750, "y": 0, "w": 390, "h": 844 },
     { "file": "CornerPanel.dc.html", "title": "Corner panel", "x": 0, "y": 1010, "w": 1440, "h": 810 },
     { "file": "CornerPhone.dc.html", "title": "Corner panel, phone", "x": 1560, "y": 1010, "w": 390, "h": 844 },
     { "file": "CenterCard.dc.html", "title": "Center card", "x": 2070, "y": 1010, "w": 1440, "h": 810 },
@@ -16,35 +17,35 @@
       "x": 0,
       "y": -240,
       "w": 480,
-      "text": "The in-game menu: leave, side and settings, opened by Esc or the corner MENU key, with nothing paused and the ship live below. Two candidates are drawn in full: the column carried in from the landing, and the corner panel below it. Whichever wins, side is a list, not a stepper."
+      "text": "The column, with its key attached: small and faint at the bottom middle, standing exactly where the column will stand. The tap slides the column up out of that edge, and RESUME ends up breathing on the very pixels the key occupied; resuming hands the spot back. Esc does the same from a keyboard. Nothing pauses, and the ship stays live behind the thin wash."
     },
     {
       "id": "menu-key",
       "x": 490,
       "y": -170,
       "w": 390,
-      "text": "The button, as the client already draws it: the key box every pressable thing wears, three bars for the mark, the word MENU beside them on a desktop because that corner is read. Dim until pressed, friend blue while the menu stands."
+      "text": "Faint on purpose: the key lives inside the fight, so at rest it is furniture, not a control demanding to be read. It keeps the key box and the three bars, said small. PLAYERS keeps the corner it has always had; the corner row just loses MENU."
+    },
+    {
+      "id": "mid-slide",
+      "x": 1560,
+      "y": -170,
+      "w": 380,
+      "text": "One drawn frame standing in for the motion: the column rising out of the bottom edge, LEAVE first because LEAVE lives at the top, the wash fading in with it."
     },
     {
       "id": "phones",
-      "x": 4680,
+      "x": 6240,
       "y": -170,
       "w": 400,
-      "text": "On a phone the word drops and the mark stands alone in a square of the same box. The column's 320 fits a 390 glass with margin, and RESUME lands where a thumb already lives."
+      "text": "On a phone the bottom middle is also the easiest reach there is: the key sits where a thumb already rests and the column rises into the same hand. Side becomes the corner panel's list here too when the zone holds more than two."
     },
     {
       "id": "corner-panel",
       "x": 0,
       "y": 1880,
       "w": 460,
-      "text": "The corner panel, explored: the fight stays live and undimmed beside it. Side is a list because a stepper walks: in a zone with more than two sides, arrows drag you through every team between here and the one you want. A row per side says them all at once, marks yours, and any other is one press; the counts you weigh before switching ride along."
-    },
-    {
-      "id": "corner-phone",
-      "x": 1560,
-      "y": 1880,
-      "w": 400,
-      "text": "The same panel at a phone's width leaves a strip of live fight showing, the direction's promise kept even here. The strip is also the tradeoff: everything right of the panel is live game under a stray thumb."
+      "text": "The corner panel, kept beside the column: the fight stays live and undimmed. Side is a list because a stepper walks: a row per side says them all at once, marks yours, and any other is one press, with the counts you weigh before switching riding along. The list carries over to the column's SIDE stop."
     },
     {
       "id": "alternatives",

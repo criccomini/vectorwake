@@ -6,17 +6,24 @@
 # boards brainstorm the menu that holds them, for mouse, keyboard,
 # controller and touch alike.
 #
-#   Main         a pause takeover in the landing column's own grammar: dim
-#                the fight, stops for SIDE, SETTINGS and LEAVE, RESUME
-#                breathing where PLAY NOW breathes at home
-#   SettingsOpen the same pause with the settings stop open, the panel
-#                climbing from it the way the ship pager climbs
-#   CornerPanel  the small answer: a corner key docks a panel on the left
-#                and the fight stays live and undimmed beside it
-#   CenterCard   the classic: a compact pause card in the middle of the
-#                screen, four rows, nothing else
-#   Radial       the fast answer: hold the key and four choices ring the
-#                ship, flick toward one
+# The column's row, as it stands after the iterations: the menu key is
+# small and faint at the bottom middle, exactly where the column will
+# stand, and the tap slides the column up out of that edge.
+#
+#   MenuKey      the match at rest, the faint key at the bottom middle
+#   MidSlide     the column on its way up, one frame for the motion
+#   Main         the column standing: SIDE, SETTINGS, LEAVE over a
+#                breathing RESUME, the fight thin-washed behind
+#   SettingsOpen the settings stop open, the panel climbing from it the
+#                way the ship pager climbs at home
+#   Phone(...)   the same three states on a 390 glass
+#
+# And the explorations kept beside it:
+#
+#   CornerPanel  a corner key docks a panel on the left and the fight
+#   CornerPhone  stays live and undimmed beside it; side as a list
+#   CenterCard   the classic: a compact pause card, four rows
+#   Radial       hold the key and four choices ring the ship
 #
 # Chrome and hues are the client's own, in the manner of ../ship-kit/build.py
 # and ../no-drawer/build.py: the row states of decision 72, the ship panel's
@@ -369,19 +376,50 @@ def hud(three=False):
     ]
 
 
+# The column's own button: small and faint at the bottom middle, standing
+# exactly where the column will stand, so the tap and what it summons
+# share a spot. Pressing it slides the column up out of that edge, and
+# RESUME ends up breathing on the very pixels the key occupied; pressing
+# RESUME hands the spot back to the key. Faint on purpose: it lives
+# inside the fight, so at rest it is furniture, not a control demanding
+# to be read.
+def bottom_key(bottom=14):
+    ink = "rgba(159,182,212,.5)"
+    return (f'<div class="key" style="position:absolute;left:50%;'
+            f'transform:translateX(-50%);bottom:{bottom}px;height:22px;'
+            'padding:0 8px;border-color:rgba(108,122,144,.35);'
+            'background:rgba(108,122,144,.05)">' + burger(ink, 11)
+            + '</div>')
+
+
 # ============== Main: the pause takeover, column grammar ==============
 #
-# The landing column, carried into the match. Dim the fight, keep it
-# visible, and say the three things a seat can want the way the landing
-# says who, where and what: stops at the column's width, the breathing
-# key at the bottom, leave farthest from the thumb that resumes.
+# The landing column, carried into the match, standing where its key
+# stood. Dim the fight, keep it visible, and say the three things a seat
+# can want the way the landing says who, where and what: stops at the
+# column's width, the breathing key at the bottom, leave farthest from
+# the thumb that resumes.
 def pause_board():
     parts = hud() + [
         DIM,
-        corner_key(lit=True),
         column(STOP_ROWS),
     ]
     write("Main.dc.html", board(1440, 810, parts))
+
+
+# ============ MidSlide: the column on its way up ============
+#
+# The moment between the tap and the menu: the column rising out of the
+# bottom edge where the key sat, LEAVE first because LEAVE lives at the
+# top. One drawn frame standing in for the motion; the wash fades in
+# with it.
+def mid_slide_board():
+    parts = hud() + [
+        '<div style="position:absolute;inset:0;'
+        'background:rgba(5,7,12,.24)"></div>',
+        column(STOP_ROWS, bottom=-118),
+    ]
+    write("MidSlide.dc.html", board(1440, 810, parts))
 
 
 # =========== SettingsOpen: the same pause, the stop opened ===========
@@ -393,7 +431,6 @@ def pause_board():
 def settings_open_board():
     parts = hud() + [
         DIM,
-        corner_key(lit=True),
         column(STOP_ROWS, lit="SETTINGS"),
         '<div style="position:absolute;left:50%;'
         'transform:translateX(-50%);bottom:184px;width:320px;'
@@ -537,16 +574,15 @@ def radial_board():
 
 # ================ MenuKey: the button at rest, desktop ================
 #
-# The key that summons the column, drawn as the client already draws it:
-# the box every pressable thing here wears, three bars for the mark, and
-# the word MENU beside them because a desktop corner is read while a
-# phone corner is worked. PLAYERS keeps it company, so the button is seen
-# in its row rather than alone. Dim at rest; the friend blue it wears
-# while the column stands is on every open board on this canvas.
+# The match at rest with the column's key faint at the bottom middle,
+# where the column will stand. The mark keeps the key box and the three
+# bars, said small; PLAYERS keeps the corner it has always had, so the
+# corner row loses MENU and nothing else. Esc still opens the column
+# from a keyboard, so the key is the touch opener and the reminder.
 def menu_key_board():
     parts = hud() + [
-        corner_key(),
-        players_key(x=96),
+        players_key(),
+        bottom_key(),
     ]
     write("MenuKey.dc.html", board(1440, 810, parts))
 
@@ -570,33 +606,33 @@ def hud_phone():
     ]
 
 
-# ================== Phone: the mark alone, at rest ==================
+# ================== Phone: the faint key, at rest ==================
 #
-# On a phone the word drops and the mark stands alone in a square of the
-# same box: a thumb that has met this screen before does not need the
-# word, and the corner has no room for it anyway.
+# The same faint mark at the bottom middle of a 390 glass, which on a
+# phone is also the easiest reach there is: the key sits where a thumb
+# already rests, and the column it summons rises into the same hand.
 def phone_board():
     parts = hud_phone() + [
-        corner_key(word=False, x=12, y=12),
+        bottom_key(),
     ]
     write("Phone.dc.html", board(390, 844, parts))
 
 
 # ================ PhoneOpen: the column under a thumb ================
 #
-# The same press, the column standing. The 320 the stops have always been
-# fits a 390 glass with margin to spare, RESUME lands where a thumb
-# already lives, and the fight stays visible through the thin wash.
+# The tap, taken. The column stands where the key sat, the 320 the stops
+# have always been fits the glass with margin, RESUME breathes on the
+# key's own pixels, and the fight stays visible through the thin wash.
 def phone_open_board():
     parts = hud_phone() + [
         DIM,
-        corner_key(lit=True, word=False, x=12, y=12),
         column(STOP_ROWS),
     ]
     write("PhoneOpen.dc.html", board(390, 844, parts))
 
 
 pause_board()
+mid_slide_board()
 settings_open_board()
 corner_panel_board()
 center_card_board()
@@ -605,4 +641,4 @@ menu_key_board()
 phone_board()
 phone_open_board()
 corner_phone_board()
-print("nine boards written")
+print("ten boards written")
