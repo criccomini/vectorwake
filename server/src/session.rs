@@ -571,6 +571,46 @@ pub(crate) async fn serve_client(
                 // place, so it goes out now rather than on the heartbeat.
                 z.push_status();
             }
+            C2S_KIT => {
+                // A build, for the hull it was spent on. Read as pairs: a
+                // count of spent slots, then a slot and a count for each.
+                //
+                // Nothing is validated here beyond the shape, and that is
+                // deliberate rather than lax. The core fits every build to
+                // the ceilings and the budget, so a client sending a slot
+                // twice, a count of two hundred, or seven credits in each of
+                // twenty-three slots gets a legal build back rather than an
+                // error, and the arena deals the fitted row. What a hostile
+                // client cannot do is spend more than a player, and what it
+                // cannot do in place is reload: a build dealt onto the hull
+                // a pilot is already in clamps the rack down and never up.
+                //
+                // Only from a pilot in a seat. A watcher asking to spend
+                // credits is asking about a ship they are not in, and the
+                // way back into one is `C2S_SHIP`.
+                if data.len() >= 3 {
+                    let cls = data[1];
+                    let spent = data[2] as usize;
+                    let mut kit = [0u8; crate::sim::SLOT_COUNT];
+                    if data.len() >= 3 + spent * 2 {
+                        for pair in data[3..3 + spent * 2].chunks_exact(2) {
+                            if (pair[0] as usize) < crate::sim::SLOT_COUNT {
+                                kit[pair[0] as usize] =
+                                    kit[pair[0] as usize].saturating_add(pair[1]);
+                            }
+                        }
+                        if let Presence::Flying { room, member } = presence.current() {
+                            let mut z = zone.lock().await;
+                            if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
+                                let a = &mut z.rooms[index];
+                                if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
+                                    a.set_ship_kit(ship, cls, &kit);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             C2S_SHIP => {
                 // A hull change, in place. The core refuses it unless
                 // the pilot is alive and at a full bar, which is what

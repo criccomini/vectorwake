@@ -404,8 +404,12 @@ pub struct sim_ship {
     /// hand out the assists above. 255 is an empty slot.
     pub hurt_by: [u8; ASSIST_SLOTS],
     pub hurt_at: [u32; ASSIST_SLOTS],
-    /// What this hull is, which is the profile dealt back at every spawn. The
-    /// profile itself belongs to the class, and a ship knows its class.
+    /// What this pilot flies, over the flat slot space: the build, and the
+    /// one thing on this struct a player chooses. Kept per ship because
+    /// every re-deal happens inside the step, where there is nobody to ask
+    /// what this pilot spent their credits on.
+    pub kit: [u8; SLOT_COUNT],
+    /// What that build dealt: the frame, dealt back at every spawn.
     pub up: [u8; UP_COUNT],
     pub level: [u8; TRIG_COUNT],
     pub mods: [u16; TRIG_COUNT],
@@ -537,8 +541,15 @@ extern "C" {
         cfg: *const sim_settings,
         ev: *mut sim_events,
     );
-    pub fn sim_set_ship_class(s: *mut sim_state, cfg: *const sim_settings, i: u8, cls: u8)
-        -> c_int;
+    /// `kit` is the build to arrive in, since a build belongs to a hull and
+    /// only a caller holds both rows. Null asks for the hull's own profile.
+    pub fn sim_set_ship_class(
+        s: *mut sim_state,
+        cfg: *const sim_settings,
+        i: u8,
+        cls: u8,
+        kit: *const u8,
+    ) -> c_int;
     pub fn sim_hash(s: *const sim_state) -> u64;
     /// Whether this pilot has `streak_kills` kills without dying, which is
     /// the one place the threshold is compared.
@@ -611,6 +622,24 @@ extern "C" {
     pub fn sim_restart(s: *mut sim_state, cfg: *const sim_settings);
     /// One named slot, with the arena's ceilings enforced.
     pub fn sim_grant(sh: *mut sim_ship, cfg: *const sim_settings, ty: u8) -> c_int;
+    /// How high one slot goes, for this hull, in this zone. The one place a
+    /// ceiling is written down, so a pilot spending and a deal agree.
+    pub fn sim_slot_cap(cfg: *const sim_settings, cls: u8, slot: u8) -> u8;
+    /// What a build costs, which is the sum of it: every step is one credit.
+    pub fn sim_kit_cost(kit: *const u8) -> c_int;
+    /// Cut a build down to something this hull can fly, in place: every slot
+    /// to its ceiling, then the tallest slot pays back the overspend.
+    pub fn sim_kit_fit(cfg: *const sim_settings, cls: u8, kit: *mut u8) -> c_int;
+    /// The row this hull flies when nobody has spent anything.
+    pub fn sim_kit_default(cfg: *const sim_settings, cls: u8, out: *mut u8);
+    /// Give a seated pilot a build and re-deal the frame from it. Fitted on
+    /// the way in; the rack is clamped down, never refilled.
+    pub fn sim_set_ship_kit(
+        s: *mut sim_state,
+        cfg: *const sim_settings,
+        i: u8,
+        kit: *const u8,
+    ) -> c_int;
     pub fn sim_pack(s: *const sim_state, out: *mut u8, cap: c_int) -> c_int;
     /// The other end of a snapshot. Only a client needs this, and the bot
     /// server is a client: it learns the room the way a browser does rather
@@ -688,6 +717,10 @@ pub const SLOT_COUNT: usize = UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + M
 /// Steps a stat's ladder holds. The shipped roster spends none of them: a
 /// hull's flight is its own row, where the step is zero.
 pub const UP_STEPS: u8 = 8;
+/// What a pilot has to spend over that slot space, mirroring
+/// SIM_KIT_CREDITS. Every step costs one, so this is both the purse and the
+/// most slots a build can reach.
+pub const KIT_CREDITS: u8 = 7;
 /// Charge kinds: a count you carry and spend. Two of the four slots the rack
 /// holds, the rest left for a zone that ships more.
 pub const CHARGE_REPEL: usize = 0;
@@ -1010,11 +1043,42 @@ impl World {
     /// Put a pilot in a different hull, keeping their team and their seat.
     /// The core refuses unless they are alive and at a full bar, so this is
     /// the whole of the rule and both sides get it from the same place.
-    pub fn set_ship_class(&mut self, i: u8, cls: u8) -> bool {
+    /// `kit` is the build to arrive in, since a build belongs to a hull:
+    /// None asks for the hull's own profile, which is what a bot wants.
+    pub fn set_ship_class(&mut self, i: u8, cls: u8, kit: Option<&[u8; SLOT_COUNT]>) -> bool {
         if cls >= self.cfg.class_count {
             return false;
         }
-        unsafe { sim_set_ship_class(&mut *self.state, &*self.cfg, i, cls) == 0 }
+        let p = kit.map_or(std::ptr::null(), |k| k.as_ptr());
+        unsafe { sim_set_ship_class(&mut *self.state, &*self.cfg, i, cls, p) == 0 }
+    }
+
+    /// Give a seated pilot a build for the hull they are in. Fitted by the
+    /// core, so anything at all may be handed over.
+    pub fn set_ship_kit(&mut self, i: u8, kit: &[u8; SLOT_COUNT]) -> bool {
+        unsafe { sim_set_ship_kit(&mut *self.state, &*self.cfg, i, kit.as_ptr()) == 0 }
+    }
+
+    /// How high one slot goes for this hull, which is what a build is fitted
+    /// against and what a client draws a stepper's end from.
+    pub fn slot_cap(&self, cls: u8, slot: u8) -> u8 {
+        unsafe { sim_slot_cap(&*self.cfg, cls, slot) }
+    }
+
+    /// The row this hull flies when nobody has spent anything.
+    pub fn default_kit(&self, cls: u8) -> [u8; SLOT_COUNT] {
+        let mut out = [0u8; SLOT_COUNT];
+        unsafe { sim_kit_default(&*self.cfg, cls, out.as_mut_ptr()) };
+        out
+    }
+
+    /// Cut a build down to something this hull can fly, returning the fitted
+    /// row. The core's own arithmetic, so a server and a client that fit the
+    /// same bytes land on the same build.
+    pub fn fit_kit(&self, cls: u8, kit: &[u8; SLOT_COUNT]) -> [u8; SLOT_COUNT] {
+        let mut out = *kit;
+        unsafe { sim_kit_fit(&*self.cfg, cls, out.as_mut_ptr()) };
+        out
     }
 
     /// Cross a pilot to another side. Which sides exist and who may enter one

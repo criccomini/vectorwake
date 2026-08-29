@@ -4933,7 +4933,7 @@ mod tests {
         // Hurt, so the core will not swap them.
         a.world.state.ships[ship as usize].energy = 1;
         let was = a.world.state.ships[ship as usize].cls;
-        a.world.set_ship_class(ship, 3);
+        a.world.set_ship_class(ship, 3, None);
         assert_eq!(
             a.world.state.ships[ship as usize].cls, was,
             "refused, as set up"
@@ -6205,7 +6205,7 @@ mod tests {
     fn an_invalid_hull_number_is_refused_instead_of_selecting_the_last_hull() {
         let mut world = sim::World::new(1);
         assert_eq!(world.spawn(0, 0, 512, 512, 0), 0);
-        assert!(!world.set_ship_class(0, u8::MAX));
+        assert!(!world.set_ship_class(0, u8::MAX, None));
         assert_eq!(world.state.ships[0].cls, 0);
     }
 
@@ -6223,6 +6223,75 @@ mod tests {
         assert_eq!(room.world.state.flag_count, 2);
         assert_eq!(room.world.state.flags[0].team, 1);
         assert_eq!(room.world.cfg.friction, 9);
+    }
+
+    /// A build reaches the arena, survives a whistle, and cannot be spent
+    /// past the budget however it arrives.
+    ///
+    /// The whistle is the half worth pinning. A match start re-deals every
+    /// seat, and it re-deals from the ship rather than from the hull's row,
+    /// so a pilot who spent their credits before the match still has them
+    /// afterwards. The last kit lost exactly this and nobody noticed until
+    /// a player flew a bare hull for a whole match.
+    #[test]
+    fn a_build_reaches_the_arena_and_survives_a_whistle() {
+        let cfg: config::ZoneConfig = toml::from_str("[arena]\nmode = \"arena\"\n").unwrap();
+        let mut room = Room::new_from(&cfg);
+        let apex = 0u8;
+        let ship = room.world.spawn(apex, 0, 8, 8, 0) as u8;
+
+        // Four rounds off the gun and one repel, which is the Apex's four
+        // credits spent somewhere else.
+        let mut mine = [0u8; sim::SLOT_COUNT];
+        mine[sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize] = 3;
+        mine[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 1;
+        room.set_ship_kit(ship, apex, &mine);
+        let sh = &room.world.state.ships[ship as usize];
+        assert_eq!(sim::mod_get(sh.mods[sim::TRIG_GUN], sim::MOD_MULTI), 3);
+        assert_eq!(sh.charge[sim::CHARGE_REPEL], 1);
+
+        // A whistle deals it back, ammunition and all, from the ship.
+        room.world.restart();
+        room.deal_seat(ship);
+        let sh = &room.world.state.ships[ship as usize];
+        assert_eq!(
+            sim::mod_get(sh.mods[sim::TRIG_GUN], sim::MOD_MULTI),
+            3,
+            "a whistle re-deals the build the pilot spent, not the hull's row"
+        );
+        assert_eq!(sh.charge[sim::CHARGE_REPEL], 1);
+
+        // And nothing a client can send spends more than a player has.
+        let greedy = [9u8; sim::SLOT_COUNT];
+        room.set_ship_kit(ship, apex, &greedy);
+        let kit = room.world.state.ships[ship as usize].kit;
+        assert_eq!(
+            kit.iter().map(|&n| n as u16).sum::<u16>(),
+            u16::from(sim::KIT_CREDITS)
+        );
+    }
+
+    /// A build naming a hull the pilot is not in is a hull change carrying
+    /// it, so the two never arrive separately and deal the wrong row in
+    /// between.
+    #[test]
+    fn a_build_for_another_hull_carries_the_hull_change() {
+        let cfg: config::ZoneConfig = toml::from_str("[arena]\nmode = \"arena\"\n").unwrap();
+        let mut room = Room::new_from(&cfg);
+        let ship = room.world.spawn(0, 0, 8, 8, 0) as u8;
+        let wedge = 1u8;
+
+        let mut bomber = [0u8; sim::SLOT_COUNT];
+        bomber[sim::slot_mod(sim::TRIG_BOMB, sim::MOD_SHRAPNEL) as usize] = 2;
+        room.set_ship_kit(ship, wedge, &bomber);
+
+        let sh = &room.world.state.ships[ship as usize];
+        assert_eq!(sh.cls, wedge, "the hull came with the build");
+        assert_eq!(
+            sim::mod_get(sh.mods[sim::TRIG_BOMB], sim::MOD_SHRAPNEL),
+            2,
+            "and it arrived carrying what was spent on it"
+        );
     }
 
     /// The zone we ship is the documentation for this format. Parsing it is

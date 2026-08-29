@@ -34,6 +34,15 @@ local C2S_TEAM, C2S_FOUND, C2S_INVITE = 6, 7, 8
 -- watcher's keepalive, since a client with no inputs to send has nothing else
 -- to prove the socket alive with.
 local C2S_WATCH = 9
+-- The build this pilot spends their credits on, for the hull they name:
+-- `[C2S_KIT, class, spent, (slot, count) * spent]`. The hull is named because
+-- a build belongs to one, so a message that crosses a hull change is dropped
+-- rather than dealt to the wrong ship; the arena reads a build naming a hull
+-- you are not in as the hull change carrying it, which is how picking a ship
+-- and arriving in your own build are one act. Spent slots rather than the
+-- whole vector, because seven credits cannot reach more than seven of the
+-- twenty-three.
+local C2S_KIT = 10
 -- The one flag a player sets in a join: this client came to watch, not to
 -- fly. The class byte is ignored, no ship is spawned, and the seat taken is a
 -- watcher's. The other bit is JOIN_BOT, which a player never sets.
@@ -71,7 +80,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 31
+local CLIENT_PROTOCOL = 32
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -1713,6 +1722,25 @@ end
 
 function M.set_class(cls)
     return ask(string.char(C2S_SHIP, cls))
+end
+
+-- Send a build, for the hull it was spent on.
+--
+-- Only the slots with something in them, which is the wire's own shape and
+-- also the cheapest thing to write: a build is mostly zeroes. Nothing is
+-- checked here beyond the shape, because the arena fits whatever arrives to
+-- its own ceilings and budget and deals the fitted row: a client that got
+-- its arithmetic wrong is corrected rather than refused, and one that lied
+-- gains nothing by it.
+function M.set_kit(cls, kit)
+    local spent = {}
+    for slot = 0, #kit do
+        local n = kit[slot]
+        if n and n > 0 then
+            spent[#spent + 1] = string.char(slot, n)
+        end
+    end
+    return ask(string.char(C2S_KIT, cls, #spent) .. table.concat(spent))
 end
 
 function M.set_team(team)

@@ -116,8 +116,26 @@ pub(crate) const C2S_INVITE: u8 = 8;
 /// to the channel; then same-side follow and the staff grant went too, and a
 /// byte whose every value meant the channel is a byte saying nothing.
 pub(crate) const C2S_WATCH: u8 = 9;
-/// 10 was `C2S_KIT`, the kit a pilot chose. Ships are preconstructed, so
-/// what a pilot picks is a hull and `C2S_JOIN` already carries it.
+/// `[C2S_KIT, class, spent, (slot, count) * spent]`: the build this pilot
+/// spends their credits on, for the hull they name.
+///
+/// The class byte is not redundant. A build belongs to a hull, and a pilot
+/// who picks a ship and edits it sends two messages that may cross; naming
+/// the hull it was spent on lets a room drop one that arrived for a ship the
+/// pilot is no longer in, rather than dealing an Anvil's row to a Cipher.
+///
+/// Slot and count are sent as pairs rather than as the whole vector for the
+/// same reason the snapshot does it: a build is mostly zeroes, and seven
+/// credits cannot reach more than seven slots. Nothing here is trusted. The
+/// core fits whatever arrives to the ceilings and the budget, so a hostile
+/// client cannot spend more than a player can, and the arena deals the
+/// fitted row rather than the asked one.
+///
+/// The tag is 10, which is the number the last kit used before ships were
+/// preconstructed. Reissuing it is safe because the version byte is checked
+/// before any tag is read: a client old enough to remember the other meaning
+/// is refused at the door.
+pub(crate) const C2S_KIT: u8 = 10;
 /// `[C2S_SAY, phrase]`: say one of the fixed things. One byte, and it names a
 /// line rather than carrying one, which is the whole design:
 /// [decision 28](../../docs/architecture/decisions.md) says no chat, and this
@@ -212,7 +230,14 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// `S2C_KILL` drops what the kill was worth. A client built for 30 would read
 /// four bytes of somebody else's row out of every roster and print a payout
 /// off the end of a kill.
-pub(crate) const CLIENT_PROTOCOL: u8 = 31;
+///
+/// 32 gives a pilot their credits back. `C2S_KIT` returns on tag 10 carrying
+/// a build as spent slots, and a hull's profile becomes the row a pilot
+/// starts on rather than the row they are stuck with. A client built for 31
+/// would fly whatever the hull's profile is and never send a build, which is
+/// the game 31 played, so the refusal is what tells them to reload rather
+/// than leaving them quietly unable to spend anything.
+pub(crate) const CLIENT_PROTOCOL: u8 = 32;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of

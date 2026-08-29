@@ -514,17 +514,12 @@ pub(crate) struct Seat {
     /// it was minted. This is how a career crosses zones without an arena
     /// asking anybody anything.
     pub(crate) carried: Option<Vec<token::ClassRating>>,
-    /// What this account may slot, over the core's flat kit space, out of the
-    /// token that admitted them. A kit is checked against this and against the
-    /// hull's own row, and the smaller of the two wins.
-    ///
-    /// The baseline for a guest and for a token from a meta-layer that does
-    /// not send them yet, which is the reading that lets a pilot fly a whole
-    /// ship without an account rather than a chassis.
-    /// The kit this pilot asked for and has not been dealt yet. The hull is
-    /// locked for a match and the kit with it, so one that arrives mid-match
-    /// waits for the whistle; one that arrives at a join or between matches is
-    /// dealt on the spot and never lands here.
+    /// A seat holds no build. Two doc comments stood here describing one, an
+    /// entitlement vector out of the token and a pending kit waiting for a
+    /// whistle, and both outlived their fields. Neither comes back with the
+    /// credits: there is nothing to be entitled to, since every pilot reaches
+    /// every slot, and nothing to hold pending, since a build lives on the
+    /// ship in the core and a whistle re-deals it from there.
     /// The tick this seat last said one of the fixed things, so it cannot say
     /// them faster than anybody wants to read them. Zero is never.
     pub(crate) said_at: u32,
@@ -1838,9 +1833,35 @@ impl Room {
         Some(id)
     }
 
-    /// Apply an in-seat hull change, under the core's own rules.
+    /// Apply an in-seat hull change, under the core's own rules, on the
+    /// hull's own profile. A pilot who has spent their credits differently
+    /// says so through `set_ship_kit`, which carries both at once.
     pub(crate) fn set_ship_class(&mut self, ship: u8, class: u8) -> bool {
-        self.world.set_ship_class(ship, class)
+        self.world.set_ship_class(ship, class, None)
+    }
+
+    /// Apply a build, for the hull it was spent on.
+    ///
+    /// One act rather than two, because a build belongs to a hull and the
+    /// two arriving separately would deal the wrong one in between: a pilot
+    /// moving from an Anvil to a Cipher would fly a Cipher on the Cipher's
+    /// own profile for as long as it took the second message to land, and
+    /// their own build would arrive as a second re-deal. So a build naming a
+    /// hull the pilot is not in is a hull change carrying it, under the same
+    /// rules any hull change follows, and a build naming the hull they are
+    /// already in is dealt in place.
+    ///
+    /// Nothing here is checked against anything: the core fits every build
+    /// to the ceilings and the budget on the way in, so a hostile client
+    /// spends what a player spends. What it cannot do is refill: a build
+    /// dealt in place clamps the rack down and never up, which is what stops
+    /// a pilot reloading by opening a menu.
+    pub(crate) fn set_ship_kit(&mut self, ship: u8, class: u8, kit: &[u8; sim::SLOT_COUNT]) {
+        if self.world.state.ships[ship as usize].cls == class {
+            self.world.set_ship_kit(ship, kit);
+        } else {
+            self.world.set_ship_class(ship, class, Some(kit));
+        }
     }
 
     /// One of the fixed things, said to the room.
@@ -1878,12 +1899,15 @@ impl Room {
         self.channel.pending_feed.push(msg);
     }
 
-    /// Deal this seat what it is flying, which is its hull's own profile,
+    /// Deal this seat what it is flying, which is the build on the ship,
     /// rack included.
     ///
-    /// There is nothing to choose and nothing to check. A hull always has a
-    /// profile, so a pilot who has never opened a menu, a bot and a guest all
-    /// arrive in a whole ship.
+    /// There is still nothing to choose and nothing to check here. A seat
+    /// starts on its hull's own profile, so a pilot who has never opened a
+    /// menu, a bot and a guest all arrive in a whole ship; a pilot who has
+    /// spent their credits elsewhere put that on the ship through
+    /// `set_ship_kit` before this ever runs, and a whistle deals it back
+    /// without knowing which of the two it is handling.
     ///
     /// With ammunition, because both callers are moments that fill a rack: a
     /// pilot arriving, and a whistle. It dealt the frame alone and left the

@@ -421,24 +421,40 @@ int ClassKit(lua_State* L) {
 }
 
 
-// How deep this ship's rack is in one slot, which is a fact about its hull.
+// How deep this ship's rack is in one slot, which is a fact about the pilot
+// again.
 //
-// It read `sh->kit` when a kit was a pilot's own thirty points and lived on
-// the ship. A hull is a whole ship now and the profile belongs to the class,
-// so the ship is the way in and the class is the answer. The corner stack and
-// the touch pads ask this every frame to draw the empty places beside the
-// full ones, which is why it stays an accessor rather than becoming a table
-// they would have to allocate and index.
+// It read the ship's own build when a kit was thirty points, then the class
+// profile when a hull was the whole ship, and it is back on the ship because
+// a build is a pilot's once more: two people in the same hull no longer carry
+// the same rack. The corner stack and the touch pads ask this every frame to
+// draw the empty places beside the full ones, which is why it stays an
+// accessor rather than becoming a table they would have to allocate.
 int ShipKit(lua_State* L) {
     int i = CheckShip(L);
     int slot = (int)luaL_checkinteger(L, 2);
-    int cls = g_cur->ships[i].cls;
-    if (slot < 0 || slot >= SIM_SLOT_COUNT || cls < 0
-        || cls >= g_cfg.class_count) {
+    if (slot < 0 || slot >= SIM_SLOT_COUNT) {
         lua_pushnumber(L, 0);
         return 1;
     }
-    lua_pushnumber(L, g_cfg.classes[cls].kit[slot]);
+    lua_pushnumber(L, g_cur->ships[i].kit[slot]);
+    return 1;
+}
+
+// How high one slot goes for a hull, which is where a stepper stops.
+//
+// The core's own answer rather than one worked out here: a ceiling drawn from
+// a different arithmetic than the one the arena enforces is a key that looks
+// pressable and does nothing.
+int SlotCap(lua_State* L) {
+    int cls = (int)luaL_checkinteger(L, 1);
+    int slot = (int)luaL_checkinteger(L, 2);
+    if (cls < 0 || cls >= g_cfg.class_count || slot < 0
+        || slot >= SIM_SLOT_COUNT) {
+        lua_pushnumber(L, 0);
+        return 1;
+    }
+    lua_pushnumber(L, sim_slot_cap(&g_cfg, (uint8_t)cls, (uint8_t)slot));
     return 1;
 }
 
@@ -1221,6 +1237,7 @@ const luaL_reg kFunctions[] = {
     {"ship_repel", ShipRepel},
     {"ship_up", ShipUp},
     {"ship_kit", ShipKit},
+    {"slot_cap", SlotCap},
     {"class_kit", ClassKit},
     {"class_flight", ClassFlight},
     {"hull_extent", HullExtent},
@@ -1327,6 +1344,9 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_SLOT_MOD(0, 0)); lua_setfield(L, -2, "SLOT_MOD0");
     lua_pushnumber(L, SIM_SLOT_CHARGE(0)); lua_setfield(L, -2, "SLOT_CHARGE0");
     lua_pushnumber(L, SIM_UP_STEPS);     lua_setfield(L, -2, "UP_STEPS");
+    lua_pushnumber(L, SIM_KIT_CREDITS);  lua_setfield(L, -2, "KIT_CREDITS");
+    lua_pushnumber(L, SIM_MOD_COUNT * SIM_TRIG_COUNT);
+    lua_setfield(L, -2, "MOD_SLOTS");
     lua_pushnumber(L, SIM_MAX_CHARGES);  lua_setfield(L, -2, "MAX_CHARGES");
     lua_pushnumber(L, SIM_KIT_CHARGE_SLOTS);
     lua_setfield(L, -2, "KIT_CHARGE_SLOTS");
