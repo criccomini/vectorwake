@@ -18,54 +18,105 @@
  * ship size at all. `hull_extent` below gives every hull a fixed target budget,
  * and the client fits each drawing around that collision rectangle.
  *
- * Every row has eight useful kit steps. The old inherited triplets reached
- * their clamps after 7, 5, 5, 1 and 1 points, so most of the visible ladder
- * was either removed or dead. These ranges keep the starter's handling at an
- * 18-point allocation and leave controlled room above it for a specialist.
- * Near that allocation, one point changes its stat by roughly two to eight
- * percent, so the five rows ask comparable prices without pretending they do
- * the same job. */
-static const sim_class_units flight = {
-    2010, 248, 3994,      /* InitialSpeed, UpgradeSpeed, MaximumSpeed */
-    154,    8,  218,      /* thrust, in tenths of the documented unit */
-    210,   10,  290,      /* rotation */
-    1475,  25, 1675,      /* energy */
-    1070,  20, 1230,      /* recharge */
+ * A row per hull, and the row is the ship. Nobody spends points on these, so
+ * the step is zero and the ceiling is the floor: what a hull flies at is the
+ * first number, full stop, and this table is the roster in
+ * docs/design/ships.md read straight off the file.
+ *
+ * One shared row stood here, because a kit was thirty points and thirty
+ * points had to buy the same ship whatever you were sitting in. There is no
+ * kit to be fair about now, so the constraint went with it and the hulls got
+ * their engines back. The spread is deliberate and anti-correlated: Cipher is
+ * the fastest and the thinnest, Anvil the slowest and the deepest, and
+ * nothing is at the top of two rows at once.
+ *
+ * The triplet stays because a zone may still want a hull whose stat climbs,
+ * and `eff` reads it the same way whether the step is zero or not. */
+static const sim_class_units flight[SIM_MAX_CLASSES] = {
+    /*        speed        thrust        rotation       energy      recharge */
+    /* Apex    */ {3600,0,3600, 190,0,190, 250,0,250, 1500,0,1500, 1150,0,1150},
+    /* Wedge   */ {2900,0,2900, 155,0,155, 205,0,205, 1900,0,1900, 1000,0,1000},
+    /* Chord   */ {2800,0,2800, 215,0,215, 310,0,310, 1550,0,1550, 1200,0,1200},
+    /* Anvil   */ {2650,0,2650, 145,0,145, 195,0,195, 2100,0,2100, 1300,0,1300},
+    /* Cipher  */ {3900,0,3900, 200,0,200, 235,0,235, 1300,0,1300,  950,0, 950},
+    /* Facet   */ {3050,0,3050, 175,0,175, 265,0,265, 1400,0,1400, 1100,0,1100},
+    /* Lattice */ {3100,0,3100, 165,0,165, 240,0,240, 1750,0,1750, 1250,0,1250},
 };
 
-/* The weapons, also identical on every hull, from the same files and the
- * arena settings beside them. */
-#define BULLET_DAMAGE   200   /* BulletDamageLevel: what an L1 bullet does */
-#define BULLET_UPGRADE  100   /* BulletDamageUpgrade: and each level after */
-#define BULLET_DELAY     25   /* BulletFireDelay */
-#define BULLET_ENERGY    20   /* BulletFireEnergy */
-/* How far apart a multi-barrel hull's rounds leave, at 65536 to the turn:
- * seven and a half degrees, half the baseline's fifteen-degree `mod_spread`,
- * so a second barrel reads as a barrel rather than as a free rung of
- * multifire. That ratio is the baseline's own; a zone that tightens its
- * multifire fan can walk right past it, and one that cares sets `spread` on
- * the facet-gun patterns too.
+/* The weapons.
+ *
+ * Each hull fires its own gun and its own bomb, at rung zero of its own
+ * ladder, because a hull is a whole ship again rather than a shape holding
+ * whatever a pilot bought. The rung machinery stays for a zone that wants a
+ * hull whose weapon climbs; the shipped roster names one rung each.
+ *
+ * The numbers below are the original's where the original had an answer.
+ * BulletDamageLevel is 200 and each level after adds 100, so 200, 300, 400
+ * and 500 are that ladder read as seven fixed points on it rather than as
+ * three rungs anybody climbs. BulletFireDelay is 25 and BulletFireEnergy 20,
+ * scaled with the damage. BombDamageLevel is 750 "for all bomb levels" and
+ * BombExplodePixels is 80 at L1, doubled at L2 and tripled at L3.
+ *
+ * The wide blasts stop short of those. A blast damages the pilot who threw it
+ * at full strength and everybody else at half, which is the rule that makes a
+ * bomb a thrown weapon rather than a bigger bullet, and at a tripled radius
+ * the thrower is inside their own blast for sixty ticks of a bomb's flight.
+ * So the bomber reaches eight tiles and the heavy ten, which are steps a
+ * player can feel without either hull spending the match killing itself. */
+
+/* Gun, per hull: damage, energy a pull, ticks between pulls.
+ *
+ * What a pull actually throws is this times the hull's spray, which is a
+ * profile slot: Facet's five rounds cost it twice the energy and three times
+ * the wait, off `mod_multi_energy` and `mod_multi_delay`. So the row is one
+ * round and the profile says how many.
+ *
+ *                                        damage energy delay */
+static const int32_t gun_row[SIM_MAX_CLASSES][3] = {
+    /* Apex:    a fighter's, paired by its profile   */ {300, 40, 25},
+    /* Wedge:   chip while the rack reloads          */ {200, 20, 25},
+    /* Chord:   light, and it freezes                */ {200, 30, 25},
+    /* Anvil:   a cannon: slow, dear, and it lands   */ {500, 90, 45},
+    /* Cipher:  the whole of what it has             */ {400, 60, 28},
+    /* Facet:   one of five, and five is the point   */ {300, 40, 25},
+    /* Lattice: the weakest gun in the roster        */ {200, 20, 25},
+};
+
+/* Bomb, per hull: damage, blast radius in px, energy, ticks. Damage of zero
+ * is a hull with no rack at all, which the core has always handled and which
+ * nothing until now used.
+ *
+ *                                    damage blast energy delay */
+static const int32_t bomb_row[SIM_MAX_CLASSES][4] = {
+    /* Apex    */ {750,  80, 300, 150},
+    /* Wedge:   the bay down the spine          */ {750, 128, 350, 120},
+    /* Chord   */ {750,  80, 300, 150},
+    /* Anvil:   the widest, and the slowest     */ {750, 160, 400, 200},
+    /* Cipher:  no rack, and it is the only one */ {  0,   0,   0,   0},
+    /* Facet   */ {750,  80, 300, 150},
+    /* Lattice */ {750,  80, 300, 150},
+};
+
+#define BULLET_LIFE     550   /* BulletAliveTime: 5.5 s, 69 tiles of reach */
+#define BOMB_THRUST     400   /* BombThrust: the recoil of letting one go */
+
+/* How far apart a pair of rounds leave, at 65536 to the turn.
+ *
+ * Two and a quarter degrees, which is tight enough that both rounds land on
+ * one hull out to about three hundred pixels and start to straddle beyond it.
+ * That range matters more than it used to: a pair was one option among many
+ * when a pilot bought spray a rung at a time, and it is the Apex's whole gun
+ * now. At the fifteen degrees this was, the two rounds are twenty-six pixels
+ * either side of the line at two hundred, so a pair aimed dead at a dart went
+ * past it on both sides and the roster's fighter could not hit anything it
+ * was not touching.
+ *
+ * Three rounds and up open out to the zone's own `mod_spread`, so the fan is
+ * still a fan. What this sets is what two abreast means.
  *
  * It has to be nonzero. A pattern of many at spacing zero is the shrapnel
  * encoding, and scatters. */
-#define BARREL_SPREAD (65536 / 48)
-#define BOMB_DAMAGE     750   /* BombDamageLevel, "for all bomb levels" */
-#define BOMB_DELAY      150   /* BombFireDelay */
-#define BOMB_ENERGY     300   /* BombFireEnergy */
-#define BOMB_ENERGY_UP   50   /* BombFireEnergyUpgrade, per level */
-#define BOMB_THRUST     400   /* BombThrust: the recoil of letting one go */
-#define BOMB_BLAST       80   /* BombExplodePixels, for an L1 bomb */
-
-/* Two bits per add-on, so a row reads as a list rather than a number. */
-/* One add-on's ceiling, packed the way `sim_mod_get` reads it: two bits for
- * everything that is a rung of something, three at the top of the word for
- * spray, which is a count of rounds. */
-#define MN(a, n) ((uint16_t)((a) == SIM_MOD_MULTI \
-    ? (uint32_t)(n) \
-    : ((uint32_t)(n) << (1 + (a) * 2))))
-#define M1(a) MN(a, 1)
-#define M2(a) MN(a, 2)
-#define M3(a) MN(a, 3)
+#define BARREL_SPREAD (65536 / 160)
 
 /* Each hull's footprint, in Q8 pixels from the point it turns about: past the
    nose, behind the tail, to either side. client/tests/hull_fit_test.lua reads
@@ -106,113 +157,106 @@ static const uint16_t hull_extent[SIM_MAX_CLASSES][3] = {
     /* Lattice: 25 long by 25 wide           */ {3328, 3072, 3200},
 };
 
-/* What an arena lets a kit hold, and how far each weapon climbs.
+/* ---- what a hull holds ----
  *
- * One row, for the whole zone. This was seven rows, one per hull, and every
- * number in it was something a pilot could want and not be allowed: the
- * second barrel was the Facet's, the third bomb rung was the Anvil's, and a
- * deep rung of shrapnel belonged to whichever two hulls the table called
- * bombers. None of it could ever be sold, because
- * a shop cannot sell a trait that exists on one hull, and a pilot who bought
- * a rung anyway would find the hull they wanted to fly refused it.
+ * Nothing here is an arena-wide row any more, and there is no shelf for it to
+ * describe. Seven rows of "which add-ons may this hull hold and how deep"
+ * became one row for the whole zone when a kit was thirty points a pilot
+ * spent, because a shop cannot sell a trait that exists on one hull. Both are
+ * gone: a hull's add-ons are its profile below, and the profile is the ship.
  *
- * So the roster stopped carrying a tech tree. What is left of a hull is the
- * shape it presents to a bullet, in `hull_extent` above, and that is the one
- * difference no shop could sell even if it wanted to. Everything else is
- * here, the same for everybody, and on the shelf.
- *
- * These numbers are the union of what the seven rows allowed, each at its
- * deepest. Nothing new is granted and nothing is taken away: a Wedge could
- * always hold three rungs of shrapnel, and now anyone who buys them can.
- *
- * Availability still follows the original, which gates none of this per ship:
- * its add-ons are entries in [PrizeWeight] and any ship can be handed any of
- * them. What it varies is the ceiling, and the ceiling is the arena's now.
+ * So what was a ceiling is now a statement. The Facet fires five rounds
+ * because it is a Facet, and the two barrels it has always been drawn with
+ * are true again rather than a claim about somebody's shopping.
  */
 
-/* MaxGuns is 3 on every ship the original ships. MaxBombs is 2 on seven of
- * them and 3 on the Leviathan, and three is what everybody climbs to here:
- * the shop sells the rung rather than the roster handing it to one hull. */
-#define GUN_RUNGS  3
-#define BOMB_RUNGS 3
-
-/* Guns fan, freeze and come in pairs. They carry no fuse and do not break up,
- * which no hull's gun ever did: a bullet with a proximity fuse is a bomb, and
- * that weapon already exists.
- *
- * Bullet bouncing is one rung and stays one. A bounced bullet lives out its
- * whole clock either way -- 69 tiles of reach against a life it cannot spend
- * -- so a second rung would buy literally nothing.
- *
- * Spray to five, which is six rounds at a pull. It was multifire at two and
- * barrels at two, on two ladders that both spelled "more bullets"; folded
- * into one, the ceiling is the rounds those two could reach together, less
- * the one nobody would have bought. */
-#define GUN_MODS  (MN(SIM_MOD_MULTI, SIM_MOD_MULTI_MAX) | M1(SIM_MOD_BOUNCE) \
-                   | M1(SIM_MOD_FREEZE))
-
-/* Bombs bounce, sense, shatter and freeze. They do not fan and they do not
- * come in pairs, which is the other combination no hull ever had: a rack that
- * throws three at a pull is not a bomber, it is a different game.
- *
- * Bounce at two was the Lattice's alone. Shrapnel at three was the two
- * bombers'.
- *
- * Freeze is on both triggers rather than the gun alone. Stalling a recharge is
- * a thing a hit does, and the core has always applied it off whichever
- * trigger's add-ons carried it, so this is a flag rather than a weapon.
- *
- * Push is off the shelf for now. It was two rungs of the Lattice's shove, and
- * a shove welded onto a bomb wants its own look before it is sold. */
-#define BOMB_MODS (M2(SIM_MOD_BOUNCE) | M1(SIM_MOD_PROX) \
-                   | M3(SIM_MOD_SHRAPNEL) | M1(SIM_MOD_FREEZE))
-
 /* Repels and bursts are three, which is RepelMax and BurstMax on all eight of
- * the original's ships. Three of either is most of a thirty point kit once
- * the rack is a ladder a pilot climbs a rung at a time. */
+ * the original's ships, and three is what the deepest rack in this roster
+ * carries. */
 #define CHARGE_REPEL_MAX 3
 #define CHARGE_BURST_MAX 3
 
 /* How long a burst shuts its own key for. A second and a half, which is the
- * bomb's own clock and the longest wait any weapon in this game asks for.
+ * longest wait any weapon in this game asks for.
  *
  * The original has no such setting and did not need one: a burst is loot
  * there, and a pilot holding three has had a good afternoon. Here the rack is
- * a kit slot, everybody who wants three has three from the whistle, and the
+ * part of a hull, everybody in a Lattice has three from the whistle, and the
  * only thing between the first press and the third was how fast a thumb
  * moves. Three at once is three rosettes from one standing position, and at
- * 700 a round against a bar of 1475 it takes three of the seventy-two to end
- * anybody. What that asked of the pilot was one approach.
+ * 700 a round it takes three of the seventy-two to end anybody. What that
+ * asked of the pilot was one approach.
  *
  * This prices the cadence rather than the fight. Emptying the rack takes
- * three seconds now, where three presses of a thumb took a tenth of one, and
- * three seconds is long enough that the second and third bursts are flown
- * between and aimed separately, and short enough that both are still
- * available in the fight the first one was thrown into. A wait that pushed
- * the next burst into the next engagement would be several times this, and
- * that is a different rule about what a rack is for rather than a longer
- * version of this one.
+ * three seconds now, which is long enough that the second and third bursts
+ * are flown between and aimed separately, and short enough that both are
+ * still available in the fight the first one was thrown into.
  *
  * The repel keeps none of this. It does no damage, chaining it only wastes
  * it, and it is the answer to a round already in the air. */
 #define CHARGE_BURST_DELAY 150
 
-/* The above, over the flat slot space: the most this arena will let a kit put
- * in each slot, and zero for a slot it does not have at all. */
-static void fill_kit_ceiling(sim_settings *cfg) {
-    memset(cfg->kit_ceiling, 0, sizeof cfg->kit_ceiling);
-    for (int u = 0; u < SIM_UP_COUNT; u++)
-        cfg->kit_ceiling[SIM_SLOT_STAT(u)] = SIM_UP_STEPS;
-    /* A ladder of N rungs is N-1 steps to buy: rung zero is what the trigger
-     * already fires. */
-    cfg->kit_ceiling[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] = GUN_RUNGS - 1;
-    cfg->kit_ceiling[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] = BOMB_RUNGS - 1;
-    for (int m = 0; m < SIM_MOD_COUNT; m++) {
-        cfg->kit_ceiling[SIM_SLOT_MOD(SIM_TRIG_GUN, m)] = sim_mod_get(GUN_MODS, m);
-        cfg->kit_ceiling[SIM_SLOT_MOD(SIM_TRIG_BOMB, m)] = sim_mod_get(BOMB_MODS, m);
-    }
-    cfg->kit_ceiling[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = CHARGE_REPEL_MAX;
-    cfg->kit_ceiling[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = CHARGE_BURST_MAX;
+/* ---- the profiles ----
+ *
+ * One row per hull over the flat slot space, and the row is what that hull
+ * flies with. Nobody buys these and nobody spends points on them: you pick a
+ * ship and the ship is the build. See docs/design/ships.md.
+ *
+ * Written as a small table of named counts rather than as a literal vector,
+ * because a vector over twenty-three slots is unreadable and the slot indices
+ * are macros. `fill_profile` lays one down.
+ *
+ * The stat slots are all zero. Flight is the `flight` table above, where the
+ * step is zero and the ceiling is the floor, so a stat step here would buy
+ * nothing. They stay in the space for a zone that writes a climbing hull.
+ *
+ * Nothing carries a third charge kind. Two is what a keyboard has room for,
+ * per SIM_KIT_CHARGE_SLOTS, and `profiles_carry_two_kinds` holds the roster
+ * to it. */
+typedef struct {
+    uint8_t gun_rung, bomb_rung;
+    uint8_t spray, gun_bounce, gun_freeze;
+    uint8_t bomb_bounce, prox, shrapnel, bomb_freeze;
+    uint8_t repel, burst;
+} hull_profile;
+
+/*                                     gun bomb | spray gb gf | bb px sh bf | rep bur */
+static const hull_profile profile[SIM_MAX_CLASSES] = {
+    /* Apex: a pair of heavy rounds, a plain bomb, and a way out.        */
+    /* Apex    */ {0, 0,  1, 0, 0,  0, 0, 0, 0,  2, 1},
+    /* Wedge: the bomber. A fuse, a wide blast and six fragments, on the
+       hull that presents the broadest face to anything it charges.      */
+    /* Wedge   */ {0, 0,  0, 0, 0,  0, 1, 2, 0,  1, 1},
+    /* Chord: turns inside everything and outruns nothing. Three light
+       rounds that stall a recharge, and a fuse so it need not be exact. */
+    /* Chord   */ {0, 0,  2, 0, 1,  0, 1, 0, 0,  2, 0},
+    /* Anvil: wins any fight it is allowed to have. One heavy round, the
+       widest bomb in the game, and three repels to survive the wait.    */
+    /* Anvil   */ {0, 0,  0, 0, 0,  0, 0, 0, 0,  3, 1},
+    /* Cipher: the only hull with no rack. Fastest, thinnest, and it
+       cannot afford a fight it did not choose.                          */
+    /* Cipher  */ {0, 0,  0, 0, 0,  0, 0, 0, 0,  1, 2},
+    /* Facet: five rounds off two barrels, bouncing once, which is a kill
+       inside three tiles and one round beyond six.                      */
+    /* Facet   */ {0, 0,  4, 1, 0,  0, 0, 0, 0,  2, 0},
+    /* Lattice: does not kill you, moves you. The deepest rack of both
+       kinds, and a freezing bomb that fills a corridor.                 */
+    /* Lattice */ {0, 0,  0, 1, 0,  2, 0, 0, 1,  3, 3},
+};
+
+static void fill_profile(sim_ship_class *c, const hull_profile *p) {
+    memset(c->kit, 0, sizeof c->kit);
+    c->kit[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] = p->gun_rung;
+    c->kit[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] = p->bomb_rung;
+    c->kit[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] = p->spray;
+    c->kit[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_BOUNCE)] = p->gun_bounce;
+    c->kit[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_FREEZE)] = p->gun_freeze;
+    c->kit[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_BOUNCE)] = p->bomb_bounce;
+    c->kit[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_PROX)] = p->prox;
+    c->kit[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_SHRAPNEL)] = p->shrapnel;
+    c->kit[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_FREEZE)] = p->bomb_freeze;
+    c->kit[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = p->repel;
+    c->kit[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = p->burst;
 }
 
 const char *const sim_class_names[SIM_MAX_CLASSES] = {
@@ -274,22 +318,11 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->wormhole_pull = sim_units_speed(90);
     cfg->wormhole_range = 220 * 256;
 
-    /* A fresh pilot is worth one and each kill adds one, so the number over
-     * a ship is the length of its current run and nothing else. Killing
-     * somebody who just spawned pays almost nothing, which is the free
-     * anti-farming property bounty.md wants: no repeat-kill decay, no timer,
-     * no rule about camping, just a price that starts at the floor. */
-    cfg->bounty_base = 1;
-    cfg->bounty_per_kill = 1;
-    cfg->points_per_flag = 100;
-
-    /* Three kills without dying, and two points on top of the run for as long
-     * as it lasts. Three because it is the shortest run that cannot be an
-     * accident and is still reachable in a three-minute match; two because a
-     * streak has to move what the pilot is worth by more than one more kill
-     * would, or the bonus says nothing the run was not already saying. */
+    /* Three kills without dying. The shortest run that cannot be an accident
+     * and is still reachable inside a three-minute match, and the only thing
+     * this game says about how a pilot is doing right now: the room is told,
+     * the hull goes gold, and somebody comes to end it. */
     cfg->streak_kills = 3;
-    cfg->streak_bounty = 2;
 
     /* What one rung of each add-on is worth, in the units of the field it
      * moves. These values live here rather than inside the transform that
@@ -342,7 +375,6 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->mod_multi_energy = 25;
     cfg->mod_multi_delay = 50;
     cfg->mod_pair_spread = BARREL_SPREAD;
-    fill_kit_ceiling(cfg);
 
     /* Shrapnel, one pattern per rung: four fragments, then six, then eight.
      * The fragments themselves are one spec, so a rung of shrapnel
@@ -386,8 +418,12 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
          * `bounces`, so a fragment wearing it survives one wall. */
         frag.on_wall = SIM_WALL_END;
         frag.bounces = 0;
-        frag.damage = sim_units_energy(BULLET_DAMAGE);
-        frag.damage_up = sim_units_energy(BULLET_UPGRADE);
+        /* ShrapnelDamagePercent=1000, which the original's help defines as
+         * tenths of a percent "relative to bullets of same level", so a
+         * fragment hits for a whole L1 bullet. The roster's lightest gun is
+         * that bullet, and the step is what a level of it used to add. */
+        frag.damage = sim_units_energy(200);
+        frag.damage_up = sim_units_energy(100);
         frag.splinter = SIM_NO_PATTERN;
         uint8_t frag_spec = (uint8_t)sim_add_spec(cfg, &frag);
         cfg->mod_splinter[0] = SIM_NO_PATTERN;   /* rung zero is no shrapnel */
@@ -475,95 +511,76 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         for (int k = 2; k < SIM_MAX_CHARGES; k++) cfg->charge[k] = SIM_NO_PATTERN;
     }
 
-    /* Every hull, built the same way. What differs between them is three
-     * numbers of footprint and nothing else: they fly alike, they climb alike
-     * and they hold alike, and the shape each one presents to a bullet is the
-     * whole of the roster. See docs/design/ships.md. */
+    /* Every hull, and every one of them a different ship.
+     *
+     * Flight comes off `flight`, the footprint off `hull_extent`, the gun and
+     * the bomb off `gun_row` and `bomb_row`, and what it wears off `profile`.
+     * Four tables, one row each, and the row is the roster entry. */
     for (int i = 0; i < SIM_MAX_CLASSES; i++) {
         sim_ship_class *c = &cfg->classes[i];
-        sim_class_from_units(c, &flight);
+        sim_class_from_units(c, &flight[i]);
         c->fore = (int32_t)hull_extent[i][0];
         c->aft = (int32_t)hull_extent[i][1];
         c->halfw = (int32_t)hull_extent[i][2];
+        fill_profile(c, &profile[i]);
 
-        /* A ladder per trigger. A gun rung adds BulletDamageUpgrade, flat,
-         * which is what the original's help says it is: "amount of extra
-         * damage each bullet level will cause". Not a percentage -- that was
-         * ours, and it made an L3 bullet 360 where the original makes it 400.
-         *
-         * A bomb rung adds no damage at all. BombDamageLevel is defined "for
-         * all bomb levels" and there is no BombDamageUpgrade to go with it.
-         * What a bomb level buys is BombFireEnergyUpgrade, which is to say it
-         * costs more, and shrapnel, which is the add-on. So the rungs exist
-         * to be climbed past rather than for themselves.
-         *
-         * Costs are absolute rather than a share of the bar, which they can
-         * be because every hull has the same energy ladder. A gun rung also
-         * multiplies BulletFireEnergy by its level, which is the original's
-         * `(weapon level + 1)` rule. */
-        for (int k = 0; k < GUN_RUNGS && k < SIM_MAX_RUNGS; k++) {
+        /* Rung zero is the hull's gun, because nobody climbs a ladder any
+         * more. The rungs above it stay reachable for a zone that wants a
+         * hull whose weapon grows; the shipped roster leaves them empty. */
+        {
             sim_weapon_spec bolt;
             memset(&bolt, 0, sizeof bolt);
             bolt.speed = sim_units_speed(2000);
-            bolt.life = 550;    /* BulletAliveTime: 5.5 s, 69 tiles of reach */
+            bolt.life = BULLET_LIFE;
             bolt.on_wall = SIM_WALL_END;
             /* The add-on buys one wall, as its single rung says. Infinite
-             * ricochets made that one point dominate whole corridors and
-             * made the displayed rung count false. */
+             * ricochets made that one point dominate whole corridors. */
             bolt.bounces = 0;
-            bolt.damage = sim_units_energy(BULLET_DAMAGE + BULLET_UPGRADE * k);
+            bolt.damage = sim_units_energy(gun_row[i][0]);
             bolt.splinter = SIM_NO_PATTERN;
 
             sim_fire_pattern gun;
             memset(&gun, 0, sizeof gun);
             gun.spec = (uint8_t)sim_add_spec(cfg, &bolt);
-            /* One round, and the spacing an add-on will want if a pilot
-             * buys barrels. DoubleBarrel used to be baked in here, because it
-             * was a property of the hull the pattern belonged to; it is a
-             * transform applied when the trigger is pulled now, so every
-             * hull's rung zero fires one round and what leaves the barrel is
-             * the pilot's business. */
+            /* One round. What actually leaves the barrels is this times the
+             * hull's spray, applied when the trigger is pulled, so the Facet
+             * being drawn with two of them is a fact about the Facet again. */
             gun.count = 1;
             gun.spacing = 0;
-            gun.energy = sim_units_energy(BULLET_ENERGY * (k + 1));
-            gun.delay = BULLET_DELAY;
-            c->trigger[SIM_TRIG_GUN][k] = (uint8_t)sim_add_pattern(cfg, &gun);
+            gun.energy = sim_units_energy(gun_row[i][1]);
+            gun.delay = (uint16_t)gun_row[i][2];
+            c->trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(cfg, &gun);
         }
 
-        /* Every hull has a rack, because every one of the original's ships
-         * does: MaxBombs is 2 or 3 on all eight. The empty-ladder case is
-         * still handled -- a zone may take a rack away -- and the trigger
-         * simply goes dead when it does. */
-        for (int k = 0; k < BOMB_RUNGS && k < SIM_MAX_RUNGS; k++) {
+        /* A rack, unless the row says otherwise. Cipher is the one hull with
+         * none, and an empty ladder is a trigger that goes dead, which the
+         * core has always handled and nothing until now used. */
+        if (bomb_row[i][0] > 0) {
             sim_weapon_spec sh;
             memset(&sh, 0, sizeof sh);
-            /* BombSpeed=2000, BombAliveTime=6000 and BombExplodePixels=80.
-             * Sixty seconds is not a fuse, it is "until it hits something",
-             * which is what the original means on a map this size.
+            /* BombSpeed=2000 and BombAliveTime=6000. Sixty seconds is not a
+             * fuse, it is "until it hits something", which is what the
+             * original means on a map this size.
              *
              * This said 8000, from the reference server's own config rather
-             * than from VIE's, and both shipped zones then overrode it back to
-             * 6000 while describing that as their own deviation. Two sources,
-             * one of them the game we are actually copying. */
+             * than from VIE's, and both shipped zones then overrode it back
+             * to 6000 while describing that as their own deviation. Two
+             * sources, one of them the game we are actually copying. */
             sh.speed = sim_units_speed(2000);
             sh.life = 6000;
             sh.on_wall = SIM_WALL_END;
-            sh.damage = sim_units_energy(BOMB_DAMAGE);
-            /* BombExplodePixels is the L1 radius and its help spells the rest
-             * out: "L2 bombs double this, L3 bombs triple this". So the blast
-             * is what a bomb level buys, since the damage at the center does
-             * not move. */
-            sh.blast = BOMB_BLAST * (k + 1) * 256;
+            sh.damage = sim_units_energy(bomb_row[i][0]);
+            sh.blast = bomb_row[i][1] * 256;
             sh.splinter = SIM_NO_PATTERN;
 
             sim_fire_pattern bomb;
             memset(&bomb, 0, sizeof bomb);
             bomb.spec = (uint8_t)sim_add_spec(cfg, &sh);
             bomb.count = 1;
-            bomb.energy = sim_units_energy(BOMB_ENERGY + BOMB_ENERGY_UP * k);
-            bomb.delay = BOMB_DELAY;
+            bomb.energy = sim_units_energy(bomb_row[i][2]);
+            bomb.delay = (uint16_t)bomb_row[i][3];
             bomb.recoil = sim_units_speed(BOMB_THRUST);
-            c->trigger[SIM_TRIG_BOMB][k] = (uint8_t)sim_add_pattern(cfg, &bomb);
+            c->trigger[SIM_TRIG_BOMB][0] = (uint8_t)sim_add_pattern(cfg, &bomb);
         }
     }
 }

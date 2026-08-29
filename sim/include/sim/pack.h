@@ -12,8 +12,14 @@ extern "C" {
 #define SIM_PACK_MAX (64 * 1024)
 
 /* Largest whole-state snapshot. Every visible ship carries its private tail,
- * so this is slightly larger than the network limit. */
-#define SIM_STATE_PACK_MAX 68238
+ * so this is slightly larger than the network limit.
+ *
+ * It came down when ships stopped carrying a kit. A profile belongs to the
+ * class, so it travels once with the settings rather than twenty-three bytes
+ * per hull per snapshot, and the run and the points went with bounty. That is
+ * twenty-nine bytes off every ship, which at a full room is most of the
+ * seven kilobytes this lost. */
+#define SIM_STATE_PACK_MAX 60843
 
 /* A network snapshot carries one owner-only ship tail. The whole-state
  * replay path and trusted house bots ask for every tail instead.

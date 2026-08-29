@@ -362,7 +362,7 @@ typedef enum {
  * above one: a rung is a round, one rung is the pair that used to be a second
  * barrel, and the group opens from a pair's tight spacing into the zone's fan
  * as it grows. The tradeoff moved from "which add-on" to "how many, against
- * everything else thirty points could buy".
+ * everything else the profile could have spent that slot on"."
  */
 
 /* How many recent attackers a hull remembers, and for how long, which is what
@@ -406,17 +406,13 @@ typedef enum {
 #define SIM_CHARGE_BURST 1
 #define SIM_CHARGE_MAX 15  /* how many of one kind a pilot can hold */
 
-/* How many kinds a pilot may carry at once, whatever they own.
+/* How many kinds one hull may carry at once.
  *
- * Two, and it is a rule of the game rather than a fact about a keyboard: the
- * kit is where a build is decided, and a pilot who could carry every kind at
- * once would be deciding nothing. Which two is the choice, and the arena
- * refuses a kit that names a third, so the ship page cannot offer one and no
- * client can send one.
- *
- * Whichever two are carried bind to Q and W in kind order, so the lower kind
- * is always on Q. That is the whole of the binding: what a key spends is a
- * slot, and which kinds fill the slots is what the kit decided. */
+ * Two, and it is a fact about a keyboard as much as about the game: whichever
+ * two a profile names bind to Q and W in kind order, so a third would have no
+ * key to be thrown with. A profile naming three is a profile with a slot the
+ * pilot cannot reach, and `profiles_carry_two_kinds` in the tests is what
+ * stops one being written. */
 #define SIM_KIT_CHARGE_SLOTS 2
 
 /* The slot field in the buttons and the number of charge kinds are two halves
@@ -521,17 +517,13 @@ typedef enum {
  *  19 .. 22    a charge          per kind
  *
  * This used to be the space a green indexed, one byte per prize, rolled by
- * the server against a table of weights. Greens are gone and the space is
- * not: what was rolled at a pickup is now chosen in the hangar, and the
- * ceilings a roll respected are the ceilings a kit is validated against.
+ * the server against a table of weights; then it was thirty points a pilot
+ * spent in a hangar. It is neither now. The space survived both because it is
+ * the right shape for the question, and what fills it is the hull: one vector
+ * per class in `sim_ship_class::kit`, dealt at every spawn.
  *
- * Everything a pilot can hold lives here, which is a rule rather than an
- * observation. A trait that sat on the hull instead, such as a second barrel,
- * a third bomb rung or a deeper rung of shrapnel, was a trait no shop could
- * sell and no pilot could choose, and the roster was carrying several of
- * them. They are slots now. What tells the hulls apart is
- * the shape they present to a bullet, which is the one difference nobody
- * can buy. */
+ * So everything a ship can hold still lives here, and a pilot holds exactly
+ * what the ship they picked holds. */
 #define SIM_SLOT_STAT(u)     (u)
 #define SIM_SLOT_LEVEL(t)    (SIM_UP_COUNT + (t))
 #define SIM_SLOT_MOD(t, m)   (SIM_UP_COUNT + SIM_TRIG_COUNT \
@@ -541,10 +533,9 @@ typedef enum {
 #define SIM_SLOT_COUNT       (SIM_UP_COUNT + SIM_TRIG_COUNT \
                               + SIM_TRIG_COUNT * SIM_MOD_COUNT \
                               + SIM_MAX_CHARGES)
-/* Every stat has eight effective build steps, and a kit may spend thirty
- * points in total. See docs/design/match-game.md. */
+/* Steps a stat's ladder holds. A profile names how many of them a hull
+ * carries; nobody buys one. See docs/design/ships.md. */
 #define SIM_UP_STEPS 8
-#define SIM_KIT_BUDGET 30
 
 
 /* Per-class tuning in core units. sim_class_from_units fills this from
@@ -571,13 +562,19 @@ typedef struct {
      * SIM_NO_PATTERN ends the ladder, so a hull with no bomb rack has
      * SIM_NO_PATTERN at rung zero.
      *
-     * The baseline builds the same ladders for every class, because how far
-     * a weapon climbs is the zone's business now and lives in `kit_ceiling`
-     * below. This stays per class so a zone that wants a hull with no rack
-     * can still write one, and `trigger_pattern` clamps to whatever is
-     * actually here, so the two disagreeing costs a pilot points rather than
-     * crashing anything. */
+     * A hull carries its own ladder, and `trigger_pattern` clamps to whatever
+     * is actually here, so a profile that reaches past the end of one costs a
+     * rung rather than crashing anything. */
     uint8_t trigger[SIM_TRIG_COUNT][SIM_MAX_RUNGS];
+
+    /* The profile: what this hull flies with, over the flat slot space.
+     *
+     * Dealt at every spawn and owned by nobody. There is no budget to spend
+     * and no shelf to buy from, so what tells an Anvil from a Cipher is the
+     * flight row above and this row here, and both are the zone's to write.
+     * `sim_deal_kit` walks it a slot at a time through `sim_grant`, which
+     * clamps each one to what its slot can physically hold. */
+    uint8_t kit[SIM_SLOT_COUNT];
 } sim_ship_class;
 
 typedef struct {
@@ -592,40 +589,13 @@ typedef struct {
      * a slot this zone does not use. Zone-wide rather than per hull, so a
      * charge means the same thing to everybody who has one. */
     uint8_t charge[SIM_MAX_CHARGES];
-    /* The most a kit may put in each slot, over the flat space above. Zero is
-     * a slot this zone does not have at all, which is how "bombs do not
-     * multifire here" gets said.
+    /* How many kills without dying make a streak. Zero turns the whole
+     * thing off, which is the switch a zone that does not want it gets.
      *
-     * Zone-wide, and that is the change worth naming. This was a row per hull:
-     * which add-ons that hull could hold and how deep, how far each trigger
-     * climbed, how many of each charge it carried. Seven rows meant a pilot
-     * could buy an upgrade and then find the hull they wanted to fly would not
-     * take it, and it meant the shop's shelf was whatever the roster happened
-     * to allow rather than whatever the game has. One row for the arena ends
-     * both: everything on the shelf fits in every hangar. */
-    uint8_t kit_ceiling[SIM_SLOT_COUNT];
-    /* What a kill adds to the killer's own bounty. Bounty is a run rather
-     * than a loadout now, so this is the whole of what makes one: a fresh
-     * pilot is worth `bounty_base` and each kill adds this. */
-    uint16_t bounty_per_kill;
-    /* What a pilot who has just spawned is worth. One, so that killing one
-     * pays almost nothing and camping a spawn is not a living, which is the
-     * free anti-farming property docs/design/bounty.md wants and which a kit
-     * counted into bounty would have destroyed. */
-    uint16_t bounty_base;
-    /* Points on top of the victim's bounty for each flag they were carrying. */
-    uint16_t points_per_flag;
-    /* How many kills without dying make a streak, and what being on one adds
-     * to what you are worth. Zero kills turns the whole thing off, which is
-     * the switch a zone that does not want it gets.
-     *
-     * Separate from `bounty_per_kill` on purpose: that is a price and this is
-     * a count, and a zone that pays two points a kill has not thereby decided
-     * a streak starts at two kills. The bonus is a step rather than a slope,
-     * so the pilot on a tear is worth visibly more than the arithmetic of
-     * their run alone, and taking them costs the room nothing to work out. */
+     * A streak is the one thing this game says about how a pilot is doing
+     * right now, so it is a step rather than a slope: the room is told once,
+     * the hull wears it, and it goes when they do. */
     uint16_t streak_kills;
-    uint16_t streak_bounty;
     /* What one rung of each add-on is worth. Units are the field it changes:
      * extra projectiles, walls, Q8 px of fuse, ticks of stall, Q16 push. */
     int32_t mod_step[SIM_MOD_COUNT];
@@ -824,16 +794,13 @@ typedef struct {
      * corrected by the next snapshot, exactly as it does a kill. */
     uint8_t hurt_by[SIM_ASSIST_SLOTS];
     uint32_t hurt_at[SIM_ASSIST_SLOTS];
-    /* What this hull is, which is the kit dealt back at every spawn. These
-     * are not accumulated any more and are not lost by dying: a death
-     * re-deals the frame. */
+    /* What this hull is, which is the profile dealt back at every spawn.
+     * These are not accumulated and are not lost by dying: a death re-deals
+     * the frame. The profile itself is not kept here, because it belongs to
+     * the class and a ship already knows which class it is. */
     uint8_t up[SIM_UP_COUNT];
     uint8_t level[SIM_TRIG_COUNT];
     uint16_t mods[SIM_TRIG_COUNT];
-    /* The kit itself, over the flat slot space, kept on the ship so a
-     * respawn can re-deal it without the caller being asked twice. Set by
-     * `sim_set_kit`, which validates it against the hull and the budget. */
-    uint8_t kit[SIM_SLOT_COUNT];
     /* Multifire declined. The add-on stays held and stays on the scoreboard;
      * this only stops it being applied when the trigger is pulled. Cleared by
      * death with everything else, because the add-on it refuses is. */
@@ -845,8 +812,8 @@ typedef struct {
      * never happened. */
     uint16_t btn_prev;
     /* Charges in hand, spent one at a time, and the one thing a death does
-     * NOT give back: the kit deals them once and the match spends them.
-     * Dying to reload would otherwise be free at a bounty of one. */
+     * NOT give back: the profile deals them once and the match spends them.
+     * Dying to reload would otherwise cost a pilot nothing at all. */
     uint8_t charge[SIM_MAX_CHARGES];
     /* Ticks until each kind may be thrown again, counted down, set from the
      * pattern's own `delay` when one goes.
@@ -863,34 +830,16 @@ typedef struct {
      * one back early. A match start deals the rack afresh and clears these
      * with it, in `sim_deal_kit`. */
     uint16_t charge_cooldown[SIM_MAX_CHARGES];
-    /* Kills since this hull last spawned, which is the whole of its bounty
-     * beyond the base. Cleared by death, which is what makes the number over
-     * a ship say "this one is on a run" rather than "this one shopped well". */
-    uint16_t run;
-    /* The same kills, counted rather than priced: `run` moves by
-     * `bounty_per_kill` and this moves by one, so a zone that changes what a
-     * kill pays does not thereby change what a streak is. Cleared everywhere
-     * `run` is, since both answer "how has this pilot been doing since they
-     * last died" and an answer that outlived a death would be a lie. */
+    /* Kills since this hull last spawned. Cleared by death, because it
+     * answers "how has this pilot been doing since they last died" and an
+     * answer that outlived a death would be a lie.
+     *
+     * The one number in this struct about how a pilot is doing right now.
+     * There were three: a run that priced the kill, a points total the kill
+     * paid into, and this. The first two are gone with bounty, and what is
+     * left is the count a streak is made of. */
     uint16_t streak;
-    /* The score. Not cleared by death: what you have been paid is yours,
-     * and what you are worth is a different number entirely. */
-    uint32_t points;
 } sim_ship;
-
-/* What this pilot is worth to whoever kills them: the base plus their run.
- *
- * This used to be a sum over everything held, which was the right answer
- * while what you held was what you had survived to collect. Once a kit is
- * dealt back at every spawn that sum says only what you shopped for, it is
- * the same for a pilot who has just undocked as for one on a tear, and a
- * fresh spawn becomes worth thirty to whoever camps it. So bounty counts the
- * run instead: one on arrival, one more per kill, gone when you die.
- *
- * A streak adds `streak_bounty` on top of that, so the pilot the room has
- * been told about is worth more than the run alone would say. It is a step,
- * and it goes when the streak does. */
-int32_t sim_bounty(const sim_settings *cfg, const sim_ship *sh);
 
 /* Whether this pilot is on a streak, which is `streak_kills` kills without
  * dying. Asked by everything that draws one, so the threshold is compared in
@@ -898,78 +847,19 @@ int32_t sim_bounty(const sim_settings *cfg, const sim_ship *sh);
 int sim_on_streak(const sim_settings *cfg, const sim_ship *sh);
 
 
-/* What an account owns before it has bought anything, over the same flat
- * space, and 255 for a slot the account never limits.
- *
- * A kit is checked against the zone's ceiling and the account's entitlements
- * together, and the smaller of the two wins. The zone's row is the arena
- * saying what it has; this is the shop's half, and it exists so that "what
- * rivets buy is which upgrades you may slot, never how many" has somewhere to
- * be true.
- *
- * Every effective stat step is universal. Stats are build choices, not
- * purchases, and the thirty-point kit keeps a pilot from taking all forty at
- * once.
- *
- * The equipment row covers Gunner, Bomber and Control, plus the established
- * second gun and spray rungs used by saved remixes. A fresh pilot can rearrange
- * those points without shopping first. Deeper weapon, add-on and charge-rack
- * rungs are progression: Repel and Burst begin at two and climb from the
- * shelf. See docs/design/match-game.md. */
-void sim_base_entitlements(uint8_t *out);
-
-/* A whole budget spent on a hull, without asking anybody what they wanted.
- *
- * Every seat has to be flying something: a pilot who has never opened the
- * hangar, a bot, and a new account all arrive with no kit of their own, and a
- * bare hull against a built one is not a game. So this is the answer to "what
- * would a sensible pilot bring", and it is here rather than in a server
- * because the same thirty points have to land the same way for a new account,
- * for a bot, and for the hangar drawing a starting point.
- *
- * One rung on each trigger the hull has, the charges it will hold, and the
- * rest spread evenly over the five stats. That is deliberately an
- * all-rounder: it is a decent ship on any hull and the best ship on none, so
- * the first thing a player learns in the hangar is that spending differently
- * is worth doing.
- *
- * Takes the ceilings rather than the hull, because what a pilot may slot is
- * the zone's row and their account's entitlements together, and the account
- * is not something this core knows about. `cfg->kit_ceiling` is the zone's
- * half; a caller with no account to consult passes that straight in.
- *
- * `out` is SIM_SLOT_COUNT bytes. Returns what it spent, which is
- * SIM_KIT_BUDGET in any arena with room for it and less in one with almost
- * nothing to spend it on. */
-int sim_starter_kit(const uint8_t *ceiling, uint8_t *out);
-
-/* What a kit spends, which is just its sum, because every slot costs one. */
-int sim_kit_cost(const uint8_t *kit);
-
-/* Validate a kit against the zone and the budget, store it on the ship, and
- * deal it with ammunition. Returns 0 and changes nothing if any slot is over
- * its ceiling or the total is over `SIM_KIT_BUDGET`, so a refused kit leaves
- * the pilot in what they were already flying rather than half dressed.
- *
- * The hull is not consulted. A kit that validated in the hangar flies on
- * anything in the roster, which is what makes changing hull between matches a
- * free choice rather than a rebuild. */
-int sim_set_kit(sim_ship *sh, const sim_settings *cfg, const uint8_t *kit);
-
-/* Deal the stored kit onto the hull.
+/* Deal this hull's profile onto it.
  *
  * `ammunition` is the whole of the difference between arriving and
  * respawning. A match deals charges once and a death re-deals only the
  * frame, so a pilot who has spent both repels flies the rest of the match
- * without them and cannot reload by dying, which at a bounty of one would
- * otherwise be a trade worth making. */
+ * without them and cannot reload by dying. */
 void sim_deal_kit(sim_ship *sh, const sim_settings *cfg, int ammunition);
 
-/* Hand a pilot one named slot, with the arena's ceilings enforced. Returns 1
- * if the count moved and 0 if the slot is already full, which is how a caller
- * tells "wearing the kit" from "cannot wear it". `sim_deal_kit` is this in a
- * loop; the calibration harness calls it directly to build a ship a slot at
- * a time. */
+/* Hand a ship one named slot, clamped to what that slot can hold. Returns 1
+ * if the count moved and 0 if it was already full, which is how a caller
+ * tells "wearing it" from "cannot wear it". `sim_deal_kit` is this in a loop;
+ * the calibration harness calls it directly to build a ship a slot at a
+ * time. */
 int sim_grant(sim_ship *sh, const sim_settings *cfg, uint8_t type);
 
 /* Flags. The core owns pickup, carry, and drop, exactly as the original's
@@ -1034,8 +924,9 @@ typedef enum {
      * speed the wall took out of it, before the wall gave any back. */
     SIM_EV_BOUNCE,   /* a: ship, b: unused, v: impact speed Q16 */
     SIM_EV_HIT,      /* a: victim, b: attacker, v: damage Q10 */
-    /* a: victim, b: killer (255 = none), v: points the kill paid, which is
-     * the victim's bounty plus what their flags were worth. */
+    /* a: victim, b: killer (255 = none). Nothing is paid: a kill moves the
+     * killer's own counters and the room's score, and neither is a number
+     * carried on the event. */
     SIM_EV_DEATH,
     SIM_EV_SPAWN,    /* a: ship */
     /* A weapon stopped existing: it ran out of life, hit a wall, or struck a
@@ -1136,8 +1027,8 @@ uint8_t sim_eff_max_ships(const sim_settings *cfg);
  * the same fields a spawn touches and it has to land identically on every
  * architecture the state hash is compared across.
  *
- * Kills, deaths and points are the match's own tally and go back to zero with
- * it. The kit does not, because a kit is what you own. */
+ * Kills, deaths and assists are the match's own tally and go back to zero
+ * with it. The profile does not, because it belongs to the hull. */
 void sim_restart(sim_state *s, const sim_settings *cfg);
 
 int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
@@ -1172,7 +1063,7 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
 
 /* Put a pilot on a different side. Gated exactly as a hull change is, and for
  * the same reason: it is a respawn at the new side's start with a full bar, so
- * ungated it is an escape. Flags are dropped and bounty earned by killing is
+ * ungated it is an escape. Flags are dropped and the run earned by killing is
  * cleared, which is what stops two pilots swapping sides to feed each other.
  *
  * What you are flying is untouched: hull, levels, add-ons and charges all
@@ -1198,7 +1089,7 @@ int sim_door_open(const sim_settings *cfg, uint32_t tick, uint8_t variant);
 int32_t sim_units_speed(int32_t v);    /* px/s/10 -> Q16 px/tick */
 int32_t sim_units_energy(int32_t e);   /* energy units -> Q10 */
 
-/* A hull's flight stats in settings-file units: what zero kit points provide,
+/* A hull's flight stats in settings-file units: what zero profile steps give,
  * what one point adds, and the ceiling. All three are explicit because each
  * row has its own useful range even though every row has eight steps. Speed
  * uses tenths of a pixel per second and thrust uses tenths of its documented

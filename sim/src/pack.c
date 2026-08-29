@@ -126,11 +126,9 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w16(&w, (uint16_t)sh->kills);
         w16(&w, sh->deaths);
         w16(&w, sh->assists);
-        w16(&w, sh->run);
         /* Public, because it is drawn on the hull: a client has to know which
          * ships in front of it are on a run without being told separately. */
         w16(&w, sh->streak);
-        w32(&w, sh->points);
         /* Energy is the fight's health bar. Anyone who can see the hull can
          * see how close it is to dying, which requires its capacity rung as
          * well as its current value. Other inventory and weapon state remain
@@ -164,10 +162,10 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
              * snapshot. */
             w8(&w, sh->multi_off);
             w16(&w, sh->btn_prev);
-            /* The kit, because a respawn re-deals from it and the client
-             * predicts that: without this a pilot comes back flying a
-             * different ship on the client than on the server. */
-            for (int k = 0; k < SIM_SLOT_COUNT; k++) w8(&w, sh->kit[k]);
+            /* The profile is not here. A respawn re-deals from the class, and
+             * the class is in the settings both ends already hold, so sending
+             * it per ship per snapshot would be sending the same twenty-three
+             * bytes about a Wedge to everybody flying a Wedge. */
         }
     }
 
@@ -311,9 +309,7 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
         sh->kills = (int16_t)(uint16_t)r16(&r);
         sh->deaths = (uint16_t)r16(&r);
         sh->assists = (uint16_t)r16(&r);
-        sh->run = (uint16_t)r16(&r);
         sh->streak = (uint16_t)r16(&r);
-        sh->points = r32(&r);
         sh->energy = (int32_t)r32(&r);
         if ((sh->alive && sh->energy <= 0) || (!sh->alive && sh->energy != 0))
             return -1;
@@ -344,8 +340,6 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
             sh->multi_off = (uint8_t)r8(&r);
             if (sh->multi_off > 1) return -1;
             sh->btn_prev = (uint16_t)r16(&r);
-            for (int k = 0; k < SIM_SLOT_COUNT; k++)
-                sh->kit[k] = (uint8_t)r8(&r);
         }
     }
 
@@ -477,8 +471,14 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
  * 19: mines are gone, and the three fields that existed for them go with
  * them: `still` and `blast_up` off the spec, `energy_up` off the pattern.
  * Nothing else in the game was ever laid rather than thrown, wore a rung
- * from another trigger's ladder, or charged more for one. */
-#define CFG_VERSION 19
+ * from another trigger's ladder, or charged more for one.
+ *
+ * 20: ships are preconstructed. Every class carries its own profile, so the
+ * kit vector moves here from the ship record and `kit_ceiling` goes: there is
+ * no shelf for an arena-wide row to describe. Bounty goes with the shop, and
+ * `bounty_base`, `bounty_per_kill`, `points_per_flag` and `streak_bounty` go
+ * with it. `streak_kills` stays, because a streak is what is left. */
+#define CFG_VERSION 20
 
 static int settings_valid(const sim_settings *cfg) {
     if (cfg->class_count == 0 || cfg->class_count > SIM_MAX_CLASSES
@@ -543,9 +543,11 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
         w32(&w, (uint32_t)c->halfw);
         for (int t = 0; t < SIM_TRIG_COUNT; t++)
             for (int r = 0; r < SIM_MAX_RUNGS; r++) w8(&w, c->trigger[t][r]);
+        /* The profile. Per class rather than per ship: everybody flying a
+         * Wedge flies the same Wedge, so this travels once with the settings
+         * instead of on every hull in every snapshot. */
+        for (int k = 0; k < SIM_SLOT_COUNT; k++) w8(&w, c->kit[k]);
     }
-    /* Once for the arena, where it used to be twice per hull. */
-    for (int i = 0; i < SIM_SLOT_COUNT; i++) w8(&w, cfg->kit_ceiling[i]);
 
     w32(&w, (uint32_t)cfg->prox_step);
     w16(&w, cfg->prox_delay);
@@ -584,11 +586,7 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     }
 
     for (int k = 0; k < SIM_MAX_CHARGES; k++) w8(&w, cfg->charge[k]);
-    w16(&w, cfg->bounty_base);
-    w16(&w, cfg->bounty_per_kill);
-    w16(&w, cfg->points_per_flag);
     w16(&w, cfg->streak_kills);
-    w16(&w, cfg->streak_bounty);
     for (int m = 0; m < SIM_MOD_COUNT; m++) w32(&w, (uint32_t)cfg->mod_step[m]);
     w16(&w, cfg->mod_spread);
     w16(&w, cfg->mod_pair_spread);
@@ -652,9 +650,8 @@ int sim_settings_unpack(sim_settings *out, const uint8_t *in, int len) {
         for (int t = 0; t < SIM_TRIG_COUNT; t++)
             for (int k = 0; k < SIM_MAX_RUNGS; k++)
                 c->trigger[t][k] = (uint8_t)r8(&r);
+        for (int k = 0; k < SIM_SLOT_COUNT; k++) c->kit[k] = (uint8_t)r8(&r);
     }
-    for (int i = 0; i < SIM_SLOT_COUNT; i++)
-        cfg->kit_ceiling[i] = (uint8_t)r8(&r);
 
     cfg->prox_step = (int32_t)r32(&r);
     cfg->prox_delay = (uint16_t)r16(&r);
@@ -697,11 +694,7 @@ int sim_settings_unpack(sim_settings *out, const uint8_t *in, int len) {
     }
 
     for (int k = 0; k < SIM_MAX_CHARGES; k++) cfg->charge[k] = (uint8_t)r8(&r);
-    cfg->bounty_base = (uint16_t)r16(&r);
-    cfg->bounty_per_kill = (uint16_t)r16(&r);
-    cfg->points_per_flag = (uint16_t)r16(&r);
     cfg->streak_kills = (uint16_t)r16(&r);
-    cfg->streak_bounty = (uint16_t)r16(&r);
     for (int m = 0; m < SIM_MOD_COUNT; m++) cfg->mod_step[m] = (int32_t)r32(&r);
     cfg->mod_spread = (uint16_t)r16(&r);
     cfg->mod_pair_spread = (uint16_t)r16(&r);

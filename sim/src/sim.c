@@ -179,13 +179,6 @@ void sim_init(sim_state *s, uint32_t seed) {
     s->rng = seed ? seed : 1u;
 }
 
-/* Sum the counts in a kit. Every slot costs one point. */
-int sim_kit_cost(const uint8_t *kit) {
-    int n = 0;
-    for (int i = 0; i < SIM_SLOT_COUNT; i++) n += kit[i];
-    return n;
-}
-
 static void clear_hurt(sim_ship *sh);
 
 void sim_deal_kit(sim_ship *sh, const sim_settings *cfg, int ammunition) {
@@ -199,107 +192,11 @@ void sim_deal_kit(sim_ship *sh, const sim_settings *cfg, int ammunition) {
          * of the next one, and this is the only place a rack is refilled. */
         memset(sh->charge_cooldown, 0, sizeof sh->charge_cooldown);
     }
+    const uint8_t *kit = cfg->classes[sh->cls].kit;
     for (int i = 0; i < SIM_SLOT_COUNT; i++) {
         if (i >= SIM_SLOT_CHARGE(0) && !ammunition) continue;
-        for (int k = 0; k < sh->kit[i]; k++) sim_grant(sh, cfg, (uint8_t)i);
+        for (int k = 0; k < kit[i]; k++) sim_grant(sh, cfg, (uint8_t)i);
     }
-}
-
-/* What an account owns before it has bought anything.
- *
- * This includes the three starter profiles, every effective stat step and the
- * established second gun and spray rungs for heavier remixes. Progression unlocks deeper
- * specialization, while a first-session pilot begins with three complete
- * competitive choices and can rearrange their points. */
-void sim_base_entitlements(uint8_t *out) {
-    memset(out, 0, SIM_SLOT_COUNT);
-    /* A new pilot owns Gunner, Bomber and Control and can remix them
-     * immediately. Stats are build choices rather than purchases, so all
-     * eight effective steps are available from the first flight. The base
-     * envelope also keeps the second gun and spray rungs used by saved remixes.
-     * The shelf starts beyond this envelope and unlocks specialization. */
-    for (int u = 0; u < SIM_UP_COUNT; u++)
-        out[SIM_SLOT_STAT(u)] = SIM_UP_STEPS;
-    out[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] = 2;
-    out[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] = 1;
-    out[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] = 2;
-    out[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_BOUNCE)] = 1;
-    out[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_FREEZE)] = 1;
-    out[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_BOUNCE)] = 2;
-    out[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_PROX)] = 1;
-    out[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_SHRAPNEL)] = 1;
-    out[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_FREEZE)] = 1;
-    out[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 2;
-    out[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = 2;
-}
-
-int sim_starter_kit(const uint8_t *ceiling, uint8_t *out) {
-    memset(out, 0, SIM_SLOT_COUNT);
-    int spent = 0;
-
-    /* Gunner is the neutral fallback when no saved profile has arrived yet.
-     * The account layer offers the other two named builds. Keeping this one in
-     * the core makes an offline arena and a joining client agree. */
-    uint8_t target[SIM_SLOT_COUNT] = {0};
-    static const uint8_t stats[SIM_UP_COUNT] = {5, 4, 5, 2, 2};
-    for (int u = 0; u < SIM_UP_COUNT; u++) target[SIM_SLOT_STAT(u)] = stats[u];
-    target[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] = 2;
-    target[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] = 1;
-    target[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] = 2;
-    target[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_BOUNCE)] = 1;
-    target[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_FREEZE)] = 1;
-    target[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_PROX)] = 1;
-    target[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 2;
-    target[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = 2;
-    for (int i = 0; i < SIM_SLOT_COUNT && spent < SIM_KIT_BUDGET; i++) {
-        uint8_t want = target[i] < ceiling[i] ? target[i] : ceiling[i];
-        if (want > SIM_KIT_BUDGET - spent) want = (uint8_t)(SIM_KIT_BUDGET - spent);
-        out[i] = want;
-        spent += want;
-    }
-
-    /* A reduced custom zone may omit part of Gunner. Fill any remaining
-     * budget from what that zone does allow, still never carrying a third
-     * charge kind. */
-    while (spent < SIM_KIT_BUDGET) {
-        int moved = 0;
-        for (int i = 0; i < SIM_SLOT_COUNT && spent < SIM_KIT_BUDGET; i++) {
-            if (i >= SIM_SLOT_CHARGE(0) && out[i] == 0) {
-                int kinds = 0;
-                for (int k = 0; k < SIM_MAX_CHARGES; k++)
-                    if (out[SIM_SLOT_CHARGE(k)] > 0) kinds++;
-                if (kinds >= SIM_KIT_CHARGE_SLOTS) continue;
-            }
-            if (out[i] < ceiling[i]) {
-                out[i]++;
-                spent++;
-                moved = 1;
-            }
-        }
-        if (!moved) break;
-    }
-    return spent;
-}
-
-int sim_set_kit(sim_ship *sh, const sim_settings *cfg, const uint8_t *kit) {
-    int cost = 0;
-    for (int i = 0; i < SIM_SLOT_COUNT; i++) {
-        if (kit[i] > cfg->kit_ceiling[i]) return 0;
-        cost += kit[i];
-    }
-    if (cost > SIM_KIT_BUDGET) return 0;
-    /* Two kinds of charge, whatever the pilot owns. The rule lives here
-     * rather than in the page that draws the ladders, because a rule in a
-     * client is a rule until somebody writes their own. */
-    {
-        int kinds = 0;
-        for (int k = 0; k < SIM_MAX_CHARGES; k++)
-            if (kit[SIM_SLOT_CHARGE(k)]) kinds++;
-        if (kinds > SIM_KIT_CHARGE_SLOTS) return 0;
-    }
-    memcpy(sh->kit, kit, SIM_SLOT_COUNT);
-    sim_deal_kit(sh, cfg, 1);
-    return 1;
 }
 
 uint32_t sim_offsetof_settings_max_ships(void) {
@@ -339,6 +236,11 @@ int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
     sh->x = sh->spawn_x = x_px * 256;
     sh->y = sh->spawn_y = y_px * 256;
     sh->heading = heading;
+    /* And the hull's profile, with ammunition, because arriving is the one
+     * thing besides a whistle that fills a rack. There is nothing to ask a
+     * caller for: a hull always has a profile, so every seat flies a whole
+     * ship whether a person, a bot or a test put somebody in it. */
+    sim_deal_kit(sh, cfg, 1);
     sh->energy = sim_eff_max_energy(&cfg->classes[sh->cls], sh);
     return i;
 }
@@ -757,8 +659,6 @@ void sim_restart(sim_state *s, const sim_settings *cfg) {
         sh->kills = sh->deaths = 0;
         sh->assists = 0;
         clear_hurt(sh);
-        sh->points = 0;
-        sh->run = 0;
         sh->streak = 0;
         /* With ammunition, which is the one thing a match start does that a
          * respawn does not. */
@@ -1011,12 +911,6 @@ int sim_on_streak(const sim_settings *cfg, const sim_ship *sh) {
     return cfg->streak_kills && sh->streak >= cfg->streak_kills;
 }
 
-int32_t sim_bounty(const sim_settings *cfg, const sim_ship *sh) {
-    int32_t worth = (int32_t)cfg->bounty_base + sh->run;
-    if (sim_on_streak(cfg, sh)) worth += cfg->streak_bounty;
-    return worth;
-}
-
 
 static void clear_hurt(sim_ship *sh);
 
@@ -1090,17 +984,11 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
         v->deaths++;
         v->respawn_at = cfg->respawn_delay;
         v->vx = v->vy = 0;
-        /* What the kill is worth, read before the pilot is stripped: the run
-         * they were on, plus the base a fresh spawn is worth.
-         *
-         * So camping a respawn pays `bounty_base` and nothing else, which is
-         * the anti-farming rule arrived at by arithmetic a player can do in
-         * their head rather than by a rule about camping. It cost a paragraph
-         * of tuning while a kill paid for what the victim was carrying: thirty
-         * upgrades dealt at every spawn made an arriving pilot worth about
-         * thirty, and the levers on that were `spawn_radius` and how much a
-         * spawn was handed. Neither is a lever any more. */
-        int32_t paid = 0;
+        /* A kill pays nothing, because there is nothing left to pay in.
+         * Bounty priced one and points banked it, and both are gone: what a
+         * kill moves is the killer's own count and the room's score. That
+         * takes the anti-farming question with it, since camping a respawn
+         * now pays exactly what every other kill pays. */
         if (attacker == victim) {
             /* Your own bomb. It costs a kill, the same way a teammate's does
              * below, because both are the same mistake seen from two sides
@@ -1110,19 +998,12 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
             v->kills--;
         } else if (attacker != 255) {
             sim_ship *k = &s->ships[attacker];
-            /* A teammate's death pays neither points nor bounty, and now
-             * takes a kill as well. The rating layer already refuses to score
-             * teammate damage; this is the same rule where a player can see
-             * it, and with a cost rather than a shrug. */
+            /* A teammate's death takes a kill rather than paying one. The
+             * rating layer already refuses to score teammate damage; this is
+             * the same rule where a player can see it, and with a cost rather
+             * than a shrug. */
             if (k->team != v->team) {
                 k->kills++;
-                paid = sim_bounty(cfg, v);
-                for (int f = 0; f < s->flag_count; f++)
-                    if (s->flags[f].active && s->flags[f].carried
-                        && s->flags[f].carrier == victim)
-                        paid += cfg->points_per_flag;
-                k->points += (uint32_t)paid;
-                k->run = (uint16_t)(k->run + cfg->bounty_per_kill);
                 if (k->streak < 65535) k->streak++;
                 /* Exactly the kill that reaches it, so the room is told once
                  * and not again on the fourth, fifth and sixth. The streak
@@ -1160,10 +1041,9 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
          * something you own rather than something you survived with. */
         v->repel = 0;
         v->repel_speed = 0;
-        v->run = 0;
         v->streak = 0;
         drop_flags(s, cfg, victim, ev);
-        emit(ev, SIM_EV_DEATH, victim, attacker, paid);
+        emit(ev, SIM_EV_DEATH, victim, attacker, 0);
     }
 }
 
@@ -1467,22 +1347,24 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
     if (sh->energy < sim_eff_max_energy(&cfg->classes[sh->cls], sh)) return -1;
     drop_flags(s, cfg, i, 0);
     sh->cls = cls;
-    /* The kit crosses, and is re-dealt onto the new hull without ammunition:
-     * exactly what a death costs, because that is what this is.
+    /* And the new hull's profile with it, because the profile is the ship:
+     * an Anvil flies an Anvil's gun whoever climbed into it.
      *
-     * It used to be wiped, on the argument that a kit was validated against
-     * the hull it was built for and so could not cross to another one. That
-     * stopped being true when the roster stopped carrying ceilings: a kit is
-     * checked against the arena and the account now, so one that fits in any
-     * hangar fits in all of them. Wiping it made changing ship cost a pilot
-     * their loadout until the next whistle re-dealt it, which is a price for a
-     * rule that no longer exists.
+     * The rack is the exception, and it is the same exception a death makes.
+     * Charges are dealt once a match and spent from there, so a hull change
+     * cannot hand them back: a pilot who has thrown both repels and switches
+     * ships has still thrown both repels. What it does instead is clamp them
+     * to what the new hull would have carried, so climbing out of a Lattice
+     * into a Cipher does not smuggle three bursts across.
      *
-     * Without ammunition, so spent charges stay spent. A hull change already
-     * hands out a fresh full bar; handing back the repels with it would make
-     * this the reload a death deliberately is not. */
+     * That leaves the honest case: a pilot who has spent nothing and switches
+     * to a deeper rack does not get the difference. The rack you fly the
+     * match with is the one you were dealt at the whistle. */
     sim_deal_kit(sh, cfg, 0);
-    sh->run = 0;
+    for (int k = 0; k < SIM_MAX_CHARGES; k++) {
+        uint8_t theirs = cfg->classes[cls].kit[SIM_SLOT_CHARGE(k)];
+        if (sh->charge[k] > theirs) sh->charge[k] = theirs;
+    }
     sh->streak = 0;
     sh->alive = 1;
     sh->respawn_at = 0;
@@ -1516,9 +1398,7 @@ int sim_set_ship_team(sim_state *s, const sim_settings *cfg, uint8_t i,
     drop_flags(s, cfg, i, 0);
     sh->team = team;
     /* A run does not cross sides with you. Two pilots trading sides to feed
-     * each other kills is the oldest arrangement in this genre, and what a
-     * kill pays is the victim's bounty. */
-    sh->run = 0;
+     * each other kills is the oldest arrangement in this genre. */
     sh->streak = 0;
 
     /* And your start moves to the new side's. A map that marks no start for
@@ -1613,22 +1493,25 @@ static void lock_trigger(sim_ship *sh, int trig, uint16_t ticks) {
  * rung there to stand on. */
 static void grant_count(sim_ship *sh, const sim_settings *cfg, uint8_t type) {
     const sim_ship_class *c = &cfg->classes[sh->cls];
-    uint8_t cap = cfg->kit_ceiling[type];
     if (type < SIM_UP_COUNT) {
-        if (sh->up[type] < cap) sh->up[type]++;
+        if (sh->up[type] < SIM_UP_STEPS) sh->up[type]++;
         return;
     }
     type = (uint8_t)(type - SIM_UP_COUNT);
     if (type < SIM_TRIG_COUNT) {
+        /* The ladder itself is the ceiling: a rung the hull does not have is
+         * a rung it does not climb to. */
         int next = sh->level[type] + 1;
-        if (next <= cap && next < SIM_MAX_RUNGS
-            && c->trigger[type][next] != SIM_NO_PATTERN)
+        if (next < SIM_MAX_RUNGS && c->trigger[type][next] != SIM_NO_PATTERN)
             sh->level[type] = (uint8_t)next;
         return;
     }
     type = (uint8_t)(type - SIM_TRIG_COUNT);
     if (type < SIM_TRIG_COUNT * SIM_MOD_COUNT) {
         int t = type / SIM_MOD_COUNT, m = type % SIM_MOD_COUNT;
+        /* Spray is a count of rounds and takes three bits; everything else is
+         * a rung of something and takes two. */
+        uint8_t cap = m == SIM_MOD_MULTI ? SIM_MOD_MULTI_MAX : SIM_MOD_MAX;
         uint8_t have = sim_mod_get(sh->mods[t], m);
         if (have < cap) {
             sh->mods[t] = sim_mod_set(sh->mods[t], m, (uint8_t)(have + 1));
@@ -1636,8 +1519,10 @@ static void grant_count(sim_ship *sh, const sim_settings *cfg, uint8_t type) {
         return;
     }
     {
+        /* A slot the zone fills with no weapon holds no ammunition, which is
+         * what keeps an unused charge kind out of every hull. */
         int k = type - SIM_TRIG_COUNT * SIM_MOD_COUNT;
-        if (sh->charge[k] < cap) {
+        if (cfg->charge[k] != SIM_NO_PATTERN && sh->charge[k] < SIM_CHARGE_MAX) {
             sh->charge[k]++;
         }
     }
@@ -2593,13 +2478,7 @@ uint64_t sim_hash(const sim_state *s) {
          * client that guessed at it would toggle when the server did not. */
         h = hash_u32(h, sh->multi_off);
         h = hash_u32(h, sh->btn_prev);
-        h = hash_u32(h, sh->run);
         h = hash_u32(h, sh->streak);
-        h = hash_u32(h, sh->points);
-        /* The kit, because a respawn re-deals from it: a client holding a
-         * different one would rebuild a different ship on the tick a pilot
-         * comes back, which is the loudest desync there is. */
-        for (int k = 0; k < SIM_SLOT_COUNT; k++) h = hash_u32(h, sh->kit[k]);
     }
     h = hash_u32(h, s->flag_count);
     for (int i = 0; i < s->flag_count; i++) {
