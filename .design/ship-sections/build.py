@@ -10,9 +10,10 @@ What is there today is one panel with everything on it. The hull is
 walked on the top row, five flight bars read under it, the credit tray
 sits under those, and then every slot the hull can spend on runs down
 the rest of the glass under three band labels: gun, bomb, rack. On an
-Apex that is fourteen rows, which is a scroll on a laptop and two on a
-phone, and the tray scrolls off the top of it: a pilot stepping a slot
-near the foot is spending a purse they cannot see.
+Apex that is 762 points of panel against the 782 an 810-point window
+has to give it, so it fits by twenty and scrolls on anything shorter, a
+phone included. What goes off the top first is the tray: a pilot
+stepping a slot near the foot is spending a purse they cannot see.
 
 Five sections fix both. The menu is five rows and a reset, none of it
 scrolls, and the tray is chrome rather than content: it rides under the
@@ -30,16 +31,19 @@ Every number is lifted from the client rather than invented:
 the 14-point inset and margin, the 34x18 switch, the 30-point credit
 tray and its nine-point diamonds. The rows in each submenu are what
 `sim_slot_cap` answers off the shipped baseline, in the order
-`tune_rows` builds them: gun caps {spray 5, bounce 1, freeze 1} and
-bomb caps {bounce 1, prox 1, shrapnel 3, freeze 1}, with prox,
-shrapnel and push off the gun and spray off the bomb; the rack is
-repel to 3 and burst to 2. Shrapnel reads fragments, not rungs, so one
-rung reads 4. The scene behind the glass is ../dropdown-stack's.
+`tune_rows` builds them: the trigger's own rung first, then gun caps
+{spray 5, bounce 1, freeze 1} and bomb caps {bounce 1, prox 1,
+shrapnel 3, freeze 1}, with prox, shrapnel and push off the gun and
+spray off the bomb. The rack is repel to 3 and burst to 2. Shrapnel
+reads fragments rather than rungs, so one rung reads 4. The scene
+behind the glass is ../dropdown-stack's.
 
-One pilot flies every board: an Apex carrying its own spray and repels
-with a bouncing gun and a rung of shrapnel bought on top, which is six
-credits of seven and leaves one in hand. The counts on the menu add up
-to what the tray has spent, on purpose: they are the same six.
+One pilot flies every board, on one build: an Apex on spray 1, gun
+bounce 1, bomb shrapnel 1, repel 2 and burst 1. Three of those five
+come with the hull and two were stepped on top of it, and a profile is
+spent from the same purse as a step, so that is six credits of seven
+with one in hand. The three counts on the menu add up to what the tray
+has spent, on purpose: they are the same six.
 
 Rebuild with: python3 build.py
 """
@@ -319,7 +323,22 @@ def starfield(w, h, n, seed):
     return ",".join(out)
 
 
-def score_band():
+def score_band(names=True):
+    """The top row over the arena, which the stands get too: the landing
+    watches a live room, so `match_clock` draws while `M.joined` is false and
+    only the press into the board stands down.
+
+    A side with nowhere left to grow drops its name rather than the whole band
+    dropping a line, which at 390 points is both of them."""
+    if not names:
+        return ('<div style="position:absolute;top:14px;left:50%;'
+                'transform:translateX(-50%);display:flex;align-items:center;'
+                'gap:18px">'
+                f'<span class="mono" style="font-size:26px;color:{FRIEND}">3'
+                '</span>'
+                '<span class="mono" style="font-size:30px">1:47</span>'
+                f'<span class="mono" style="font-size:26px;color:{ENEMY}">5'
+                '</span></div>')
     return ('<div style="position:absolute;top:14px;left:50%;'
             'transform:translateX(-50%);display:flex;align-items:center;'
             'gap:22px">'
@@ -349,8 +368,9 @@ def panel(w, section, inner, margin=14, foot_note=None, free=1,
     """As tall as what it holds, standing on the margin it slid out of.
 
     `back` is the panel a submenu has come up over: decision 104 says a
-    covered panel stands down, so it is drawn at a third of its strength
-    with nothing on it lit."""
+    covered panel stands down, so it is drawn at a third of its strength.
+    The cursor goes with the panel that took it, and what is left lit on the
+    covered menu is the mark on the section that is open."""
     pw = min(w - 2 * margin, PANEL_MAX)
     left = (w - pw) / 2
     pad = margin
@@ -374,10 +394,11 @@ def board(w, h, section, inner, seed, foot_note=None, free=1, margin=14):
 
 # --- the pilot every board flies ---------------------------------------------
 #
-# An Apex off the roster, carrying the pair of heavy rounds and the two repels
-# its own profile deals, with a bouncing gun and one rung of shrapnel bought on
-# top of it. Spray 1, gun bounce 1, bomb shrapnel 1, repel 2, burst 1: six
-# credits of the seven `SIM_KIT_CREDITS` hands out, one still in hand.
+# An Apex on spray 1, gun bounce 1, bomb shrapnel 1, repel 2 and burst 1. The
+# first, fourth and fifth come with the hull and the other two were stepped on
+# top of it, which is a distinction the purse does not make: a hull's own
+# profile is spent from the same seven `SIM_KIT_CREDITS` hands out. Six of
+# them, one still in hand.
 #
 # The three counts on the menu are those six, split the way the submenus split
 # them, which is the whole reason a count is what a section reads.
@@ -385,18 +406,26 @@ def board(w, h, section, inner, seed, foot_note=None, free=1, margin=14):
 FREE = 1
 
 
-def menu_rows():
+def menu_rows(cursor="Guns", open_row=None):
+    """`cursor` is where a press would land and `open_row` is the section
+    already open, which is the landing's own rule for a stop whose panel is
+    up. One of each a screen at most: two washed rows in one frame is two
+    answers to the question the cursor asks."""
+    def state(name):
+        if name == open_row:
+            return "here"
+        return "cursor" if name == cursor else None
     return [
-        row("Body", r_open(reading("Apex")), state="here"),
-        row("Guns", r_open(r_spend(2)), state="cursor"),
-        row("Bombs", r_open(r_spend(1))),
-        row("Specials", r_open(r_spend(3))),
-        row("Flair", r_open(reading("standard"))),
+        row("Body", r_open(reading("Apex")), state=state("Body")),
+        row("Guns", r_open(r_spend(2)), state=state("Guns")),
+        row("Bombs", r_open(r_spend(1)), state=state("Bombs")),
+        row("Specials", r_open(r_spend(3)), state=state("Specials")),
+        row("Flair", r_open(reading("Standard")), state=state("Flair")),
         rule(),
         # Live, because this build is not the hull's own any more. It is the
         # whole of the build manager and it stays on the menu rather than in a
         # section: what it puts back is all five of them at once.
-        row("Reset", ""),
+        row("Reset", "", state=state("Reset")),
     ]
 
 
@@ -466,17 +495,24 @@ def flair_board():
 
 
 def stack_board():
-    """The motion, and the answer to "stays visible in the submenus".
+    """The motion, and what "stays visible in the submenus" turns into.
 
     A section slides up through the bottom edge and the menu stands down
     behind it, which is decision 103's grammar unchanged. What is new is that
-    both panels carry the tray at the same place under their own back bar, so
-    the purse holds still while everything else moves: the rows change, the
-    diamonds do not."""
+    the tray comes up with it: it is the first thing under the back bar on
+    whichever panel is on top, so a section arrives with the purse already on
+    it and there is no scroll position left that can take it away.
+
+    It does not hold still, and this is the board that says so. A panel is as
+    tall as what it holds and stands on the bottom margin it slid out of, so a
+    section of four rows sits lower than a menu of six and its tray rides down
+    with its own head. What is fixed is the tray's place in a panel, not its
+    place on the screen."""
     w, h = 1440, 810
     return wrap(w, h, [
         scene(w, h, 13), score_band(),
-        panel(w, "ship", menu_rows(), free=FREE, back=True),
+        panel(w, "ship", menu_rows(cursor=None, open_row="Guns"),
+              free=FREE, back=True),
         panel(w, "guns", [
             row("Rung", r_stepper(1, down=False), state="cursor"),
             row("Spray", r_stepper(1)),
@@ -487,13 +523,18 @@ def stack_board():
 
 
 def phone_board():
-    """366 points of glass on a 390 phone, and the whole menu still fits
-    above the fold: five rows, a rule and the reset, over a tray that is
-    always the top of the panel. This is the shape the scroll was costing."""
+    """362 points of glass on a 390 phone, which is the window less the
+    14-point margin `panel_geom` keeps at every window size, and the whole
+    menu still fits above the fold: five rows, a rule and the reset, over a
+    tray that is always the top of the panel. This is the shape the scroll
+    was costing.
+
+    Nothing is lit. A cursor is where a press would land, and on glass there
+    is nowhere a press is waiting to land."""
     w, h = 390, 844
     return wrap(w, h, [
-        scene(w, h, 29),
-        panel(w, "ship", menu_rows(), margin=12, free=FREE),
+        scene(w, h, 29), score_band(names=False),
+        panel(w, "ship", menu_rows(cursor=None), free=FREE),
     ], 29)
 
 
@@ -508,11 +549,11 @@ def alt_reading_board():
     six credits spread over three sections, nothing on the page says where
     the sixth went."""
     return board(1440, 810, "ship", [
-        row("Body", r_open(reading("Apex")), state="here"),
+        row("Body", r_open(reading("Apex"))),
         row("Guns", r_open(reading("bouncing")), state="cursor"),
         row("Bombs", r_open(reading("4 fragments"))),
         row("Specials", r_open(reading("2 repels, a burst"))),
-        row("Flair", r_open(reading("standard"))),
+        row("Flair", r_open(reading("Standard"))),
         rule(),
         row("Reset", ""),
     ], seed=7, free=FREE)

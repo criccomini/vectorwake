@@ -16,11 +16,14 @@ flight bars read under it, the credit tray sits under those, and then every
 slot the hull can spend on runs down the rest of the glass under three band
 labels: gun, bomb, rack.
 
-On an Apex that is fourteen rows. It scrolls on a laptop and scrolls twice on
-a phone, and the first thing off the top is the tray: a pilot stepping a slot
-near the foot is spending a purse they cannot see. `land_panel` has a scroll,
-a thumb and a cursor-follow to make that bearable, all of which exist because
-the page is longer than the glass.
+On an Apex that is eleven rows to spend on under three band labels, with the
+walker, the bars, the tray and a reset around them: 762 points of panel. An
+810-point window has 782 to give it, so it fits by twenty and a shorter
+browser window scrolls; a 390 by 844 phone has 735 once its safe areas are
+out, and scrolls by twenty-seven. What goes off the top first is the tray, so
+a pilot stepping a slot near the foot is spending a purse they cannot see.
+`land_panel` has a scroll, a thumb and a cursor-follow to make that bearable,
+all of which exist because the page is longer than the glass.
 
 Five rows and a reset fit any window without scrolling, and the tray stops
 being the third strip of the content and becomes part of the panel.
@@ -28,12 +31,16 @@ being the third strip of the content and becomes part of the panel.
 ## The rules the boards follow
 
 **The tray is chrome.** The panel draws it, under the back bar, above
-everything the page is about, and it is identical on the menu and on all five
-sections. Nothing else moves it: the rows change, the diamonds do not. That is
-what "stays visible in the submenus" turns into once a submenu is a panel of
-its own rather than a scroll position, and the Stack board is the frame that
-says so, with a section half risen and the tray in both panels at the same
-height.
+everything the page is about, and it is the same seven diamonds on the menu
+and on all five sections. That is what "stays visible in the submenus" turns
+into once a submenu is a panel of its own rather than a scroll position: there
+is no scroll position left that could take it away.
+
+It does not hold still, and the Stack board is where that shows. A panel is as
+tall as what it holds and stands on the bottom margin it slid out of, so a
+section of four rows sits lower than a menu of six and its tray rides down
+with its own head. What is fixed is the tray's place in a panel, not its place
+on the screen.
 
 **A section reads what it holds, in credits, in the color a credit is spent
 in.** The pilot on these boards has six of seven spent, split two into guns,
@@ -94,21 +101,22 @@ Nine, built by `build.py` and seeded with the design skill's helper:
 Main is the menu. Stack is a section coming up over it. The five sections are
 their own boards, Phone is the menu at 390, and AltReading is the open choice.
 
-One pilot flies every one of them: an Apex carrying the pair of heavy rounds
-and the two repels its own profile deals, with a bouncing gun and a rung of
-shrapnel bought on top. Six credits of seven, one in hand, and the counts on
-the menu add to the six.
+One pilot flies every one of them, on one build: an Apex on spray 1, gun
+bounce 1, bomb shrapnel 1, repel 2 and burst 1. Three of those five come with
+the hull and two were stepped on top of it, which is a distinction the purse
+does not make: a profile is spent from the same seven a step is. Six of them,
+one in hand, and the three counts on the menu add to the six.
 
 Every number is lifted from the client rather than invented:
 `client/arena/palette.lua` for hues, `ui.lua` for the type ladder
 {12, 14, 17, 21}, LIT {0.18, 0.07}, the 44-point row, `PANEL_MAX` 560, the
 14-point inset and margin, the 34x18 switch, and the 30-point tray with its
 nine-point diamonds. The rows in each section are what `sim_slot_cap` answers
-off the shipped baseline, in the order `tune_rows` builds them: gun caps
-{spray 5, bounce 1, freeze 1} and bomb caps {bounce 1, prox 1, shrapnel 3,
-freeze 1}, with prox, shrapnel and push off the gun and spray off the bomb,
-and the rack at repel 3, burst 2. Shrapnel reads fragments rather than rungs,
-so one rung reads 4. The fight behind the glass is `../dropdown-stack`'s.
+off the shipped baseline, in the order `tune_rows` builds them: the trigger's
+own rung first, then gun caps {spray 5, bounce 1, freeze 1} and bomb caps
+{bounce 1, prox 1, shrapnel 3, freeze 1}, with prox, shrapnel and push off the
+gun and spray off the bomb, and the rack at repel 3, burst 2. Shrapnel reads
+fragments rather than rungs, so one rung reads 4. The fight behind the glass is `../dropdown-stack`'s.
 
 ## What it would cost the client
 
