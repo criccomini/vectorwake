@@ -282,26 +282,6 @@ def shares(hull):
     return out
 
 
-def bar_cells(hull, labelled=True, col=FRIEND):
-    out = []
-    for name, share in zip(STATS, shares(hull)):
-        pct = round(share * 100)
-        cap = (f'<span class="lbl" style="font-size:8.5px">{name}</span>'
-               if labelled else "")
-        out.append(
-            f'<span style="flex:1;display:flex;flex-direction:column;gap:5px">'
-            f'<span style="height:3px;background:'
-            f'linear-gradient(90deg,{col} {pct}%,rgba(108,122,144,.22) '
-            f'{pct}%)"></span>{cap}</span>')
-    return "".join(out)
-
-
-def bars(hull="Apex", pad=14):
-    """The strip the shipped panel draws, under the row it belongs to."""
-    return (f'<div class="row" style="height:34px;padding:0 {pad}px;gap:6px">'
-            f'{bar_cells(hull)}</div>')
-
-
 # The Apex silhouette, verbatim from `M.HULLS` in client/arena/world.lua: the
 # polygon the client calls the part a menu draws, the interior lines that say
 # which way it is facing, and the canopy. Local pixels with the nose along +y.
@@ -586,10 +566,6 @@ def menu_rows(cursor="Guns", open_row=None):
         return "cursor" if name == cursor else None
     return [
         row("Body", r_open(reading("Apex")), state=state("Body")),
-        # The stats stand under the row they belong to rather than up in the
-        # panel's head: the row names the hull, the strip says how it flies,
-        # and pressing the row opens the seven of them read the same way.
-        bars("Apex"),
         row("Guns", r_open(reading("2 rounds \u00b7 bouncing")),
             state=state("Guns")),
         row("Bombs", r_open(reading("4 fragments")), state=state("Bombs")),
@@ -732,7 +708,6 @@ def alt_reading_board():
     Chris took the contents. This is what the other one looked like."""
     return board(1440, 810, "ship", [
         row("Body", r_open(reading("Apex"))),
-        bars("Apex"),
         row("Guns", r_open(r_spend(2)), state="cursor"),
         row("Bombs", r_open(r_spend(1))),
         row("Specials", r_open(r_spend(3))),

@@ -1459,9 +1459,11 @@ do
     check("the menu is the five parts of a ship",
           kinds.sect == 5 and opens.body and opens.guns and opens.bombs
           and opens.specials and opens.flair, tostring(kinds.sect))
-    check("with the hull's flight under the row that names it",
-          kinds.bars == 1 and type(panel.rows[2].bars) == "table"
-          and #panel.rows[2].bars == 5)
+    -- And nothing else. The hull's five bars stood under the row that names
+    -- it for a while, which put a second instrument on a page of five plain
+    -- rows; they belong to the section that is about the hull.
+    check("and nothing on it but rows", kinds.bars == nil
+          and #panel.rows == 7, tostring(#panel.rows))
     check("and the credits it has left to spend",
           panel.credits == 7 and panel.free == 4,
           tostring(panel.free) .. " of " .. tostring(panel.credits))

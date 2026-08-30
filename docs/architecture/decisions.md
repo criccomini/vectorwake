@@ -6045,3 +6045,31 @@ inside the glass on more than one line with no capital on the second, which
 fails on the cased drawing with "Fragments". Photographed: the Chord reads
 "Turns inside everything and outruns nothing" over a full turn bar and a speed
 stub, which is its row in the flight table.
+
+## 116. The ship menu carries no bars
+
+**Status:** accepted, removing the strip [decision
+112](#112-the-ship-menu-is-five-parts-of-a-ship) put on the menu
+
+**Decision:** the hull's five flight bars come off the ship menu. They stay in
+the body section, one to a line under the ship they belong to. The menu is
+five rows and a reset over the tray, and nothing else.
+
+**Why:** Chris asked for it. The strip went on the menu because the bars are
+the answer to the question the body row asks, which is true and is not enough:
+the row already answers with the hull's name, and a page of five plain rows
+with one instrument wedged under the first is a page with a shape it does not
+need. The bars belong to the section that is about the hull, and every one of
+them is one press away.
+
+It was also the last thing on that panel that was not a row. What is left is
+the language decision 104 settled and nothing else.
+
+**Cost:** comparing a build against the hull it is on is a press further away
+than it was for four decisions. Nothing else reads a hull's flight from the
+menu, so nothing else changes.
+
+**Verified:** `menu_test` counts the menu's rows and holds it to seven with no
+strip among them, which fails with the row back in. Photographed: five rows
+evenly spaced over the tray, and the body section still reading a Wedge's
+five lines under it.

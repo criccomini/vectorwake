@@ -120,7 +120,6 @@ local SHIP_MENU = {
     rows = {
         {kind = "sect", sect = "body", label = "Body", detail = "Wedge",
          raw = true},
-        {kind = "bars", bars = {0.2, 0.14, 0.09, 0.71, 0.0}},
         {kind = "sect", sect = "guns", label = "Guns", detail = "3 rounds"},
         {kind = "sect", sect = "bombs", label = "Bombs", detail = ""},
         {kind = "sect", sect = "specials", label = "Specials",

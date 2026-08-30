@@ -4727,9 +4727,6 @@ local function land_list(kx, kw, top, list, drh)
     end
 end
 
--- The five rows a hull's flight is read on, in the order the panel and the
--- roster both draw them.
-local FLIGHT_ROWS = {"speed", "thrust", "turn", "energy", "recharge"}
 
 -- How long one turn of a hull on the carousel takes, in seconds.
 --
@@ -4889,27 +4886,6 @@ local function land_row(kx, kw, y, h, r)
         hrule(kx + pad, y + h / 2, kw - 2 * pad, 0.6)
         return
     end
-    if r.kind == "bars" then
-        -- The menu's own strip, under the row that names the hull: five bars
-        -- across, captioned at the size the carousel's rows are read at.
-        if r.bars then
-            local gap = 6 * F.scale
-            local n = #r.bars
-            local bw = kw - 2 * pad
-            local cw = (bw - gap * (n - 1)) / n
-            for i = 1, n do
-                local px = kx + pad + (i - 1) * (cw + gap)
-                local share = math.max(0, math.min(1, r.bars[i] or 0))
-                rect(px, y + 12 * F.scale, cw, 3 * F.scale,
-                     pal.a(pal.DIM, 0.22))
-                rect(px, y + 12 * F.scale, cw * share, 3 * F.scale,
-                     pal.a(pal.FRIEND, 0.85))
-                lbl(FLIGHT_ROWS[i], px, y + 23 * F.scale, pal.MUTE, nil,
-                    8.5 * F.scale)
-            end
-        end
-        return
-    end
     if r.kind == "stat" then
         stat_line(kx, kw, y, h, r, r.here and pal.FRIEND or pal.INK)
         return
@@ -5038,7 +5014,6 @@ function pages.land_row_h(r, drh)
         return (198 + #art_lines(r.note, panel_width()) * pages.NOTE_LINE)
             * F.scale
     end
-    if r.kind == "bars" then return 34 * F.scale end
     if r.kind == "stat" then return 26 * F.scale end
     if r.kind == "rule" then return 9 * F.scale end
     return drh

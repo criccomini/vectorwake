@@ -52,10 +52,12 @@ column, in the face the numbers in flight are set in: that is what "4v4 3:00"
 wears on the zone stop, and it is what "2 rounds, bouncing" wears here. It is
 quieter than the name it answers and can never be mistaken for a control.
 
-**Body carries the stats, twice.** The hull's five bars stand under the row
-that names it on the menu, and the section itself turns one ship at a time
-with its five rows read out one to a line underneath. The bars take a floor,
-so the hull at the bottom of a row draws a stub rather than nothing.
+**The stats belong to body.** The section turns one ship at a time with its
+five rows read out one to a line underneath it. They stood on the menu too for
+four decisions, under the row that names the hull; the row already answers
+with the hull's name, and a page of five plain rows does not want an
+instrument wedged under the first (decision 116). The bars take a floor, so
+the hull at the bottom of a row draws a stub rather than nothing.
 
 **Almost nothing new in the language.** A section row opens, which is the
 caret every stop on the landing already wears, and the rows inside are

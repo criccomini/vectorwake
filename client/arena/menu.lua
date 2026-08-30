@@ -990,13 +990,13 @@ function M.sect_reading(cls, sect)
     return table.concat(said, " \194\183 "), false
 end
 
--- The ship stop's own panel: five rows, the ship's flight under the row that
--- names it, and the purse over all of it.
+-- The ship stop's own panel: five rows and the purse over them.
 --
--- The stats stand on the menu as well as inside body because they are the
--- answer to the question the body row asks, and a pilot comparing a build
--- against the hull it is on should not have to open a section to see what
--- the hull does.
+-- The hull's five bars stood under the row that names it for a while, on the
+-- argument that they answer the question that row asks. What they actually
+-- did was put a second instrument on a page of five plain rows, and the row
+-- already answers with the hull's name. The bars belong to the section that
+-- is about the hull, and that is where they are.
 function M.ship_menu()
     local cls = M.class or 0
     local rows = {}
@@ -1004,9 +1004,6 @@ function M.ship_menu()
         local reading, raw = M.sect_reading(cls, sect)
         rows[#rows + 1] = {kind = "sect", sect = sect, label = M.titled(sect),
                            detail = reading, raw = raw}
-        if sect == "body" then
-            rows[#rows + 1] = {kind = "bars", bars = flight_bars(cls)}
-        end
     end
     rows[#rows + 1] = {kind = "rule"}
     -- The whole of the build manager, and it stays on the menu rather than in
