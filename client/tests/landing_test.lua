@@ -676,6 +676,42 @@ do
           dots_in_stop(true) == 1, tostring(dots_in_stop(true)))
     check("and a guest with nothing to lose gets none",
           dots_in_stop(false) == 0, tostring(dots_in_stop(false)))
+
+    -- And it stands beside the call sign rather than beside the word
+    -- ACCOUNT. What a guest stands to lose is who they are signed in as, not
+    -- the question the row is asking, and down the column those two are at
+    -- opposite ends of the row: a mark in the left margin reads as a note on
+    -- the label. Asked by lengthening the name, because a mark on the account
+    -- moves when the account's name does and one in the margin does not.
+    local function dot_x(name)
+        local land = {}
+        for k, v in pairs(LAND) do land[k] = v end
+        land.warn = true
+        land.name = name
+        frame(1440, 810, {land = land})
+        local stop = box("land_account")
+        if not stop then return nil end
+        for _, d in ipairs(discs) do
+            local y = H - d.y
+            if d.r < 4 and d.x >= stop.x and d.x <= stop.x + stop.w
+               and y >= stop.y and y <= stop.y + stop.h then
+                return d.x, stop
+            end
+        end
+        return nil, stop
+    end
+    local short_dot, acct = dot_x("Ro 1")
+    local long_dot = dot_x("deSoto 4127777")
+    check("the dot follows the call sign rather than sitting off the label",
+          short_dot ~= nil and long_dot ~= nil
+          and short_dot > long_dot + 30,
+          tostring(short_dot) .. " for a short name, "
+          .. tostring(long_dot) .. " for a long one")
+    check("and stands on the answer's half of the row",
+          short_dot ~= nil and acct ~= nil
+          and short_dot > acct.x + acct.w / 2,
+          tostring(short_dot) .. " in a row from " .. tostring(acct and acct.x))
+
     -- It stands inside the stop's own outline rather than a measure off the
     -- label, which on the rail's narrower cell put it outside the box.
     frame(844, 390, {land = (function()
@@ -686,14 +722,96 @@ do
     end)()})
     local rail_stop = box("land_account")
     local inside = rail_stop ~= nil
+    local on_the_name = false
     for _, d in ipairs(discs) do
         if d.r < 4 and rail_stop and math.abs(d.x - rail_stop.x) < 20
            and d.x < rail_stop.x then
             inside = false
         end
+        -- A rail cell sets the answer under the question at the same left
+        -- edge, so out here the dot says which of the two it is about by
+        -- which line it is on rather than by how far along the row it is.
+        if d.r < 4 and rail_stop and d.x < rail_stop.x + 20
+           and (H - d.y) > rail_stop.y + rail_stop.h / 2
+           and (H - d.y) < rail_stop.y + rail_stop.h then
+            on_the_name = true
+        end
     end
     check("and it stays inside the stop on a phone held sideways", inside,
           "the dot fell outside the cell")
+    check("and rides the name's line there, not the label's", on_the_name,
+          "the dot sat on the question")
+end
+
+-- --- what a panel over the fight stands over -------------------------------
+--
+-- The front page is a live room, so every hull on it wears its pilot's call
+-- sign. Type comes from the gui and the gui draws over every mesh, so nothing
+-- a panel lays down can cover one: the ship stop's panel climbs from its own
+-- stop to the top of the window, and the names of everybody flying behind it
+-- were read straight through the build in front of it.
+--
+-- The menu's column has taken the plates down since it arrived and the ending
+-- takes them down too. The landing's own column did not, which went unnoticed
+-- because the drawer was where a panel used to stand and the drawer was
+-- already named on that line.
+do
+    local function plates()
+        local n = 0
+        for _, t in ipairs(words()) do
+            if t.s:match("^pilot %d$") then n = n + 1 end
+        end
+        return n
+    end
+    frame(1440, 810)
+    check("the landing wears a plate on the hulls it is watching",
+          plates() > 0, plates() .. " call signs")
+    for _, open in ipairs({"ship", "account", "zone"}) do
+        frame(1440, 810, {col_open = open})
+        check("the " .. open .. " stop's panel takes the plates down",
+              plates() == 0, plates() .. " call signs over the panel")
+    end
+end
+
+-- --- a rung is counted from one --------------------------------------------
+--
+-- Every other row of the ship panel counts what a pilot has bought, so an
+-- untouched row is a nought. A rung is a place on the hull's own ladder, and
+-- a gun nobody has spent a credit on is still the first rung rather than no
+-- gun: the row read 0 and said the hull was unarmed. `menu.tune_rows` carries
+-- what a row reads at nothing spent and the drawing adds it.
+do
+    local land = {}
+    for k, v in pairs(LAND) do land[k] = v end
+    land.panel = {
+        at = 1, pages = 8, class = 1, label = "Wedge", mine = true,
+        bars = {0.2, 0.14, 0.09, 0.71, 0.0}, free = 2, credits = 7,
+        rows = {
+            {kind = "sect", label = "gun"},
+            {kind = "slot", slot = 5, label = "Rung", value = 0, cap = 2,
+             base = 1, can_up = true, can_down = false},
+            {kind = "slot", slot = 7, label = "Spray", value = 0, cap = 5,
+             can_up = true, can_down = false},
+        },
+    }
+    frame(1440, 810, {col_open = "ship", land = land})
+    -- Which figure belongs to which row is the row's own line: both rows here
+    -- are untouched, and a page of numerals says nothing about where each one
+    -- came from.
+    local function figure_on(label)
+        local row = word(label)
+        if not row then return nil end
+        for _, t in ipairs(words()) do
+            if t.s:match("^%d+$") and math.abs((H - t.y) - row.y) < 2 then
+                return t.s
+            end
+        end
+        return nil
+    end
+    check("an untouched rung reads as the ladder's first rung",
+          figure_on("Rung") == "1", tostring(figure_on("Rung")))
+    check("and an untouched row that counts what was bought reads none",
+          figure_on("Spray") == "0", tostring(figure_on("Spray")))
 end
 
 -- --- the card those acts raise stands on the landing ------------------------

@@ -84,6 +84,13 @@ the top of each weapon section in the hangar spends on. `SIM_MAX_RUNGS` is
 four, so the fourth stays free for a zone that wants a hull climbing further
 than this roster does.
 
+The row counts from one where the slot counts from zero, and the two are
+saying different things. A slot counts credits spent, so nothing spent is a
+nought, which is right for every other row on the page: no shrapnel, no
+bounce, no repel. A rung is a place on a ladder the hull is already standing
+on, and a gun nobody has paid for still fires. The row read 0 for a while and
+said the hull was unarmed.
+
 | Class | Gun damage | Energy | Delay | Bomb damage | Blast | Energy | Delay |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | Apex | 320 | 40 | 25 | 750 | 80 | 300 | 150 |

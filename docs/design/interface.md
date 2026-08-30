@@ -439,10 +439,17 @@ through a panel read as a fault. A card dims the world the same way and
 drops every hit box published before it, so a question is answered, not
 clicked past.
 
+Nameplates come down for every panel that stands over the arena, not just for
+the menu's. The landing is the case that says why: it is a live room with the
+column laid over it, and the ship stop opens a panel climbing from its own
+stop to the top of the window. Every call sign in the fight behind it read
+through the build in front of it until the rule was written as "something is
+being read over the arena" rather than as "the menu is open".
+
 That gui-over-mesh constraint is load-bearing everywhere: the only way to
 quiet a label is to quiet the label (`text_dim`), a wash can never do it. It
 is why rows draw whole or not at all, and why the ending takes the
-nameplates down while it is up.
+nameplates down with it for the twenty five seconds it is up.
 
 Text is also a budget. The gui draws `TEXT_POOL` strings a frame (declared in
 `state.lua`, where the side that writes them can be tested against it) and

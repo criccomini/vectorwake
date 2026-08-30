@@ -98,7 +98,10 @@ endpoint for both, and what it does is put a password on the account this
 client already holds. A player who declines stays a guest and loses nothing
 but durability. Once a guest has something a sweep would cost them, a rating
 earned past the baseline or a rated game flown, the landing's account stop
-wears a dot: you are using a guest account, press here to set your password.
+wears a dot beside the call sign: you are using a guest account, press here to
+set your password. Beside the name rather than beside the word ACCOUNT, since
+what is at stake is who you are signed in as and not the question the row is
+asking.
 Before there is anything to lose it stays away, because a warning over an
 empty account is nagging. The drawer carried the same warning as a banner
 across every tab of it, and went with decision 102.

@@ -1458,6 +1458,26 @@ do
           and menu.build_free(0) == 3)
     menu.builds = {}
 
+    -- And it is the one row on the page that is not counted from nothing.
+    -- Everywhere else the figure is what a pilot has bought, so an untouched
+    -- row is a nought; a rung is a place on a ladder the hull is already
+    -- standing on, and a gun nobody has spent on is the first rung rather
+    -- than no gun. The row said 0 and read as an empty rack.
+    local counts_from = {}
+    for _, r in ipairs(panel.rows) do
+        if r.kind == "slot" then
+            counts_from[r.label] = r.base or 0
+        end
+    end
+    check("the rung is counted from one", counts_from.Rung == 1,
+          tostring(counts_from.Rung))
+    local others = 0
+    for label, base in pairs(counts_from) do
+        if label ~= "Rung" and base ~= 0 then others = others + 1 end
+    end
+    check("and every other row from nothing", others == 0,
+          others .. " rows count from somewhere else")
+
     -- A slot that only goes to one is on and off and draws as a switch;
     -- anything you can have more of counts. The panel does not decide that,
     -- the ceiling does.

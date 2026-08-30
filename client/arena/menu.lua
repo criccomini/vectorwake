@@ -662,13 +662,20 @@ function M.tune_rows(cls)
     local function section(label, slots)
         local made = {}
         for _, it in ipairs(slots) do
-            local slot, label2, note = it[1], it[2], it[3]
+            local slot, label2, note, base = it[1], it[2], it[3], it[4]
             local cap = slot_cap(cls, slot)
             if cap >= 1 then
                 local at = mine[slot] or 0
                 made[#made + 1] = {
                     kind = "slot", slot = slot, label = label2, note = note,
                     value = at, cap = cap, toggle = cap == 1,
+                    -- What the row reads at nothing spent, where that is not
+                    -- nought. Only the rung sets it: the slot counts steps up
+                    -- a ladder a hull is already standing on, so an untouched
+                    -- gun is the first rung rather than no gun. See
+                    -- `land_row`, which adds it to the figure it draws and
+                    -- leaves the spend to say the color.
+                    base = base,
                     -- What the arrows may do, asked the same way the act
                     -- asks it, so an arrow drawn live is one that works.
                     can_up = at < cap and M.build_free(cls) >= 1,
@@ -694,8 +701,9 @@ function M.tune_rows(cls)
     for t = 0, trig - 1 do
         local word = t == 0 and "gun" or "bomb"
         -- The rung first: which weapon off the hull's own ladder, before
-        -- what that weapon carries.
-        local slots = {{lvl0 + t, "Rung", SLOT_NOTES[word .. "_level"]}}
+        -- what that weapon carries. Counted from one, because the bottom of
+        -- a ladder is a rung.
+        local slots = {{lvl0 + t, "Rung", SLOT_NOTES[word .. "_level"], 1}}
         for m = 0, mods - 1 do
             local mod = pal.MODS[m + 1]
             local name = mod and (mod.title or mod.name)

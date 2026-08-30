@@ -4187,18 +4187,33 @@ local function land_stop(x, y, w, h, label, value, action, lit, stacked, o)
             pal.a(pal.INK, 0.95), "right", nil, raw)
     end
     -- The guest warning, where a guest has something a lost account would
-    -- cost them: one dot in the caution color on the stop that answers it.
+    -- cost them: one dot in the caution color beside the name it is about.
     -- The drawer said it in words on a band, which it had the width for. Out
     -- here the stop is the whole of the account, and a dot on it is the mark
     -- that band used to put on the pilot tab.
+    --
+    -- Beside the call sign, not beside the word ACCOUNT. What is at stake is
+    -- who you are signed in as rather than the question the row is asking,
+    -- and down the column those are at opposite ends of the row: a mark in
+    -- the left margin reads as a note on the label.
     if o.warn then
-        -- In the margin the outline leaves, rather than a measure off the
-        -- label: the label starts at eight points on a rail cell and twelve
-        -- down the column, and a dot placed off that number leaves the box on
-        -- the narrower of the two.
-        F.layer:disc(x + 5.5 * F.scale,
-                     ry(stacked and y + h * 0.33 or y + h / 2),
-                     2.5 * F.scale, 8, pal.a(pal.CHARGE_COL, 0.95))
+        local dy = stacked and y + h * 0.68 or y + h / 2
+        -- The rail sets the answer under the question at the same left edge,
+        -- so the margin the outline leaves is still the right place to stand
+        -- and the dot only has to drop a line to be beside the name. A
+        -- measure off the label would leave the box there: the label starts
+        -- at eight points on a rail cell and twelve down the column.
+        local dx = x + 5.5 * F.scale
+        if not stacked then
+            -- The answer is set from the right, so where it begins is where
+            -- it ends less its own width. Asked of the same measure the
+            -- drawing uses rather than guessed at, since a call sign is as
+            -- long as its pilot made it.
+            dx = cx - 11 * F.scale - text_w(value or "", px, nil, raw)
+                - 7 * F.scale
+        end
+        F.layer:disc(dx, ry(dy), 2.5 * F.scale, 8,
+                     pal.a(pal.CHARGE_COL, 0.95))
     end
     hit(x, y, w, h, action, o.value)
 end
@@ -4340,9 +4355,15 @@ local function land_row(kx, kw, y, h, r)
         return
     end
     -- A count, between the two arrows that move it.
+    --
+    -- What the count reads at is the row's to say. Every row here but one
+    -- counts what has been bought, so nothing bought is a nought; a rung is
+    -- which weapon off the hull's ladder, and a hull nobody has spent on is
+    -- still firing the first one rather than none. Its color is off the spend
+    -- either way: rung one is dim because it cost nothing.
     local vx = kx + kw - pad - 26 * F.scale
     local mid = y + h / 2
-    txt(tostring(r.value), vx - 24 * F.scale, mid, px,
+    txt(tostring(r.value + (r.base or 0)), vx - 24 * F.scale, mid, px,
         r.value > 0 and pal.FRIEND or pal.a(pal.DIM, 0.9), "center")
     for _, d in ipairs({{-1, vx - 54 * F.scale, r.can_down},
                         {1, vx, r.can_up}}) do
@@ -4981,15 +5002,26 @@ function M.hud(o)
         inspect(o, top)
         F.text_dim = behind
     end
-    -- Names hanging off ships, but not under the menu. Glyphs come from the
-    -- gui and the gui draws over every mesh, so nothing the menu lays down
-    -- can cover them: a panel with six pilots' names scattered through it
-    -- reads as a fault rather than as depth. The instruments stay -- your
-    -- bars, the dial, the feed -- because you can still be shot while you
-    -- are reading, and those are what say so.
+    -- Names hanging off ships, but not under anything being read over the
+    -- arena. Glyphs come from the gui and the gui draws over every mesh, so
+    -- nothing a panel lays down can cover them: a panel with six pilots'
+    -- names scattered through it reads as a fault rather than as depth. The
+    -- instruments stay, your bars and the dial and the feed, because you can
+    -- still be shot while you are reading, and those are what say so.
+    --
     -- The ending is text over a card and lands in the same trap, so it takes
-    -- the plates down with it for the twenty five seconds it is up.
-    if not o.menu_open and not ending then nameplates(o) end
+    -- the plates down with it for the twenty five seconds it is up. So does
+    -- the menu's own column, and so does a question card.
+    --
+    -- And so does the landing's column, which is where this was noticed: the
+    -- front page is a live room, the ship stop opens a panel that climbs from
+    -- its own stop to the top of the window, and every call sign in the fight
+    -- behind it was drawn through the build a pilot was reading. It went
+    -- unseen while `menu_open` was the only name on this line, because that
+    -- was true of the drawer and the drawer was where a panel used to stand.
+    if not (o.menu_open or ending or M.col_open or o.card or M.room_ask) then
+        nameplates(o)
+    end
     -- One corner, one instrument. The map is the radar pulled back to the
     -- whole thousand tiles, so it stands where the radar stands rather than
     -- somewhere else with the radar still lit beside it.
