@@ -1004,6 +1004,19 @@ M.page_fields = false
 -- for; see M.begin.
 M.details = false
 
+-- Whether this client has joined the room on screen, as a ship or as a
+-- watcher. False on the landing, where the fight behind the name is a room
+-- nobody here has walked into yet, and false again before a room answers at
+-- all.
+--
+-- The two instruments that are about a room you are in read it: the dial in
+-- the corner, and the board the band opens. Both are absent rather than drawn
+-- when it is false. A radar is for flying and a roster is for knowing who you
+-- are up against, and a stranger watching from outside is asking neither
+-- question. What the front page owes them is the fight, the name and the way
+-- in. `M.waiting` drew neither already, for this reason one screen earlier.
+M.joined = false
+
 -- Where each row of the corner stack, the dial and the feed landed this
 -- frame, filed by each element as it draws itself.
 --
@@ -1164,6 +1177,13 @@ end
 -- centered clock and a 112-point dial, and what is left over is not a call
 -- sign, so the band gives up its two names there. The figures under them
 -- always draw.
+--
+-- Where the dial stands rather than whether one is drawn, which is why this
+-- asks nothing about `M.joined`. The landing has no dial and the band keeps
+-- its measure anyway: a band that spread into the empty corner out there
+-- would hand a phone its two side names and take them back the moment
+-- somebody pressed PLAY NOW, which is the front page moving under the hand
+-- that just used it.
 function TOP.row_right()
     return F.w - F.safe_r - PAD * F.scale
         - RADAR.side * RADAR.factor() * F.scale - KEY_GAP * F.scale
@@ -1218,7 +1238,15 @@ end
 -- than guess. The square and a gap: nothing hangs off the dial's foot now
 -- that the tile readout has gone, so this is the instrument's own extent
 -- again.
+--
+-- The top row's own line when there is no dial, which is every frame until
+-- this client joins something. The feed hangs under the corner instrument, so
+-- with the corner empty it would otherwise start a hundred and forty points
+-- down a square nobody drew. See `M.joined`.
 function M.radar_span()
+    if not M.joined then
+        return TOP.mid() + KEY_H * F.scale / 2 + 14 * F.scale
+    end
     local _, iy, side = dial()
     return iy + side + 14 * F.scale
 end
@@ -3584,6 +3612,10 @@ local function match_clock(o, m, names, alone)
     -- player reading the column still wants the clock, but the board it opens
     -- is not drawn then, and a control whose panel cannot appear is a press
     -- that does nothing anybody can see.
+    --
+    -- The landing is that case for the whole screen rather than for one
+    -- panel: the board is not drawn out there either, so the band is a
+    -- reading of the fight going on behind the name and nothing to press.
     local function press()
         if alone then return end
         local x0, x1 = band_l, band_r
@@ -5172,7 +5204,7 @@ end
 -- loader and the game. The logo moved when the game arrived, which is the one
 -- thing the hand-off should never do.
 function M.waiting(note)
-    M.foot_key, M.menu_column = false, false
+    M.foot_key, M.menu_column, M.joined = false, false, false
     landing_mark()
     -- The one control, drawn here rather than through the corner row, which
     -- carries a roster this screen has not got.
@@ -5195,7 +5227,16 @@ end
 
 function M.hud(o)
     F.case = "upper"
-    local ending = match_ended(o.match)
+    -- Whether this client is in the room on screen at all. Read before
+    -- anything else here, because the whistle is one of the things it
+    -- answers. See `M.joined`.
+    M.joined = not o.landing
+    -- Whether the match on screen has been settled, and this client is in the
+    -- room it was settled in. The ending is the board with a head over it, so
+    -- on the landing it is the roster arriving over the front page every three
+    -- minutes by another door. Out there a finished match is something the
+    -- band says a word about and the fight goes on being the backdrop it was.
+    local ending = M.joined and match_ended(o.match)
     -- Each whistle gets its own entrance. Once play or a rival search resumes,
     -- release the old timestamp so the next result does not inherit a fully
     -- grown podium from the first match of the session.
@@ -5229,7 +5270,7 @@ function M.hud(o)
     -- and the three stops above PLAY NOW are the choices that do. A faint
     -- fourth control under the one key the screen exists for was the whole of
     -- what it added.
-    M.foot_key = not o.landing
+    M.foot_key = M.joined
     -- And whether the menu's own column is the one standing, which is what the
     -- one walk reads to know which set of boxes it is walking.
     M.menu_column = o.menu_open or false
@@ -5255,7 +5296,8 @@ function M.hud(o)
     -- every instrument's label at full brightness, which is the exact fault
     -- the paragraph above is about. It went unnoticed while the only card the
     -- interface raised stood inside a drawer that was always up.
-    local reading = M.details and not o.menu_open and not ending
+    local reading = M.details and M.joined
+        and not o.menu_open and not ending
     F.text_dim = (ending or o.menu_open or o.card or M.room_ask or reading)
         and 0.34 or 1
 
@@ -5286,7 +5328,11 @@ function M.hud(o)
     -- The board itself, at full strength over that wash: it is the thing
     -- being read, and the dim above is what everything else on the screen is
     -- wearing while it is up.
-    if not (o.menu_open or ending) then
+    --
+    -- And not on the landing at all. The board is the room's roster, and out
+    -- there the room is scenery: the band above it reads and does not open.
+    -- See `M.joined` and the press in `match_clock`.
+    if M.joined and not (o.menu_open or ending) then
         local behind = F.text_dim
         if reading then F.text_dim = 1 end
         local top = scores(me, o.pilots, o.watchers, o.viewer_name)
@@ -5319,14 +5365,21 @@ function M.hud(o)
     -- One corner, one instrument. The map is the radar pulled back to the
     -- whole thousand tiles, so it stands where the radar stands rather than
     -- somewhere else with the radar still lit beside it.
-    -- The dial's corner, in every state there is. It used to stand down under
+    -- The dial's corner, in every state a room has. It used to stand down under
     -- an open drawer, which on a phone was the whole window; the column stands
     -- at the foot and reaches no corner, so the radar and the clock band are
     -- on screen while the menu is up. That is the point of a menu that does
     -- not pause: a pilot reading it is still being shot at, and the two
     -- instruments that say so keep saying it.
-    dial()
-    if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
+    --
+    -- And nothing in the corner at all until this client has joined the room.
+    -- A radar answers what is near you, and on the landing there is no you:
+    -- the fight is somebody else's and the camera is a seat in the stands.
+    -- The map that replaces it goes with it, since it is the same corner
+    -- asking the same question further out. See `M.joined`.
+    if M.joined then
+        if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
+    end
     -- Under the dial, wherever the dial now ends: it lost its panel and its
     -- padding, so a constant here would have left a gap or an overlap. Not on
     -- a touchscreen: the lines land where a thumb flies the ship, and a
@@ -5422,7 +5475,7 @@ function M.hud(o)
     -- somewhere else the moment the whistle goes. The ending's own head
     -- carries the score, so the band gives its two sides up while that block
     -- is on screen and keeps the numerals. See `match_clock`.
-    match_clock(o, o.match, o.side_names, o.menu_open)
+    match_clock(o, o.match, o.side_names, o.menu_open or not M.joined)
     match_note(o, o.match)
     -- The menu key, at the foot, wherever there is a room to have a menu
     -- about and no column standing on the spot already. It is drawn from here

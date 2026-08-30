@@ -266,6 +266,20 @@ local function glazed(b)
     return false
 end
 
+-- Whether the whole window was washed down behind a panel. The board lays one
+-- before it draws, so this answers the second half of "the roster is not on
+-- this screen": no rows, and no dark over the fight where they would have
+-- been.
+local function washed(w, h)
+    for _, r in ipairs(rects) do
+        if r.x <= 0.5 and r.y <= 0.5
+           and r.w >= w - 0.5 and r.h >= h - 0.5 then
+            return true
+        end
+    end
+    return false
+end
+
 -- What a press at this point reaches, through the same rule `on_input` uses.
 local function press(x, y)
     local r = ui.pick(x, y)
@@ -433,9 +447,57 @@ check("and says nothing about the channel it is watching",
       word("CHANNEL") == nil)
 check("and offers no menu, this being a room nobody here is in",
       box("open") == nil)
--- The roster is opened from the band across the top rather than from a key
--- beside this one. What is asserted here is that a watcher can still reach it.
-check("and a way into the roster", box("details") ~= nil)
+-- And no way into the roster, which the band opens everywhere else. The board
+-- lists who is in a room, and out here the room is the backdrop a stranger has
+-- landed in front of rather than one they are in: what they are being offered
+-- is a game, a ship and the key that gets them in. The band keeps the clock
+-- and the score, which are the fight itself reading out, and gives up the one
+-- thing it is a control for.
+check("and no way into the roster, this being a room nobody here is in",
+      box("details") == nil)
+-- Nor a radar. It answers what is near you, and there is no you on this
+-- screen: the camera is a seat in the stands and the hulls on it are somebody
+-- else's. The square published that box, so an absent box is an absent
+-- instrument.
+check("and no radar over a fight nobody here is flying", box("map") == nil)
+-- What the feed hangs under goes with it. That strip is measured off the
+-- corner's own extent rather than from a constant, so an empty corner has to
+-- answer with the top row's line: a feed that kept its place would start a
+-- hundred and forty points down a square nobody drew.
+local bare = ui.radar_span()
+frame(1440, 810, {landing = false})
+local dialled = ui.radar_span()
+frame(1440, 810)
+check("and the strip under the corner starts at the row instead",
+      bare < dialled - 100,
+      string.format("%.0f on the landing, %.0f in a room", bare, dialled))
+-- And nothing appears if the flag behind the board is set anyway, which is
+-- what a key still bound to it would do. The panel is gated where it draws
+-- rather than only where it is toggled, so there is one answer and not two.
+frame(1440, 810, {details = true})
+check("and no board even with the roster flag set", word("PILOTS") == nil)
+check("and the fight behind it is not washed for a panel nobody can see",
+      not washed(1440, 810))
+-- Nor at the whistle, which is the same roster arriving by another door. The
+-- ending is the board with a head over it, so a landing that turned it away
+-- at the band and took it at the whistle would show a stranger the roster of
+-- a room they are not in for twenty five seconds of every three minutes. The
+-- band says a word about it and the fight goes on being the backdrop.
+local ENDED = {playing = false, left = 0, artifact = 1,
+               score = {[0] = 3, [1] = 5}}
+frame(1440, 810, {match = ENDED})
+check("and no ending board when the match behind it is settled",
+      word("PILOTS") == nil and word("TAKES IT") == nil)
+check("and the band still counts to the next one",
+      word("NEXT MATCH IN") ~= nil)
+check("and the way in is still the way in",
+      box("play_now") ~= nil and word("vectorwake") ~= nil)
+-- A pilot in the room gets it, which is the half of the rule that has to keep
+-- working: the ending is theirs to read.
+frame(1440, 810, {landing = false, match = ENDED})
+check("but a pilot in the room reads their own ending",
+      word("PILOTS") ~= nil)
+frame(1440, 810)
 
 -- --- and no way into the menu ----------------------------------------------
 --
@@ -1241,10 +1303,16 @@ end
 -- its name when the row runs out of width for it, which is a name rather than
 -- the line the whole band stands on.
 --
--- At 390 points it does. This row is a chip, a clock and a dial hard into the
--- far corner, and what is left over is not a call sign, so a phone's front
--- page is the clock with a figure either side of it. The names are on the
--- board a press opens, and on a window with the width for them.
+-- At 390 points it does. This row is a chip and a clock, and what is left over
+-- is not a call sign, so a phone's front page is the clock with a figure
+-- either side of it. The names are on a window with the width for them.
+--
+-- The far corner is empty out here, since the dial arrives with the seat, and
+-- the band keeps its measure anyway: `TOP.row_right()` is where the dial
+-- stands rather than whether one is drawn. A band that spread into that
+-- corner on the landing would give the names back and then take them away
+-- again the moment somebody pressed PLAY NOW, which is the front page moving
+-- under the hand that just used it.
 --
 -- The chip is the ruler here, so these frames are drawn with a second room in
 -- the zone. A landing with one room puts nothing in that corner at all, and
@@ -1269,45 +1337,25 @@ do
           word("PYLON") == nil and word("CAISSON") == nil,
           "a name is drawn where the row has no width for one")
     check("and both figures", word("3") ~= nil and word("5") ~= nil)
-    -- The far end of the row is the dial, at the same margin from its corner
-    -- that the chips keep from the opposite one. The link meter stood out here
-    -- until it went into the menu's head and the dial came up into the corner
-    -- it left. The meter draws no caption, so what answers for it is the box
-    -- it would publish over its bars.
-    check("and nothing in the far corner of the row but the dial",
-          box("debug") == nil, "the link meter is still on the landing")
-    local corner = box("map")
-    if chip and corner then
-        check("which hugs it at the corner chip's own margin",
-              math.abs(corner.y - chip.y) < 0.5
-                  and math.abs((390 - (corner.x + corner.w)) - chip.x) < 0.5,
-              string.format("dial at %.0f,%.0f ending %.0f of 390",
-                            corner.x, corner.y, corner.x + corner.w))
-    end
+    -- The far end of the row is nothing. The link meter stood out here until
+    -- it went into the menu's head and the dial came up into the corner it
+    -- left, and the dial itself now waits for a seat. Neither draws a caption,
+    -- so what answers for both is the box each would publish.
+    check("and nothing in the far corner of the row",
+          box("debug") == nil and box("map") == nil,
+          "an instrument is still on the landing's top row")
 
-    -- The band is the control, so the press that opens the roster is on the
-    -- band rather than in the corner beside it.
-    local band = box("details")
-    check("the roster opens from the band itself",
-          band and clock and clock.x > band.x
-              and clock.x < band.x + band.w,
-          band and string.format("band %.0f..%.0f, clock at %.0f",
-                                 band.x, band.x + band.w, clock.x)
-              or "no band press")
-    check("and nothing in the corner row offers it a second time",
-          band ~= nil and chip ~= nil and band.x > chip.x + chip.w,
-          band and chip and string.format("band starts %.0f, chip ends %.0f",
-                                          band.x, chip.x + chip.w)
-              or "no band press")
+    -- And the band is a reading rather than a control. It says what the fight
+    -- behind the name is doing; the roster it opens everywhere else is a list
+    -- of a room, and this is not a room anybody here is in.
+    check("the band offers no press on a phone either", box("details") == nil)
 
-    -- The board opens under the band, wherever the band ends.
+    -- Which holds however the flag behind the board is set. The panel is
+    -- gated where it draws, so a key still bound to it lands on nothing.
     frame(390, 844, {details = true})
-    local heading, clock2 = word("PILOTS"), word("1:47")
-    check("portrait starts the roster under the clock",
-          heading and clock2 and heading.y > clock2.y,
-          string.format("roster at %s, clock at %s",
-                        tostring(heading and heading.y),
-                        tostring(clock2 and clock2.y)))
+    check("portrait draws no roster on the landing", word("PILOTS") == nil)
+    check("and still draws the clock it is standing under",
+          word("1:47") ~= nil)
 
     -- A window with room keeps the same band on the same line.
     frame(1440, 810, {rooms = ROOMS, room = 1})
@@ -1329,6 +1377,15 @@ check("and no key that would join a room they are already in",
       box("play_now") == nil)
 check("and no name over the fight they are already in",
       word("vectorwake") == nil)
+-- And the two instruments the landing goes without. Watching is joining: the
+-- seat is being held, the room is one this client walked into, and what is
+-- near you and who is in it are questions again. Spectating is the same
+-- connection with no seat waiting at the end of it, so this is the whole of
+-- what "before you have joined" means.
+check("and a radar over a room they are in", box("map") ~= nil)
+check("and a band that opens the roster", box("details") ~= nil)
+frame(1440, 810, {landing = false, details = true})
+check("and the board itself when they ask for it", word("PILOTS") ~= nil)
 
 -- --- before a room answers ---------------------------------------------------
 --
@@ -1411,37 +1468,34 @@ do
     end
 end
 
--- --- the podium does not bury the key ---------------------------------------
+-- --- the whistle buries nothing ---------------------------------------------
 --
--- Between matches the room puts up a podium, and the podium washes the whole
--- window at 0.8 so the card is what gets read. The landing's key is drawn
--- after that wash rather than before it: laid down first it is still there to
--- a hit test and gone to a person, for the twenty five seconds a stranger is
--- most likely to be deciding. Deploying then is legal and lands you at the
--- next whistle.
+-- Between matches the room a pilot is in puts up a podium, and the podium
+-- washes the whole window at 0.8 so the card is what gets read. The landing's
+-- key used to be drawn after that wash rather than before it: laid down first
+-- it was still there to a hit test and gone to a person, for the twenty five
+-- seconds a stranger is most likely to be deciding.
+--
+-- The podium is the board with a head over it and the landing draws no board,
+-- so out here the whistle is a word under the clock and the fight carrying on
+-- behind the name. Which is the same rule from the other side: the screen a
+-- stranger meets at the whistle is the screen they met a second earlier, and
+-- deploying then is legal and lands you at the next one.
 do
     local ended = {playing = false, left = 15, artifact = 7,
                    score = {[0] = 3, [1] = 5}}
     frame(1440, 810, {match = ended})
     local key = box("play_now")
-    check("the key survives a podium", key ~= nil)
+    check("the key survives a whistle", key ~= nil)
     check("and the name with it", word("vectorwake") ~= nil)
     if key then
         check("and is still what a press there reaches",
               press(key.x + key.w / 2, key.y + key.h / 2) == "play_now")
-        -- The podium is centered and the key sits at the foot, so the wash is
-        -- the only thing between them. Nothing the podium writes may land on
-        -- the key itself.
-        local on_key = 0
-        for _, t in ipairs(words()) do
-            local y = H - t.y
-            if y >= key.y - 6 and y <= key.y + key.h + 6
-               and t.s ~= "PLAY NOW" then
-                on_key = on_key + 1
-            end
-        end
-        check("and the podium writes nothing across it",
-              on_key == 0, on_key .. " words on the key")
+        -- And the window it stands in is not darkened for a card nobody is
+        -- being shown. The podium's wash was the one thing that ever laid a
+        -- rectangle over the whole of this screen.
+        check("and the window is not washed for a card nobody is shown",
+              not washed(1440, 810))
     end
 end
 

@@ -592,6 +592,17 @@ local function toggle_map()
     ui.map = not ui.map
 end
 
+-- Whether the room on screen is one this client is in, which is what the
+-- roster and the map are both about. `menu.home` is true on the landing as
+-- well as before a room answers, and the interface draws neither instrument
+-- on either screen. So a key that toggled one out there would make the noise
+-- a key makes and set a flag nobody can see, which the next seat would then
+-- cash: press the map on the front page and the whole thousand tiles open
+-- the moment you arrive in a room. See `ui.joined`.
+local function in_room(live)
+    return live and not menu.home
+end
+
 -- Panel input is data-driven so the binding catalog and the frame loop share
 -- one executable contract. The handlers keep the old ordering and gates: a
 -- panel press is consumed even without a live arena, while Escape remains for
@@ -648,7 +659,7 @@ TUNE.PANEL_HANDLERS = {
         return true
     end,
     details = function(_, live)
-        if live then
+        if in_room(live) then
             toggle_details()
             sfx.ui("ui_move")
         end
@@ -658,7 +669,7 @@ TUNE.PANEL_HANDLERS = {
             local action = move.action
             if taps[action] then
                 taps[action] = nil
-                if live then
+                if in_room(live) then
                     show_details()
                     ui.player_step(move.direction, net.pilots, net.watchers,
                                    eye_team(), menu.name)
@@ -668,7 +679,7 @@ TUNE.PANEL_HANDLERS = {
         end
     end,
     map = function(_, live)
-        if live then
+        if in_room(live) then
             toggle_map()
             sfx.ui("ui_move")
         end
