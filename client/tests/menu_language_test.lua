@@ -363,13 +363,27 @@ do
           and math.abs(land_val - menu_val) < 0.01,
           string.format("landing %s, menu %s", tostring(land_val),
                         tostring(menu_val)))
-    -- And a stop with nothing beside it wears the answer's strength on its
-    -- own name, since the name is what the row has to say.
-    local settings = alpha("SETTINGS", column_view())
-    check("and a stop with no answer inks its own name",
-          settings and land_val and math.abs(settings - land_val) < 0.01,
-          string.format("settings %s, an answer %s", tostring(settings),
-                        tostring(land_val)))
+    -- And the labels down a column are one weight the whole way, whether or
+    -- not the stop has an answer beside it. The settings stop had its name in
+    -- ink for two decisions, on the argument that a stop with nothing at full
+    -- strength reads as unpressable; what made it read that way was the dim
+    -- above, and with that gone the ink left one white word in a column of
+    -- muted ones. Alpha is the same on both, so this asks the color.
+    local function ink(word, menu)
+        frame({menu = menu})
+        local t = said(word)
+        if not t then return nil end
+        return string.format("%.2f,%.2f,%.2f", t.col[1], t.col[2], t.col[3])
+    end
+    local leave = ink("LEAVE", column_view())
+    local settings = ink("SETTINGS", column_view())
+    local side = ink("SIDE", column_view())
+    local zone_lbl = ink("ZONE")
+    check("and every label down a column is the one weight",
+          leave and leave == settings and leave == side and leave == zone_lbl,
+          string.format("leave %s, settings %s, side %s, landing %s",
+                        tostring(leave), tostring(settings), tostring(side),
+                        tostring(zone_lbl)))
     -- Except under a card, where the dim is meant for the column too: it is
     -- what the question is being read over, and it cannot reach back to quiet
     -- what was drawn before it.
