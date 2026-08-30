@@ -20,6 +20,13 @@ scrolls, and the tray is chrome rather than content: it rides under the
 head on the menu and on every submenu, so the purse is on screen
 wherever a credit is being spent.
 
+Each of the five reads what it holds, in the voice the games list reads
+a format in: `menu_row` puts a detail at TYPE.BODY in `pal.MUTE` hard
+against the right of the type column, which is what "4v4 3:00" is
+wearing on the zone stop. Body reads the hull, and the hull's five bars
+stand under the row that names it, because the stats are the answer to
+the question that row asks.
+
 The five are not new groupings. Four of them are the sections
 `menu.tune_rows` already builds (flight, gun, bomb and rack) under the
 words Chris used, and the fifth is the pair the settings page is
@@ -31,12 +38,19 @@ Every number is lifted from the client rather than invented:
 the 14-point inset and margin, the 34x18 switch, the 30-point credit
 tray and its nine-point diamonds. The rows in each submenu are what
 `sim_slot_cap` answers off the shipped baseline, in the order
-`tune_rows` builds them: the trigger's own rung first, then gun caps
+`tune_rows` builds them: the trigger's own level first, then gun caps
 {spray 5, bounce 1, freeze 1} and bomb caps {bounce 1, prox 1,
 shrapnel 3, freeze 1}, with prox, shrapnel and push off the gun and
 spray off the bomb. The rack is repel to 3 and burst to 2. Shrapnel
-reads fragments rather than rungs, so one rung reads 4. The scene
-behind the glass is ../dropdown-stack's.
+reads fragments rather than levels, so one level reads 4. The bars are
+`flight` off sim/src/baseline.c, shared against the roster's own range
+the way `flight_bars` does it. The scene behind the glass is
+../dropdown-stack's.
+
+The level row is called Level. It was Rung, which is the client's word
+for the thing and not the core's: `SIM_SLOT_LEVEL` and `SLOT_NOTES`
+both say level, and a ladder can go on being a ladder in prose without
+the row a pilot presses having to say so.
 
 One pilot flies every board, on one build: an Apex on spray 1, gun
 bounce 1, bomb shrapnel 1, repel 2 and burst 1. Three of those five
@@ -126,7 +140,14 @@ WASH_CURSOR = "background:rgba(79,214,255,.18)"
 WASH_HERE = "background:rgba(79,214,255,.07)"
 
 
-def reading(text, col=READ):
+def reading(text, col=MUTE):
+    """A row's reading, in the voice the games list reads its format in.
+
+    `menu_row` draws a detail at TYPE.BODY in `pal.MUTE`, right against the
+    type column's far edge, in the face the numbers in flight are set in. That
+    is what "4v4 3:00" is wearing on the zone stop, and it is what these
+    sections wear now: quieter than the name it answers, and never mistaken
+    for a control."""
     return (f'<span class="mono" style="font-size:14px;color:{col}">'
             f'{text}</span>')
 
@@ -231,32 +252,85 @@ def tray(free=1, total=7, pad=14):
             '</div>')
 
 
-def pager_row(name, state=None, pad=14):
-    """The walker, which the body section keeps: what is being paged is the
-    name, so it stands between the arrows rather than beside one."""
-    wash = {"cursor": WASH_CURSOR, "here": WASH_HERE}.get(state, "")
-    return (f'<div class="row" style="height:44px;padding:0 {pad}px;{wash}">'
-            f'{step_tri(-1)}<span style="font-size:17px;color:{FRIEND};'
-            f'flex:1;text-align:center">{name}</span>{step_tri(1)}</div>')
+# What each hull flies at, verbatim from `flight` in sim/src/baseline.c. The
+# step is zero on every row and the ceiling is the floor, so the first number
+# of each triplet is the whole of it.
+STATS = ("speed", "thrust", "turn", "energy", "recharge")
+FLIGHT = {
+    "Apex":    (3600, 205, 250, 1500, 1150),
+    "Wedge":   (2900, 155, 205, 1900, 1020),
+    "Chord":   (2800, 215, 310, 1550, 1200),
+    "Anvil":   (2650, 145, 195, 2100, 1250),
+    "Cipher":  (3900, 200, 235, 1400, 1100),
+    "Facet":   (3050, 175, 265, 1400, 1100),
+    "Lattice": (3100, 165, 240, 1750, 1050),
+}
+ROSTER = list(FLIGHT)
 
 
-def bars(pad=14):
-    """Where this hull stands against the rest of the roster, as a share
-    rather than a figure: the question is "faster than what"."""
-    cells = "".join(
-        f'<span style="flex:1;display:flex;flex-direction:column;gap:5px">'
-        f'<span style="height:3px;background:'
-        f'linear-gradient(90deg,{FRIEND} {p}%,rgba(108,122,144,.22) {p}%)">'
-        f'</span><span class="lbl" style="font-size:8.5px">{n}</span></span>'
-        for n, p in (("speed", 62), ("thrust", 48), ("turn", 75),
-                     ("energy", 55), ("recharge", 40)))
+def shares(hull):
+    """Where a hull stands on each row as a share of the roster's own range,
+    which is what `flight_bars` answers and for its reason: the units are the
+    core's, five different scales none of which a player reads, and the
+    question is "faster than what"."""
+    out = []
+    for i in range(5):
+        col = [FLIGHT[h][i] for h in ROSTER]
+        lo, hi = min(col), max(col)
+        span = hi - lo
+        out.append((FLIGHT[hull][i] - lo) / span if span else 1.0)
+    return out
+
+
+def bar_cells(hull, labelled=True, col=FRIEND):
+    out = []
+    for name, share in zip(STATS, shares(hull)):
+        pct = round(share * 100)
+        cap = (f'<span class="lbl" style="font-size:8.5px">{name}</span>'
+               if labelled else "")
+        out.append(
+            f'<span style="flex:1;display:flex;flex-direction:column;gap:5px">'
+            f'<span style="height:3px;background:'
+            f'linear-gradient(90deg,{col} {pct}%,rgba(108,122,144,.22) '
+            f'{pct}%)"></span>{cap}</span>')
+    return "".join(out)
+
+
+def bars(hull="Apex", pad=14):
+    """The strip the shipped panel draws, under the row it belongs to."""
     return (f'<div class="row" style="height:34px;padding:0 {pad}px;gap:6px">'
-            f'{cells}</div>')
+            f'{bar_cells(hull)}</div>')
 
 
-def sentence(text, pad=14):
-    return (f'<div style="padding:2px {pad}px 12px;font-size:14px;'
-            f'color:{READ};line-height:1.45">{text}</div>')
+def stat_head(pad=14):
+    """The list's column head: the five words once, over the columns they
+    name, at the 8.5 points the bars strip already captions itself in.
+
+    A band names what the rows under it are; this names what the columns
+    under it are, which is the same job on the other axis, so it takes the
+    band's two rules and its label rung."""
+    cells = "".join(
+        f'<span style="flex:1"><span class="lbl" style="font-size:8.5px">'
+        f'{n}</span></span>' for n in STATS)
+    return ('<div style="flex:none">'
+            '<div style="height:1px;background:rgba(63,88,120,.45)"></div>'
+            f'<div class="row" style="height:24px;padding:0 {pad}px;gap:6px">'
+            f'<span style="width:96px;flex:none"></span>{cells}</div>'
+            '<div style="height:1px;background:rgba(63,88,120,.45)"></div>'
+            '</div>')
+
+
+def hull_row(hull, state=None, pad=14):
+    """One hull of the roster: its name, and where it stands on all five
+    rows. The bars are the row's reading, so the seven can be compared down
+    a column rather than by paging between them."""
+    wash = {"cursor": WASH_CURSOR, "here": WASH_HERE}.get(state, "")
+    col = FRIEND if state == "here" else INK
+    alpha = "" if state else "opacity:.85;"
+    return (f'<div class="row" style="height:44px;padding:0 {pad}px;gap:6px;'
+            f'{wash}"><span style="width:96px;flex:none;font-size:17px;'
+            f'color:{col};{alpha}">{hull}</span>'
+            f'{bar_cells(hull, labelled=False, col=col)}</div>')
 
 
 # --- the fight behind the glass, from ../dropdown-stack ----------------------
@@ -417,10 +491,16 @@ def menu_rows(cursor="Guns", open_row=None):
         return "cursor" if name == cursor else None
     return [
         row("Body", r_open(reading("Apex")), state=state("Body")),
-        row("Guns", r_open(r_spend(2)), state=state("Guns")),
-        row("Bombs", r_open(r_spend(1)), state=state("Bombs")),
-        row("Specials", r_open(r_spend(3)), state=state("Specials")),
-        row("Flair", r_open(reading("Standard")), state=state("Flair")),
+        # The stats stand under the row they belong to rather than up in the
+        # panel's head: the row names the hull, the strip says how it flies,
+        # and pressing the row opens the seven of them read the same way.
+        bars("Apex"),
+        row("Guns", r_open(reading("2 rounds \u00b7 bouncing")),
+            state=state("Guns")),
+        row("Bombs", r_open(reading("4 fragments")), state=state("Bombs")),
+        row("Specials", r_open(reading("2 repels \u00b7 1 burst")),
+            state=state("Specials")),
+        row("Flair", r_open(reading("standard wake")), state=state("Flair")),
         rule(),
         # Live, because this build is not the hull's own any more. It is the
         # whole of the build manager and it stays on the menu rather than in a
@@ -434,16 +514,28 @@ def main_board():
 
 
 def body_board():
-    """The one section that is a choice rather than a set of slots, so it
-    keeps the walker and the flight bars the one panel had. Nothing here
-    costs a credit on the shipped roster, since every hull's flight step is
-    zero and `tune_rows` builds no flight rows, and the tray is still drawn
-    because the purse is a fact about the ship rather than about the page."""
-    return board(1440, 810, "body", [
-        pager_row("Apex", state="here"),
-        bars(),
-        sentence("A dart: long and narrow, with a larger broadside target."),
-    ], seed=3, foot_note="enter flies it", free=FREE)
+    """The roster as a list, one hull a row, each row carrying that hull's
+    five bars.
+
+    It was a walker, because decision 100 called seven hulls with five bars
+    apiece a page in a list's clothes. That was true of a page that also held
+    every slot the hull could spend on; a section that holds nothing else is
+    a list, and a list is where the bars pay: seven hulls read down a column
+    compare, and seven read one at a time have to be remembered.
+
+    The five words are said once, at the head, over the columns they name.
+    Nothing here costs a credit on the shipped roster, since every hull's
+    flight step is zero and `tune_rows` builds no flight rows, and the tray
+    is still drawn because the purse is a fact about the ship rather than
+    about the page."""
+    rows = [stat_head()]
+    for hull in ROSTER:
+        rows.append(hull_row(hull, state="here" if hull == "Apex" else None))
+    # The roster's last answer, and the one row with nothing to say about how
+    # it flies.
+    rows.append(row("Spectate", ""))
+    return board(1440, 810, "body", rows, seed=3,
+                 foot_note="enter flies it", free=FREE)
 
 
 def guns_board():
@@ -451,7 +543,7 @@ def guns_board():
         # Counted from one, because the bottom of a ladder is a rung: the
         # slot counts credits and the row draws value plus base, so an
         # untouched gun reads 1 and its down arrow is dead.
-        row("Rung", r_stepper(1, down=False), state="cursor"),
+        row("Level", r_stepper(1, down=False), state="cursor"),
         row("Spray", r_stepper(1)),
         row("Bounce", r_switch(True)),
         row("Freeze", r_switch(False)),
@@ -460,7 +552,7 @@ def guns_board():
 
 def bombs_board():
     return board(1440, 810, "bombs", [
-        row("Rung", r_stepper(1, down=False)),
+        row("Level", r_stepper(1, down=False)),
         row("Bounce", r_switch(False)),
         row("Proximity detonation", r_switch(False)),
         # The one row whose figure is not what it cost: shrapnel's magnitude
@@ -514,7 +606,7 @@ def stack_board():
         panel(w, "ship", menu_rows(cursor=None, open_row="Guns"),
               free=FREE, back=True),
         panel(w, "guns", [
-            row("Rung", r_stepper(1, down=False), state="cursor"),
+            row("Level", r_stepper(1, down=False), state="cursor"),
             row("Spray", r_stepper(1)),
             row("Bounce", r_switch(True)),
             row("Freeze", r_switch(False)),
@@ -539,21 +631,23 @@ def phone_board():
 
 
 def alt_reading_board():
-    """The one open choice, drawn rather than argued.
+    """The road not taken, kept as the record of the choice.
 
-    A section can read what it holds in credits, as the menu does, or what
-    it holds in the fight, as this does. The count is the same information
-    the tray above is denominated in, so the two read as one instrument and
-    a pilot hunting for a credit to free knows which row to open. The
-    contents say something the tray cannot, and cost the pilot that: with
-    six credits spread over three sections, nothing on the page says where
-    the sixth went."""
+    A section could read what it holds in credits rather than what it holds
+    in the fight. The count is the same currency the tray above is
+    denominated in, so the two read as one instrument and a pilot hunting a
+    credit to free knows which row to open without opening any of them. What
+    it cannot do is say anything about the ship: three sections reading 2, 1
+    and 3 describe a purse, and the pilot is here about a gun.
+
+    Chris took the contents. This is what the other one looked like."""
     return board(1440, 810, "ship", [
         row("Body", r_open(reading("Apex"))),
-        row("Guns", r_open(reading("bouncing")), state="cursor"),
-        row("Bombs", r_open(reading("4 fragments"))),
-        row("Specials", r_open(reading("2 repels, a burst"))),
-        row("Flair", r_open(reading("Standard"))),
+        bars("Apex"),
+        row("Guns", r_open(r_spend(2)), state="cursor"),
+        row("Bombs", r_open(r_spend(1))),
+        row("Specials", r_open(r_spend(3))),
+        row("Flair", r_open(r_spend(0))),
         rule(),
         row("Reset", ""),
     ], seed=7, free=FREE)

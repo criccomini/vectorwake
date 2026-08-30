@@ -42,11 +42,16 @@ section of four rows sits lower than a menu of six and its tray rides down
 with its own head. What is fixed is the tray's place in a panel, not its place
 on the screen.
 
-**A section reads what it holds, in credits, in the color a credit is spent
-in.** The pilot on these boards has six of seven spent, split two into guns,
-one into bombs and three into specials, and those are the six the tray has
-hollowed out. Body and flair cost nothing, so they read what they are instead:
-a hull's name, and a wake.
+**A section reads what it holds, in the games list's voice.** `menu_row`
+draws a detail at TYPE.BODY in `pal.MUTE`, hard against the right of the type
+column, in the face the numbers in flight are set in: that is what "4v4 3:00"
+wears on the zone stop, and it is what "2 rounds, bouncing" wears here. It is
+quieter than the name it answers and can never be mistaken for a control.
+
+**Body carries the stats, twice.** The hull's five bars stand under the row
+that names it on the menu, and every hull in the body list carries its own,
+so the roster can be read down a column. The five words are said once, at the
+head of that list, over the columns they name.
 
 **Nothing new in the language.** A section row opens, which is the caret every
 stop on the landing already wears. The rows inside are decision 104's six ends
@@ -62,9 +67,16 @@ a list written in the client, so a zone that gives a hull no bomb rack opens a
 bombs section with nothing in it rather than one nobody remembered to hide.
 
 Body is the one section that is a choice rather than a set of slots, so it
-keeps the walker, the flight bars and the press that flies the hull. Nothing
-in it costs a credit on the shipped roster: every hull's flight step is zero,
-which is why the shipped panel has no flight rows either.
+is a list: seven hulls and sitting out, one to a row, each row carrying that
+hull's five bars, and a press flies the one you are on. It was a walker,
+because decision 100 called seven hulls with five bars apiece a page in a
+list's clothes. That was true of a page that also held every slot the hull
+could spend on. A section that holds nothing else is a list, and a list is
+where the bars pay: seven read down a column compare, seven read one at a
+time have to be remembered.
+
+Nothing in body costs a credit on the shipped roster: every hull's flight step
+is zero, which is why the shipped panel has no flight rows either.
 
 Flair is the pair the settings page is holding for the ship, the wake and
 which key throws which charge. They went there because a panel a player opens
@@ -72,18 +84,23 @@ to spend credits was the wrong home for two things that cost nothing. A
 section that costs nothing sits fine beside four that do, so on these boards
 they come back here and settings loses them: one control, one home.
 
-## The one open choice
+## The choice that was open
 
-What a section reads. The count is the same currency the tray above is
-denominated in, so the two read as one instrument and a pilot hunting a credit
-to free knows which row to open. The contents say something the tray cannot,
-and cost that: with six credits over three sections, nothing on the page says
-where the sixth went. Both are drawn, Main and AltReading.
+What a section reads. Chris took the contents, and AltReading is the record of
+the other one: a section reading the credits standing in it, which is the same
+currency the tray above is denominated in. That version reads as one
+instrument with the tray and tells a pilot hunting a credit to free which row
+to open without opening any. What it cannot do is say anything about the ship,
+and the pilot is here about a gun.
 
 Two small ones, drawn one way and worth saying: reset stays on the menu,
 because what it puts back is all five sections at once, rather than one per
 section; and the tray is drawn the same on body and flair, where nothing is
 spendable, because it is a label and seven chips and never a control.
+
+The level row is called Level. It was Rung, which is the client's word rather
+than the core's: `SIM_SLOT_LEVEL` and `SLOT_NOTES` both say level. A ladder
+can go on being a ladder in prose without the row a pilot presses saying so.
 
 ## The boards
 
@@ -99,7 +116,8 @@ Nine, built by `build.py` and seeded with the design skill's helper:
       --artboard AltReading.dc.html --canvas canvas.json
 
 Main is the menu. Stack is a section coming up over it. The five sections are
-their own boards, Phone is the menu at 390, and AltReading is the open choice.
+their own boards, Phone is the menu at 390, and AltReading is the reading that
+was not taken.
 
 One pilot flies every one of them, on one build: an Apex on spray 1, gun
 bounce 1, bomb shrapnel 1, repel 2 and burst 1. Three of those five come with
@@ -113,10 +131,14 @@ Every number is lifted from the client rather than invented:
 14-point inset and margin, the 34x18 switch, and the 30-point tray with its
 nine-point diamonds. The rows in each section are what `sim_slot_cap` answers
 off the shipped baseline, in the order `tune_rows` builds them: the trigger's
-own rung first, then gun caps {spray 5, bounce 1, freeze 1} and bomb caps
+own level first, then gun caps {spray 5, bounce 1, freeze 1} and bomb caps
 {bounce 1, prox 1, shrapnel 3, freeze 1}, with prox, shrapnel and push off the
 gun and spray off the bomb, and the rack at repel 3, burst 2. Shrapnel reads
-fragments rather than rungs, so one rung reads 4. The fight behind the glass is `../dropdown-stack`'s.
+fragments rather than levels, so one level reads 4. The bars are the `flight`
+table off `sim/src/baseline.c`, shared against the roster's own range the way
+`flight_bars` does it, so Apex is three quarters of the way up speed and a
+seventh of the way up energy. The fight behind the glass is
+`../dropdown-stack`'s.
 
 ## What it would cost the client
 
@@ -126,4 +148,6 @@ at a time, and `M.ship_panel` would answer the five rows with a count apiece.
 `land_panel` loses its scroll, its thumb and its cursor-follow, since no page
 in the set is longer than the glass, and gains the tray as part of the frame
 alongside the head. Panels already stack (decision 103), so a section is the
-container that exists rather than a new one.
+container that exists rather than a new one. Body is `M.landing_ships` with
+`flight_bars` on each row, both of which the client already has and one of
+which it stopped drawing when the roster became a pager.
