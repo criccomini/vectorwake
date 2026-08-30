@@ -382,22 +382,23 @@ Two rungs a weapon added 26 shapes to that space and did not make it more
 runaway-prone: 44 of 212 past 65% against 40 of 186 before them, which is the
 same fifth of the space either way.
 
-What the sweep says a slot is worth, as the mean over the seven hulls of
-dumping every credit into it alone. The rows that ship are the yardstick a new
-one is read against:
+What the sweep says a slot is worth: the mean over the seven hulls of dumping
+every credit into it alone, and the best any one hull did with it. The rows
+that ship are the yardstick a new one is read against, and the best column is
+where a slot that is too strong shows itself first.
 
-| slot | mean | dearest hull |
-|---|---:|---:|
-| gun bounce | 57.9 | 92.5 |
-| burst | 54.1 | 87.5 |
-| gun freeze | 53.9 | 87.5 |
-| gun rung | 46.2 | 95.0 |
-| gun spray | 32.5 | 85.0 |
-| bomb rung | 30.4 | 47.5 |
-| bomb bounce | 26.2 | 65.0 |
-| bomb shrapnel | 25.7 | 52.5 |
-| bomb freeze | 23.4 | 45.0 |
-| bomb proximity | 20.9 | 41.2 |
+| slot | mean | best |
+|---|---:|---|
+| gun bounce | 57.9 | 92.5 Apex |
+| burst | 54.1 | 87.5 Apex |
+| gun freeze | 53.9 | 87.5 Wedge |
+| gun rung | 46.2 | 95.0 Wedge |
+| gun spray | 32.5 | 85.0 Apex |
+| bomb rung | 30.4 | 47.5 Wedge |
+| bomb bounce | 26.2 | 65.0 Apex |
+| bomb shrapnel | 25.7 | 52.5 Apex |
+| bomb freeze | 23.4 | 45.0 Apex |
+| bomb proximity | 20.9 | 41.2 Apex |
 
 So a gun rung is the fourth-strongest gun slot, under three that already
 ship, and a bomb rung is the strongest of the bomb slots without leaving
