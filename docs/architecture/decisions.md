@@ -5885,3 +5885,54 @@ five rows, every section, the walk and the tray at a rail's measure;
 one. The middle dot in a reading was written `\u{00b7}` first, which is not an
 escape in Lua 5.1 and drew as those six characters: the reading test is what
 caught it.
+
+## 113. Body is a carousel
+
+**Status:** accepted, replacing the list [decision
+112](#112-the-ship-menu-is-five-parts-of-a-ship) gave the body section
+
+**Decision:** the body section turns one ship at a time. The hull is drawn
+large and rotating in the middle of the panel, an arrow either side of the
+drawing and level with it, the ship's name under it, and its five flight rows
+read out one to a line below that. The name is the press that flies it; the
+arrows only look. Sitting out is the page past the roster, with the sentence
+about it standing where a ship would be.
+
+The flight bars take a floor of 0.035, so the hull at the bottom of a row
+draws a stub rather than nothing.
+
+**Why:** Chris asked for it, looking at the list. What a hull looks like is
+most of what a pilot is choosing between, and neither shape this section has
+had could draw one: the pager had the room and never used it, and a row of a
+list has no room to use.
+
+Decision 112 argued the list from comparison, that seven read down a column
+compare and seven read one at a time have to be remembered. That is still
+true and it is not the whole question. The roster's spread is anti-correlated
+by construction, so the comparison a player actually needs is one hull against
+the range, which is what a bar against the roster's own low and high already
+says on a single page. What the list bought was reading two hulls against each
+other; what it cost was seeing either of them.
+
+The floor came out of the same drawing. The Anvil is the floor of speed,
+thrust and turn all three, so its page came out with three of five rows blank
+and read as an instrument that had failed rather than as the slowest ship in
+the game. On the list it was one row among seven and easy to miss; one hull to
+a page is what made it obvious.
+
+**Cost:** two hulls can no longer be read against each other without turning
+between them, which is the thing decision 112 bought and this gives back. The
+floor is a small lie about the share: a hull at nought of the range draws 3.5%
+of the track. It keeps the order down every row and it stops a true zero
+reading as a broken instrument.
+
+`M.col_hull` is a third piece of state on the ship stop, and `land_page_ship`
+comes back with it.
+
+**Verified:** built and photographed. Apex, Anvil and the spectate page were
+shot through `client/tools/shot.sh`, with the arrows turning the carousel
+three ships along and wrapping past the end onto sitting out. Anvil reads
+empty on speed, thrust and turn and full on energy and recharge, which is its
+row in `sim/src/baseline.c` exactly. `landing_test` holds the two arrows level
+with each other, either side of the drawing and above the name under it;
+`menu_test` covers the page, the wrap and the sitting-out page.

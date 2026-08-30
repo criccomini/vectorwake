@@ -39,7 +39,9 @@ local function world_stub()
         radar_doors = {},
         HULLS = setmetatable({}, {
             __index = function()
-                return {poly = {0, 0, 1, 1, 2, 0}, mid = 0}
+                return {poly = {0, 12, 8, -8, -8, -8}, mid = 2, reach = 12,
+                        lines = {{0, 12, 0, -8}},
+                        canopy = {0, 8, 2, 4, -2, 4}}
             end,
         }),
     }

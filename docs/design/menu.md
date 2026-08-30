@@ -5,10 +5,11 @@
 > the back bar on the menu and on every section. The tray is chrome the panel
 > draws rather than a strip of the content, so it cannot scroll away.
 >
-> Body is the roster as a list, each row carrying that hull's five flight
-> bars under one column head, and a press flies it. The pager is gone with the
-> page that made a list the wrong shape. The same bars stand under the body
-> row on the menu.
+> Body turns one ship at a time: the hull drawn large and rotating, an arrow
+> either side of the drawing and level with it, the name under it as the press
+> that flies it, and the five flight rows one to a line below. It was a list
+> for a day, which compared the seven and drew none of them. The bars take a
+> floor, so the hull at the bottom of a row is a stub rather than a blank.
 >
 > A section reads what it holds in the fight, in the games list's voice: the
 > detail at 14 in the mute, hard against the right of the type column. The

@@ -643,6 +643,11 @@ local function class_flight(cls)
     return {speed, thrust, rot, energy, recharge}
 end
 
+-- The five rows a hull's flight is read on, in the order `class_flight`
+-- answers them and the order the carousel lists them. Said here rather than in
+-- the drawing because the rows carry their own labels now.
+local FLIGHT_NAMES = {"speed", "thrust", "turn", "energy", "recharge"}
+
 -- Where a hull sits on each of the five rows, as a share of the roster's own
 -- range.
 --
@@ -787,12 +792,37 @@ local function sect_slots(cls, sect)
     return {}
 end
 
+-- How many hulls the roster holds, which is also the page sitting out is on.
+function M.hull_count()
+    return #HULLS
+end
+
+-- Which page body opens on: the ship being flown, or sitting out where that
+-- is what has been chosen. The one place that default is written down, so the
+-- drawing and the walking agree about where a fresh carousel is.
+function M.panel_home()
+    if M.spectating() then return #HULLS end
+    return M.class or 0
+end
+
+-- Step the carousel one ship, wrapping at either end, and answer where it
+-- landed. Nothing is chosen by turning: a pilot looking at an Anvil has not
+-- climbed into one until they press.
+function M.hull_page(at, dir)
+    local n = #HULLS
+    local to = (at or 0) + dir
+    if to < 0 then to = n end
+    if to > n then to = 0 end
+    return to
+end
+
 -- The rows one section opens.
 --
 -- Body is the odd one and the only one: it is a choice among seven ships
--- rather than a set of slots, so it is the roster, and the flight rows a
--- climbing zone would add fall under it after a rule.
-function M.sect_rows(cls, sect)
+-- rather than a set of slots, so it is a carousel of them, and the flight
+-- rows a climbing zone would add fall under it after a rule. `at` is the page
+-- it is turned to, which only body reads.
+function M.sect_rows(cls, sect, at)
     if sect == "flair" then
         -- Flattened here rather than drawn live, the way `view_row` flattens
         -- a settings row: a choice is a function on the row and a pair of
@@ -810,10 +840,27 @@ function M.sect_rows(cls, sect)
     end
     local rows = {}
     if sect == "body" then
-        rows[#rows + 1] = {kind = "stat_head"}
-        for _, h in ipairs(M.landing_ships()) do
-            rows[#rows + 1] = {kind = "hull", label = h.label,
-                               value = h.value, here = h.here, bars = h.bars}
+        -- One ship, turning, with the arrows either side of it and its
+        -- flight read out underneath. A list of seven put every hull's
+        -- five bars on screen at once, which compares them and shows none
+        -- of them: what a hull looks like is most of what a pilot is
+        -- choosing between, and a row of a list has no room to draw one.
+        local roster = M.landing_ships()
+        at = at or M.panel_home()
+        if at < 0 or at > #HULLS then at = M.panel_home() end
+        local h = roster[at + 1]
+        if h then
+            rows[#rows + 1] = {kind = "art", label = h.label, value = h.value,
+                               here = h.here, at = at, pages = #HULLS + 1,
+                               cls = type(h.value) == "number" and h.value
+                                   or nil,
+                               note = h.note}
+            for i, name in ipairs(FLIGHT_NAMES) do
+                if h.bars then
+                    rows[#rows + 1] = {kind = "stat", label = name,
+                                       share = h.bars[i]}
+                end
+            end
         end
     end
     local mine = M.build_of(cls)
@@ -960,14 +1007,14 @@ end
 -- tray is the same either way, which is the point of it: the panel draws it
 -- under the back bar wherever you are, so the purse is on screen wherever a
 -- credit is spent.
-function M.ship_panel(sect)
+function M.ship_panel(sect, at)
     local cls = M.class or 0
     return {
         sect = sect,
         label = sect or "ship",
         free = M.build_free(cls), credits = credits(),
         class = cls,
-        rows = sect and M.sect_rows(cls, sect) or M.ship_menu(),
+        rows = sect and M.sect_rows(cls, sect, at) or M.ship_menu(),
     }
 end
 
@@ -1091,7 +1138,8 @@ function M.landing_ships()
                            bars = flight_bars(i - 1)}
     end
     rows[#rows + 1] = {label = "spectate", value = "spectate",
-                       here = M.spectating()}
+                       here = M.spectating(),
+                       note = "watch the room from nobody's cockpit"}
     return rows
 end
 

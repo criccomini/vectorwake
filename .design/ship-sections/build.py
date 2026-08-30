@@ -302,35 +302,90 @@ def bars(hull="Apex", pad=14):
             f'{bar_cells(hull)}</div>')
 
 
-def stat_head(pad=14):
-    """The list's column head: the five words once, over the columns they
-    name, at the 8.5 points the bars strip already captions itself in.
+# The Apex silhouette, verbatim from `M.HULLS` in client/arena/world.lua: the
+# polygon the client calls the part a menu draws, the interior lines that say
+# which way it is facing, and the canopy. Local pixels with the nose along +y.
+APEX_POLY = [(0, 21), (1.6, 12), (2.6, 5), (6.5, -1), (11, -9), (8.5, -11.5),
+             (3.5, -6.5), (3, -10.5), (0, -11.5), (-3, -10.5), (-3.5, -6.5),
+             (-8.5, -11.5), (-11, -9), (-6.5, -1), (-2.6, 5), (-1.6, 12)]
+APEX_LINES = [[(0, 19.8), (2.6, 5), (6.5, -1)],
+              [(0, 19.8), (-2.6, 5), (-6.5, -1)],
+              [(5, 0.2), (9.3, -8.2)], [(-5, 0.2), (-9.3, -8.2)],
+              [(2.6, 1.5), (6, -1.6)], [(-2.6, 1.5), (-6, -1.6)]]
+APEX_CANOPY = [(0, 15.5), (1.5, 10.5), (0, 7.6), (-1.5, 10.5)]
+# `reach` is the circle that holds the hull and `mid` is halfway up it, both
+# measured off the polygon when world.lua loads. A drawing about the origin
+# sits low, because every hull reaches further forward than back.
+APEX_REACH = 22.0
+APEX_MID = 4.75
 
-    A band names what the rows under it are; this names what the columns
-    under it are, which is the same job on the other axis, so it takes the
-    band's two rules and its label rung."""
-    cells = "".join(
-        f'<span style="flex:1"><span class="lbl" style="font-size:8.5px">'
-        f'{n}</span></span>' for n in STATS)
-    return ('<div style="flex:none">'
-            '<div style="height:1px;background:rgba(63,88,120,.45)"></div>'
-            f'<div class="row" style="height:24px;padding:0 {pad}px;gap:6px">'
-            f'<span style="width:96px;flex:none"></span>{cells}</div>'
-            '<div style="height:1px;background:rgba(63,88,120,.45)"></div>'
-            '</div>')
+
+def hull_art(cx, cy, r, ang, col=FRIEND):
+    """One hull, turning, at the size a menu can look at it.
+
+    Caught mid-turn rather than animated: a still board says what the shape
+    is, and the client turns it once every eleven seconds."""
+    import math
+    k = r / APEX_REACH
+    ca, sa = math.cos(ang), math.sin(ang)
+
+    def put(pts):
+        out = []
+        for px, py in pts:
+            x, y = px * k, (py - APEX_MID) * k
+            out.append((cx + x * ca - y * sa, cy - (x * sa + y * ca)))
+        return out
+
+    def path(pts, close):
+        d = "M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+        return d + (" Z" if close else "")
+
+    parts = [f'<path d="{path(put(APEX_POLY), True)}" fill="none" '
+             f'stroke="{col}" stroke-width="1.6" stroke-linejoin="round"/>']
+    for line in APEX_LINES:
+        parts.append(f'<path d="{path(put(line), False)}" fill="none" '
+                     f'stroke="{col}" stroke-width="1.1" opacity=".55"/>')
+    parts.append(f'<path d="{path(put(APEX_CANOPY), True)}" fill="none" '
+                 f'stroke="{INK}" stroke-width="1.1" opacity=".7"/>')
+    return "".join(parts)
 
 
-def hull_row(hull, state=None, pad=14):
-    """One hull of the roster: its name, and where it stands on all five
-    rows. The bars are the row's reading, so the seven can be compared down
-    a column rather than by paging between them."""
-    wash = {"cursor": WASH_CURSOR, "here": WASH_HERE}.get(state, "")
-    col = FRIEND if state == "here" else INK
-    alpha = "" if state else "opacity:.85;"
-    return (f'<div class="row" style="height:44px;padding:0 {pad}px;gap:6px;'
-            f'{wash}"><span style="width:96px;flex:none;font-size:17px;'
-            f'color:{col};{alpha}">{hull}</span>'
-            f'{bar_cells(hull, labelled=False, col=col)}</div>')
+def carousel(hull, ang=0.42, h=206, pad=14, here=True):
+    """The body section: one ship turning, an arrow either side of it level
+    with the ship rather than with the row, and the name under it.
+
+    The name is the press that flies it; the arrows only look."""
+    col = FRIEND if here else INK
+    nameh = 30
+    mid = (h - nameh) / 2
+    wash = WASH_HERE if here else ""
+    art = hull_art(560 / 2, mid, min(mid - 6, 80), ang, col)
+    return (f'<div style="position:relative;height:{h}px;{wash}">'
+            f'<svg width="560" height="{h}" style="position:absolute;'
+            f'inset:0">{art}</svg>'
+            f'<div style="position:absolute;left:{pad + 10}px;top:{mid - 9}px">'
+            f'{step_tri(-1, k=18)}</div>'
+            f'<div style="position:absolute;right:{pad + 10}px;'
+            f'top:{mid - 9}px">{step_tri(1, k=18)}</div>'
+            f'<div style="position:absolute;left:0;right:0;bottom:0;'
+            f'height:{nameh}px;display:flex;align-items:center;'
+            f'justify-content:center;font-size:21px;color:{col}">{hull}</div>'
+            f'</div>')
+
+
+def stat_line(name, share, col=FRIEND, pad=14):
+    """One flight row: the word, and where this hull stands on it against the
+    rest of the roster.
+
+    With a floor under the fill, because the hull at the bottom of a row is
+    still a hull that flies: a share of nothing drew nothing, and the Anvil is
+    the floor of speed, thrust and turn all three."""
+    pct = max(3.5, round(share * 100))
+    return (f'<div class="row" style="height:26px;padding:0 {pad}px;gap:0">'
+            f'<span class="lbl" style="width:96px;flex:none">{name}</span>'
+            f'<span style="flex:1;height:3px;background:'
+            f'linear-gradient(90deg,{col} {pct}%,rgba(108,122,144,.22) '
+            f'{pct}%)"></span></div>')
 
 
 # --- the fight behind the glass, from ../dropdown-stack ----------------------
@@ -514,26 +569,19 @@ def main_board():
 
 
 def body_board():
-    """The roster as a list, one hull a row, each row carrying that hull's
-    five bars.
+    """One ship, turning, with its flight read out underneath.
 
-    It was a walker, because decision 100 called seven hulls with five bars
-    apiece a page in a list's clothes. That was true of a page that also held
-    every slot the hull could spend on; a section that holds nothing else is
-    a list, and a list is where the bars pay: seven hulls read down a column
-    compare, and seven read one at a time have to be remembered.
+    It was a walker, then a list of seven with five bars apiece, and it is a
+    carousel: what a hull looks like is most of what a pilot is choosing
+    between, and neither of the first two had room to draw one. The five bars
+    are still there, one to a line, under the ship they belong to.
 
-    The five words are said once, at the head, over the columns they name.
-    Nothing here costs a credit on the shipped roster, since every hull's
-    flight step is zero and `tune_rows` builds no flight rows, and the tray
-    is still drawn because the purse is a fact about the ship rather than
-    about the page."""
-    rows = [stat_head()]
-    for hull in ROSTER:
-        rows.append(hull_row(hull, state="here" if hull == "Apex" else None))
-    # The roster's last answer, and the one row with nothing to say about how
-    # it flies.
-    rows.append(row("Spectate", ""))
+    The tray is still drawn, because the purse is a fact about the ship rather
+    than about the page, and nothing here costs a credit on the shipped
+    roster: every hull's flight step is zero."""
+    rows = [carousel("Apex")]
+    for name, share in zip(STATS, shares("Apex")):
+        rows.append(stat_line(name, share))
     return board(1440, 810, "body", rows, seed=3,
                  foot_note="enter flies it", free=FREE)
 

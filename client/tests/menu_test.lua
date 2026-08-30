@@ -1475,25 +1475,37 @@ do
     check("flair reads the wake",
           opens.flair.detail == "standard wake", tostring(opens.flair.detail))
 
-    -- Body is the roster, one hull a row, each with its own flight beside it.
-    local body = menu.sect_rows(0, "body")
-    local hulls, headed = 0, false
+    -- Body is one ship, turning, with its five flight rows read out under it.
+    local body = menu.sect_rows(0, "body", 0)
+    local stats = {}
     for _, r in ipairs(body) do
-        if r.kind == "stat_head" then headed = true end
-        if r.kind == "hull" then hulls = hulls + 1 end
+        if r.kind == "stat" then stats[#stats + 1] = r.label end
     end
-    check("body lists the roster under one column head",
-          headed and hulls == 8, hulls .. " rows")
-    check("and every ship in it carries its own flight",
-          type(body[2].bars) == "table" and #body[2].bars == 5)
+    check("body turns one ship at a time",
+          body[1] and body[1].kind == "art" and body[1].label == "Apex"
+          and body[1].cls == 0 and body[1].pages == 8,
+          tostring(body[1] and body[1].label))
+    check("and reads its five flight rows under it",
+          #stats == 5 and stats[1] == "speed" and stats[5] == "recharge"
+          and type(body[2].share) == "number",
+          table.concat(stats, " "))
+    -- Turning wraps at either end, and sitting out is the page past the
+    -- roster: no ship to draw, and a sentence where one would have been.
+    check("the carousel wraps at either end",
+          menu.hull_page(7, 1) == 0 and menu.hull_page(0, -1) == 7,
+          menu.hull_page(7, 1) .. "/" .. menu.hull_page(0, -1))
+    local out = menu.sect_rows(0, "body", 7)
+    check("and sitting out is its last page",
+          #out == 1 and out[1].value == "spectate" and out[1].cls == nil
+          and out[1].note ~= nil, #out .. " rows")
     -- A stat that steps nothing would take a credit and change nothing, so no
-    -- row is offered for one even here.
-    local stats = 0
+    -- slot is offered for one even here.
+    local slots = 0
     for _, r in ipairs(body) do
-        if r.kind == "slot" then stats = stats + 1 end
+        if r.kind == "slot" then slots = slots + 1 end
     end
-    check("no row is offered for a stat that steps nothing", stats == 0,
-          stats .. " stat rows")
+    check("no row is offered for a stat that steps nothing", slots == 0,
+          slots .. " slot rows")
 
     -- The three that spend, each holding what the core says this hull can
     -- reach.

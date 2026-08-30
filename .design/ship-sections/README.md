@@ -5,8 +5,10 @@ specials and flair, each one opening a submenu holding the config for that
 part, with the build credits on display at the top, above body and below the
 back bar, and still there in the submenus.
 
-Shipped as [decision 112](../../docs/architecture/decisions.md). Nine boards,
-drawn before the client was, and the client agrees with them.
+Shipped as [decision 112](../../docs/architecture/decisions.md), with body
+corrected to a carousel by [decision
+113](../../docs/architecture/decisions.md). Nine boards, drawn before the
+client was, and kept in step with it.
 
 Artifact: [Ship Menu Sections](https://claude.ai/code/artifact/165ecbef-f9b9-4392-bcf9-27bf0938653a)
 
@@ -50,14 +52,16 @@ wears on the zone stop, and it is what "2 rounds, bouncing" wears here. It is
 quieter than the name it answers and can never be mistaken for a control.
 
 **Body carries the stats, twice.** The hull's five bars stand under the row
-that names it on the menu, and every hull in the body list carries its own,
-so the roster can be read down a column. The five words are said once, at the
-head of that list, over the columns they name.
+that names it on the menu, and the section itself turns one ship at a time
+with its five rows read out one to a line underneath. The bars take a floor,
+so the hull at the bottom of a row draws a stub rather than nothing.
 
-**Nothing new in the language.** A section row opens, which is the caret every
-stop on the landing already wears. The rows inside are decision 104's six ends
-unchanged: the walker in body, steppers and switches in guns, bombs and
-specials, the range cells in flair.
+**Almost nothing new in the language.** A section row opens, which is the
+caret every stop on the landing already wears, and the rows inside are
+decision 104's six ends unchanged: steppers and switches in guns, bombs and
+specials, the range cells in flair. Body is the one thing here that is not a
+row. It is a drawing with the walker's two arrows either side of it, level
+with the ship rather than with a line of type, and a reading block under it.
 
 ## Where the five came from
 
@@ -67,14 +71,13 @@ specials. Which rows appear inside each is still the core's answer rather than
 a list written in the client, so a zone that gives a hull no bomb rack opens a
 bombs section with nothing in it rather than one nobody remembered to hide.
 
-Body is the one section that is a choice rather than a set of slots, so it
-is a list: seven hulls and sitting out, one to a row, each row carrying that
-hull's five bars, and a press flies the one you are on. It was a walker,
-because decision 100 called seven hulls with five bars apiece a page in a
-list's clothes. That was true of a page that also held every slot the hull
-could spend on. A section that holds nothing else is a list, and a list is
-where the bars pay: seven read down a column compare, seven read one at a
-time have to be remembered.
+Body is the one section that is a choice rather than a set of slots, and it
+took three shapes to settle. It was a walker with no drawing on it, then a
+list of seven with five bars apiece, and it is a carousel: one hull drawn
+large and turning, an arrow either side of it, the five rows underneath. What
+the list bought was reading two hulls against each other; what it cost was
+seeing either of them, and what a hull looks like is most of what a pilot is
+choosing between. See decision 113.
 
 Nothing in body costs a credit on the shipped roster: every hull's flight step
 is zero, which is why the shipped panel has no flight rows either.

@@ -106,6 +106,14 @@ package.loaded["arena.world"] = {
     radar_tiles = {2960, 2960},
     radar_safe = {},
     radar_doors = {},
+    -- One hull for the carousel to turn. `reach` and `mid` are what world.lua
+    -- measures off a polygon when it loads, and the drawing wants both.
+    HULLS = setmetatable({}, {
+        __index = function()
+            return {poly = {0, 12, 8, -8, -8, -8}, mid = 2, reach = 12,
+                    lines = {{0, 12, 0, -8}}}
+        end,
+    }),
 }
 
 local ui = require("arena.ui")
@@ -176,17 +184,28 @@ local GUNS = {
     },
 }
 
--- And the body section, which is the roster with each hull's flight beside
--- its name.
+-- And the body section, which is one ship turning with its flight read out
+-- underneath and an arrow either side of the drawing.
 local BODY = {
     label = "body", class = 1, free = 2, credits = 7,
     rows = {
-        {kind = "stat_head"},
-        {kind = "hull", label = "Apex", value = 0,
-         bars = {0.76, 0.86, 0.48, 0.14, 0.57}},
-        {kind = "hull", label = "Wedge", value = 1, here = true,
-         bars = {0.2, 0.14, 0.09, 0.71, 0.0}},
-        {kind = "hull", label = "spectate", value = "spectate"},
+        {kind = "art", label = "Wedge", value = 1, cls = 1, here = true,
+         at = 1, pages = 8},
+        {kind = "stat", label = "speed", share = 0.2},
+        {kind = "stat", label = "thrust", share = 0.14},
+        {kind = "stat", label = "turn", share = 0.09},
+        {kind = "stat", label = "energy", share = 0.71},
+        {kind = "stat", label = "recharge", share = 0.0},
+    },
+}
+
+-- Sitting out is the page past the roster, and carries no ship to draw and no
+-- flight to read.
+local WATCHING = {
+    label = "body", class = 1, free = 2, credits = 7,
+    rows = {
+        {kind = "art", label = "spectate", value = "spectate", at = 7,
+         pages = 8, note = "watch the room from nobody's cockpit"},
     },
 }
 
@@ -733,17 +752,43 @@ do
     check("and a switch that is already off cannot be turned off",
           down_off == nil)
 
-    -- Body is the roster, one hull a row, and a press on one flies it.
+    -- Body is one ship, turning, with an arrow either side of the drawing
+    -- and its flight read out underneath. A press on the ship flies it.
     frame(1440, 810, {land = land_in(BODY), col_open = "ship"})
-    local flyable = {}
+    local fly, turns = nil, {}
     for _, r in ipairs(ui.hits) do
-        if r.action == "land_pick_ship" then flyable[#flyable + 1] = r.value end
+        if r.action == "land_pick_ship" then fly = r end
+        if r.action == "land_page_ship" then turns[r.value] = r end
     end
-    check("body lists the roster and every hull can be flown",
-          #flyable == 3 and flyable[1] == 0 and flyable[3] == "spectate",
-          table.concat({tostring(flyable[1]), tostring(flyable[3])}, " "))
-    check("and says the five flight rows once, over their columns",
+    check("body turns one ship and flies it on a press",
+          fly ~= nil and fly.value == 1 and turns[-1] and turns[1],
+          tostring(fly and fly.value))
+    check("and says the five flight rows under it",
           word("SPEED") ~= nil and word("RECHARGE") ~= nil)
+    -- The arrows stand either side of the drawing rather than either side of
+    -- the row: what they turn is the ship, so that is what they are level
+    -- with. Both are the same height, and it is not the row's middle.
+    if turns[-1] and turns[1] then
+        local l, r2 = turns[-1], turns[1]
+        local art
+        for _, h in ipairs(ui.hits) do
+            if h.action == "land_pick_ship" then art = h end
+        end
+        check("with the two arrows level with each other",
+              math.abs((l.y + l.h / 2) - (r2.y + r2.h / 2)) < 1)
+        check("one either side of the drawing",
+              l.x < art.x and r2.x + r2.w > art.x + art.w)
+        check("and above the name under it",
+              l.y + l.h / 2 < art.y + art.h - 20)
+    end
+
+    -- Sitting out is the page past the roster: no ship to draw, and the
+    -- sentence about it standing where one would have been.
+    frame(1440, 810, {land = land_in(WATCHING), col_open = "ship"})
+    check("sitting out is a page of the carousel",
+          word("Spectate") ~= nil and box("land_pick_ship") ~= nil,
+          table.concat({tostring(word("Spectate") ~= nil),
+                        tostring(box("land_pick_ship") ~= nil)}, " "))
 
     -- Flair is the two rows that cost nothing, and they take a press.
     frame(1440, 810, {land = land_in(FLAIR), col_open = "ship"})
@@ -760,9 +805,7 @@ do
     frame(1440, 810, {land = {name = LAND.name, zone = LAND.zone,
                               ship = "spectate", watching = true,
                               zones = LAND.zones,
-                              panel = {at = 7, pages = 8, watching = true,
-                                       label = "spectate",
-                                       note = "watch the room"}}})
+                              panel = WATCHING}})
     check("the ship stop says sitting out in the interface's own case",
           word("SPECTATE") ~= nil and word("spectate") == nil)
 end
@@ -1320,7 +1363,7 @@ end
 do
     frame(844, 390, {land = land_in(BODY), col_open = "ship"})
     local pick = box("land_pick_ship")
-    check("a rail's panel carries the roster", pick ~= nil)
+    check("a rail's panel carries the carousel", pick ~= nil)
     if pick then
         check("and stays inside the window",
               pick.x >= 0 and pick.x + pick.w <= 844)
@@ -1350,7 +1393,7 @@ do
     -- short window is exactly where it will not already be drawn.
     local last = nil
     for _, r in ipairs(BODY.rows) do
-        if r.kind == "hull" then last = r.value end
+        if r.kind == "art" then last = r.value end
     end
     ui.col_scroll = 0
     ui.col_sel, ui.col_sel_value = "land_pick_ship", last

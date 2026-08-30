@@ -527,7 +527,7 @@ local function shut_panels()
     -- up stands it down rather than leaving it to reappear underneath, and the
     -- cursor goes with it. The two columns stand in the same place, so a lit
     -- stop under the one that replaced it is the interface drawn twice.
-    ui.col_open, ui.col_sect = nil, nil
+    ui.col_open, ui.col_sect, ui.col_hull = nil, nil, nil
     ui.col_sel, ui.col_sel_value = nil, nil
     ui.page_scroll = 0
     -- And the slide with it, rather than left half up for the next panel to
@@ -545,7 +545,7 @@ local function land_shut()
     if ui.col_open then
         ui.col_sel, ui.col_sel_value = "land_" .. ui.col_open, nil
     end
-    ui.col_open, ui.col_sect = nil, nil
+    ui.col_open, ui.col_sect, ui.col_hull = nil, nil, nil
 end
 
 local function toggle_menu()
@@ -730,7 +730,7 @@ local LAND_HOT = {
     play_now = true, land_account = true, land_zone = true, land_ship = true,
     land_pick_zone = true, land_pick_ship = true, land_back = true,
     land_pick_account = true, land_kit_row = true, land_kit_reset = true,
-    land_sect = true, land_flair = true,
+    land_sect = true, land_flair = true, land_page_ship = true,
     -- And the menu's own column, which is the same interface with a different
     -- set of stops on it: one cursor, one pointer, one rule for what lights.
     menu_go = true, menu_stop = true, menu_pick = true, menu_row = true,
@@ -885,7 +885,7 @@ local function leave_world()
     ui.help_prompt = false
     ui.map = false
     ui.room_ask = nil
-    ui.col_open, ui.col_sect = nil, nil
+    ui.col_open, ui.col_sect, ui.col_hull = nil, nil, nil
     ui.col_sel, ui.col_sel_value = nil, nil
     ui.panel_shut()
 end
@@ -2214,7 +2214,7 @@ function update(self, dt)
                     -- the credits they are bought with, or whichever of the
                     -- five is open over the same credits. `ui.col_sect` is
                     -- which, and nil is the menu itself.
-                    panel = menu.ship_panel(ui.col_sect),
+                    panel = menu.ship_panel(ui.col_sect, ui.col_hull),
                     -- What the account stop opens, and the dot it wears
                     -- while this guest has a rated game a lost account would
                     -- cost them. The drawer says the same thing in words on
@@ -3003,12 +3003,20 @@ function land_act(self, action, value)
     end
     -- The landing's one key. See session.deploy.
     if action == "play_now" then
-        -- Nothing to settle first. The panel used to page the roster without
-        -- picking, so the key had to fly whatever page was up or a pilot who
-        -- walked to a Wedge would arrive in the Apex they walked away from.
-        -- The roster is a list now and a press on it is the pick, so what
-        -- this pilot arrives as is already decided.
-        ui.col_open, ui.col_sect = nil, nil
+        -- With the roster on screen, the key flies the ship it is showing.
+        -- Turning the carousel does not pick, so without this a pilot who
+        -- turned to a Wedge and pressed the one key on the screen would
+        -- arrive in the Apex they turned away from, with the panel in front
+        -- of them saying Wedge the whole time.
+        if ui.col_open == "ship" and ui.col_sect == "body" and ui.col_hull then
+            if ui.col_hull >= menu.hull_count() then
+                apply_menu(self, "spectate")
+            else
+                local act = menu.pick_profile(ui.col_hull)
+                if act then apply_menu(self, act) end
+            end
+        end
+        ui.col_open, ui.col_sect, ui.col_hull = nil, nil, nil
         ui.col_sel, ui.col_sel_value = nil, nil
         session.deploy(self)
         return true
@@ -3036,7 +3044,7 @@ function land_act(self, action, value)
             -- A stop opens where the pilot is rather than where they last
             -- read to: the ship stop opens on its own menu, at the top of it.
             if which == "ship" then
-                ui.col_sect = nil
+                ui.col_sect, ui.col_hull = nil, nil
                 ui.col_scroll = 0
             end
         end
@@ -3053,7 +3061,7 @@ function land_act(self, action, value)
         -- onto the landing. The backdrop behind the glass means the same
         -- thing, so a press on the margin walks the stack down too.
         if ui.col_open == "ship" and ui.col_sect then
-            ui.col_sect = nil
+            ui.col_sect, ui.col_hull = nil, nil
             ui.col_sel, ui.col_sel_value = nil, nil
             ui.col_scroll = 0
         else
@@ -3086,6 +3094,9 @@ function land_act(self, action, value)
     -- spent, and back steps out onto the menu again.
     if action == "land_sect" then
         ui.col_sect = value
+        -- Body opens on the ship being flown rather than wherever it was last
+        -- turned to: a section opens where the pilot is.
+        ui.col_hull = value == "body" and menu.panel_home() or nil
         ui.col_sel, ui.col_sel_value = nil, nil
         ui.col_scroll = 0
         sfx.ui("ui_go")
@@ -3096,6 +3107,15 @@ function land_act(self, action, value)
     -- one of a few answers has always done.
     if action == "land_flair" then
         if menu.flair_step(value, 1) then sfx.ui("ui_go") end
+        return true
+    end
+    -- Turning the carousel: one hull along the roster, wrapping at either
+    -- end. Nothing is chosen by turning, so a pilot reading through the seven
+    -- is not changing what they will fly until they press.
+    if action == "land_page_ship" then
+        ui.col_hull = menu.hull_page(ui.col_hull or menu.panel_home(),
+                                     value or 1)
+        sfx.ui("ui_move")
         return true
     end
     if action == "land_flair_step" then

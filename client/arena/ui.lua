@@ -144,6 +144,11 @@ M.col_open = nil
 -- before it steps off the menu onto the landing. Cleared with `col_open`,
 -- since a stop that has shut is not open at any depth.
 M.col_sect = nil
+-- Which ship the body section's carousel is turned to: a class, or the count
+-- of them for sitting out. Nothing is chosen by turning, so this is a place in
+-- a list rather than a decision, and it goes back to the ship being flown
+-- every time the section is opened.
+M.col_hull = nil
 -- Where a press would land on the landing: the action a box publishes, and
 -- the value that box carries so one row of an open list is told from the next.
 --
@@ -4718,53 +4723,82 @@ end
 -- roster both draw them.
 local FLIGHT_ROWS = {"speed", "thrust", "turn", "energy", "recharge"}
 
--- The five words a hull's flight is read on, said once over the columns they
--- name at the top of the roster.
+-- How long one turn of a hull on the carousel takes, in seconds.
 --
--- At the size the bars caption themselves in rather than the label's own
--- rung: eight and a half points is what fits over a fifth of the glass at a
--- phone's width, and these are the same captions moved off seven repetitions
--- of the strip onto one head.
-local function stat_head(kx, kw, y, h, name_w)
-    local pad = M.ROW_INSET * F.scale
-    hrule(kx, y, kw, 0.45)
-    local bx = kx + pad + name_w
-    local bw = kw - 2 * pad - name_w
-    local gap = 6 * F.scale
-    local n = #FLIGHT_ROWS
-    local cw = (bw - gap * (n - 1)) / n
-    for i = 1, n do
-        lbl(FLIGHT_ROWS[i], bx + (i - 1) * (cw + gap), y + h / 2, pal.MUTE,
-            nil, 8.5 * F.scale)
+-- Slow enough to read as a thing turning rather than a thing spinning: what a
+-- pilot is doing here is looking at a silhouette, and the whole identity
+-- system is that every hull has a front visibly not its back. `F.now` is zero
+-- under the test harness, which holds every one of these still.
+local HULL_TURN = 11
+
+-- One hull, turning, at the size a menu can look at it.
+--
+-- The silhouette only, which is what `world.HULLS` calls the part a menu
+-- draws, plus the interior lines and the canopy that say which way it is
+-- facing. Centred on `mid` rather than on the origin: every hull reaches
+-- further forward than back, so a drawing about its own turning point sits
+-- low. `reach` is the circle that holds it, so an Anvil and a Cipher come out
+-- the same size on screen rather than the same size in world pixels.
+local function hull_art(cx, cy, cls, r, col, alpha)
+    local h = world.HULLS and world.HULLS[cls + 1]
+    -- `reach` and `mid` are measured off the polygon when world.lua loads, so
+    -- a hull that has neither is a table this drawing was never meant to be
+    -- handed. Nothing rather than a raise: the panel around it is still the
+    -- thing on screen.
+    if not (h and h.poly and h.reach) then return end
+    local k = r / math.max(1, h.reach)
+    local ang = (F.now * math.pi * 2) / HULL_TURN
+    local ca, sa = math.cos(ang), math.sin(ang)
+    local out = {}
+    local function turned(src)
+        for i = 1, #src, 2 do
+            local x, y = src[i] * k, (src[i + 1] - h.mid) * k
+            out[i] = cx + x * ca - y * sa
+            out[i + 1] = ry(cy - (x * sa + y * ca))
+        end
+        for i = #src + 1, #out do out[i] = nil end
+        return out
     end
-    hrule(kx, y + h, kw, 0.45)
+    F.layer:outline(turned(h.poly), 1.6 * F.scale, pal.a(col, alpha), true)
+    for _, q in ipairs(h.lines or {}) do
+        local t = turned(q)
+        for i = 1, #t - 3, 2 do
+            F.layer:seg(t[i], t[i + 1], t[i + 2], t[i + 3],
+                        1.1 * F.scale, pal.a(col, alpha * 0.55), true)
+        end
+    end
+    if h.canopy then
+        F.layer:outline(turned(h.canopy), 1.1 * F.scale,
+                        pal.a(pal.INK, alpha * 0.7), true)
+    end
 end
 
--- One hull's five bars, laid in the columns that head names.
+-- One flight row of the carousel: the word, and where this hull stands on it
+-- against the rest of the roster.
 --
 -- A share rather than a figure. The units are the core's, five different
 -- scales none of which a player reads, and what the row is answering is
--- "faster than what": a bar against the rest of the roster says that and a
--- number in Q16 pixels a tick does not.
-local function flight_strip(x, y, w, bars, col, captions)
-    local gap = 6 * F.scale
-    local n = #bars
-    local cw = (w - gap * (n - 1)) / n
-    for i = 1, n do
-        local px = x + (i - 1) * (cw + gap)
-        local share = math.max(0, math.min(1, bars[i] or 0))
-        rect(px, y, cw, 3 * F.scale, pal.a(pal.DIM, 0.22))
-        rect(px, y, cw * share, 3 * F.scale, pal.a(col, 0.85))
-        if captions then
-            lbl(FLIGHT_ROWS[i], px, y + 11 * F.scale, pal.MUTE, nil,
-                8.5 * F.scale)
-        end
-    end
-end
+-- "faster than what".
+--
+-- With a floor under the fill, because the hull at the bottom of a row is
+-- still a hull that flies. A share of nothing drew nothing, which is exact
+-- about the range and wrong about the ship: the Anvil is the floor of speed,
+-- thrust and turn all three, so its page came out with three of five rows
+-- blank and read as an instrument that had failed rather than as the slowest
+-- ship in the game. The floor is small enough that the order down a row is
+-- still the order, and every hull's page now has five bars on it.
+local FLOOR = 0.035
 
--- How wide a hull's name stands in the roster before its bars begin.
-local function hull_name_w(kw)
-    return math.min(96 * F.scale, (kw - 2 * M.ROW_INSET * F.scale) * 0.3)
+local function stat_line(kx, kw, y, h, r, col)
+    local pad = M.ROW_INSET * F.scale
+    local name_w = math.min(96 * F.scale, (kw - 2 * pad) * 0.34)
+    local mid = y + h / 2
+    lbl(r.label, kx + pad, mid, pal.MUTE)
+    local bx = kx + pad + name_w
+    local bw = kw - 2 * pad - name_w
+    local share = math.max(FLOOR, math.min(1, r.share or 0))
+    rect(bx, mid - 1.5 * F.scale, bw, 3 * F.scale, pal.a(pal.DIM, 0.22))
+    rect(bx, mid - 1.5 * F.scale, bw * share, 3 * F.scale, pal.a(col, 0.85))
 end
 
 -- One row of the ship stop, at whichever level of it is open.
@@ -4780,15 +4814,71 @@ local function land_row(kx, kw, y, h, r)
         hrule(kx + pad, y + h / 2, kw - 2 * pad, 0.6)
         return
     end
-    if r.kind == "stat_head" then
-        stat_head(kx, kw, y, h, hull_name_w(kw))
+    if r.kind == "bars" then
+        -- The menu's own strip, under the row that names the hull: five bars
+        -- across, captioned at the size the carousel's rows are read at.
+        if r.bars then
+            local gap = 6 * F.scale
+            local n = #r.bars
+            local bw = kw - 2 * pad
+            local cw = (bw - gap * (n - 1)) / n
+            for i = 1, n do
+                local px = kx + pad + (i - 1) * (cw + gap)
+                local share = math.max(0, math.min(1, r.bars[i] or 0))
+                rect(px, y + 12 * F.scale, cw, 3 * F.scale,
+                     pal.a(pal.DIM, 0.22))
+                rect(px, y + 12 * F.scale, cw * share, 3 * F.scale,
+                     pal.a(pal.FRIEND, 0.85))
+                lbl(FLIGHT_ROWS[i], px, y + 23 * F.scale, pal.MUTE, nil,
+                    8.5 * F.scale)
+            end
+        end
         return
     end
-    if r.kind == "bars" then
-        if r.bars then
-            flight_strip(kx + pad, y + 12 * F.scale, kw - 2 * pad, r.bars,
-                         pal.FRIEND, true)
+    if r.kind == "stat" then
+        stat_line(kx, kw, y, h, r, r.here and pal.FRIEND or pal.INK)
+        return
+    end
+    if r.kind == "art" then
+        -- The carousel: one ship turning, an arrow either side of it at its
+        -- own middle, and the name under it. The name is the press that flies
+        -- it, so a pilot who has turned to a ship is one press from arriving
+        -- in it; the arrows only look.
+        local on = M.col_sel == "land_pick_ship" and M.col_sel_value == r.value
+        LIT.state(kx, y, kw, h, on, r.here)
+        local col = r.here and pal.FRIEND or pal.INK
+        local a = (r.here and not on) and LIT.breath() or 1
+        local nameh = 30 * F.scale
+        local mid = y + (h - nameh) / 2
+        if r.cls then
+            hull_art(kx + kw / 2, mid, r.cls,
+                     math.min((h - nameh) / 2 - 6 * F.scale,
+                              80 * F.scale), col, a)
+        elseif r.note then
+            -- Sitting out has no ship to draw, so what stands in its place is
+            -- the sentence about it.
+            txt(r.note, kx + kw / 2, mid, TYPE.BODY * F.scale, pal.READ,
+                "center", MENU_FONT)
         end
+        txt(r.label, kx + kw / 2, y + h - nameh / 2, TYPE.LEAD * F.scale,
+            pal.a(col, a), "center", MENU_FONT, r.value ~= "spectate")
+        -- The two arrows, at the glass's own edges and level with the middle
+        -- of the ship rather than with the row: what they turn is the
+        -- drawing, so that is what they stand beside.
+        for _, d in ipairs({{-1, kx + 24 * F.scale},
+                            {1, kx + kw - 24 * F.scale}}) do
+            local dir, ax = d[1], d[2]
+            F.layer:tri(ax + dir * 7 * F.scale, ry(mid),
+                        ax - dir * 6 * F.scale, ry(mid - 9 * F.scale),
+                        ax - dir * 6 * F.scale, ry(mid + 9 * F.scale),
+                        pal.a(pal.FRIEND, 0.9))
+            hit(ax - 24 * F.scale, mid - 26 * F.scale, 48 * F.scale,
+                52 * F.scale, "land_page_ship", dir, nil, 1)
+        end
+        -- The name takes the press, published under the arrows and clear of
+        -- them, so a thumb aiming at the ship gets the ship.
+        hit(kx + 56 * F.scale, y, kw - 112 * F.scale, h, "land_pick_ship",
+            r.value, nil, 0)
         return
     end
     if r.kind == "sect" then
@@ -4800,24 +4890,6 @@ local function land_row(kx, kw, y, h, r)
         menu_row(kx + pad, y, kw - 2 * pad, h,
                  {label = r.label, detail = r.detail, verbatim = r.raw,
                   caret = true}, on)
-        return
-    end
-    if r.kind == "hull" then
-        -- The roster: the name, then where that hull stands against the rest
-        -- of it. One press flies it, which is the act the drawer's own roster
-        -- ran and the act the ship stop has always ended in.
-        local on = M.col_sel == "land_pick_ship" and M.col_sel_value == r.value
-        LIT.state(kx, y, kw, h, on, r.here)
-        hit(kx, y, kw, h, "land_pick_ship", r.value, nil, 1)
-        local col = r.here and pal.FRIEND or pal.INK
-        local a = (r.here and not on) and LIT.breath() or 1
-        local name_w = hull_name_w(kw)
-        txt(r.label, kx + pad, y + h / 2, TYPE.ROW * F.scale, pal.a(col, a),
-            nil, MENU_FONT, true)
-        if r.bars then
-            flight_strip(kx + pad + name_w, y + h / 2, kw - 2 * pad - name_w,
-                         r.bars, col, false)
-        end
         return
     end
     if r.kind == "reset" then
@@ -4867,8 +4939,9 @@ end
 -- one, the roster's column head is a band, and the hairline over the reset is
 -- the rule the account list already draws between its two groups.
 function pages.land_row_h(r, drh)
+    if r.kind == "art" then return 206 * F.scale end
     if r.kind == "bars" then return 34 * F.scale end
-    if r.kind == "stat_head" then return 24 * F.scale end
+    if r.kind == "stat" then return 26 * F.scale end
     if r.kind == "rule" then return 9 * F.scale end
     return drh
 end
@@ -4879,7 +4952,7 @@ end
 local function land_row_at(r)
     if r.kind == "sect" then return "land_sect", r.sect end
     if r.kind == "slot" then return "land_kit_row", r.slot end
-    if r.kind == "hull" then return "land_pick_ship", r.value end
+    if r.kind == "art" then return "land_pick_ship", r.value end
     if r.kind == "flair" then return "land_flair", r.index end
     if r.kind == "reset" then return "land_kit_reset", nil end
     return nil, nil
@@ -5223,6 +5296,11 @@ function M.col_walk()
                or r.action == "land_pick_ship" or r.action == "land_kit_row"
                or r.action == "land_flair" or r.action == "land_kit_reset"
             then
+                -- The two arrows either side of the ship are not stops of
+                -- their own: a hand standing on the carousel turns it with
+                -- left and right, which is the rule every value row here
+                -- follows. They are a pointer's way in and nothing else.
+
                 out[#out + 1] = r
             end
         end
@@ -5273,6 +5351,9 @@ function M.col_side(dir)
     end
     if M.col_sel == "land_flair" then
         return "land_flair_step", {index = M.col_sel_value, dir = dir}
+    end
+    if M.col_sel == "land_pick_ship" then
+        return "land_page_ship", dir
     end
     return nil
 end
