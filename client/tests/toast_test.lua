@@ -106,7 +106,7 @@ local function frame(w, h, feed, opts)
         me = 0,
         class_names = {"Apex", "Wedge", "Chord", "Anvil", "Facet", "Cipher",
                        "Lattice"},
-        menu_open = false,
+        menu_open = opts.menu or false,
         pilots = {[0] = {name = "you", label = "human"}},
         teams = {}, feed = feed or {}, hurt = 0,
         charges = {}, pad_top = pad_reach(w, h, 1),
@@ -254,6 +254,25 @@ check("a short window pulls it up off the controls",
       tight and tight.y + 12 < 500 - treach,
       tight and string.format("line at %.0f, controls reach %.0f",
                               tight.y, 500 - treach) or "not drawn")
+
+-- --- and it goes down under anything read over the arena -------------------
+--
+-- The same rule the nameplates go down on. Glyphs come from the gui and the
+-- gui draws over every mesh, so nothing a panel lays down can cover this line:
+-- on a phone a panel is most of the window, and a kill was landing in the
+-- middle of a settings row, which loses the line and the row together.
+--
+-- The instruments stay, because a pilot reading a menu can still be shot and
+-- those are what say so. This is news rather than an instrument, and on a
+-- touchscreen the corner feed is already off for the same kind of reason.
+
+frame(390, 844, {MY_DEATH}, {menu = true})
+check("a panel over the arena takes the line down with the plates",
+      shown("other killed you") == nil,
+      "the kill line is drawn through the menu")
+frame(390, 844, {MY_DEATH})
+check("and it comes back when the panel does not stand",
+      shown("other killed you") ~= nil, "not drawn with nothing over it")
 
 -- --- and a desktop is untouched --------------------------------------------
 

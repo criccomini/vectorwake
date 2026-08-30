@@ -434,6 +434,14 @@ net.may_found = false
 -- the state somebody sets deliberately and then comes back wondering about.
 
 open("settings")
+
+-- A section is a band with a run of rows under it, so a `sect` opens one and
+-- the rows after it belong to it. The first row of the page has to open one,
+-- since a run with no band over it is a run of rows nothing names.
+check("the settings page opens with a section",
+      rows()[1] and rows()[1].sect ~= nil,
+      tostring(rows()[1] and rows()[1].label))
+
 menu.volume, menu.music = 3, 3
 menu.apply_settings()
 local sound_row = row_named("sound")
@@ -596,6 +604,22 @@ do
     local row = keys_row()
     check("a hull carrying two kinds gets a row for the keys", row ~= nil,
           "no row")
+    -- And it opens no section of its own. A `sect` starts a band, and this
+    -- row named the same one the wake above it had already started, so the
+    -- page drew SHIP with one row under it and then SHIP again with one row
+    -- under that. Checked here rather than up with the rest of the page,
+    -- because this is the only hull that has both rows to collide.
+    do
+        local seen, twice = {}, nil
+        for _, r in ipairs(rows()) do
+            if r.sect then
+                if seen[r.sect] then twice = r.sect end
+                seen[r.sect] = true
+            end
+        end
+        check("and no section on the page opens twice", twice == nil,
+              tostring(twice) .. " opens a band of its own more than once")
+    end
     local said = row and row.detail
     check("and the row says which kind the first key throws",
           said ~= nil and said:find("first") ~= nil, tostring(said))

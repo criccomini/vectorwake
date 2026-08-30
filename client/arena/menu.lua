@@ -859,8 +859,13 @@ local function flair_rows()
             local c = pal.CHARGES[k + 1]
             names[#names + 1] = c and c.name or ("charge " .. k)
         end
+        -- No band of its own. A `sect` opens one, and this row named the
+        -- same section the wake above it had already opened, so the settings
+        -- page drew SHIP twice with one row under each. The wake is always
+        -- first in this pair, so the band belongs to it and this falls under
+        -- it.
         rows[#rows + 1] = {
-            label = "charge keys", sect = "ship",
+            label = "charge keys",
             help = "Which of the two keys throws which kind.",
             detail = names[1] .. " first",
             act = "swap_charges",

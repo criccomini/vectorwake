@@ -490,15 +490,22 @@ if in_menu then
             {label = "Caisson", detail = "4 pilots", named = true,
              tint = 1, index = 1},
         } or {
-            {sect = "audio"},
-            {label = "Sound", choice = 2, choices = 3, detail = "half",
+            -- The settings page as `menu.lua` builds it: four sections, and
+            -- the two ship rows under one band rather than under two.
+            {label = "Sound", sect = "audio", choice = 2, choices = 3,
+             detail = "half", pick = true},
+            {label = "Music", choice = 2, choices = 3, detail = "half",
              pick = true},
-            {label = "Music", choice = 1, choices = 3, detail = "quiet",
-             pick = true},
-            {sect = "video"},
-            {label = "Effects", choice = 3, choices = 3, detail = "full",
-             pick = true},
-            {label = "Controls", go = "controls", caret = true},
+            {label = "Frames", sect = "video", choice = 1, choices = 3,
+             detail = "display", pick = true},
+            {label = "Fullscreen", detail = "fill the screen"},
+            {label = "Controls", sect = "the machine",
+             detail = "keys and pads", caret = true},
+            {label = "About", detail = "this build", caret = true},
+            {label = "Wake", sect = "ship", choice = 1, choices = 3,
+             detail = "standard", pick = true},
+            {label = "Charge keys", choice = 1, choices = 2,
+             detail = "repel first", pick = true},
         }) or {},
     })
 end

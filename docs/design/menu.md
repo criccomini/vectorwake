@@ -1,5 +1,19 @@
 # Landing, and the menu
 
+> **The column is read at full strength.** It was drawn at a third of it. The
+> HUD quiets every word on screen while a menu is up so the instruments behind
+> it recede, and the column is drawn after that and took the dim meant for what
+> it covers: the same rows as the landing's, through the same function, at 0.34
+> against 1.00. A card over the column is the one case that keeps the dim,
+> since the card is what is being read then.
+>
+> The settings page opens each section once. It drew SHIP twice, one row under
+> each, because the wake and the charge keys both claimed the band.
+>
+> On a phone the kill line goes down under a panel, with the nameplates and
+> for their reason: the gui draws over every mesh, so a panel cannot cover it,
+> and a kill in the middle of a settings row loses the line and the row.
+
 > **The column speaks the menu language too.** The settings stop wears no
 > mark. It carried a gauge, drawn by the tab rail's own mark table, and a rail
 > is not what this column is: it was a seventh right end in a language with

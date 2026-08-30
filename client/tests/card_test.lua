@@ -179,7 +179,11 @@ local function frame(ask, o)
             zone = "melee",
             fps = 60, frame_ms = 16.7, rx_rate = 0, tx_rate = 0,
         })
-        ui.menu({open = true, stops = STOPS, rows = {}})
+        -- The question rides the view, the way `menu.view` carries
+        -- `menu.ask`: the column reads it to know that something stands over
+        -- it and keeps the dim the HUD set. Without it the column would draw
+        -- at full strength under the card it is being read through.
+        ui.menu({open = true, stops = STOPS, rows = {}, ask = ask})
     end
     ui.land_card(ask)
     ui.finish()

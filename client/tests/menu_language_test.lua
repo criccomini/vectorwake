@@ -323,6 +323,65 @@ do
                         tostring(sides)))
 end
 
+-- --- one strength ----------------------------------------------------------
+--
+-- Both columns are the thing being read, so both are read at full strength.
+--
+-- They were not. `M.hud` drops every word on screen to a third while a menu
+-- is up, so the instruments it stands over recede, and it returns early with
+-- that still set. The landing's column is drawn inside `M.hud` before that
+-- return and came out lit; the in-match column is drawn after it and came out
+-- at 0.34 on the same rows through the same function. RESUME was grey against
+-- PLAY NOW's white and a stop's answer was barely there.
+--
+-- This is measured on the two columns together because that is the only way
+-- to see it: 0.34 looks deliberate until the identical row beside it is 1.00.
+-- It is also the rule with the least chance of being noticed by a test that
+-- reads positions, which is what every other check in this file does.
+
+do
+    local function alpha(word, menu)
+        frame({menu = menu})
+        local t = said(word)
+        if not t then return nil end
+        return (t.col[4] or 1) * (t.dim or 1)
+    end
+    local land_key, menu_key = alpha("PLAY NOW"), alpha("RESUME",
+                                                        column_view())
+    check("both columns light their key the same",
+          land_key and menu_key and math.abs(land_key - menu_key) < 0.01,
+          string.format("landing %s, menu %s", tostring(land_key),
+                        tostring(menu_key)))
+    local land_lbl, menu_lbl = alpha("ZONE"), alpha("LEAVE", column_view())
+    check("and their labels", land_lbl and menu_lbl
+          and math.abs(land_lbl - menu_lbl) < 0.01,
+          string.format("landing %s, menu %s", tostring(land_lbl),
+                        tostring(menu_lbl)))
+    local land_val = alpha("Team Battle")
+    local menu_val = alpha("Pylon", column_view())
+    check("and their answers", land_val and menu_val
+          and math.abs(land_val - menu_val) < 0.01,
+          string.format("landing %s, menu %s", tostring(land_val),
+                        tostring(menu_val)))
+    -- And a stop with nothing beside it wears the answer's strength on its
+    -- own name, since the name is what the row has to say.
+    local settings = alpha("SETTINGS", column_view())
+    check("and a stop with no answer inks its own name",
+          settings and land_val and math.abs(settings - land_val) < 0.01,
+          string.format("settings %s, an answer %s", tostring(settings),
+                        tostring(land_val)))
+    -- Except under a card, where the dim is meant for the column too: it is
+    -- what the question is being read over, and it cannot reach back to quiet
+    -- what was drawn before it.
+    local under = column_view()
+    under.ask = {head = "Leave the game?"}
+    local quiet = alpha("RESUME", under)
+    check("but a card over the column quiets it like everything else",
+          quiet and quiet < land_key - 0.1,
+          string.format("%s under a card, %s without one", tostring(quiet),
+                        tostring(land_key)))
+end
+
 -- --- one wash ---------------------------------------------------------------
 --
 -- Where a hand is, said at one weight in one shape wherever a row is drawn.

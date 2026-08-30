@@ -5481,7 +5481,20 @@ function M.hud(o)
     -- The phone's own reading of that same feed, and not in the same place:
     -- this one is over the middle of the screen rather than in the corner the
     -- debug readout took, so the two do not argue about a strip.
-    if M.touching then toast(o.feed, o.pad_top) end
+    --
+    -- Down under anything being read over the arena, on the same rule the
+    -- nameplates go down on and for the same reason: glyphs come from the gui
+    -- and the gui draws over every mesh, so no panel can cover this. On a
+    -- phone a panel is most of the window, and a kill line was landing in the
+    -- middle of a settings row: the line is unreadable there and it takes the
+    -- row with it. The instruments stay, because you can still be shot while
+    -- you read; the feed is news rather than an instrument, and the corner
+    -- feed is already off on a touchscreen for the same kind of reason.
+    if M.touching
+       and not (o.menu_open or ending or M.col_open or o.card or M.room_ask)
+    then
+        toast(o.feed, o.pad_top)
+    end
     -- What the stick's rim says. touch.lua works out the sentence and where it
     -- goes, in its own space of drawable pixels counting up from the bottom;
     -- this flips it into the one type is measured in and draws it. Raw,
@@ -6506,6 +6519,25 @@ function M.menu(v)
     -- since anything drawn after the column is the arena's again.
     local was_case = F.case
     F.case = "sentence"
+    -- And at full strength, which it was not. `M.hud` drops every word on
+    -- screen to a third while the menu is up, so the instruments behind it
+    -- recede, and then returns early with that still set: the column is drawn
+    -- after it and inherited the dim meant for what it stands over. Every
+    -- word of the in-match menu came out at 0.34 against the landing's 1.00,
+    -- on the same rows drawn by the same function. RESUME was grey where PLAY
+    -- NOW is lit, and the settings stop's ink read as mute.
+    --
+    -- `M.land_card` and `ask_card` have always done this, for exactly this
+    -- reason: what is being read is at full strength and what it is read over
+    -- is not. Nothing caught it because the shared test harness answers zero
+    -- to `ship_count`, and `M.hud` returns before the dim on an empty world.
+    --
+    -- Unless something stands over the column in turn, in which case the dim
+    -- is meant for this too and is kept: the menu's own card, and the room's
+    -- question, both of which are drawn after this and cannot reach back to
+    -- quiet what they cover.
+    local was_dim = F.text_dim
+    if not (v.ask or M.room_ask) then F.text_dim = 1 end
     local g = menu_geom(n)
     column_x, column_w = g.kx, g.kw
     -- The slide. `F.now` is zero under the test harness, which is what settles
@@ -6635,6 +6667,7 @@ function M.menu(v)
         for i = #M.hits, hits_before + 1, -1 do M.hits[i] = nil end
     end
     F.case = was_case
+    F.text_dim = was_dim
 end
 
 -- The settings panel's rows, laid into the panel the stop opened.

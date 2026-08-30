@@ -5719,3 +5719,61 @@ asks the settings stop for exactly two strokes in its right corner where it
 used to allow more than two, since the mark shared that corner. `hud_svg` grew
 `menu`, `menu-settings` and `menu-side`, which is how the collision was seen
 in the first place, and the three were read at 1440 by 810.
+
+## 110. Three corrections to the in-match menu
+
+**Status:** accepted, finishing
+[decision 109](#109-the-in-match-column-speaks-the-menu-language-too)
+
+**Decision:** the in-match column draws at full strength, the settings page
+opens each of its sections once, and the phone's kill line goes down under a
+panel with the nameplates.
+
+**Why:** Chris put the landing and the menu side by side and said the dimming
+and the coloring were still wrong. They were, and by exactly a factor of
+three.
+
+`M.hud` drops every word on screen to 0.34 while a menu is up, so the
+instruments the column stands over recede, and then it returns early with that
+still set. The landing's column is drawn inside `M.hud` before that return and
+came out lit. The in-match column is drawn after it, by `arena.script`, and
+inherited a dim meant for what it covers: the same rows through the same
+function, at 1.00 on one screen and 0.34 on the other. RESUME was grey against
+PLAY NOW's white, a stop's answer was 0.32, and the ink decision 109 gave the
+settings stop was a third of the way to being visible.
+
+`M.land_card` and `ask_card` have always set the strength back for themselves,
+for this reason. `M.menu` never did. It does now, except under a card, where
+the dim is meant for the column too: a question is drawn after the column and
+cannot reach back to quiet what it covers.
+
+Nothing caught it because the shared test harness answers zero to
+`ship_count`, and `M.hud` returns before the dim on an empty world. Every test
+that drives the column drove it lit. The check that closes this measures the
+two columns against each other, which is the only way to see it: 0.34 looks
+deliberate until the identical row beside it is 1.00.
+
+Two more came out of the same photographs. The settings page drew SHIP twice
+with one row under each, because the wake and the charge keys both carried a
+`sect` and a `sect` opens a band. And on a phone the kill line was drawn
+through the middle of a settings row: glyphs come from the gui and the gui
+draws over every mesh, so a panel cannot cover it, and on a phone a panel is
+most of the window. It goes down under anything read over the arena now, on
+the rule the nameplates already follow. The instruments stay, because a pilot
+reading a menu can still be shot; the feed is news rather than an instrument,
+and the corner feed is already off on a touchscreen for the same kind of
+reason.
+
+**Cost:** a phone loses the one line telling it who just killed you for as long
+as a panel is open. That is a panel the player opened, and closing it is one
+press.
+
+**Verified:** `menu_language_test` measures the landing's key, label and answer
+against the column's and asks them to match, plus the settings stop's ink and
+the one case that keeps the dim. All four fail on the old drawing with the
+numbers off the screenshots (`landing 1, menu 0.34`). `menu_test` asks the
+settings page that no section opens twice, inside the block that gives a hull
+two kinds of charge, since that is the only page carrying both ship rows.
+`toast_test` asks for the line to be absent under a panel and present without
+one. `hud_svg`'s settings scenario carries the real page's four sections now,
+and the three pictures were read at 1440 by 810 and 390 by 844.
