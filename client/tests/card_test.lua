@@ -4,16 +4,16 @@
 --
 -- A card is the one thing on screen that has to be answered before anything
 -- else happens, and the lines on it are the only typing in this game. What
--- can go wrong there is drawn rather than modeled: a password that appears as
--- itself, a pasted line that runs off the side of the card, an input element
--- laid over a rule it is nowhere near, or the page's copy of a value and the
--- client's copy both on screen half a frame apart. None of that is visible
--- from the model, and every one of them has happened.
+-- can go wrong there is in the drawing rather than the model: a password
+-- drawn as itself, a pasted line that runs off the side of the card, an
+-- input element laid over a rule it is nowhere near, or the page's copy of a
+-- value and the client's copy both on screen half a frame apart. The pasted
+-- line is the one that shipped.
 --
 -- So these run the real `ui.land_card` against a recording layer, over the
 -- real cards `arena/menu.lua` raises. menu_test.lua is the model underneath:
 -- what a letter does, what enter sends, what a refusal keeps. This file is
--- what any of it looks like.
+-- what any of it looks like on a screen.
 --
 -- The checks came from menu_view_test.lua, which measured the drawer the card
 -- used to be drawn inside. The drawer is gone and the card is not: the arena
@@ -93,9 +93,9 @@ layer.disc = function(_, x, y, r)
     discs[#discs + 1] = {x = x, y = y, r = r}
 end
 
--- Eight seats, which is what the HUD needs to draw anything at all: it
--- returns on an empty room, and a card standing over nothing would say
--- nothing about what a card does to what is behind it.
+-- Eight seats, because the HUD returns on an empty room and draws nothing at
+-- all. A card over a blank screen says nothing about what a card does to what
+-- is behind it.
 local SIM = setmetatable({
     ship_count = function() return 8 end,
     ship_active = function() return 1 end,
@@ -259,8 +259,8 @@ check("only the answers can be pressed", answers == 2 and others == 0,
 --
 -- A question can also be lines to fill in. On a machine with keys the client
 -- draws them, since the keys are already under the player's hands. Where
--- there is a page it hands the rectangles over instead, which is the section
--- below; this one is the drawing, and it is what a native build has.
+-- there is a page it hands the rectangles over instead and draws no value at
+-- all. These are the drawn ones, which is what a native build has.
 
 -- What gets typed into the two lines of a login card, here and in the section
 -- after it: a call sign that is shown and a password that is not.
@@ -281,7 +281,7 @@ check("a build with no page keeps its lines", ui.ask_dom == nil,
 -- into it appears nowhere on the screen.
 check("the name line shows what is in it", drew(NAME) ~= nil,
       table.concat(texts(), " "))
-check("and the password line draws a disc a character instead",
+check("and the password line draws a disc per character instead",
       drew("hunter") == nil and #discs == #PASS,
       #discs .. " discs for " .. #PASS .. " characters, drew "
           .. tostring(drew("hunter")))
