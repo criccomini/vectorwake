@@ -22,10 +22,11 @@
 -- real `M.menu` against a recording layer and reads both back off it, so a
 -- page that moves takes its assertions with it.
 --
--- The column draws rows in two places, and the rules are the same in both. A
--- stop's page is a panel of rows inset from the column's edge, which is what
--- most of this file is about; a stop that opens a list instead lights its rows
--- edge to edge, and the last section holds that list to the same two weights.
+-- The column draws rows in two places, and the rules are the same in both: a
+-- row is lit at the glass's own span, and its type stands inside that by the
+-- inset the interface publishes. Most of this file is about a stop's page; the
+-- last section holds a stop that opens a list to the same extent and the same
+-- two weights.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -115,18 +116,19 @@ end
 
 -- The fields that run the width of a panel row.
 --
--- A panel row is inset from the column at both edges, which is what tells it
--- apart from everything else drawn in the same blue: the key at the foot
--- breathes at the column's own width, a stop under the pointer lights the
--- whole of itself, and the pips on a row that carries a range are a few points
--- wide. So a row's field is the one that stands strictly inside the column and
--- still crosses most of it.
+-- A row is lit at the glass's own span, left edge to right edge, which is what
+-- tells it apart from everything else drawn in the same blue: the pips on a row
+-- that carries a range are a few points wide, and a key or a stop is somewhere
+-- else entirely. It used to be the opposite test, strictly inside the column,
+-- because a row lit itself at its type column and stopped fourteen points
+-- short of the glass on both sides. Chris saw that on the zone panel and it is
+-- the reason this changed: a highlight that stops short of the edge is a box
+-- floating on a panel.
 local function row_fields()
     local cx, cw = ui.column_span()
     local out = {}
     for _, r in ipairs(fields()) do
-        if r.x > cx + 0.5 and r.x + r.w < cx + cw - 0.5
-           and r.w > cw * 0.75 then
+        if math.abs(r.x - cx) < 1 and math.abs(r.w - cw) < 1 then
             out[#out + 1] = r
         end
     end
@@ -264,10 +266,9 @@ end
 -- Two pages used to publish a box narrower than the field they drew, so a
 -- press in the margin the field claimed hit nothing.
 --
--- The panel publishes its rows at the column's full width and lights them
--- inside its own inset, so the two are no longer the same rectangle. That is
--- the safe way round and it is the direction that matters: everything lit is
--- pressable, and the margin either side of it is pressable too.
+-- The panel publishes its rows at the glass's full width and lights them at
+-- the same span, so the two are the same rectangle again: what lights up is
+-- exactly what a press lands on, which is the strongest form this can take.
 for _, page in ipairs(PAGES) do
     draw(page.view(), page.sel)
     local lit = row_fields()
@@ -392,8 +393,9 @@ end
 -- the page sets, so ask it of every line of type the page sets.
 --
 -- The column is taken off the drawing rather than written down here: a lit
--- row's field is exactly the box `stage_row` is handed, so its own left and
--- right edges are the two lines no line of type may cross.
+-- row's field is the glass, and the type column is that field brought in by
+-- the inset the interface publishes. Those two lines are the ones no line of
+-- type may cross.
 
 do
     local menu_face = require("arena.menu_face")
@@ -414,7 +416,9 @@ do
         local lit = row_fields()
         check(page.name .. " lit a row to measure its column by", #lit > 0)
         if #lit > 0 then
-            local left, right = lit[1].x, lit[1].x + lit[1].w
+            local inset = ui.ROW_INSET
+            local left = lit[1].x + inset
+            local right = lit[1].x + lit[1].w - inset
             local _, py, _, ph = ui.page_span()
             local out, looked = {}, 0
             for i = 1, st.n do
@@ -493,10 +497,11 @@ end
 
 -- --- and a stop that opens a list keeps the same two weights ---------------
 --
--- The sides are the one stop whose answer is a list rather than a page, so
--- their rows are drawn edge to edge on the panel instead of inset inside it.
--- Different extent, same two weights: a walk from the settings page onto the
--- side list should not change what "here" and "under the cursor" look like.
+-- The sides are the one stop whose answer is a list rather than a page. Same
+-- extent and same two weights: a walk from the settings page onto the side
+-- list should not change what "here" and "under the cursor" look like, and
+-- for a while it did, because a page lit its rows at the type column and a
+-- list lit them at the glass.
 
 do
     local function sides()
@@ -510,17 +515,13 @@ do
         })
     end
     draw(sides(), 2, "menu_pick")
-    local cx, cw = ui.column_span()
     -- Everything the column held went out through the bottom edge when the
     -- panel came up, key included, so the fields at the panel's own span are
     -- the list and nothing else: there is no breathing key left up here to
-    -- tell them apart from.
-    local lit = {}
-    for _, r in ipairs(fields()) do
-        if math.abs(r.x - cx) < 1 and math.abs(r.w - cw) < 1 then
-            lit[#lit + 1] = r
-        end
-    end
+    -- tell them apart from. Read with the same measure the pages are, which is
+    -- the point of the section: one extent, whether a stop opens a list or a
+    -- page.
+    local lit = row_fields()
     check("the side list lights the row you fly for and the one under the "
           .. "cursor", #lit == 2, #lit .. " fields")
     if #lit == 2 then

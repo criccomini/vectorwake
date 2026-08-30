@@ -5512,3 +5512,40 @@ than it was; the panel grows to hold them and scrolls past the room it has.
 and span the rise does, which is the right default and is one constant away
 from being its own. The boards in `.design/menu-language` carry all six
 corrections, so the sheet and the client agree again.
+
+## 106. A lit row is the glass, edge to edge
+
+**Status:** accepted, finishing
+[decision 105](#105-six-corrections-to-the-menu-language)'s first correction
+
+**Decision:** the field that says where a hand is runs the panel's full width,
+and it is laid by the page rather than by the row. `menu_row` draws type and
+nothing else.
+
+**Why:** decision 105 made the field flat and left it at the wrong extent.
+Chris opened the zone panel, put the cursor on a row and saw plain glass
+showing either side of the highlight.
+
+The row function is handed a type column, fourteen points inside the glass on
+both sides, because that is where a name and its reading are set. It lit that
+box. Two of the four surfaces lit the glass as well, so a games row came out
+with a brighter band up the middle and two dimmer strips at the edges, and a
+settings row came out as a box floating on a panel with no relationship to
+anything around it. Neither is a selection. A selection is the row, and the row
+is as wide as the panel it is in.
+
+So the page lays the field now, through `LIT.state`, at the same rectangle it
+publishes the press on. That was already what `menu_row`'s own comment claimed
+and it had never been true of the code under it. The type column is published
+as `M.ROW_INSET` instead, because the field used to be the only thing that said
+where the column was.
+
+**Cost:** one more line in each of the five places a row is drawn, against a
+row function that decided its own lighting. Worth it: the thing that knows
+where the glass ends is the thing holding the glass.
+
+**Verified:** `menu_language_test` measures the lit field against the press box
+on all four surfaces, which is one rectangle now rather than two. It fails on
+the old drawing. `row_field_test` measures the type column off the field and
+the published inset, and the pictures `hud_svg` writes carry a cursor at last,
+so the panels can be looked at with a row lit.

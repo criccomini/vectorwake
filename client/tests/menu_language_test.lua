@@ -302,6 +302,54 @@ do
     check("and the row you are already in at the standing weight",
           washed("zone", ui.LIT.HERE) ~= nil,
           "no wash at the standing weight")
+
+    -- And it runs the glass, edge to edge, on every one of them.
+    --
+    -- Reported off the zone panel: the highlight stopped short of both sides
+    -- and left plain panel showing either side of it. A row lit itself at its
+    -- own type column, fourteen points in, and the lists lit the glass as
+    -- well, so a list row came out with a brighter band up the middle and a
+    -- settings row came out as a box floating on the panel.
+    --
+    -- Measured against the box a press lands in rather than against a number
+    -- written down here, which is the same rectangle by construction now: what
+    -- lights up is what a press lands on. The four surfaces each name the row
+    -- their cursor is standing on.
+    local EDGE = {
+        {open = "zone", sel = "land_pick_zone", sel_value = "duel"},
+        {open = "account", sel = "land_pick_account", sel_value = 1},
+        {open = "ship", sel = "land_kit_row", sel_value = 8},
+        {sel = "menu_row", sel_value = 2, menu = settings_view()},
+    }
+    for _, s in ipairs(EDGE) do
+        frame({open = s.open, sel = s.sel, sel_value = s.sel_value,
+               menu = s.menu})
+        local lit
+        for _, r in ipairs(rects) do
+            local c = r.col
+            if c and math.abs(c[1] - pal.FRIEND[1]) < 0.01
+               and math.abs(c[2] - pal.FRIEND[2]) < 0.01
+               and math.abs((c[4] or 0) - ui.LIT.CURSOR) < 0.005 then
+                lit = r
+                break
+            end
+        end
+        local box
+        for _, r in ipairs(ui.hits) do
+            if r.action == s.sel and r.value == s.sel_value then
+                box = r
+                break
+            end
+        end
+        local name = s.open or "settings"
+        check(name .. " lights its row the full width of the glass",
+              lit and box and math.abs(lit.x - box.x) < 1
+              and math.abs(lit.w - box.w) < 1,
+              lit and box
+              and string.format("lit %.0f..%.0f, pressed %.0f..%.0f", lit.x,
+                                lit.x + lit.w, box.x, box.x + box.w)
+              or (lit and "no press box" or "nothing lit"))
+    end
 end
 
 -- --- one head ---------------------------------------------------------------

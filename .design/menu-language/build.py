@@ -15,7 +15,8 @@ at all.
 The language here says each of those once:
 
 - Everything is a panel; a panel is rows; a row is one shape.
-- One glass, one edge, one head, one band, one wash pair, one key.
+- One glass, one edge, one head, one band, one wash pair at the
+  glass's own width, one key.
 - The menu speaks in the menu face, sentence case, at 17; it reads in
   the mono at 14; it quotes names raw. Capitals belong to the HUD and
   to the small labels, which are the mono at 12.
@@ -231,10 +232,12 @@ def head(section, foot_note=None, h=44, hot=False):
             f'{note}</div>')
 
 
-def pager_row(name, h=44):
+def pager_row(name, h=44, state=None):
     """The walker: the one row whose left and right arrows page a set,
-    folded out of the ship panel's second head into an ordinary row."""
-    return (f'<div class="row" style="height:{h}px;padding:0 14px">'
+    folded out of the ship panel's second head into an ordinary row. It takes
+    the states an ordinary row does, and the ship you fly is one of them."""
+    wash = {"cursor": WASH_CURSOR, "here": WASH_HERE}.get(state, "")
+    return (f'<div class="row" style="height:{h}px;padding:0 14px;{wash}">'
             f'{step_tri(-1)}<span style="font-size:17px;color:{FRIEND};'
             f'flex:1;text-align:center">{name}</span>{step_tri(1)}</div>')
 
@@ -414,7 +417,7 @@ def ship_board():
            else f'background:rgba(255,209,102,.18)') + '"></span>'
         for k in range(7))
     inner = [
-        pager_row("Apex"),
+        pager_row("Apex", state="here"),
         (f'<div class="row" style="height:34px;padding:0 14px;gap:6px">'
          f'{bars}</div>'),
         (f'<div class="row" style="height:30px;padding:0 14px">'
@@ -616,8 +619,9 @@ def main_board():
         "centered, and as tall as what it holds -- standing on the bottom "
         "margin it slid out of, taking the room and scrolling only where its "
         "content outruns it. Cards are not exempt: a card is a panel that "
-        "stacked. Two washes say where a hand is, flat across the row: the "
-        "cursor at 0.18 and where you already are at 0.07, friend color both."))
+        "stacked. Two washes say where a hand is, flat and the full width "
+        "of the glass: the cursor at 0.18 and where you already are at 0.07, "
+        "friend color both."))
     parts.append(f'''
   <div class="row" style="gap:22px;align-items:flex-start;flex-wrap:wrap">
     {swatch("rgba(10,15,24,.72)", "the glass", "frost + 0a0f18 at .72")}

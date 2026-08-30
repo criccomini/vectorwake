@@ -325,6 +325,10 @@ local land = landing and {
     zones = {
         {label = "Team Battle", zone = "melee", live = true,
          format = "4v4 · 3:00", here = true},
+        -- A second game, so the picture can show a row you are already in and
+        -- a row under the cursor at once. Those are the two states a row has
+        -- and one row could only ever be in one of them.
+        {label = "Duel", zone = "duel", live = true, format = "1v1"},
     },
     -- What the ship stop opens: one hull with its flight and its credits,
     -- and the rows those credits go on. `menu.ship_panel` builds it, driven
@@ -354,6 +358,19 @@ ui.col_open = (scenario == "landing-zones" and "zone")
     -- which is what makes it a picture of the stack rather than of a card.
     or ((scenario == "landing-account" or scenario == "landing-login")
         and "account") or nil
+
+-- And a row under the cursor on the stop that is open, because a panel drawn
+-- with nothing lit leaves out the one part of a row most worth looking at.
+-- The field says where a press would land, and it was drawn short of the
+-- glass on both sides for a while with no picture here that would have shown
+-- it.
+if scenario == "landing-zones" then
+    ui.col_sel, ui.col_sel_value = "land_pick_zone", "duel"
+elseif scenario == "landing-ships" then
+    ui.col_sel, ui.col_sel_value = "land_kit_row", 16
+elseif scenario == "landing-account" then
+    ui.col_sel, ui.col_sel_value = "land_pick_account", 1
+end
 
 ui.details = true
 state.n = 0

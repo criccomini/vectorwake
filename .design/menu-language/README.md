@@ -23,8 +23,8 @@ The language says each of those once:
   what is on top.
 - One head (back triangle + section name, the whole line the press, and
   it lights like the control it is), one band (label between rules, 24),
-  one wash pair (cursor 0.18, here 0.07, **flat across the row**), one
-  breathing key per screen.
+  one wash pair (cursor 0.18, here 0.07, **flat, and the width of the
+  glass**), one breathing key per screen.
 - The menu **speaks** in the menu face at 17, sentence case; it
   **reads** in the mono at 14; it **quotes** a name raw. Capitals
   belong to the HUD and to the small labels, which are the mono at 12,
@@ -68,6 +68,14 @@ on a switch, the content-height panel, a pointer that lights every row,
 and the shrapnel row reading the fragments a rung throws rather than the
 rung. The one row on the sheet whose figure is not what it cost is
 Shrapnel, and it says so.
+
+[Decision 106](../../docs/architecture/decisions.md) is the same
+correction finished. The wash was flat and still stopped fourteen points
+short of the glass on both sides, because a row lit its own type column
+and only the lists lit the panel. These boards always drew it the right
+way, which is how the client came to disagree with them: the wash on
+every row here is the row's own background and runs under its padding to
+the edge.
 
 Every number is lifted from the client rather than invented:
 `client/arena/palette.lua` for hues, `ui.lua` for the type ladder

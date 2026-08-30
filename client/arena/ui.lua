@@ -499,6 +499,21 @@ function LIT.field(x, y, w, h, weight)
     rect(x, y, w, h, pal.a(pal.FRIEND, weight))
 end
 
+-- The two states a row can be lit in, laid at the span the caller hands in.
+--
+-- Every page calls this with the glass's own left edge and full width, and
+-- every page draws its type inside that. A row lit short of the panel's edge
+-- is a box floating on a panel: it was drawn at the type column for a while,
+-- fourteen points in on each side, and on the settings page that was the only
+-- field there was.
+function LIT.state(x, y, w, h, hot, mark)
+    if hot then
+        LIT.field(x, y, w, h, LIT.CURSOR)
+    elseif mark then
+        LIT.field(x, y, w, h, LIT.HERE)
+    end
+end
+
 -- How bright the label on a standing row is this frame. It breathes on the
 -- clock the landing key breathes on, floored well clear of dark so the trough
 -- never reads as a row that has gone out. `F.now` is zero under the test
@@ -4285,6 +4300,14 @@ end
 local PANEL_MAX = 560
 local PANEL_MARGIN = 14
 
+-- How far a row's type stands inside the glass it is drawn on.
+--
+-- The field a state lights is the glass, edge to edge, so this is the one
+-- measure that says where the type column is, and it is published because the
+-- field no longer says it: a lit row used to be exactly the box its type was
+-- handed, and `client/tests/row_field_test.lua` measured the column off it.
+M.ROW_INSET = 14
+
 -- The most a panel can grow to, which is the window less its margins.
 local function panel_room()
     local margin = PANEL_MARGIN * F.scale
@@ -4446,7 +4469,7 @@ local function panel_frame(px, py, pw, ph, title, back, foot_note, back_value)
     local headh = 44 * F.scale
     -- The same measure the rows under it are inset by, so the head's mark and
     -- the names below it stand on one line rather than two points apart.
-    local pad = 14 * F.scale
+    local pad = M.ROW_INSET * F.scale
     frost(px, py, pw, ph)
     rect(px, py, pw, ph, pal.a(pal.BTN_BG, 0.72))
     key_box(px, py, pw, ph, nil, pal.a(pal.RADAR_TILE, 0.75))
@@ -4456,7 +4479,7 @@ local function panel_frame(px, py, pw, ph, title, back, foot_note, back_value)
     -- never did. Both hands write `M.col_sel` through the same `M.pick`, so
     -- this answers a pointer resting on it as well.
     local hot = back and M.col_sel == back
-    if hot then LIT.field(px, py, pw, headh, LIT.CURSOR) end
+    LIT.state(px, py, pw, headh, hot, false)
     local hy = py + headh / 2
     F.layer:tri(px + pad + 2 * F.scale, ry(hy),
                 px + pad + 9 * F.scale, ry(hy - 6 * F.scale),
@@ -4526,7 +4549,7 @@ end
 -- and it had to be nearly opaque for two rows over a firefight to be readable
 -- at all. A panel is one surface with one glass, so the rows draw onto it.
 local function land_list(kx, kw, top, list, drh)
-    local pad = 14 * F.scale
+    local pad = M.ROW_INSET * F.scale
     local y = top
     for _, r in ipairs(list) do
         if r.rule then
@@ -4538,11 +4561,7 @@ local function land_list(kx, kw, top, list, drh)
             -- The field a state lights runs the panel's full width, and the
             -- type column stands inside it: the caller owns the glass, the
             -- row owns what is written on it.
-            if hov then
-                LIT.field(kx, y, kw, drh, LIT.CURSOR)
-            elseif r.here then
-                LIT.field(kx, y, kw, drh, LIT.HERE)
-            end
+            LIT.state(kx, y, kw, drh, hov, r.here)
             -- These lists used to set their names in the HUD's twelve point
             -- mono capitals, because a list was once a strip drawn over a
             -- fight. It is a panel now, read rather than glanced at, so the
@@ -4591,7 +4610,7 @@ local col_followed = nil
 -- one that would do nothing is drawn dim rather than left out, so a row does
 -- not change shape as a pilot spends.
 local function land_row(kx, kw, y, h, r)
-    local pad = 14 * F.scale
+    local pad = M.ROW_INSET * F.scale
     if r.kind == "sect" then
         menu_band(kx, kw, y, h, r.label)
         return
@@ -4609,7 +4628,7 @@ local function land_row(kx, kw, y, h, r)
     -- are published over it, so a pointer aiming at one lands on it and a
     -- pad walking the panel lands on the row.
     local on = M.col_sel == "land_kit_row" and M.col_sel_value == r.slot
-    if on then LIT.field(kx, y, kw, h, LIT.CURSOR) end
+    LIT.state(kx, y, kw, h, on, false)
     hit(kx, y, kw, h, "land_kit_row", r.slot, nil, 0)
     -- A slot is a stepper or a switch, and which is not a decision made here:
     -- a slot that only goes to one is on and off, and anything you can have
@@ -4643,7 +4662,7 @@ end
 -- itself once, and what the walker says is which of the seven ships is in
 -- front of you, which is a row's worth of information.
 local function land_panel(kx, kw, top, bottom, panel, drh)
-    local pad = 14 * F.scale
+    local pad = M.ROW_INSET * F.scale
     local rowh = drh
     local headh = 44 * F.scale
     local barh = panel.bars and 34 * F.scale or 0
@@ -4654,7 +4673,7 @@ local function land_panel(kx, kw, top, bottom, panel, drh)
     -- them. Lit where the cursor is standing on it, like any other row.
     local col = panel.mine and pal.FRIEND or pal.INK
     local walk_hot = M.col_sel == "land_pick_ship"
-    if walk_hot then LIT.field(kx, py, kw, headh, LIT.CURSOR) end
+    LIT.state(kx, py, kw, headh, walk_hot, panel.mine)
     menu_row(kx + pad, py, kw - 2 * pad, headh, {
         label = panel.label, named = not panel.watching,
         walk = "land_page_ship", mark = panel.mine,
@@ -5632,22 +5651,13 @@ function menu_row(x, y, w, h, r, hot)
     -- the mark's cyan because your own side generates cyan anyway, so the two
     -- rules agree on the one row where they could disagree.
     if r.tint then col = team_col(r.tint) end
-    -- The cursor is a field of team blue across the row, and only that. It
-    -- was a field with a chamfered bracket drawn around it, which is two
-    -- marks saying one thing, and the corners cut the row into a box in a
-    -- panel that has no boxes anywhere else in it.
-    -- Bright where it meets the panel's rule and gone across the row, which
-    -- is what a selection is everywhere else in this interface. It was a flat
-    -- field, and a flat field on a page that has a lit edge reads as a second
-    -- panel laid over the first.
-    if hot then
-        LIT.field(x, y, w, h, LIT.CURSOR)
-    elseif r.mark then
-        -- Where you already are, at the standing weight. This was a lit wedge
-        -- out in the gutter; the field says the same thing without spending a
-        -- mark on it, and without pushing its own label out of the column.
-        LIT.field(x, y, w, h, LIT.HERE)
-    end
+    -- No field is laid here. The cursor and the standing mark are a field of
+    -- team blue across the row, and the row this function draws is the type
+    -- column: fourteen points in on either side of the glass. Lighting from
+    -- inside meant a highlight that stopped short of both edges, and on the
+    -- pages that lit the row themselves as well, a brighter band up the
+    -- middle where the two fields overlapped. `LIT.state` is the one place it
+    -- happens now, called by the page that knows where the glass ends.
     -- One text column, whatever the row is, and it is the column the title
     -- above the list is set in.
     local tx = x
@@ -6127,7 +6137,7 @@ function M.land_card(a)
     -- travels the way every other answer does, by its place in that list.
     local top = panel_frame(px, py, pw, ph, a.head or "", a.action or "answer",
                             nil, #a.keys)
-    local pad = 14 * F.scale
+    local pad = M.ROW_INSET * F.scale
     -- What signing up buys, or what the fleet said about the last press. A
     -- status supersedes the note while it stands and wears the caution color,
     -- since the two it carries are "wait" and "that did not work".
@@ -6586,7 +6596,7 @@ function M.menu_panel(kx, kw, top, bottom, v)
     -- The one measure every panel insets its rows by. This page had its own,
     -- which is how the settings rows came to start two points inside every
     -- other row in the game.
-    local pad = 14 * F.scale
+    local pad = M.ROW_INSET * F.scale
     local rowh = (M.compact and 40 or 44) * F.scale
     -- A run of rows under a small label and a rule, which is how the ship
     -- panel bands its own sections and how the settings page has always
@@ -6654,6 +6664,7 @@ function M.menu_panel(kx, kw, top, bottom, v)
         end
         if y + rh > top and y < top + view_h then
             local hot = M.col_sel == "menu_row" and M.col_sel_value == i
+            LIT.state(kx, y, kw, rh, hot, r.mark)
             -- The clip goes around the drawing and not around the box a press
             -- lands in. A row is pressable to the panel's own edge; what is
             -- cut is only the type that would have run past it.
