@@ -5163,14 +5163,19 @@ set up. The ceiling on a level is not a number anybody writes: it is the
 length of the hull's ladder, so shortening a ladder is how a rung gets cheaper
 to hold and there is nothing to keep in step with it.
 
-The sweep was run at forty bouts a build on the pit and neither rung needed
-one. A gun rung is the fourth-strongest gun slot, under gun bounce, the burst
-and gun freeze, all three of which already ship; a bomb rung is the strongest
-of the bomb slots and still inside their band. The two of them added 26 shapes
-to the space and left the share of it that runs away where it was, at a fifth.
-The numbers are tabled in [ships.md](../design/ships.md), along with the one
-tall reading, and with the reason a build sweep is a pit question: the arena
-is a room where a mirror match does not finish.
+The sweep was run at forty bouts a build, on the pit and again on Gantry off
+`mapforge`, and neither rung needed a ceiling. In both rooms a gun rung is
+third of the four gun slots and a bomb rung sits inside the bomb group, and
+the 26 shapes the two added left the share of the space that runs away where
+it was. On the real map nothing at all cleared the line by more than luck
+would put there.
+
+That is a screen passing rather than a measurement. Forty bouts a build is
+the exploratory tier under `experiment.rs`, far from its alpha and power, and
+the ordering the sweep prints is not evidence: the pit and Gantry disagree
+about nearly every slot, because the pit pays for closing and a real map does
+not. [ships.md](../design/ships.md) carries the numbers, the floor they have
+to be read against, and what the arithmetic will and will not support.
 
 The other cost is the tables. Three rungs on seven hulls is 42 of the core's
 64 weapon specs and 44 of its 64 patterns, where one rung each was 16 and 18.

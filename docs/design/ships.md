@@ -382,31 +382,60 @@ Two rungs a weapon added 26 shapes to that space and did not make it more
 runaway-prone: 44 of 212 past 65% against 40 of 186 before them, which is the
 same fifth of the space either way.
 
-What the sweep says a slot is worth: the mean over the seven hulls of dumping
-every credit into it alone, and the best any one hull did with it. The rows
-that ship are the yardstick a new one is read against, and the best column is
-where a slot that is too strong shows itself first.
+What a slot is worth is a harder question than the sweep can answer, and the
+table below is as far as it goes. Every row is one candidate: every credit
+dumped into that slot and the rest of the budget wasted. So a slot capped at
+one is measured on a build spending one credit of seven, and a hull that has
+thrown its budget away is most of what the number describes.
 
-| slot | mean | best |
-|---|---:|---|
-| gun bounce | 57.9 | 92.5 Apex |
-| burst | 54.1 | 87.5 Apex |
-| gun freeze | 53.9 | 87.5 Wedge |
-| gun rung | 46.2 | 95.0 Wedge |
-| gun spray | 32.5 | 85.0 Apex |
-| bomb rung | 30.4 | 47.5 Wedge |
-| bomb bounce | 26.2 | 65.0 Apex |
-| bomb shrapnel | 25.7 | 52.5 Apex |
-| bomb freeze | 23.4 | 45.0 Apex |
-| bomb proximity | 20.9 | 41.2 Apex |
+Which is why the flight stats belong in it. Their step is zero, so seven
+credits there buy nothing at all and the row is a stripped hull: 23.2 on the
+pit, 38.0 on Gantry. That is the floor, and the only scale on which two rooms
+with different draw rates can be compared, so the columns below are points
+above it.
 
-So a gun rung is the fourth-strongest gun slot, under three that already
-ship, and a bomb rung is the strongest of the bomb slots without leaving
-their band. Its one tall reading, the Wedge at 95, is not separable from the
-Apex's 92.5 on gun bounce: at forty bouts those are 95.0 plus or minus 6.8
-and 92.5 plus or minus 8.2. The Wedge's own row also loses to gun bounce at
-86 and gun freeze at 88, so what that column is measuring there is a hull
-whose seven credits are badly spent rather than a slot that is too strong.
+| slot | pit | Gantry |
+|---|---:|---:|
+| gun bounce | +34.7 | +7.0 |
+| burst | +30.9 | +6.8 |
+| gun freeze | +30.8 | +12.1 |
+| gun rung | +23.1 | +8.0 |
+| gun spray | +9.3 | +8.8 |
+| bomb rung | +7.2 | +2.2 |
+| bomb bounce | +3.1 | +2.7 |
+| bomb shrapnel | +2.5 | +1.8 |
+| bomb freeze | +0.2 | +1.3 |
+| repel | -0.7 | -0.7 |
+| bomb proximity | -2.3 | +2.3 |
+
+Read the two columns against each other rather than either alone, because
+they disagree about almost everything. Gun bounce is the strongest slot in
+the game on the pit and fourth on a real map; the burst falls the same way.
+On Gantry the five gun slots land inside six points of one another, which is
+a roster with no dominant slot rather than a ranking. The pit is one box a
+pilot can see across, so it pays for closing and charges nothing for being
+slow, and every close-quarters good is worth more there than it will ever be
+worth in a game. A ranking off the pit is a fact about the pit.
+
+The rungs come out of that unremarkable, which is what they were checked
+for. A gun rung is third of the four gun slots in both rooms, inside the
+band each time. A bomb rung leads the bomb slots by four points on the pit
+and is third of five on Gantry, where the whole group sits within a point
+and a half of itself. The one tall reading, the Wedge at 95 on a doubled
+gun, was the pit talking: the same build is 66.2 on Gantry.
+
+None of this is a significance test, and forty bouts a build is not close to
+being one. `experiment.rs` is where this repository does inference properly,
+at alpha 0.05 and power 0.90 with the effect named in advance; a build sweep
+is the exploratory tier under it. At forty bouts the Wilson interval on an
+even build is plus or minus 14.8, so the 65% line the sweep flags at falls
+inside the noise, and screening 212 builds against it turns up about nine by
+luck alone. Gantry found nine. Resolving a ten point gap between two
+slots at power 0.90 would take 524 bouts a build, so the ordering inside
+either column above is not evidence of anything.
+
+What the sweep does answer is the question it was built for: whether some
+shape runs away with it. Two rungs a weapon added 26 shapes and did not.
 
 Run the hull tournament on both rooms. The pit is one box a pilot can see
 across, which flatters everything that wants to be close and charges nothing
@@ -414,10 +443,14 @@ for being slow; the arena has cover and somewhere to run to. A hull whose
 weakness is written down as "slow" or "must choose its fights" only pays for
 it on the second, and a number from one room alone is a fact about that room.
 
-`calibrate builds` is the exception, and it is a pit question only. It is a
-mirror, so the arena's cover gives two identical hulls at one skill somewhere
-to not die: 4223 of 4240 bouts drew there, every rate collapsed onto the half
-point a draw scores, and the run still printed that nothing ran away with it.
+`calibrate builds` needs a third room and the arena is not it. A build sweep
+is a mirror, so two identical hulls at one skill use the arena's cover to not
+die: 4223 of 4240 bouts drew there, every rate collapsed onto the half point
+a draw scores, and the run still printed that nothing ran away with it. Read
+its draw count before believing a flat table. A map off `mapforge generate`
+is the room to use instead, since it is one the game is actually played on,
+though Gantry still draws 71% of a mirror and a draw carries no information.
+Everything a build sweep says is worth less than its draw count suggests.
 Read the draw count before believing a flat table.
 
 Where the shipped roster stands, mean of the two rooms at 24 bouts a pair:
