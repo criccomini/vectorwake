@@ -12,7 +12,7 @@ is owned, so there is no shelf, no wallet and no ceiling but the slot's own;
 what a pilot changes is which weapons and which rack their seven credits sit
 on. See [decision 100](../architecture/decisions.md).
 
-There is no ship page in the drawer. The landing's ship stop is the roster and
+There is no ship page anywhere but the landing. Its ship stop is the roster and
 the editor at once: one hull at a time, paged left and right, with its flight
 against the rest of the roster and the rows that spend its credits under it.
 

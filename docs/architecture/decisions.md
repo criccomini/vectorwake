@@ -5175,3 +5175,79 @@ is a room where a mirror match does not finish.
 The other cost is the tables. Three rungs on seven hulls is 42 of the core's
 64 weapon specs and 44 of its 64 patterns, where one rung each was 16 and 18.
 A zone adding weapons of its own has half the room it had.
+
+## 102. The drawer is gone, and settings live in the match
+
+**Status:** accepted, superseding the drawer half of
+[decision 83](#83-settings-is-the-last-stop-on-every-row) and finishing what
+[decision 98](#98-the-drawer-stops-carrying-the-games),
+[decision 99](#99-the-account-is-a-dropdown-and-the-pilot-page-is-gone) and
+[decision 100](#100-seven-credits-and-every-step-costs-one) started
+
+**Decision:** the slide-out menu is deleted. What is left of it is a column at
+the foot of the screen, raised by a faint key standing in the same place,
+holding the three things a seat can want: the way out of it, which side it is
+on, and the machine. That column is the only place settings can be reached at
+all. The landing goes on saying who, where and what, and holds nothing about
+the machine.
+
+**Why:** Chris asked for a menu that lets a pilot leave, change sides and edit
+settings, and said settings should live in the game and nowhere else.
+
+The drawer had been emptying for three decisions before that. The games went
+to the landing's zone stop, the account to its account stop, the ship and its
+credits to the ship stop. What it still held at home was settings on its own,
+plus side and leave in a room, which is a rail of tabs, a stage, a topbar and a
+head row carrying four rows between them. Everything it did that anybody used
+was already being done better by the column of stops the landing had grown.
+
+So the column is that column. The stops sit at the same width, in the same
+place, over the same breathing key, and the settings stop opens a panel
+climbing off its own row exactly as the ship stop does at home. One interface,
+learned once, pressed in both places. What died with the drawer is its own
+navigation: a rail on screen at every level, a stage previewing the page the
+rail cursor rested on, a head row with an x on it, and a cursor that could be
+in any of the three. A lit stop with its panel over it says where you are, and
+says it the way the landing has always said it.
+
+The key moved with it. MENU stood in the top left corner for as long as there
+was a drawer to pull out of the left edge, and once the panel it opened stood
+at the foot, a key in the far corner was a control detached from what it does.
+It is at the bottom middle now, where the column stands: the press and what it
+raises share a spot, the column slides up out of that edge, and RESUME comes to
+rest on the key's own pixels. It is drawn faint because it lives inside the
+fight rather than beside it, and a first visit should be reading the word
+rather than working around the weight. The word rides along on a phone as well,
+which the corner never had the room for.
+
+Side is a list rather than a value stepped left and right. Arrows walk, which
+is fine while a room holds two sides and wrong the moment it holds three:
+reaching the third means crossing the second, and a pilot who wanted the third
+has joined the second on the way. A row per side says them all at once, marks
+the one you fly for, carries the counts you weigh before switching, and puts
+any other one press away. The wire never needed changing for it, because
+`C2S_TEAM` has always carried the side you want by its own byte.
+
+Nothing pauses, which the drawer never did either, and which the drawing now
+says out loud. The wash behind the column is a tint rather than a curtain, and
+the clock band and the radar keep their line: a pilot reading their own
+settings is still being shot at, and the two instruments that say so go on
+saying it. The drawer covered a phone's whole window and stood both of them
+down.
+
+**Cost:** a pilot who wants the music down has to be in a room to do it. Every
+pilot is, within a second of pressing PLAY NOW, and the stands are a room too,
+so the price is paid once by somebody who never joins anything. What it buys is
+a front page that is four presses wide and answers exactly one question.
+
+The top left corner is also empty in an ordinary match. PLAYERS folded into the
+clock band a while ago and MENU has now left, so what remains up there are
+chips that come and go: TAKE SEAT, ROOM n, and the on-air tally. A corner with
+nothing in it is the fight, which is what that corner is for.
+
+**Reconsider if:** the faint key goes unfound. A control drawn at a fifth of
+the weight of everything around it is a control a first session can miss, and
+the answer would be a notch of alpha rather than a new location, since the word
+beside the mark is already doing the work brightness would. Drawn in
+`.design/game-menu`, where a corner-docked panel, the console center card and a
+hold-and-flick radial stand beside the column and were not taken.

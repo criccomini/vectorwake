@@ -290,11 +290,31 @@ frame(counted_room)
 do
     local band = box("details")
     check("the band publishes the press that opens the roster", band ~= nil)
-    check("nothing in the corner row offers it a second time",
-          band == nil or box("open") == nil
-              or band.x > box("open").x + box("open").w,
-          "a roster key is still beside MENU")
+    -- One box, and it is the band's. This used to ask whether the band began
+    -- to the right of the key in the corner, which said what it meant while
+    -- MENU stood there and a roster key would have stood beside it. MENU is
+    -- at the foot now and that corner is empty in an ordinary match, so the
+    -- question left is the one it was always about: how many presses reach
+    -- the panel.
+    local ways = 0
+    for _, r in ipairs(ui.hits) do
+        if r.action == "details" then ways = ways + 1 end
+    end
+    check("nothing offers it a second time", ways == 1,
+          ways .. " boxes open the roster")
     if band then
+        -- And nothing is standing up there to be that second offer. The
+        -- chips the corner can hold are all situational, and none of them is
+        -- true in a plain match: no seat is being held, the zone has one
+        -- room, and the camera is not on this client.
+        local standing = {}
+        for _, r in ipairs(ui.hits) do
+            if r.y < band.y + band.h and r.x + r.w <= band.x then
+                standing[#standing + 1] = r.action
+            end
+        end
+        check("and the corner row it left is empty",
+              #standing == 0, table.concat(standing, " | "))
         -- The clock is what sits in the middle of the window; the two sides
         -- hang off it and are as wide as their own names, so the band itself
         -- is only centered when both sides are named alike.

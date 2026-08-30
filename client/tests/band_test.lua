@@ -5,10 +5,17 @@
 -- The scoreboard used to be three things in three places: a clock with a score
 -- either side of it, a PLAYERS key in the corner that opened the roster, and a
 -- sentence across the middle of the arena in the largest type on screen. This
--- pins what replaced them. The band is one instrument -- each side a name over
--- a number, both as tall as the clock between them -- and it is the control
--- that opens the roster, so the corner row carries the way into the menu and
--- nothing else.
+-- pins what replaced them. The band is one instrument, each side a name over a
+-- number and both as tall as the clock between them, and it is the control
+-- that opens the roster, so nothing in the corner offers that panel a second
+-- time.
+--
+-- The corner row is not the way into the menu either. That key is at the foot
+-- now (see column_test.lua), and what is left up there is chips about this
+-- room and this pilot: a held seat, a room number, the ON AIR tally. None of
+-- the three is drawn in an ordinary match, so the checks that need something
+-- standing on the row ask for a zone holding a second room, which is what
+-- draws the ROOM chip.
 --
 -- Against the real `M.hud` and a stubbed engine.
 
@@ -106,6 +113,14 @@ local PILOTS = {
 
 local w_now, h_now = W, H
 
+-- A zone holding more than one room, which is what puts a ROOM chip in the
+-- corner. The chip is what this file measures the row against: it publishes a
+-- box at exactly a key's height, on exactly the row's line. The band's own box
+-- is a few points taller than the row on purpose, so a finger can find it, and
+-- reading the row's line off that box would be reading the padding.
+local ROOMS = {{n = 1, players = 3, bots = 20},
+               {n = 2, players = 0, bots = 51}}
+
 local function frame(o)
     o = o or {}
     w_now, h_now = o.w or W, o.h or H
@@ -132,6 +147,7 @@ local function frame(o)
         banner = o.banner or "",
         rtt = 4,
         zone = "melee",
+        rooms = o.rooms, room = o.room,
         fps = 60, frame_ms = 16.7, rx_rate = 0, tx_rate = 0,
     })
     ui.finish()
@@ -222,37 +238,46 @@ if pylon and fifteen and caisson and nineteen and clock then
     check("a side is as tall as the clock",
           tall <= clock.px + 0.5 and tall > clock.px * 0.9,
           string.format("%.1f against %.1f", tall, clock.px))
-    -- And one key tall. The band and the way into the menu are the two
-    -- things on the top row, so the row has one height and the clock is
-    -- measured against the key rather than against a number written down
-    -- here: `menu_button` publishes that box at exactly the key's own size.
-    local key = box("open")
-    check("the clock is as tall as the MENU key", key ~= nil
+    -- And one key tall. The band, the corner chips and the dial are what the
+    -- top row carries, so the row has one height and the clock is measured
+    -- against a chip rather than against a number written down here:
+    -- `corner_row` publishes that box at exactly a key's own size.
+    --
+    -- Drawn with a second room in the zone, because an ordinary match leaves
+    -- that corner empty and there is then nothing up there to hold a ruler
+    -- against. The reading being compared was taken above and copied out, so
+    -- redrawing the window does not disturb it.
+    frame({rooms = ROOMS, room = 1})
+    local key = box("rooms")
+    check("the clock is as tall as a corner chip", key ~= nil
               and math.abs(clock.px - key.h) < 0.5,
           key and string.format("%.1f against %.1f", clock.px, key.h)
-              or "no menu key")
+              or "no room chip")
 end
 
 -- --- the top row is a row ---------------------------------------------------
 
--- The way into the menu at the left, the band beside it and the dial at the
--- far end, on one line, at every window size. The readouts each worked their
--- own vertical out of the padding once, which is a horizontal measurement,
--- and came out four points high on a monitor and ten on a phone. The band
--- then spent a while dropping off the row on a phone, which put it through
--- the radar instead and cost the row the alignment it is for.
+-- The corner chips at the left, the band beside them and the dial at the far
+-- end, on one line, at every window size. The readouts each worked their own
+-- vertical out of the padding once, which is a horizontal measurement, and
+-- came out four points high on a monitor and ten on a phone. The band then
+-- spent a while dropping off the row on a phone, which put it through the
+-- radar instead and cost the row the alignment it is for.
 --
 -- The link meter used to be the right end of this row and is in the menu's
 -- head now. What took the corner it left is the dial, which used to start a
--- line lower, so the row is a key, a band and an instrument and nothing else:
--- the tile readout that stood up here on the wider windows is gone from the
--- interface entirely.
+-- line lower, so the row is a chip, a band and an instrument and nothing
+-- else: the tile readout that stood up here on the wider windows is gone from
+-- the interface entirely.
 --
--- Measured against the key's published box, because that is the height the
--- row takes from and the one thing here that cannot drift out of step with
--- itself.
-local function row_shares_a_center(where)
-    local key, tick = box("open"), drawn("0:33")
+-- Measured against a chip's published box, because that is the height the row
+-- takes from and the one thing here that cannot drift out of step with
+-- itself. The window is redrawn with a second room in the zone so there is a
+-- chip to measure. A match with one room puts nothing in that corner at all,
+-- which the section on the band as a control checks on its own.
+local function row_shares_a_center(where, w, h)
+    frame({w = w, h = h, rooms = ROOMS, room = 1})
+    local key, tick = box("rooms"), drawn("0:33")
     if not (key and tick) then
         check("the row is drawn on " .. where, false,
               table.concat(words(), " | "))
@@ -276,9 +301,9 @@ local function row_shares_a_center(where)
     -- them.
     local press, corner = box("details"), box("map")
     if press then
-        check("and the band keeps out of the key on " .. where,
+        check("and the band keeps out of the chip on " .. where,
               press.x > key.x + key.w,
-              string.format("band starts %.0f, key ends %.0f",
+              string.format("band starts %.0f, chip ends %.0f",
                             press.x, key.x + key.w))
         check("and off the right edge on " .. where,
               press.x + press.w <= w_now + 0.5,
@@ -296,42 +321,44 @@ end
 -- --- the dial hugs the corner ----------------------------------------------
 
 -- What the row's right end is: the dial itself, hard into the corner, at the
--- margin the way into the menu keeps from the corner opposite. It hung a row
--- lower for as long as the link bars stood above it, and with those in the
--- menu's head there was nothing left up there to start under.
+-- margin the chips keep from the corner opposite. It hung a row lower for as
+-- long as the link bars stood above it, and with those in the menu's head
+-- there was nothing left up there to start under.
 --
 -- Both instruments are asked for their own published box rather than for a
 -- number written down here, because the check is that the two margins match.
 -- A `PAD` that moved on one of them and not the other would pass against a
--- constant and still look wrong on the screen.
-local function dial_hugs_the_corner(where)
-    local key, corner = box("open"), box("map")
+-- constant and still look wrong on the screen. The chip stands for the near
+-- corner, so the window is redrawn with a second room in the zone.
+local function dial_hugs_the_corner(where, w, h)
+    frame({w = w, h = h, rooms = ROOMS, room = 1})
+    local key, corner = box("rooms"), box("map")
     if not (key and corner) then
         check("the dial is in the corner on " .. where, false,
-              "no dial or no menu key")
+              "no dial or no room chip")
         return
     end
-    check("the dial starts on the key's own line on " .. where,
+    check("the dial starts on the chip's own line on " .. where,
           math.abs(corner.y - key.y) < 0.5,
-          string.format("dial at %.1f, key at %.1f", corner.y, key.y))
-    check("and keeps the key's own margin from its corner on " .. where,
-          math.abs((w_now - (corner.x + corner.w)) - key.x) < 0.5
+          string.format("dial at %.1f, chip at %.1f", corner.y, key.y))
+    check("and keeps the chip's own margin from its corner on " .. where,
+          math.abs((w - (corner.x + corner.w)) - key.x) < 0.5
               and math.abs(corner.y - key.y) < 0.5,
-          string.format("gap %.1f right and %.1f top against the key's %.1f",
-                        w_now - (corner.x + corner.w), corner.y, key.x))
+          string.format("gap %.1f right and %.1f top against the chip's %.1f",
+                        w - (corner.x + corner.w), corner.y, key.x))
 end
 
-row_shares_a_center("a monitor")
-dial_hugs_the_corner("a monitor")
+row_shares_a_center("a monitor", W, H)
+dial_hugs_the_corner("a monitor", W, H)
 
 -- A phone is the same drawing at its own size, and it is on the row: the band
--- came off the corner row's line once and went back when the key beside it
+-- came off the corner row's line once and went back when the keys beside it
 -- lost PLAYERS and the readout beside it went under the dial.
 --
--- What it does not keep at 390 points is the names. The way into the menu, a
--- centered clock and a dial a third of the screen wide are what that row
--- holds, and a call sign does not fit in what is left. The figures do, and
--- they are the reading.
+-- What it does not keep at 390 points is the names. A corner chip, a centered
+-- clock and a dial a third of the screen wide are what that row holds, and a
+-- call sign does not fit in what is left. The figures do, and they are the
+-- reading.
 frame({w = 390, h = 844})
 local small_clock = drawn("0:33")
 check("a phone draws the same band", small_clock ~= nil,
@@ -345,8 +372,8 @@ if small_clock and clock then
           math.abs(small_clock.px - clock.px) < 0.5,
           string.format("%.0f against %.0f", small_clock.px, clock.px))
 end
-row_shares_a_center("a phone")
-dial_hugs_the_corner("a phone")
+row_shares_a_center("a phone", 390, 844)
+dial_hugs_the_corner("a phone", 390, 844)
 
 -- Held sideways it is the same phone with 844 points of row, which is width
 -- enough for the names, so the drop above is the width rather than the size
@@ -355,16 +382,16 @@ frame({w = 844, h = 390})
 check("a phone on its side has the room and keeps them",
       drawn("PYLON") ~= nil and drawn("CAISSON") ~= nil,
       table.concat(words(), " | "))
-dial_hugs_the_corner("a phone on its side")
+dial_hugs_the_corner("a phone on its side", 844, 390)
 
 -- A call sign runs to twenty four characters and the band grows with it, so
 -- the longest one a pilot can register is what decides whether the band fits
 -- the row. It gives up the name rather than the row: the number under it is
--- the reading, and a name drawn through the way into the menu is what put the
--- band on a line of its own the first time.
+-- the reading, and a name drawn through the chips in the corner is what put
+-- the band on a line of its own the first time.
 --
 -- Both names or neither, whichever end runs out first. The row's two ends are
--- a small key and a square a third of a phone across, so asking each side
+-- a small chip and a square a third of a phone across, so asking each side
 -- against the end it happens to face dropped one name and drew the other,
 -- which reads as a fault rather than as a band out of room. The pair is the
 -- unit.
@@ -377,7 +404,7 @@ check("names that would reach either instrument are both dropped",
 check("and both figures are drawn either way",
       drawn("15") ~= nil and drawn("19") ~= nil,
       table.concat(words(), " | "))
-row_shares_a_center("a phone with the longest names there are")
+row_shares_a_center("a phone with the longest names there are", 390, 844)
 -- And kept where the row has the width for them, which is the whole point of
 -- measuring rather than dropping the names on every phone.
 frame()
@@ -410,12 +437,14 @@ NAMES = SHORT
 do
     -- The same names either way: the section above leaves the longest call
     -- signs there are in `NAMES`, and a band measured against those is not
-    -- the band this compares.
-    frame()
+    -- the band this compares. A room chip stands in the corner throughout, so
+    -- the row it hangs under has an edge and a height that were published
+    -- rather than worked out here.
+    frame({rooms = ROOMS, room = 1})
     local before = box("details")
     ui.map = true
-    frame()
-    local corner, key, press = box("map"), box("open"), box("details")
+    frame({rooms = ROOMS, room = 1})
+    local corner, key, press = box("map"), box("rooms"), box("details")
     check("the map stands in the dial's corner", corner ~= nil)
     if corner and key then
         check("wider than the dial at rest",
@@ -426,7 +455,7 @@ do
                             corner.y, key.y + key.h))
         check("keeping the dial's own margin from the right edge",
               math.abs((W - (corner.x + corner.w)) - key.x) < 0.5,
-              string.format("gap %.1f against the key's %.1f",
+              string.format("gap %.1f against the chip's %.1f",
                             W - (corner.x + corner.w), key.x))
     end
     check("and a monitor's band is untouched by opening it",
@@ -436,8 +465,8 @@ do
           table.concat(words(), " | "))
     -- A phone's map is the case that forced the line: on the row it would
     -- start left of the clock.
-    frame({w = 390, h = 844})
-    local small, small_key = box("map"), box("open")
+    frame({w = 390, h = 844, rooms = ROOMS, room = 1})
+    local small, small_key = box("map"), box("rooms")
     if small and small_key then
         check("a phone's map reaches past the middle of the window",
               small.x < 195,
@@ -469,9 +498,31 @@ if band and clock then
     check("and the arena under it is still the gun's",
           ui.pick(W / 2, 300) == nil, "something is published over the fight")
 end
-check("nothing in the corner row opens it a second time",
-      box("open") ~= nil and band.x > box("open").x + box("open").w,
-      "a roster key is still beside MENU")
+-- Once, and from the band. PLAYERS was a key in the corner that carried the
+-- head count and opened this same panel; the count is a column of the panel
+-- now, one line per pilot, so a second box for it would be the offer made
+-- twice. Counted rather than compared against a key's edge, which is what
+-- this asked while there was always something standing in that corner.
+local ways = 0
+for _, r in ipairs(ui.hits) do
+    if r.action == "details" then ways = ways + 1 end
+end
+check("nothing else opens the roster", ways == 1,
+      ways .. " boxes open it")
+
+-- And in an ordinary match there is nothing up there to be the second one.
+-- Every chip the corner can hold is situational: a seat the room is keeping
+-- for a watcher, a second room to move to, the camera being on you. None of
+-- the three is true here, and the way into the menu left for the foot, so
+-- that corner is the fight.
+local standing = {}
+for _, r in ipairs(ui.hits) do
+    if r.y < band.y + band.h and r.x + r.w <= band.x then
+        standing[#standing + 1] = r.action
+    end
+end
+check("and the corner row is empty in an ordinary match",
+      #standing == 0, table.concat(standing, " | "))
 
 -- --- the board opens under it ----------------------------------------------
 

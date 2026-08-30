@@ -326,15 +326,18 @@ do
     -- And it fits the column it lands in.
     --
     -- The page a phone reads is not the block this file measures above: these
-    -- sentences go on menu rows, in a drawer 390 points wide with 20 points of
-    -- air at each edge, and a row does not wrap a detail. It cuts it at the
-    -- nearest letter, so a sentence four words too long simply loses its last
-    -- two and still reads like a finished sentence. The longest that ships is
-    -- within five points of the edge, which is close enough that the next one
-    -- written is a coin toss rather than a decision.
+    -- sentences go on menu rows, on the settings panel that climbs off the
+    -- settings stop, and a row does not wrap a detail. Nothing clamps one
+    -- either, so a sentence a few words too long is not shortened or cut, it
+    -- is drawn straight out of the panel and over the fight. The longest that
+    -- ships fits with room to spare, and the point of measuring it is that the
+    -- next one written is a coin toss rather than a decision.
     --
     -- Drawn rather than counted, through the same ui.menu the client calls, so
-    -- the answer moves if the column, the type or the padding does.
+    -- the answer moves if the column, the type or the padding does. The panel
+    -- keeps its own inset to itself, so that is taken off the drawing too:
+    -- every row sets its name at the panel's left edge, and the panel is
+    -- symmetrical, so one label's x is both edges.
     do
         local st = package.loaded["arena.state"]
         local wide = {}
@@ -346,15 +349,36 @@ do
                 rows[#rows + 1] = {label = r.pad_name or r.name, detail = r.pad}
             end
         end
-        ui.menu({depth = 2, sel = 1, focus = "page", home = false,
-                 scenery = false, closable = true, rows = rows,
-                 at = "controls", rail = {{label = "settings", at = "settings"}},
-                 rail_sel = 1, pilot = {name = "Krait 4", rivets = 310}})
+        -- The controls board, open as the client opens it: a page of the
+        -- settings stop, drawn in the column over the key that raised it.
+        ui.menu({open = true, at = "controls", page = "controls", rows = rows,
+                 stops = {
+                     {stop = "leave", label = "leave",
+                      value = "to the stands"},
+                     {stop = "settings", label = "settings",
+                      mark = "settings", open = true},
+                     {stop = "side", label = "side", value = "Pylon",
+                      named = true},
+                 },
+                 pilot = {name = "Krait 4"}})
         ui.finish()
-        local x0, _, w = ui.drawer_span()
-        local lo, hi = x0 + ui.MENU_PAD, x0 + w - ui.MENU_PAD
-        local said = {}
-        for _, r in ipairs(rows) do said[string.lower(r.detail)] = true end
+        local x0, w = ui.column_span()
+        local said, named = {}, {}
+        for _, r in ipairs(rows) do
+            said[string.lower(r.detail)] = true
+            named[string.lower(r.label)] = true
+        end
+        local edge = nil
+        for i = 1, st.n do
+            local t = st.text[i]
+            if named[string.lower(t.s)] and t.x > x0 then
+                edge = math.min(edge or t.x, t.x)
+            end
+        end
+        check("the page drew its rows in the column", edge ~= nil,
+              "no row name landed inside " .. string.format("%.0f", x0))
+        local inset = edge and (edge - x0) or 0
+        local lo, hi = x0 + inset, x0 + w - inset
         for i = 1, st.n do
             local t = st.text[i]
             -- The row raises the first letter of a sentence as it draws it,
