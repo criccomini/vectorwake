@@ -18,10 +18,14 @@
 -- straight under the key on its own row. That one was reported twice.
 --
 -- So there are two rules and this measures both: two weights at one extent for
--- the field, and one column, MENU_PAD in from each edge of the drawer, that
--- nothing a page draws may cross. It runs the real `M.menu` against a
--- recording layer and reads both back off it, so a page that moves takes its
--- assertions with it.
+-- the field, and one column that nothing a page draws may cross. It runs the
+-- real `M.menu` against a recording layer and reads both back off it, so a
+-- page that moves takes its assertions with it.
+--
+-- The column draws rows in two places, and the rules are the same in both. A
+-- stop's page is a panel of rows inset from the column's edge, which is what
+-- most of this file is about; a stop that opens a list instead lights its rows
+-- edge to edge, and the last section holds that list to the same two weights.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -56,12 +60,28 @@ end
 local ui = harness.install()
 local pal = require("arena.palette")
 
-local RAIL = {}
-for i, n in ipairs({"team", "ship", "settings", "pilot"}) do
-    RAIL[i] = {label = n, icon = n, index = i}
+-- The three stops the column carries, as `menu.view` hands them over. Which
+-- one is holding a page open is the only thing that changes between the pages
+-- below.
+local STOPS = {
+    {stop = "leave", label = "leave", value = "to the stands"},
+    {stop = "settings", label = "settings", mark = "settings"},
+    {stop = "side", label = "side", value = "Pylon", named = true},
+}
+
+local function column(open_stop, page, rows)
+    local stops = {}
+    for i, s in ipairs(STOPS) do
+        stops[i] = {stop = s.stop, label = s.label, value = s.value,
+                    mark = s.mark, named = s.named,
+                    open = s.stop == open_stop}
+    end
+    return {open = true, at = page, page = page, stops = stops, rows = rows}
 end
 
-local function draw(view, w, h)
+-- One frame of the column with a cursor somewhere in the open page. `sel` is
+-- the row the arrows are standing on, which is what the pointer writes too.
+local function draw(view, sel, action, w, h)
     W, H = w or 1280, h or 800
     rects = {}
     local st = package.loaded["arena.state"]
@@ -72,6 +92,7 @@ local function draw(view, w, h)
     -- another with no navigation between them, so a deep page left scrolled
     -- would hand the next one an offset it never sees in the app.
     ui.page_scroll = 0
+    ui.col_sel, ui.col_sel_value = action or (sel and "menu_row"), sel
     ui.begin(layer, W, H, 1, false)
     ui.menu(view)
     ui.finish()
@@ -92,14 +113,20 @@ local function fields()
     return out
 end
 
--- The fields that run the width of the drawer, which is what a row's does.
--- Everything narrower is a key, a cell or a rail stop, and those light their
--- own shapes on purpose.
+-- The fields that run the width of a panel row.
+--
+-- A panel row is inset from the column at both edges, which is what tells it
+-- apart from everything else drawn in the same blue: the key at the foot
+-- breathes at the column's own width, a stop under the pointer lights the
+-- whole of itself, and the pips on a row that carries a range are a few points
+-- wide. So a row's field is the one that stands strictly inside the column and
+-- still crosses most of it.
 local function row_fields()
-    local dx, _, dw = ui.drawer_span()
+    local cx, cw = ui.column_span()
     local out = {}
     for _, r in ipairs(fields()) do
-        if math.abs(r.x - dx) < 1 and math.abs(r.w - dw) < 1 then
+        if r.x > cx + 0.5 and r.x + r.w < cx + cw - 0.5
+           and r.w > cw * 0.75 then
             out[#out + 1] = r
         end
     end
@@ -133,67 +160,59 @@ end
 
 -- --- one extent and two weights, on every page ----------------------------
 
--- Each page as the menu is handed it, with a cursor somewhere in the list and
--- something on the page that is already yours.
+-- Each page of the settings stop as the menu is handed it, with a cursor
+-- somewhere in the list and a row that is already yours.
+--
+-- No shipped page marks a settings row today; the sides are where "where you
+-- already are" lives, and they open a list rather than a page. The mark is
+-- still the row vocabulary rather than one page's trick, and it is `stage_row`
+-- that answers it, so the pages here ask for it: what is being measured is the
+-- drawing, and a rule only one caller currently exercises is the one that
+-- rots.
 local PAGES = {
     {
-        name = "sides",
-        view = function()
-            return {depth = 2, sel = 2, rail = RAIL, rail_sel = 1,
-                    focus = "stage", closable = true, at = "teams", rows = {
-                {label = "Pylon", named = true, tint = 1, index = 1,
-                 pick = true, detail = "3 + 1 AI"},
-                {label = "Caisson", named = true, tint = 2, index = 2,
-                 pick = true, detail = "4"},
-                {label = "new team", detail = "yours", index = 3, pick = true,
-                 mark = true},
-            }}
-        end,
-    },
-    {
         name = "settings",
+        sel = 1,
         view = function()
-            return {depth = 2, sel = 1, rail = RAIL, rail_sel = 4,
-                    focus = "stage", closable = true, rows = {
-                {label = "Frames", index = 1, pick = true, choice = 1,
-                 choices = 3},
-                {label = "Fullscreen", detail = "fill the screen", index = 2,
-                 pick = true},
-            }}
+            return column("settings", "settings", {
+                {label = "sound", sect = "audio", detail = "half",
+                 choice = 2, choices = 4, index = 1, pick = true},
+                {label = "music", detail = "quiet", choice = 1, choices = 3,
+                 index = 2, pick = true},
+                {label = "fullscreen", detail = "fill the screen", index = 3,
+                 pick = true, mark = true},
+            })
         end,
     },
     {
-        name = "builds",
+        name = "controls",
+        sel = 2,
         view = function()
-            return {depth = 3, sel = 2, rail = RAIL, rail_sel = 2,
-                    focus = "stage", closable = true, newbuild = false,
-                    builds = true, rows = {
-                {label = "brawler", index = 1, choice = 1},
-                {label = "runner", index = 2, choice = 0},
-                {label = "new", index = 3, group = "keys"},
-            }}
+            return column("settings", "controls", {
+                {label = "turn left", detail = "A", index = 1, pick = true,
+                 control = "turn_left"},
+                {label = "thrust", detail = "Up", index = 2, pick = true,
+                 control = "thrust"},
+                {label = "guns", detail = "Ctrl", index = 3, pick = true,
+                 control = "guns", mark = true},
+                {label = "reset to defaults", index = 4, pick = true,
+                 reset = true},
+            })
         end,
     },
     {
-        name = "kit",
+        name = "about",
+        sel = 3,
         view = function()
-            -- The cursor on a ladder rather than on the band: the band's name
-            -- key and points meter are furniture with their own shapes, and
-            -- what this page is here to prove is the ladders.
-            return {depth = 3, sel = 3, rail = RAIL, rail_sel = 2,
-                    focus = "stage", closable = true, kit = true,
-                    kit_spent = 12, kit_total = 30, rows = {
-                {label = "brawler", index = 1, group = "band"},
-                {label = "points", index = 2, group = "band"},
-                -- Sectioned, the way menu.lua builds them: the first ladder
-                -- on this page always opens a section, and the walk lays its
-                -- rows out under the head rather than against the top of the
-                -- page. A fixture without one is not a page this client draws.
-                {label = "Gun", index = 3, choice = 2, choices = 4,
-                 group = "levels", ladder = true, sect = "gun"},
-                {label = "Repel", index = 4, choice = 1, choices = 3,
-                 charge_slot = 1, price = 200, sect = "charges"},
-            }}
+            return column("settings", "about", {
+                {label = "build", detail = "dev", index = 1, verbatim = true},
+                {label = "wire", detail = "webtransport, quic datagrams",
+                 index = 2, verbatim = true},
+                {label = "device", detail = "Linux", index = 3, pick = true,
+                 verbatim = true},
+                {label = "policies", detail = "on the site", index = 4,
+                 pick = true, mark = true},
+            })
         end,
     },
 }
@@ -206,10 +225,10 @@ local function brightest(lit)
 end
 
 for _, page in ipairs(PAGES) do
-    draw(page.view())
+    draw(page.view(), page.sel)
     local lit = row_fields()
     check(page.name .. " lights at least one row", #lit > 0,
-          #lit .. " fields at the drawer span")
+          #lit .. " fields inside the column")
     for _, r in ipairs(lit) do note_weight(r.col[4]) end
     -- One cursor. Two rows lit at the brightest weight is a page that cannot
     -- say where a press would go.
@@ -222,7 +241,7 @@ for _, page in ipairs(PAGES) do
           cursors .. " of them")
 end
 
--- The whole point of the change: over five pages, a row was lit at two
+-- The whole point of the change: over every page, a row was lit at two
 -- weights, and they are the two the interface published. Before this there
 -- were eight, at five different extents.
 check("the menu lights a row at two weights, over every page", #seen == 2,
@@ -239,43 +258,51 @@ if #seen == 2 then
                         hi / lo, RATIO))
 end
 
--- --- the field is the hit box ---------------------------------------------
+-- --- the field is inside the box a press lands on -------------------------
 
 -- A press that lands where the eye was told the row is has landed on the row.
 -- Two pages used to publish a box narrower than the field they drew, so a
 -- press in the margin the field claimed hit nothing.
+--
+-- The panel publishes its rows at the column's full width and lights them
+-- inside its own inset, so the two are no longer the same rectangle. That is
+-- the safe way round and it is the direction that matters: everything lit is
+-- pressable, and the margin either side of it is pressable too.
 for _, page in ipairs(PAGES) do
-    draw(page.view())
+    draw(page.view(), page.sel)
     local lit = row_fields()
-    local span_x, _, span_w = ui.drawer_span()
     local covered = 0
     for _, r in ipairs(lit) do
         local mid = r.y + r.h / 2
         for _, h in ipairs(ui.hits) do
-            if h.y <= mid and h.y + h.h >= mid
-               and math.abs(h.x - span_x) < 1
-               and math.abs(h.w - span_w) < 1 then
+            if h.action == "menu_row"
+               and h.y <= mid and h.y + h.h >= mid
+               and h.x <= r.x + 0.5
+               and h.x + h.w >= r.x + r.w - 0.5 then
                 covered = covered + 1
                 break
             end
         end
     end
-    check(page.name .. "'s lit rows publish a box the width of the field",
+    check(page.name .. "'s lit rows sit inside a box a press reaches",
           covered == #lit, covered .. " of " .. #lit)
 end
 
 -- --- where you already are, and where a press would go --------------------
 
 do
-    -- The games list with one row flown and the cursor elsewhere: two fields,
+    -- A page with one row already yours and the cursor elsewhere: two fields,
     -- one of each weight.
-    draw({depth = 1, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
-          closable = true, rows = {
-        {label = "Chaos", index = 1, pick = true},
-        {label = "Team Battle", index = 2, pick = true, mark = true},
-    }})
+    local two = function()
+        return column("settings", "settings", {
+            {label = "sound", detail = "half", index = 1, pick = true},
+            {label = "music", detail = "quiet", index = 2, pick = true,
+             mark = true},
+        })
+    end
+    draw(two(), 1)
     local lit = row_fields()
-    check("a flown row and a cursor elsewhere light two rows", #lit == 2,
+    check("a standing row and a cursor elsewhere light two rows", #lit == 2,
           #lit .. " fields")
     if #lit == 2 then
         local hi = math.max(lit[1].col[4], lit[2].col[4])
@@ -288,20 +315,16 @@ do
     -- Both true of one row is one field, at the cursor's weight: what a press
     -- does next is the more urgent of the two, and two fields on one row is
     -- a row lit twice.
-    draw({depth = 1, sel = 2, rail = RAIL, rail_sel = 1, focus = "stage",
-          closable = true, rows = {
-        {label = "Chaos", index = 1, pick = true},
-        {label = "Team Battle", index = 2, pick = true, mark = true},
-    }})
+    draw(two(), 2)
     lit = row_fields()
     check("a row that is both is lit once", #lit == 1, #lit .. " fields")
     -- And at the cursor's weight, which is the brighter of the two: measured
     -- against the standing field the same page drew a moment ago.
     if #lit == 1 then
-        draw({depth = 1, sel = 0, rail = RAIL, rail_sel = 1, focus = "rail",
-              closable = true, rows = {
-            {label = "Team Battle", index = 1, pick = true, mark = true},
-        }})
+        draw(column("settings", "settings", {
+            {label = "music", detail = "quiet", index = 1, pick = true,
+             mark = true},
+        }), nil)
         local standing = row_fields()
         check("and lit as the cursor rather than as standing",
               #standing == 1 and lit[1].col[4] > standing[1].col[4] + 0.001,
@@ -317,12 +340,28 @@ do
     -- The row you are on used to carry a lit triangle out in the gutter,
     -- which pushed its own label right of every other label on the page. The
     -- field says the same thing inside the column.
+    --
+    -- Counted inside the page only. The panel draws a triangle of its own
+    -- that is nothing to do with a row: the arrow on its head, which is the
+    -- way back out of the page, and it sits above the rows rather than in
+    -- them.
+    local function standing()
+        return column("settings", "settings", {
+            {label = "sound", detail = "half", index = 1, pick = true,
+             mark = true},
+        })
+    end
+    -- Once to learn where the page is, then again counting what lands in it.
+    draw(standing(), nil)
+    local _, py, _, ph = ui.page_span()
     local tris = 0
-    layer.tri = function() tris = tris + 1 end
-    draw({depth = 1, sel = 0, rail = RAIL, rail_sel = 1, focus = "rail",
-          closable = true, rows = {
-        {label = "Chaos", index = 1, pick = true, mark = true},
-    }})
+    layer.tri = function(_, _x0, y0, _x1, y1, _x2, y2)
+        -- Turned back the way the rest of this file counts, the gui reckoning
+        -- its own y up from the foot of the window.
+        local top, bot = H - math.max(y0, y1, y2), H - math.min(y0, y1, y2)
+        if top >= py and bot <= py + ph then tris = tris + 1 end
+    end
+    draw(standing(), nil)
     layer.tri = harness.noop
     check("the row you are on draws no wedge beside it", tris == 0,
           tris .. " drawn")
@@ -351,6 +390,10 @@ end
 -- the right of the panel; a price stopped fourteen points inside the line its
 -- own name began on. Both are the same question asked of every line of type
 -- the page sets, so ask it of every line of type the page sets.
+--
+-- The column is taken off the drawing rather than written down here: a lit
+-- row's field is exactly the box `stage_row` is handed, so its own left and
+-- right edges are the two lines no line of type may cross.
 
 do
     local menu_face = require("arena.menu_face")
@@ -366,36 +409,50 @@ do
         return w * px
     end
 
-    local PAD = ui.MENU_PAD
-    check("the interface publishes its column inset", type(PAD) == "number",
-          tostring(PAD))
-
     for _, page in ipairs(PAGES) do
-        local st = draw(page.view())
-        local dx, _, dw = ui.drawer_span()
-        local left, right = dx + PAD, dx + dw - PAD
-        local out = {}
-        for i = 1, st.n do
-            local t = st.text[i]
-            -- The page only, which is what the column governs: the head's own
-            -- furniture sits on the panel's margin above it and the rail's
-            -- labels are centered on their stops below it, and neither is type
-            -- set in the column.
-            if t and t.s and t.s ~= "" and t.y > 90 and t.y < H - 60 then
-                local w = measure(t.s, t.px, t.font)
-                local x0 = t.x
-                if t.pivot == "center" then x0 = t.x - w / 2
-                elseif t.pivot == "right" then x0 = t.x - w end
-                if x0 < left - 1 or x0 + w > right + 1 then
-                    out[#out + 1] = string.format("%s (%.0f..%.0f)",
-                                                  t.s, x0, x0 + w)
+        local st = draw(page.view(), page.sel)
+        local lit = row_fields()
+        check(page.name .. " lit a row to measure its column by", #lit > 0)
+        if #lit > 0 then
+            local left, right = lit[1].x, lit[1].x + lit[1].w
+            local _, py, _, ph = ui.page_span()
+            local out, looked = {}, 0
+            for i = 1, st.n do
+                local t = st.text[i]
+                -- The page only, which is what the column governs. The
+                -- panel's own head sits above it and the stops and the key
+                -- below it, and none of those is type set in the column.
+                --
+                -- A run of type carries the baseline it was handed to the gui,
+                -- which counts up from the foot of the window, and every
+                -- rectangle here has already been turned back the other way
+                -- up. So the page's own box is met halfway.
+                local ty = t and H - t.y
+                if t and t.s and t.s ~= "" and ty >= py and ty <= py + ph
+                then
+                    looked = looked + 1
+                    local w = measure(t.s, t.px, t.font)
+                    local x0 = t.x
+                    if t.pivot == "center" then x0 = t.x - w / 2
+                    elseif t.pivot == "right" then x0 = t.x - w end
+                    if x0 < left - 1 or x0 + w > right + 1 then
+                        out[#out + 1] = string.format("%s (%.0f..%.0f)",
+                                                      t.s, x0, x0 + w)
+                    end
                 end
             end
+            -- A page whose lines all landed outside the box this looked in is
+            -- a check that passed by asking nothing. It happened: the boxes
+            -- are reckoned from the top of the window and a run of type from
+            -- the foot, and read straight against each other they never met.
+            check(page.name .. " set some type on its page", looked >= #lit,
+                  looked .. " lines in " .. string.format("%.0f..%.0f",
+                                                          py, py + ph))
+            check(page.name .. " sets every line inside the column",
+                  #out == 0,
+                  string.format("column is %.0f..%.0f; outside it: %s",
+                                left, right, table.concat(out, ", ")))
         end
-        check(page.name .. " sets every line inside the column",
-              #out == 0,
-              string.format("column is %.0f..%.0f; outside it: %s",
-                            left, right, table.concat(out, ", ")))
     end
 end
 
@@ -404,11 +461,10 @@ end
 do
     local long = "The longer your run, the bigger the bounty on you, and the "
         .. "longer the odds of getting home with it"
-    local st = draw({depth = 1, sel = 1, rail = RAIL, rail_sel = 1,
-                     focus = "stage", closable = true, rows = {
+    local st = draw(column("settings", "settings", {
         {label = "Apex", note = long, index = 1, pick = true},
         {label = "Lattice", index = 2, pick = true},
-    }})
+    }), 1)
     local pieces = 0
     for i = 1, st.n do
         local t = st.text[i]
@@ -428,6 +484,52 @@ do
           note_y and next_y and note_y > next_y + 8,
           string.format("last note line at %s, next row at %s",
                         tostring(note_y), tostring(next_y)))
+end
+
+-- --- and a stop that opens a list keeps the same two weights ---------------
+--
+-- The sides are the one stop whose answer is a list rather than a page, so
+-- their rows are drawn edge to edge in the column instead of inside a panel.
+-- Different extent, same two weights: a walk from the settings page onto the
+-- side list should not change what "here" and "under the cursor" look like.
+
+do
+    local function sides()
+        return column("side", nil, {
+            {label = "Pylon", index = 1, detail = "8", tint = 0, mark = true,
+             named = true, pick = true},
+            {label = "Caisson", index = 2, detail = "7", tint = 1,
+             named = true, pick = true},
+            {label = "Meridian", index = 3, detail = "6", tint = 2,
+             named = true, pick = true},
+        })
+    end
+    draw(sides(), 2, "menu_pick")
+    local cx, cw = ui.column_span()
+    -- The key at the foot breathes in the same blue at the same width, so the
+    -- list is the fields above it. Nothing else up there is lit: the stops
+    -- answer the cursor only when it is standing on one, and it is not.
+    local go = nil
+    for _, r in ipairs(ui.hits) do
+        if r.action == "menu_go" then go = r end
+    end
+    local lit = {}
+    for _, r in ipairs(fields()) do
+        if go and r.y + r.h <= go.y + 0.5
+           and math.abs(r.x - cx) < 1 and math.abs(r.w - cw) < 1 then
+            lit[#lit + 1] = r
+        end
+    end
+    check("the side list lights the row you fly for and the one under the "
+          .. "cursor", #lit == 2, #lit .. " fields")
+    if #lit == 2 then
+        local hi = math.max(lit[1].col[4], lit[2].col[4])
+        local lo = math.min(lit[1].col[4], lit[2].col[4])
+        check("at the same two weights the pages use",
+              math.abs(hi - CURSOR) < 0.001 and math.abs(lo - HERE) < 0.001,
+              string.format("%.3f / %.3f against %.3f / %.3f", hi, lo,
+                            CURSOR, HERE))
+    end
 end
 
 if fails > 0 then

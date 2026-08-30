@@ -161,16 +161,12 @@ four fifths of a page at 13 points or under. The gap from `LABEL` to `BODY` is
 smaller than the rest of the ladder because upper case reads larger than lower
 at the same size.
 
-The menu multiplies its whole scale by `MENU_SCALE`, 1.25, on any window that is
-not `M.compact`. Rows, gaps, marks and the column grow with the type, so nothing
-is measured twice; scaling the type alone is how a name ends up wider than the
-row sized for it. A phone keeps the scale the rest of the interface uses, held
-sideways included, since the scarce axis decides and a landscape phone is 390
-points tall.
-
-There was a constant for this, `MENU_ZOOM` at 1.18. It went out with decision 63
-and nothing replaced it, so for five decisions the menu was a phone screen shown
-on a desk.
+The menu no longer scales itself. It did while it was a drawer that owned the
+whole window on a phone and a third of one on a desk: `MENU_SCALE`, 1.25, grew
+its rows, gaps, marks and column together on anything not `M.compact`. The
+column is the landing's column, laid out at the same width on every window and
+sized by the same rules, so there is nothing left to zoom. See
+[decision 102](../architecture/decisions.md).
 
 ### The inks
 
@@ -216,7 +212,7 @@ inside a panel keep `BORDER` and have nothing to find.
 The interface owns a small number of shapes and each one means one thing.
 
 **A button is a stroked box**: a rectangle outlined all the way round with a
-wash inside it (`key_box`). It is what MENU wears in the corner, what a
+wash inside it (`key_box`). It is what the `MENU` key wears at the foot, what a
 card's answers wear, what the help board draws a key as, so a hand
 that has learned one has learned all of them. On or off is one rule
 everywhere: lit in cyan with a stronger wash when active, dim otherwise.
@@ -333,8 +329,11 @@ The constants that repeat, from ui.lua:
 | ROW_PAD | 16 | how far a lit row reaches past its column of type |
 | KEY_H | 26 | a button's height |
 
-The HUD has a fixed geography, and it is the prototype's. Top left: the button
-row (MENU, ROOM, the on-air or watching chip) and the rooms panel under it.
+The HUD has a fixed geography, and it is the prototype's. Top left: the chip
+row (TAKE SEAT, ROOM, the on-air or watching chip) and the rooms panel under
+it, all of which come and go, so in an ordinary match that corner is the fight.
+Bottom middle: the faint `MENU` key, and the column it raises. Top left held
+MENU until decision 102 moved it to the foot, where the panel it opens stands.
 Top right: the radar or the map (one corner, one instrument), with the feed
 hanging under it. The radar is hard into the corner at the same PAD the button
 row keeps from the other one; the map, which is two thirds of the window's

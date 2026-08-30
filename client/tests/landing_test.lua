@@ -167,6 +167,13 @@ local LAND = {
     },
 }
 
+-- A zone holding more than one room, for the checks that need something
+-- standing in the top left corner. The row holds nothing at all in an ordinary
+-- match, and the ROOM chip is the one thing there that publishes a box at the
+-- row's own line and a key's own height.
+local ROOMS = {{n = 1, players = 3, bots = 20},
+               {n = 2, players = 0, bots = 51}}
+
 -- One frame of the landing, or of an ordinary watch when `o.landing` is false:
 -- the two differ in exactly the two things this file is about.
 local function frame(w, h, o)
@@ -179,12 +186,12 @@ local function frame(w, h, o)
     -- until a player presses PLAYERS.
     ui.details = o.details or false
     -- Which stop's list is down, the way the arena leaves it between frames.
-    ui.land_open = o.land_open or nil
+    ui.col_open = o.col_open or nil
     -- And where the cursor is standing, which both hands write: the pointer
-    -- through `land_hover` in arena.script, the arrows through `land_step`.
+    -- through `land_hover` in arena.script, the arrows through `col_step`.
     -- `keep` is for the checks that walk it and then look at what was drawn.
     if not o.keep then
-        ui.land_sel, ui.land_sel_value = o.sel, o.sel_value
+        ui.col_sel, ui.col_sel_value = o.sel, o.sel_value
     end
     ui.begin(layer, w, h, o.density or 1, false, 0, glass)
     ui.hud({
@@ -428,39 +435,47 @@ check("and a way into the roster", box("details") ~= nil)
 
 -- --- the way in wears three bars ------------------------------------------
 --
--- The menu key is a hamburger: the mark alone on a phone in either
--- orientation, the mark and the word on anything wider. The box stays in both,
--- because `key_box` is the one shape a thing to press wears here and bars
--- floating on the glass would make this control the exception the corner keys
--- were drawn as boxes to stop being.
+-- The menu key is a hamburger: the mark and the word MENU beside it, on every
+-- window there is. It spent years in the top left corner, where 390 points of
+-- row left no space for the word and the mark stood alone on a phone, so a
+-- first visit had to know what three bars meant. The bottom middle has the
+-- space the corner never did. The box stays, because `key_box` is the one
+-- shape a thing to press wears here and bars floating on the glass would make
+-- this control the exception the keys were drawn as boxes to stop being.
+--
+-- And it stands under the landing's own key rather than on it. Both columns
+-- rise out of this strip and only one of them is ever up: the stands carry
+-- PLAY NOW, and the key beneath it is what says the other column is there.
 do
     for _, s in ipairs(SHAPES) do
         local w, h, shape = s[1], s[2], s[3]
         frame(w, h)
         local key = box("open")
         check(shape .. " keeps a way into the menu", key ~= nil, "no key")
-        local worded = word("MENU") ~= nil
-        if shape == "desktop" then
-            check("a desktop names the key as well as marking it", worded,
-                  "no MENU beside the bars")
-        else
-            check(shape .. " gives the key the mark alone", not worded,
-                  "MENU is still written on a phone")
-        end
+        check(shape .. " names the key as well as marking it",
+              word("MENU") ~= nil, "no MENU beside the bars")
         if key then
-            -- Square where it is the mark alone, so it reads as a key rather
-            -- than as a word's box with a picture left in it.
-            local square = math.abs(key.w - key.h) < 1.5
+            -- Wider than it is tall, because it carries a word. The square
+            -- key was the corner's, and square is what a key looks like when
+            -- the word has been dropped and the mark is left standing alone.
             check(shape .. " shapes the key to what is in it",
-                  worded and not square or (not worded and square),
-                  string.format("%.0fx%.0f, word %s", key.w, key.h,
-                                tostring(worded)))
+                  key.w > key.h + 1.5,
+                  string.format("%.0fx%.0f", key.w, key.h))
             -- A finger reaches it whatever its width: `M.pick` grows a box to
             -- the touch floor for a press made with one.
             check(shape .. " answers a finger aimed near the key",
                   ui.pick(key.x + key.w / 2, key.y + key.h + 8, true)
                       == key,
                   "a near miss found nothing")
+            -- Clear of PLAY NOW, which is the whole reason the landing's
+            -- column lifts by this key's strip. Two keys sharing one place is
+            -- a press that commits to a game when it meant to open a menu.
+            local play = box("play_now")
+            check(shape .. " leaves the key its own strip under PLAY NOW",
+                  play ~= nil and play.y + play.h <= key.y,
+                  play and string.format("play ends %.0f, key at %.0f",
+                                         play.y + play.h, key.y)
+                      or "no play_now box")
         end
     end
 end
@@ -506,7 +521,7 @@ end
 -- of pulling a trigger, and PLAY NOW answers through all of it: it is the
 -- press that commits, whatever else is open.
 do
-    frame(1440, 810, {land_open = "zone"})
+    frame(1440, 810, {col_open = "zone"})
     local pick
     for _, r in ipairs(ui.hits) do
         if r.action == "land_pick_zone" and r.value == "chaos" then
@@ -534,7 +549,7 @@ do
                   == "play_now")
     end
 
-    frame(1440, 810, {land_open = "ship"})
+    frame(1440, 810, {col_open = "ship"})
     -- The panel names the ship it is showing, and the rows that spend its
     -- credits, rather than seven names in a column.
     check("the ship panel names the hull it is on", word("Wedge") ~= nil)
@@ -600,7 +615,7 @@ end
 -- the other two and that the one row a guest most needs is the one that
 -- stands out.
 do
-    frame(1440, 810, {land_open = "account"})
+    frame(1440, 810, {col_open = "account"})
     local rows = {}
     for _, r in ipairs(ui.hits) do
         if r.action == "land_pick_account" then rows[#rows + 1] = r end
@@ -779,7 +794,7 @@ do
     -- A row of an open list, told from its neighbors by the value its box
     -- carries: two rows publish the same action and only one of them is under
     -- the pointer.
-    frame(1440, 810, {land_open = "zone", sel = "land_pick_zone",
+    frame(1440, 810, {col_open = "zone", sel = "land_pick_zone",
                       sel_value = "chaos"})
     local rows = {}
     for _, r in ipairs(ui.hits) do
@@ -796,13 +811,13 @@ do
     -- somewhere moves, so a walk to a control lights exactly what a hover on
     -- it lights.
     frame(1440, 810)
-    ui.land_sel, ui.land_sel_value = nil, nil
-    ui.land_step(1)
-    ui.land_step(1)
+    ui.col_sel, ui.col_sel_value = nil, nil
+    ui.col_step(1)
+    ui.col_step(1)
     frame(1440, 810, {keep = true})
     check("a walk to the zone stop lights what a hover on it lights",
           lit(box("land_zone"), CURSOR),
-          "walked to " .. tostring(ui.land_sel))
+          "walked to " .. tostring(ui.col_sel))
 end
 
 -- --- the keyboard walks the same controls -----------------------------------
@@ -814,12 +829,12 @@ end
 do
     local function walk_of()
         local out = {}
-        for i, r in ipairs(ui.land_walk()) do out[i] = r.action end
+        for i, r in ipairs(ui.col_walk()) do out[i] = r.action end
         return table.concat(out, " ")
     end
     local function step(dir, n)
-        for _ = 1, (n or 1) do ui.land_step(dir) end
-        return ui.land_sel
+        for _ = 1, (n or 1) do ui.col_step(dir) end
+        return ui.col_sel
     end
 
     for _, shape in ipairs({{1440, 810, "desktop"}, {844, 390, "sideways"}}) do
@@ -832,27 +847,27 @@ do
     -- A first press lands on the end the arrow came from, and the ends wrap,
     -- so nothing out here is more than two presses away.
     frame(1440, 810)
-    ui.land_sel, ui.land_sel_value = nil, nil
+    ui.col_sel, ui.col_sel_value = nil, nil
     check("down with nothing lit lands on the first stop",
           step(1) == "land_account")
     check("and walks the column", step(1) == "land_zone")
     check("down to the key", step(1, 2) == "play_now")
     check("and off the end back to the top", step(1) == "land_account")
-    ui.land_sel, ui.land_sel_value = nil, nil
+    ui.col_sel, ui.col_sel_value = nil, nil
     check("up with nothing lit lands on the key",
           step(-1) == "play_now")
 
     -- Enter presses what the cursor is on, and the key when nothing is lit:
     -- there is one thing this screen exists for and a keyboard that had to
     -- walk to it would be a front page nobody can start the game from.
-    ui.land_sel, ui.land_sel_value = nil, nil
-    check("enter with nothing lit is the key", ui.land_go() == "play_now")
+    ui.col_sel, ui.col_sel_value = nil, nil
+    check("enter with nothing lit is the key", ui.col_go() == "play_now")
     step(1, 2)
-    check("and otherwise is whatever is lit", ui.land_go() == "land_zone")
+    check("and otherwise is whatever is lit", ui.col_go() == "land_zone")
 
     -- A game the fleet is not serving is not a stop the walk can land on. It
     -- publishes no box, because it cannot be pressed either.
-    frame(1440, 810, {land_open = "zone", land = {
+    frame(1440, 810, {col_open = "zone", land = {
         name = LAND.name, zone = LAND.zone, ship = LAND.ship,
         ships = LAND.ships,
         zones = {
@@ -866,65 +881,65 @@ do
 
     -- Inside an open list the walk is that list: the stop it hangs off, which
     -- is the way back out, and then its rows.
-    frame(1440, 810, {land_open = "zone"})
+    frame(1440, 810, {col_open = "zone"})
     check("an open list is the whole of the walk",
           walk_of() == "land_zone land_pick_zone land_pick_zone",
           walk_of())
-    ui.land_sel, ui.land_sel_value = "land_zone", nil
+    ui.col_sel, ui.col_sel_value = "land_zone", nil
     step(1)
     check("down off the stop goes into the list",
-          ui.land_sel == "land_pick_zone" and ui.land_sel_value == "melee",
-          tostring(ui.land_sel) .. " " .. tostring(ui.land_sel_value))
+          ui.col_sel == "land_pick_zone" and ui.col_sel_value == "melee",
+          tostring(ui.col_sel) .. " " .. tostring(ui.col_sel_value))
     step(1)
-    check("and along it", ui.land_sel_value == "chaos")
-    local act, value = ui.land_go()
+    check("and along it", ui.col_sel_value == "chaos")
+    local act, value = ui.col_go()
     check("enter on a row picks that game",
           act == "land_pick_zone" and value == "chaos",
           tostring(act) .. " " .. tostring(value))
     step(-1, 2)
     check("and up off the first row is the stop again",
-          ui.land_sel == "land_zone")
-    check("where enter shuts the list", ui.land_go() == "land_zone")
+          ui.col_sel == "land_zone")
+    check("where enter shuts the list", ui.col_go() == "land_zone")
 
     -- The one case where falling back to the key would be wrong: a press
     -- meant for a row would deploy instead of picking one.
-    ui.land_sel, ui.land_sel_value = "land_account", nil
+    ui.col_sel, ui.col_sel_value = "land_account", nil
     check("enter in an open list never reaches the key",
-          ui.land_go() == nil, tostring(ui.land_go()))
+          ui.col_go() == nil, tostring(ui.col_go()))
 
     -- The ship panel walks its stop, the ship it is on, one stop a row, and
     -- the way back to the hull's own build. The arrows either side of a
     -- value are not stops of their own.
-    frame(1440, 810, {land_open = "ship"})
+    frame(1440, 810, {col_open = "ship"})
     check("the ship panel walks its ship and its rows",
           walk_of():match("^land_ship land_pick_ship land_kit_row")
           and walk_of():match("land_kit_reset$"),
           walk_of())
-    ui.land_sel, ui.land_sel_value = "land_pick_ship", 1
+    ui.col_sel, ui.col_sel_value = "land_pick_ship", 1
     -- Left and right page the roster from the ship's own row.
-    local pact, pvalue = ui.land_side(1)
+    local pact, pvalue = ui.col_side(1)
     check("right off the ship pages the roster",
           pact == "land_page_ship" and pvalue == 1,
           tostring(pact) .. " " .. tostring(pvalue))
     -- And spend a credit from any other row, which is the same two keys
     -- doing the same kind of work one row down.
-    ui.land_sel, ui.land_sel_value = "land_kit_row", 7
-    local kact, kvalue = ui.land_side(1)
+    ui.col_sel, ui.col_sel_value = "land_kit_row", 7
+    local kact, kvalue = ui.col_side(1)
     check("and right on a row spends a credit on it",
           kact == "land_kit_step" and type(kvalue) == "table"
           and kvalue.slot == 7 and kvalue.dir == 1)
     check("while enter on a row does nothing on its own",
-          select(1, ui.land_go()) == "land_kit_row")
+          select(1, ui.col_go()) == "land_kit_row")
     -- Nothing answers left and right anywhere else out here.
-    ui.land_open = "zone"
+    ui.col_open = "zone"
     check("and the other stops leave both arrows unread",
-          ui.land_side(1) == nil)
-    ui.land_open = "ship"
+          ui.col_side(1) == nil)
+    ui.col_open = "ship"
 end
 
 -- --- and both hands arrive at the same place --------------------------------
 --
--- `ui.land_go` names an action and `land_act` in arena.script is what runs
+-- `ui.col_go` names an action and `land_act` in arena.script is what runs
 -- it, so an action this screen publishes that the arena has no branch for is
 -- enter pressing nothing at all, silently, on the one screen that has to
 -- work. That file is a Defold script and cannot be loaded here, so this reads
@@ -942,7 +957,7 @@ do
     -- list, and each of the two open. Named off what was drawn rather than
     -- written down twice.
     local acts = {}
-    for _, o in ipairs({{}, {land_open = "zone"}, {land_open = "ship"}}) do
+    for _, o in ipairs({{}, {col_open = "zone"}, {col_open = "ship"}}) do
         frame(1440, 810, o)
         for _, r in ipairs(ui.hits) do
             if r.action == "play_now" or r.action:sub(1, 5) == "land_" then
@@ -973,7 +988,7 @@ end
 -- two layouts to learn and two to keep working for one panel that fits a
 -- scroll.
 do
-    frame(844, 390, {land_open = "ship"})
+    frame(844, 390, {col_open = "ship"})
     local cell, key = box("land_ship"), box("play_now")
     local pick = box("land_pick_ship")
     check("a rail's panel carries the ship it is on", pick ~= nil)
@@ -1013,17 +1028,17 @@ do
     for _, r in ipairs(LAND.panel.rows) do
         if r.kind == "slot" then last = r.slot end
     end
-    ui.land_scroll = 0
-    ui.land_sel, ui.land_sel_value = "land_kit_row", last
-    frame(844, 390, {land_open = "ship", keep = true})
+    ui.col_scroll = 0
+    ui.col_sel, ui.col_sel_value = "land_kit_row", last
+    frame(844, 390, {col_open = "ship", keep = true})
     local lit
     for _, r in ipairs(ui.hits) do
         if r.action == "land_kit_row" and r.value == last then lit = r end
     end
     check("walking to a row under the fold brings it into the panel",
           lit ~= nil, "row " .. tostring(last) .. " stayed off the panel")
-    ui.land_sel, ui.land_sel_value = nil, nil
-    ui.land_scroll = 0
+    ui.col_sel, ui.col_sel_value = nil, nil
+    ui.col_scroll = 0
 end
 
 -- --- a phone's top row -----------------------------------------------------
@@ -1034,54 +1049,60 @@ end
 -- came off that row to get clear, and gave up the side names on the way down.
 --
 -- PLAYERS is gone, since the band is what opens the roster now, and the tile
--- readout that still crowded it sits under the dial. That leaves a phone's row
--- the same three things a monitor's has, and the band is back on it. Coming off
--- the row had only moved the collision: the line under it is where the radar
--- starts, so the front page read as three headings on two lines with one of
--- them over an instrument. A side gives up its name when the row runs out of
--- width for it, which is a name rather than the line the whole band stands on.
+-- readout that still crowded it sits under the dial. MENU went to the foot
+-- after it. That leaves a phone's row the same three things a monitor's has,
+-- and the band is back on it. Coming off the row had only moved the collision:
+-- the line under it is where the radar starts, so the front page read as three
+-- headings on two lines with one of them over an instrument. A side gives up
+-- its name when the row runs out of width for it, which is a name rather than
+-- the line the whole band stands on.
 --
--- At 390 points it does. This row is a key, a clock and a dial hard into the
+-- At 390 points it does. This row is a chip, a clock and a dial hard into the
 -- far corner, and what is left over is not a call sign, so a phone's front
 -- page is the clock with a figure either side of it. The names are on the
 -- board a press opens, and on a window with the width for them.
+--
+-- The chip is the ruler here, so these frames are drawn with a second room in
+-- the zone. A landing with one room puts nothing in that corner at all, and
+-- the band's own box is a few points taller than the row on purpose so a thumb
+-- can find it: reading the row's line off that box would be reading padding.
 do
-    frame(390, 844)
-    local menu_key, clock = box("open"), word("1:47")
-    check("portrait draws the corner key and the clock",
-          menu_key and clock, "missing one of them")
-    if menu_key and clock then
-        check("portrait keeps the band on the corner key's own line",
-              math.abs(clock.y - (menu_key.y + menu_key.h / 2)) < 1,
-              string.format("clock at %.0f, key mid %.0f",
-                            clock.y, menu_key.y + menu_key.h / 2))
-        check("and to the right of the key rather than through it",
-              clock.x > menu_key.x + menu_key.w,
-              string.format("clock at %.0f, key ends %.0f",
-                            clock.x, menu_key.x + menu_key.w))
+    frame(390, 844, {rooms = ROOMS, room = 1})
+    local chip, clock = box("rooms"), word("1:47")
+    check("portrait draws the corner chip and the clock",
+          chip and clock, "missing one of them")
+    if chip and clock then
+        check("portrait keeps the band on the corner row's own line",
+              math.abs(clock.y - (chip.y + chip.h / 2)) < 1,
+              string.format("clock at %.0f, chip mid %.0f",
+                            clock.y, chip.y + chip.h / 2))
+        check("and to the right of the chip rather than through it",
+              clock.x > chip.x + chip.w,
+              string.format("clock at %.0f, chip ends %.0f",
+                            clock.x, chip.x + chip.w))
     end
     check("and gives up the side names, the row being 390 points",
           word("PYLON") == nil and word("CAISSON") == nil,
           "a name is drawn where the row has no width for one")
     check("and both figures", word("3") ~= nil and word("5") ~= nil)
     -- The far end of the row is the dial, at the same margin from its corner
-    -- that the way into the menu keeps from the opposite one. The link meter
-    -- stood out here until it went into the menu's head and the dial came up
-    -- into the corner it left. The meter draws no caption, so what answers for
-    -- it is the box it would publish over its bars.
+    -- that the chips keep from the opposite one. The link meter stood out here
+    -- until it went into the menu's head and the dial came up into the corner
+    -- it left. The meter draws no caption, so what answers for it is the box
+    -- it would publish over its bars.
     check("and nothing in the far corner of the row but the dial",
           box("debug") == nil, "the link meter is still on the landing")
     local corner = box("map")
-    if menu_key and corner then
-        check("which hugs it at the corner key's own margin",
-              math.abs(corner.y - menu_key.y) < 0.5
-                  and math.abs((390 - (corner.x + corner.w)) - menu_key.x) < 0.5,
+    if chip and corner then
+        check("which hugs it at the corner chip's own margin",
+              math.abs(corner.y - chip.y) < 0.5
+                  and math.abs((390 - (corner.x + corner.w)) - chip.x) < 0.5,
               string.format("dial at %.0f,%.0f ending %.0f of 390",
                             corner.x, corner.y, corner.x + corner.w))
     end
 
     -- The band is the control, so the press that opens the roster is on the
-    -- band rather than in the corner beside the way into the menu.
+    -- band rather than in the corner beside it.
     local band = box("details")
     check("the roster opens from the band itself",
           band and clock and clock.x > band.x
@@ -1090,8 +1111,10 @@ do
                                  band.x, band.x + band.w, clock.x)
               or "no band press")
     check("and nothing in the corner row offers it a second time",
-          band == nil or band.x > menu_key.x + menu_key.w,
-          "a roster key is still beside MENU")
+          band ~= nil and chip ~= nil and band.x > chip.x + chip.w,
+          band and chip and string.format("band starts %.0f, chip ends %.0f",
+                                          band.x, chip.x + chip.w)
+              or "no band press")
 
     -- The board opens under the band, wherever the band ends.
     frame(390, 844, {details = true})
@@ -1103,14 +1126,14 @@ do
                         tostring(clock2 and clock2.y)))
 
     -- A window with room keeps the same band on the same line.
-    frame(1440, 810)
-    local wide_menu, wide_clock = box("open"), word("1:47")
-    check("a wide window keeps the clock on the corner key's own line",
-          wide_menu and wide_clock
-              and math.abs(wide_clock.y - (wide_menu.y + wide_menu.h / 2)) < 24,
-          string.format("clock at %s, key mid %s",
+    frame(1440, 810, {rooms = ROOMS, room = 1})
+    local wide_chip, wide_clock = box("rooms"), word("1:47")
+    check("a wide window keeps the clock on the corner row's own line",
+          wide_chip and wide_clock
+              and math.abs(wide_clock.y - (wide_chip.y + wide_chip.h / 2)) < 24,
+          string.format("clock at %s, chip mid %s",
                         tostring(wide_clock and wide_clock.y),
-                        tostring(wide_menu and wide_menu.y + wide_menu.h / 2)))
+                        tostring(wide_chip and wide_chip.y + wide_chip.h / 2)))
     check("and keeps the side names", word("PYLON") ~= nil)
 end
 
@@ -1128,7 +1151,8 @@ check("and no name over the fight they are already in",
 -- The gap between the engine's first frame and the first snapshot is a
 -- directory lookup plus a handshake. What goes there is this same screen with
 -- everything that needs a room taken off it, so when the stands arrive the
--- only thing that happens is that the room and the key appear.
+-- only thing that happens is that the room, the stops and the menu key
+-- appear.
 --
 -- The name is the thing to hold still. It was drawn centered for a while,
 -- which made the logo jump to the foot of the screen the moment a room
@@ -1159,28 +1183,27 @@ do
                                 waiting.x, waiting.y, waiting.px,
                                 landed.x, landed.y, landed.px))
         end
-        -- A way into the menu, because a directory that never answers must
-        -- not leave a wordmark and no exit.
-        local menu_key = box("open")
-        check(shape .. " waiting keeps a way into the menu", menu_key ~= nil)
-        if menu_key then
-            check(shape .. " waiting puts that key where it always is",
-                  menu_key.x < w / 2 and menu_key.y < h / 2,
-                  string.format("%.0f,%.0f", menu_key.x, menu_key.y))
-        end
+        -- And no way into the menu, because there is nothing yet for a menu
+        -- to be about: leaving, which side you are on and the machine are all
+        -- things a room has, and the column that holds them arrives with the
+        -- room. This screen carried a MENU key while that key sat in the
+        -- corner and the panel behind it was the whole front end. The front
+        -- end is the stands now, and what is left here is the wordmark.
+        check(shape .. " waiting offers no menu it has no room for",
+              box("open") == nil, "a menu key on a screen with no room")
         -- And nothing that needs a room: no key into one, and none of the
         -- instruments that describe one.
         check(shape .. " waiting offers no key to a room it has not found",
               box("play_now") == nil)
         check(shape .. " waiting draws no roster key", box("details") == nil)
         check(shape .. " waiting draws no radar", box("map") == nil)
-        -- The name, and the word on the menu key where that key carries one.
-        -- A phone's is the three bars alone, in either orientation, so there
-        -- the name is the only word on the screen.
-        local said = (shape == "desktop") and 2 or 1
+        -- The name, and nothing beside it, on every window. The count was two
+        -- on a desktop while this screen drew a menu key with MENU written on
+        -- it; with the key gone a starfield and the wordmark are the whole of
+        -- what a normal wait looks like.
         check(shape .. " waiting says nothing while it is only waiting",
-              #words() == said,
-              #words() .. " words on screen, wanted " .. said)
+              #words() == 1,
+              #words() .. " words on screen, wanted 1")
     end
 
     -- A fleet that is down does say so, in the slot the key will take. A

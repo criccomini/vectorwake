@@ -1,5 +1,39 @@
 # Landing, and the menu
 
+> **The drawer is gone, and settings live in the match.** There is no slide-out
+> panel, no rail of tabs, no stage, no topbar and no head row with an x on it.
+> What is left of the menu is a column at the foot of the screen, raised by a
+> faint `MENU` key standing in the same place, holding three stops: leave,
+> settings, and which side you are on, over a breathing RESUME.
+>
+> It is the landing's own column with different stops on it. Same width, same
+> place, same key at the foot, and the settings stop opens a panel climbing off
+> its row exactly as the ship stop does at home. The two never stand together:
+> in the stands the landing's column is up and the key under it says the other
+> is there, and raising the menu puts the landing's stops away until RESUME
+> hands the screen back.
+>
+> Settings cannot be reached anywhere else. The landing goes on saying who,
+> where and what, and holds nothing about the machine.
+>
+> Side is a list rather than a value stepped left and right: a row per side,
+> the one you fly for marked, the counts beside them, any other one press away.
+>
+> The key moved out of the top left corner with the panel it used to pull out
+> of the left edge. It is at the bottom middle, where the column stands, so the
+> press and what it raises share a spot; the column slides up out of that edge
+> and RESUME settles onto the key's own pixels. It carries the word on every
+> window, which the corner never had room for on a phone.
+>
+> Nothing pauses. The wash behind the column is a tint, and the clock band and
+> the radar keep their line, because a pilot reading settings is still being
+> shot at.
+>
+> Every note below about a drawer, a rail, a tab row, a stage, a head row, a
+> page sliding in from the right, or the menu covering a phone's whole window
+> describes something that no longer exists. See
+> [decision 102](../architecture/decisions.md) and `.design/game-menu`.
+
 > **The play tab is gone, and the landing's zone stop is the games.** The
 > drawer carried a page of them and the landing carried a list of them, which
 > at home is the same games twice on one screen, each with its own cursor. What

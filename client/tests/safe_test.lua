@@ -193,63 +193,52 @@ check("the topmost steps down by the top inset",
       math.abs((b.y0 - a.y0) - T_INS) < 1,
       string.format("%.1f then %.1f", a.y0, b.y0))
 
--- The menu's rail is the one thing at the bottom that reads the bottom inset,
--- and it reads it the way a tab bar does rather than the way the sides do.
+-- The column is the one thing at the bottom that reads the bottom inset, and
+-- it has to read it: the menu key and the key the column stands on are both
+-- down there, and a control under the home indicator is a control a thumb
+-- cannot press without dismissing the app.
 --
--- A tab bar's surface runs under the home indicator and its icons do not. The
--- rail was stepped up bodily instead, which stacked the indicator's 34 points
--- on top of the 24 the block already keeps under its labels and left the words
--- half an inch off the bottom of a phone with panel underneath them. So the
--- surface stays on the edge, and the inset stands in for that padding rather
--- than adding to it. The pads below are the opposite case again and keep their
--- ground: the indicator is allowed to overlap a thumbstick.
+-- The rail used to be what this measured. A tab bar's surface runs under the
+-- indicator and its icons do not, and the rail was stepped up bodily instead,
+-- which stacked the indicator's 34 points on top of the 24 the block already
+-- kept and left the words half an inch off the bottom of a phone. There is no
+-- rail now and no surface running to the edge: the column is keys over a
+-- fight, so the question is simply whether the lowest key clears the
+-- indicator. The pads below are the opposite case and keep their ground,
+-- because the indicator is allowed to overlap a thumbstick.
 local B_INS = 34
-local RAIL_LIFT = 10
-local MENU_RAIL = {}
-for i, nm in ipairs({"zones", "ship", "pilot", "settings", "controls", "about"}) do
-    MENU_RAIL[i] = {label = nm, icon = nm, index = i}
-end
 
--- Two numbers, both measured up from the bottom edge, which is where the mesh
--- counts from: how far the lowest ink stops short of it, and how far the
--- lowest word does. The rail is the only thing down there, so the word is one
--- of its labels.
-local function rail_edges(inset)
+-- How far the menu key's own box stops short of the bottom edge, at a given
+-- inset. Measured off the published box rather than off ink, because the key
+-- is the thing a thumb aims at.
+local function key_gap(inset)
     shapes = {}
     state.n = 0
     ui.safe(0, 0, 0, inset)
-    -- Portrait, where the rail is a row along the bottom.
     ui.begin(layer, 390, 844, 1, true)
-    ui.menu({depth = 2, sel = 1, rail = MENU_RAIL, rail_sel = 1,
-             focus = "stage", home = true, closable = false,
-             rows = {{label = "chaos", index = 1, pick = true,
-                      players = 2, bots = 4, live = true}}})
+    ui.hud({
+        me = 0, side = 0, viewer_name = "you", menu_open = false,
+        pilots = {}, watchers = {}, teams = {},
+        match = {playing = true, left = 60, score = {[0] = 0, [1] = 0}},
+        side_names = {[0] = "Pylon", [1] = "Caisson"},
+        feed = {}, hurt = 0, charges = {},
+        cam_x = 3000, cam_y = 3000, half_w = 195, half_h = 422,
+        banner = "", zone = "melee",
+        fps = 60, frame_ms = 16.7, rx_rate = 0, tx_rate = 0,
+    })
     ui.finish()
-    -- The panel's wash paints to the bottom edge whatever the inset is, the
-    -- way the vignette does, so the measure skips anything as wide as the
-    -- screen and asks where the furniture stopped.
-    local ink = math.huge
-    for _, sh in ipairs(shapes) do
-        if sh.x1 - sh.x0 < 380 then ink = math.min(ink, sh.y0) end
+    for _, r in ipairs(ui.hits) do
+        if r.action == "open" then return 844 - (r.y + r.h) end
     end
-    local word = math.huge
-    for k = 1, state.n do word = math.min(word, state.text[k].y) end
-    return ink, word
+    return -1
 end
-local flat_ink, flat_word = rail_edges(0)
-local step_ink, step_word = rail_edges(B_INS)
-check("the rail's surface reaches the bottom edge with nothing covering it",
-      flat_ink < 6, string.format("%.1f", flat_ink))
-check("and still reaches it with the indicator there",
-      step_ink < 6, string.format("%.1f", step_ink))
--- The block keeps 24 points under its labels, plus the ten-point portrait
--- lift that gives the full-height canvas some room above the glass.
-check("the portrait rail lifts its words above the bottom edge",
-      math.abs(flat_word - (24 + RAIL_LIFT)) < 1,
-      string.format("%.1f", flat_word))
-check("and keeps that breathing room above the indicator",
-      math.abs(step_word - (B_INS + RAIL_LIFT)) < 1,
-      string.format("%.1f, wanted %d", step_word, B_INS + RAIL_LIFT))
+local flat_gap = key_gap(0)
+local step_gap = key_gap(B_INS)
+check("the menu key stands clear of the bottom edge",
+      flat_gap > 4 and flat_gap < 24, string.format("%.1f", flat_gap))
+check("and steps up by the whole of the home indicator",
+      math.abs((step_gap - flat_gap) - B_INS) < 1,
+      string.format("%.1f then %.1f", flat_gap, step_gap))
 ui.safe(0, 0, 0, 0)
 
 -- The pads and the stick's resting mark, against the real layout: sides

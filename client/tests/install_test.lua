@@ -74,8 +74,10 @@ local function settings(state)
     said = state
     install.tick(9)
     menu.open = true
-    menu.stack = {"root", "settings"}
-    menu.sel = {}
+    -- The whole stack is the one stop that is open, which is as deep as the
+    -- column goes: settings is a page climbing off its own stop rather than a
+    -- tab reached through a root.
+    menu.stack = {"settings"}
     return menu.view()
 end
 
@@ -118,7 +120,7 @@ check("it goes under the settings rather than among them",
 -- nothing; on one that will not, the only useful thing is the sentence.
 local v2 = settings("tap")
 ran = {}
-menu.click_stage(index_of(v2, "add to home screen"))
+menu.press_row(index_of(v2, "add to home screen"))
 local asked = false
 for _, js in ipairs(ran) do
     if string.find(js, "vwInstall &&", 1, true) then asked = true end
@@ -129,7 +131,7 @@ check("and raises no card, because the browser is raising one",
       menu.ask == nil)
 
 local v3 = settings("share")
-menu.click_stage(index_of(v3, "add to home screen"))
+menu.press_row(index_of(v3, "add to home screen"))
 check("the other one says where the button is", menu.ask ~= nil
       and string.find(menu.ask.head, "Add to Home Screen", 1, true) ~= nil,
       menu.ask and menu.ask.head or "no card")

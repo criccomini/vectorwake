@@ -2,12 +2,18 @@
 --
 --     lua5.1 client/tests/scroll_test.lua
 --
--- `follow_cursor` keeps the row the arrows are on inside the window, which is
--- what a d-pad and a keyboard need. Held every frame it is a leash instead: a
--- page dragged by a thumb the cursor is not on snapped back on the very next
--- frame, so on glass the ship page could not be scrolled at all. A wheel got
--- away with it because a mouse hovers while it turns and a hover is the
--- cursor, so the row under the pointer was always on screen.
+-- The settings page is the one page in the column long enough to need this: it
+-- climbs off its own stop and stops under the clock band, and on a phone the
+-- rows run past what that leaves. A wheel and a thumb both move it through
+-- `ui.page_scroll`, and the panel clamps that to what it has to give every
+-- time it draws.
+--
+-- The follow keeps the row the arrows are on inside the window, which is what
+-- a d-pad and a keyboard need. Held every frame it is a leash instead: a page
+-- dragged by a thumb the cursor is not on snapped back on the very next frame,
+-- so on glass the page could not be scrolled at all. A wheel got away with it
+-- because a mouse hovers while it turns and a hover is the cursor, so the row
+-- under the pointer was always on screen.
 --
 -- What is checked here is that the page moves and stays moved while nothing
 -- moves the cursor, and that the arrows still drag it when they do.
@@ -29,43 +35,60 @@ local harness = require("tests.ui_harness")
 local layer = harness.layer()
 local ui = harness.install()
 
--- The ship page at a phone's measure, long enough to overflow it.
+-- Settings at a phone's measure, longer than the room the column leaves it.
+local ROWS = 24
 local function rows()
     local out = {}
-    for i = 1, 14 do
-        out[#out + 1] = {label = "hull " .. i, group = "ships",
-                         sect = i == 1 and "ships" or nil,
-                         detail = "a trade", hull = 0, ship = true,
-                         bars = {0.2, 0.4, 0.6, 0.8, 1.0},
-                         carries = {"gun spray 2", "repel 2"},
-                         choice = i == 1 and 1 or 0, choices = 1,
-                         index = #out + 1, pick = true}
+    for i = 1, ROWS do
+        out[#out + 1] = {label = "setting " .. i, detail = "a value",
+                         choice = 1, choices = 3, index = i, pick = true}
     end
     return out
 end
 
-local function view(sel)
-    return {depth = 2, sel = sel, rail = {}, rail_sel = 1, focus = "stage",
-            home = true, closable = true, at = "hangar", ships = true,
-            rows = rows()}
+-- The column with the settings stop holding its page open, which is the one
+-- shape here that scrolls: the side stop opens a list of three, and the bare
+-- column is three rows over a key.
+local function view()
+    return {
+        open = true, at = "settings", page = "settings",
+        stops = {
+            {stop = "leave", label = "leave", value = "to the stands"},
+            {stop = "settings", label = "settings", mark = "settings",
+             open = true},
+            {stop = "side", label = "side", value = "Pylon", named = true},
+        },
+        rows = rows(),
+    }
 end
 
+-- One frame with the cursor standing on a row, which is where the arrows leave
+-- it. `sel` of nil is a hand that has touched nothing.
 local function draw(sel)
     local st = package.loaded["arena.state"]
     st.n = 0
+    ui.col_sel = sel and "menu_row" or nil
+    ui.col_sel_value = sel
     ui.begin(layer, W, H, 1, false)
-    ui.menu(view(sel))
+    ui.menu(view())
     ui.finish()
 end
 
--- The page has to overflow, or none of this means anything.
-draw(1)
-draw(1)
+-- The page has to overflow, or none of this means anything. The panel keeps
+-- its extent to itself, so the overflow is read back off the clamp instead: a
+-- scroll past the end comes back at the end, and where it lands is how far
+-- there was to go.
+ui.page_scroll = 1e6
+draw(nil)
+local reach = ui.page_scroll
+local _, _, _, room = ui.page_span()
 check("the page is longer than the window it is drawn in",
-      ui.page_extent > ui.page_room and ui.page_room > 0,
-      tostring(ui.page_extent) .. " in " .. tostring(ui.page_room))
+      reach > 0 and room > 0,
+      tostring(reach) .. " to go in " .. tostring(room))
 
--- A finger drags it. The cursor stays on the band, where it opened.
+-- A finger drags it. The cursor stays on the row it opened on.
+draw(1)
+draw(1)
 ui.page_scroll = 120
 draw(1)
 check("a drag moves the page", ui.page_scroll == 120,
@@ -78,8 +101,7 @@ check("and the next frame leaves it where the finger put it",
 
 -- The arrows still drag the page, which is the whole reason the follow
 -- exists: a cursor walked off the bottom takes the window with it.
-local walked = #rows()
-draw(walked)
+draw(ROWS)
 check("a cursor moved onto a row below the fold brings the page to it",
       ui.page_scroll > 120, tostring(ui.page_scroll))
 

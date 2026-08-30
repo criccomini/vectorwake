@@ -312,13 +312,6 @@ local function near(list, cx, cy, r)
     return out
 end
 
--- The shipped row. Every stop draws its mark at the foot of the column, and
--- exactly one of them wears a badge, which is what this file counts.
-local RAIL = {}
-for i, n in ipairs({"zones", "ship", "upgrades", "settings"}) do
-    RAIL[i] = {label = n, icon = n, index = i}
-end
-
 -- One room, and the panel that lists them open over an otherwise empty world.
 -- That is where the pair still counts a population: the games list stopped
 -- carrying counts when the menu became one column, and the corner's ROOM key
@@ -592,77 +585,22 @@ if #listed_wings == 1 and #listed_chips == 1 then
           string.format("%.2f against %.2f", person.cy, machine.cy))
 end
 
--- --- and the ship page draws it in the page's line ------------------------
-
--- The ship page is a grid of hulls with one cell that is not a hull: the one
--- about flying nothing, which draws the pilot instead. Every hull in that grid
--- is outlined in one width held against the screen, so a row of eight ships at
--- one size is drawn in one weight whatever each of them measures.
+-- --- and the page of hulls that used to draw it ----------------------------
 --
--- The pilot mark is the only figure there working from a pen it is handed, and
--- it cuts that pen back to keep its feathers apart. That is right, and it is
--- also exactly the kind of number that walks: too far under and the figure
--- fades out of a row of ships, at the pen and the fan closes. This is the same
--- defect the rail had and it has to be checked separately, because the two
--- pages hold their lines to different numbers and neither knows about the
--- other.
-local ship_frame = frame(function()
-    local rows = {}
-    for i = 1, 3 do
-        rows[i] = {label = "hull " .. i, hull = i - 1, detail = "a trade",
-                   index = i, group = "ships", ship = true,
-                   bars = {0.5, 0.5, 0.5, 0.5, 0.5}, carries = {"gun spray 2"}}
-    end
-    rows[4] = {label = "spectate", detail = "no hull", figure = "pilot",
-               index = 4, group = "ships", ship = true,
-               note = "watch the room from nobody's cockpit"}
-    ui.menu({depth = 2, sel = 4, rail = RAIL, rail_sel = 2, focus = "stage",
-             home = false, closable = true, ships = true, rows = rows})
-end)
-
--- Everything on the stage, which is to say everything under the tabs. The tab
--- row is on this page too and wears a mark of its own at its own line, so a
--- search across the whole frame finds two of them and compares the wrong one.
+-- The wings were measured on one more surface here: the drawer's ship page, a
+-- grid of hulls with a single cell that was not a hull, the one about flying
+-- nothing, which drew the pilot instead. Every hull in that grid held one line
+-- against the screen, and the pilot mark was the only figure in it working
+-- from a pen it was handed and cutting that pen back to keep its feathers
+-- apart, which is exactly the kind of number that walks: too far under and the
+-- figure fades out of the row, at the pen and the fan closes.
 --
--- By height rather than by width, which is what this asked before the tabs
--- moved from a column down the left to a row across the top. The row sits at
--- about 140 in this window and the first stage line at about 250.
-local STAGE_Y = 200
-local function on_stage(list)
-    local out = {}
-    for _, sh in ipairs(list) do
-        if sh.y0 and sh.y0 > STAGE_Y then out[#out + 1] = sh end
-    end
-    return out
-end
-
-local stage = on_stage(ship_frame)
-local pairs_on_stage = wings(stage)
-check("the ship page draws the wings on its spectate row",
-      #pairs_on_stage == 1,
-      #pairs_on_stage .. " pairs on a roster of hulls and one pilot")
-if pairs_on_stage[1] then
-    -- The hulls are closed outlines, drawn out of a handful of points and
-    -- wider than they are tall. The feathers are struck, so what is compared
-    -- is a stroke against an outline.
-    local hull_w, feather_w
-    for _, sh in ipairs(stage) do
-        if sh.kind == "outline" and sh.pts and #sh.pts < 12
-            and sh.x1 - sh.x0 > sh.y1 - sh.y0 then
-            hull_w = math.max(hull_w or 0, sh.w or 0)
-        end
-    end
-    for _, sh in ipairs(near(stage, pairs_on_stage[1].cx, pairs_on_stage[1].cy,
-                             pairs_on_stage[1].w / 2)) do
-        if sh.kind == "seg" and sh.round then
-            feather_w = math.max(feather_w or 0, sh.w)
-        end
-    end
-    check("in the same line as the hulls beside it",
-          hull_w and feather_w and feather_w < hull_w
-          and feather_w > hull_w * 0.7,
-          string.format("%.2f against %.2f", feather_w or -1, hull_w or -1))
-end
+-- The grid went when the menu became a column. The roster is the landing's
+-- ship stop now, one hull at a time with its flight under it, and sitting out
+-- is a page there carrying a word and a sentence rather than a figure, so
+-- nothing draws this mark beside a hull any more. The rule it stood for is
+-- still worth knowing if a page of ships ever comes back; there is no page
+-- left for it to be checked on.
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

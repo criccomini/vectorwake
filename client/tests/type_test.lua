@@ -100,30 +100,32 @@ end
 
 -- --- the pages ------------------------------------------------------------
 
-local RAIL = {}
-for i, e in ipairs({{"ship", "ship"}, {"settings", "settings"}}) do
-    RAIL[i] = {label = e[1], icon = e[2], index = i}
-end
+-- The column's three stops, which stand under every page the menu draws.
+local STOPS = {
+    {stop = "leave", label = "leave", value = "seat"},
+    {stop = "settings", label = "settings", mark = "settings"},
+    {stop = "side", label = "side", value = "Pylon", named = true},
+}
 
 -- Rows chosen for the states that used to fail rather than for the states that
 -- are easy to draw: somebody else's name in their own side's color, a row
 -- wearing the mark for where you already are, an empty field wearing its
 -- placeholder.
 local PAGES = {
-    {"teams", {at = "teams", rail_sel = 1, rows = {
+    {"side", {at = "side", rows = {
         {label = "Pylon", named = true, tint = 1, index = 1, pick = true,
          detail = "3 + 1 AI", mark = true},
         {label = "Caisson", named = true, tint = 2, index = 2, pick = true,
          detail = "4"},
         {label = "new team", detail = "yours", index = 3, pick = true},
     }}},
-    {"ship", {at = "ship", rail_sel = 1, rows = {
+    {"settings", {at = "settings", page = "settings", rows = {
         {sect = "bomb", label = "Bomb bounce", index = 1, detail = "120",
          note = "a round that comes back"},
         {label = "Bomb prox", index = 2, detail = "300"},
         {label = "Bomb freeze", index = 3, detail = "900", mark = true},
     }}},
-    {"settings", {at = "settings", rail_sel = 2, rows = {
+    {"controls", {at = "controls", page = "controls", rows = {
         {sect = "flight", label = "Invert thrust", index = 1, choice = 1,
          choices = 2, note = "which way the stick points"},
         {label = "Deadzone", index = 2, choice = 3, choices = 5},
@@ -135,10 +137,19 @@ local function runs(page, over_, w, h, density)
     local st = package.loaded["arena.state"]
     st.n = 0
     ui.begin(layer, w, h, density, false, 0)
-    local v = {depth = 1, sel = 1, rail = RAIL, focus = "stage",
-               scenery = true, closable = true,
+    local v = {open = true, stops = {},
                pilot = {name = "Krait 4", rivets = 310}}
+    for i, st2 in ipairs(STOPS) do
+        v.stops[i] = {stop = st2.stop, label = st2.label, value = st2.value,
+                      mark = st2.mark, named = st2.named}
+    end
     for k, val in pairs(over_) do v[k] = val end
+    -- Which stop is holding the page open, so its own row stands down under
+    -- the panel the way the drawing does it.
+    for _, st2 in ipairs(v.stops) do
+        st2.open = (st2.stop == v.at)
+            or (v.at == "controls" and st2.stop == "settings")
+    end
     ui.menu(v)
     ui.finish()
     local out = {}
@@ -222,11 +233,12 @@ do
     for name, pt in pairs(ui.TYPE) do named[pt] = name end
     local off, seen = {}, {}
     for _, t in ipairs(all) do
-        -- Back out the scale the menu drew at. A window with room multiplies
-        -- the whole thing by MENU_SCALE, so the ladder is in points and what
-        -- lands in `state.text` is not.
-        local zoom = t.shape == "a phone upright" and 1 or ui.MENU_SCALE
-        local pt = t.px / (t.density * zoom)
+        -- The menu draws at the interface's own scale on every window now, so
+        -- there is nothing to back out: the ladder is in points and so is
+        -- what lands in `state.text`, once the density is divided off. The
+        -- drawer multiplied itself by MENU_SCALE on anything wider than a
+        -- phone, and this line existed to undo that. See decision 102.
+        local pt = t.px / t.density
         local rung = nil
         for v, name in pairs(named) do
             if math.abs(pt - v) < 0.01 then rung = name end
