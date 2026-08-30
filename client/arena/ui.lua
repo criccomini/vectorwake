@@ -4000,19 +4000,13 @@ local function landing_geom()
     -- `y` counts down from the top here, as it does everywhere in this file,
     -- so the foot of the screen is measured back from `F.h`.
     --
-    -- Lifted clear of the menu key's strip, always, whether or not there is a
-    -- room yet for a key to be drawn in it. The stands carry both columns:
-    -- this one, which is what you do next, and the menu's, which is this room
-    -- and the machine. They stand one at a time in the same place, and the key
-    -- is what says the other one is there.
-    --
-    -- Always, because the alternative is a screen that moves under the hand-off
-    -- it exists to make invisible. `M.waiting` draws this same column before a
-    -- room has answered, and reserving the strip only once a room had arrived
-    -- lifted the wordmark eighteen points at the moment the game appeared,
-    -- which is the one thing that screen must never do.
-    local _, ky = foot_key_box()
-    local foot = ky - 8 * F.scale
+    -- PLAY NOW sits on the bottom margin, with nothing under it. The menu key
+    -- shared this strip for a while and the column was lifted clear of it,
+    -- which put a faint second control under the one the screen exists for.
+    -- The menu is about the room you are in, and out here you are not in one
+    -- yet: what this screen offers is a game, a ship and the way in. See
+    -- `M.foot_key`.
+    local foot = F.h - F.safe_b - (M.compact and 18 or 22) * F.scale
     local rgap = 8 * F.scale
     local size = (M.compact and 20 or 26) * F.scale
     -- `txt` sets a string on the middle of its line, so half the type goes
@@ -4931,11 +4925,20 @@ function M.hud(o)
     -- enemy reads this, and while watching it is not the subject's side.
     view_team = o.side or team_of(o.me)
     F.menu_up = o.menu_open
-    -- There is a room, or this function returned above: the menu key is drawn
-    -- and the landing's column lifts to make space for it. A screen still
-    -- waiting on its first room has nothing to leave, no side to be on and no
-    -- settings to reach, and clears this. See `M.waiting`.
-    M.foot_key = true
+    -- Whether the menu key is drawn at the foot: in a room you are in, and
+    -- nowhere else. A screen still waiting on its first room clears this
+    -- itself (see `M.waiting`), and the front page is the other half of the
+    -- same rule.
+    --
+    -- The landing watches a live room, so for a while it carried the key on
+    -- the argument that a room on the screen is a room to have a menu about.
+    -- It is not one you are in. Everything the menu holds is about the room
+    -- you took a seat in: the way out of it, which side you are on, and the
+    -- machine you are flying it on. Out here none of those has an answer yet,
+    -- and the three stops above PLAY NOW are the choices that do. A faint
+    -- fourth control under the one key the screen exists for was the whole of
+    -- what it added.
+    M.foot_key = not o.landing
     -- And whether the menu's own column is the one standing, which is what the
     -- one walk reads to know which set of boxes it is walking.
     M.menu_column = o.menu_open or false

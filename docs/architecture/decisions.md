@@ -5225,13 +5225,22 @@ fight rather than beside it, and a first visit should be reading the word
 rather than working around the weight. The word rides along on a phone as well,
 which the corner never had the room for.
 
+It is drawn in a room you are in and nowhere else. The landing watches a live
+room, and that was taken as reason enough to carry the key out there: it stood
+in a strip of its own under PLAY NOW, with the column above lifted to leave it
+one. The stands are a room you are looking at rather than a room you are in.
+Everything the menu holds is about the seat you took, and out on the front page
+none of it has an answer: no seat to leave, no side to be on, and nobody flying
+anything yet. What the key added there was a faint fourth control under the one
+key that page exists for. Escape answers the same rule, so a keyboard is not a
+way around the absence.
+
 It wears no box, which makes it the one pressable thing in this interface that
-is not a stroked rectangle. That is because it is the only one standing alone.
-On the landing a box at that width in that column reads as a fourth stop under
-the three, and over a match it reads as an instrument, since the band, the dial
-and the corner chips are the boxes up there. The mark and the word carry it
-instead, which is what the footer line in `.design/no-drawer` was already
-doing: three bars say "press me" on every screen anybody has used.
+is not a stroked rectangle. That is because it is the only one standing alone:
+over a match a box reads as an instrument, since the band, the dial and the
+corner chips are the boxes up there. The mark and the word carry it instead,
+which is what the footer line in `.design/no-drawer` was already doing: three
+bars say "press me" on every screen anybody has used.
 
 Side is a list rather than a value stepped left and right. Arrows walk, which
 is fine while a room holds two sides and wrong the moment it holds three:
@@ -5248,10 +5257,12 @@ settings is still being shot at, and the two instruments that say so go on
 saying it. The drawer covered a phone's whole window and stood both of them
 down.
 
-**Cost:** a pilot who wants the music down has to be in a room to do it. Every
-pilot is, within a second of pressing PLAY NOW, and the stands are a room too,
-so the price is paid once by somebody who never joins anything. What it buys is
-a front page that is four presses wide and answers exactly one question.
+**Cost:** a pilot who wants the music down has to be in a room to do it, and
+the front page is not one. PLAY NOW is the whole of what that costs, sitting
+out included: the ship stop's last page puts you in the room as a watcher
+rather than in a hull, and a watcher gets the key like anybody else. What it
+buys is a front page that is four presses wide and answers exactly one
+question.
 
 The top left corner is also empty in an ordinary match. PLAYERS folded into the
 clock band a while ago and MENU has now left, so what remains up there are

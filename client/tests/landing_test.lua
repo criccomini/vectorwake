@@ -428,55 +428,39 @@ check("and names the sides", word("PYLON") ~= nil and word("CAISSON") ~= nil)
 -- screen wears this client's call sign.
 check("and says nothing about the channel it is watching",
       word("CHANNEL") == nil)
-check("and keeps the way into the menu", box("open") ~= nil)
+check("and offers no menu, this being a room nobody here is in",
+      box("open") == nil)
 -- The roster is opened from the band across the top rather than from a key
 -- beside this one. What is asserted here is that a watcher can still reach it.
 check("and a way into the roster", box("details") ~= nil)
 
--- --- the way in wears three bars ------------------------------------------
+-- --- and no way into the menu ----------------------------------------------
 --
--- The menu key is a hamburger: the mark and the word MENU beside it, on every
--- window there is. It spent years in the top left corner, where 390 points of
--- row left no space for the word and the mark stood alone on a phone, so a
--- first visit had to know what three bars meant. The bottom middle has the
--- space the corner never did. The box stays, because `key_box` is the one
--- shape a thing to press wears here and bars floating on the glass would make
--- this control the exception the keys were drawn as boxes to stop being.
+-- The menu key is not on this screen, on any window. It stood in its own strip
+-- under PLAY NOW for a while, on the argument that the stands are a room and a
+-- room has a menu about it. It is not a room you are in: everything the menu
+-- holds is about the seat you took, and out here you have not taken one. What
+-- the key added to the front page was a faint fourth control under the one key
+-- the screen exists for.
 --
--- And it stands under the landing's own key rather than on it. Both columns
--- rise out of this strip and only one of them is ever up: the stands carry
--- PLAY NOW, and the key beneath it is what says the other column is there.
+-- The key itself, its word, its shape and where it stands are column_test's,
+-- since a match is now the only place it appears.
 do
     for _, s in ipairs(SHAPES) do
         local w, h, shape = s[1], s[2], s[3]
         frame(w, h)
-        local key = box("open")
-        check(shape .. " keeps a way into the menu", key ~= nil, "no key")
-        check(shape .. " names the key as well as marking it",
-              word("MENU") ~= nil, "no MENU beside the bars")
-        if key then
-            -- Wider than it is tall, because it carries a word. The square
-            -- key was the corner's, and square is what a key looks like when
-            -- the word has been dropped and the mark is left standing alone.
-            check(shape .. " shapes the key to what is in it",
-                  key.w > key.h + 1.5,
-                  string.format("%.0fx%.0f", key.w, key.h))
-            -- A finger reaches it whatever its width: `M.pick` grows a box to
-            -- the touch floor for a press made with one.
-            check(shape .. " answers a finger aimed near the key",
-                  ui.pick(key.x + key.w / 2, key.y + key.h + 8, true)
-                      == key,
-                  "a near miss found nothing")
-            -- Clear of PLAY NOW, which is the whole reason the landing's
-            -- column lifts by this key's strip. Two keys sharing one place is
-            -- a press that commits to a game when it meant to open a menu.
-            local play = box("play_now")
-            check(shape .. " leaves the key its own strip under PLAY NOW",
-                  play ~= nil and play.y + play.h <= key.y,
-                  play and string.format("play ends %.0f, key at %.0f",
-                                         play.y + play.h, key.y)
-                      or "no play_now box")
-        end
+        check(shape .. " offers no way into the menu", box("open") == nil,
+              "a key on the front page")
+        check(shape .. " does not say MENU", word("MENU") == nil)
+        -- And PLAY NOW takes the strip back. The column was lifted clear of
+        -- the key, and a landing that keeps the lift with nothing in it ends
+        -- on a gap where a reader expects the screen to.
+        local play = box("play_now")
+        check(shape .. " stands PLAY NOW on the bottom margin",
+              play ~= nil and play.y + play.h > h - 34,
+              play and string.format("play ends %.0f of %d",
+                                     play.y + play.h, h)
+                  or "no play_now box")
     end
 end
 
@@ -1092,6 +1076,40 @@ do
     table.sort(missing)
     check("and it answers every control the landing publishes",
           #missing == 0, "no branch for " .. table.concat(missing, ", "))
+
+    -- Escape is the other way into the menu, and it has to answer the same
+    -- rule the drawing does: no key on the front page means no menu there,
+    -- and a keyboard that opens one anyway is the absence worked around.
+    -- Pulled out of the same file and run rather than read, so what is
+    -- checked is what the branch does and not how it is spelled.
+    local esc = src:match("menu = function%(%)(.-)\n    end,")
+    check("the arena has an escape handler to run", esc ~= nil)
+    if esc then
+        local rang = {}
+        local env = {
+            menu = {open = false, home = true,
+                    page_back = function() return false end,
+                    close = function() rang.close = true end},
+            ui = {},
+            sfx = {ui = function() end},
+            toggle_menu = function() rang.menu = true end,
+            toggle_details = function() rang.details = true end,
+            land_shut = function() rang.shut = true end,
+        }
+        local chunk = assert(loadstring(
+            "return function()" .. esc .. "\nend", "escape"))
+        setfenv(chunk, env)
+        local handler = chunk()
+        local answered = handler()
+        check("escape opens no menu on the front page", rang.menu == nil,
+              "the menu came up where its key is not drawn")
+        check("and takes the press rather than leaving it to fall through",
+              answered == true, tostring(answered))
+        env.menu.home = false
+        handler()
+        check("and opens it in a room, which is what it is for",
+              rang.menu == true)
+    end
 end
 
 -- --- and a rail's panel opens from its own cell ----------------------------
@@ -1381,8 +1399,12 @@ end
 
 -- --- the menu takes the screen ---------------------------------------------
 
--- Opening the menu draws the panel over all of this, so the key underneath it
--- must not still be pressable: a press through a panel is a press nobody aimed.
+-- A column over this screen draws its panel across all of it, so nothing
+-- underneath may still be pressable: a press through a panel is a press nobody
+-- aimed. The arena no longer puts the two together, since the menu is not
+-- reachable from the front page, so what this pins is `M.hud`'s own rule
+-- rather than a screen a player can get to: whoever sets `menu_open` gets the
+-- landing stood down with it.
 frame(1440, 810, {menu_open = true})
 check("an open menu takes the key off the landing",
       box("play_now") == nil)

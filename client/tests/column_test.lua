@@ -253,11 +253,9 @@ do
 end
 
 -- And it wears no box. Every other pressable thing here is a stroked
--- rectangle, and this one is not, because it is the only one standing alone:
--- at the foot of the landing a box reads as a fourth stop under the three,
--- since a stop is a box at that width in that column, and over a match it
--- reads as an instrument, since the band, the dial and the corner chips are
--- the boxes up there. The mark and the word carry it instead.
+-- rectangle, and this one is not, because it is the only one standing alone.
+-- Over a match a box reads as an instrument, since the band, the dial and the
+-- corner chips are the boxes up there. The mark and the word carry it instead.
 do
     frame(1440, 810)
     local key = hit_of("open")
@@ -267,16 +265,6 @@ do
     end
     check("the menu key is drawn without a box", boxed == 0,
           tostring(boxed) .. " outlines at the key's width")
-    frame(1440, 810, {landing = true})
-    local lkey = hit_of("open")
-    local lboxed = 0
-    for _, b in ipairs(boxes) do
-        if lkey and b.w and math.abs(b.w - lkey.w) < 2 then
-            lboxed = lboxed + 1
-        end
-    end
-    check("and without one on the landing either", lboxed == 0,
-          tostring(lboxed) .. " outlines at the key's width")
 end
 
 -- Nothing in the corner opens it any more.
@@ -554,20 +542,36 @@ end
 
 -- --- the landing -----------------------------------------------------------
 
--- The landing lifts to make room for the key. Both columns stand at the foot
--- and only one of them is ever up: the stands carry the landing's, and the key
--- under it is what says the other is there.
+-- The front page carries no key at all. The landing watches a live room, and
+-- for a while that was taken as reason enough for a menu about it: the key
+-- stood in its own strip under PLAY NOW and the column lifted to leave it one.
+-- It is not a room you are in. Everything the menu holds is about the seat you
+-- took, and out here the three stops over PLAY NOW are the choices that have
+-- answers. What the key added was a faint fourth control under the one key the
+-- screen exists for.
 do
     frame(1440, 810, {landing = true})
-    local key = hit_of("open")
-    check("the stands carry the menu key", key ~= nil)
+    check("the front page carries no menu key", hit_of("open") == nil)
+    check("and does not say MENU either", said("MENU") == nil)
     local play = hit_of("play_now")
-    check("and PLAY NOW as well", play ~= nil)
-    if key and play then
-        check("with the key under the landing's own",
-              play.y + play.h <= key.y + 1,
-              "play ends " .. (play.y + play.h) .. ", key at " .. key.y)
+    check("PLAY NOW is still there", play ~= nil)
+    -- And it sits on the bottom margin, with the strip the key used to have
+    -- given back. A gap under the one key the screen is for reads as
+    -- something missing.
+    if play then
+        check("and stands on the bottom margin", play.y + play.h > 810 - 30,
+              "play ends " .. (play.y + play.h) .. " of 810")
     end
+end
+
+-- A player or a spectator inside a room gets it, which is the other half of
+-- the same rule: a watcher who chose this room has a seat to leave, a side to
+-- be on and a machine to set up.
+do
+    frame(1440, 810, {watch = {subject = 1}})
+    check("a spectator in the room gets the key", hit_of("open") ~= nil)
+    frame(1440, 810)
+    check("and so does a pilot flying it", hit_of("open") ~= nil)
 end
 
 -- --- the slide -------------------------------------------------------------

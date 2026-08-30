@@ -335,8 +335,10 @@ The constants that repeat, from ui.lua:
 The HUD has a fixed geography, and it is the prototype's. Top left: the chip
 row (TAKE SEAT, ROOM, the on-air or watching chip) and the rooms panel under
 it, all of which come and go, so in an ordinary match that corner is the fight.
-Bottom middle: the faint `MENU` key, and the column it raises. Top left held
-MENU until decision 102 moved it to the foot, where the panel it opens stands.
+Bottom middle: the faint `MENU` key, and the column it raises, in a room you
+are in and nowhere else. Top left held MENU until decision 102 moved it to the
+foot, where the panel it opens stands; the front page carries neither, since
+the menu is about a room you have taken a seat in.
 Top right: the radar or the map (one corner, one instrument), with the feed
 hanging under it. The radar is hard into the corner at the same PAD the button
 row keeps from the other one; the map, which is two thirds of the window's

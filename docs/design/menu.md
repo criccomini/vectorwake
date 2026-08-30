@@ -7,11 +7,14 @@
 > settings, and which side you are on, over a breathing RESUME.
 >
 > It is the landing's own column with different stops on it. Same width, same
-> place, same key at the foot, and the settings stop opens a panel climbing off
-> its row exactly as the ship stop does at home. The two never stand together:
-> in the stands the landing's column is up and the key under it says the other
-> is there, and raising the menu puts the landing's stops away until RESUME
-> hands the screen back.
+> place, and the settings stop opens a panel climbing off its row exactly as
+> the ship stop does at home.
+>
+> The key is drawn in a room you are in and nowhere else: as a pilot, or as a
+> spectator who picked the room off the ship stop's last page. The front page
+> carries no menu at all, because nothing the menu holds has an answer out
+> there. No seat to leave, no side to be on, and the three stops over PLAY NOW
+> are the choices that do have one.
 >
 > Settings cannot be reached anywhere else. The landing goes on saying who,
 > where and what, and holds nothing about the machine.

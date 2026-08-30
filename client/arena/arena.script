@@ -630,6 +630,13 @@ TUNE.PANEL_HANDLERS = {
         elseif ui.rooms_open then
             ui.rooms_open = false
         else
+            -- Nothing left to close, and on the front page nothing to open
+            -- either. The menu is about the room you are in, and out here you
+            -- have not taken a seat in one: the key is not drawn on that
+            -- screen, so escape must not be the way around its absence.
+            -- `menu.home` is set every frame by `frame.live` and is the same
+            -- fact `o.landing` carries into the drawing.
+            if menu.home then return true end
             toggle_menu()
             sfx.ui("ui_go")
             return true
