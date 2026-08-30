@@ -1,8 +1,9 @@
 # The menu language
 
-Shipped as [decision 104](../../docs/architecture/decisions.md). One design
-language for every menu and submenu, drawn after Chris said the menus were not
-quite standardized in look and feel, and then built.
+Shipped as [decision 104](../../docs/architecture/decisions.md), and corrected
+by [decision 105](../../docs/architecture/decisions.md). One design language
+for every menu and submenu, drawn after Chris said the menus were not quite
+standardized in look and feel, then built, then used and fixed.
 
 Decision 103 gave every menu one container -- a stop slides a frosted
 panel up through the bottom edge -- and the interiors still spoke three
@@ -16,18 +17,24 @@ different heights, and the log-in card stood on no ground at all.
 The language says each of those once:
 
 - **Everything is a panel; a panel is rows; a row is one shape.**
-- One glass (frost + the button tint at 0.72, tile outline), one head
-  (back triangle + section name, the whole line the press), one band
-  (label between rules, 24), one wash pair (cursor 0.18, here 0.07),
-  one breathing key per screen.
+- One glass (frost + the button tint at 0.72, tile outline), capped at
+  560 wide and **as tall as what it holds**, standing on the bottom
+  margin it slid out of and easing to a new height when a stack changes
+  what is on top.
+- One head (back triangle + section name, the whole line the press, and
+  it lights like the control it is), one band (label between rules, 24),
+  one wash pair (cursor 0.18, here 0.07, **flat across the row**), one
+  breathing key per screen.
 - The menu **speaks** in the menu face at 17, sentence case; it
-  **reads** in the mono at 12; it **quotes** a name raw. Capitals
-  belong to the HUD and the small labels, never to a row.
-- A row is 44 tall (the touch floor; 36 where a pointer is certain),
+  **reads** in the mono at 14; it **quotes** a name raw. Capitals
+  belong to the HUD and to the small labels, which are the mono at 12,
+  never to a row.
+- A row is 44 tall (the touch floor, and there is no second height),
   inset 14, and its right end is what it does: **opens** (caret),
   **reads** (value), **steps** (arrows), **fills** (cells),
-  **switches** (the box), or **walks** (the pager, folded out of the
-  ship panel's second head into a row).
+  **switches** (the box, which enter and space flip), or **walks** (the
+  pager, folded out of the ship panel's second head into a row). A row
+  lights the same way under either hand.
 - A card is a panel that stacked: the log-in card takes the glass, the
   head, and the breathing key at its foot.
 
@@ -49,12 +56,18 @@ panel on a phone. AltVoice was the one deliberate alternative -- the
 zone panel keeping the HUD's voice -- and it is the road not taken:
 Chris picked the menu's voice, and every row in the game speaks it now.
 
-Two things on these boards are not in the code, and the difference is
-deliberate. The sheet captions a reading at 12 points; every settings
-row already read at 14, which is the right size beside a name at 17, so
-14 is what shipped and 12 is the band label's rung and nothing else's.
-And the sheet draws a dense 36-point row beside the 44: no surface
-wanted one, and two heights is the thing the decision exists to stop.
+These boards carried two captions that were never in the code, and both
+are corrected here: a reading is 14 points, not 12 (12 is the band
+label's rung and nothing else's), and there is no dense 36-point row,
+because no surface wanted one and two heights is the thing the decision
+exists to stop.
+
+Decision 105 then corrected six things Chris found by using it, and the
+boards carry all of them: the flat wash, the lit head, enter and space
+on a switch, the content-height panel, a pointer that lights every row,
+and the shrapnel row reading the fragments a rung throws rather than the
+rung. The one row on the sheet whose figure is not what it cost is
+Shrapnel, and it says so.
 
 Every number is lifted from the client rather than invented:
 `client/arena/palette.lua` for hues, `ui.lua` for the type ladder

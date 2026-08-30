@@ -6,7 +6,7 @@
       "x": 0,
       "y": 0,
       "w": 1180,
-      "h": 2040
+      "h": 2320
     },
     {
       "file": "Zone.dc.html",
@@ -44,7 +44,7 @@
       "file": "Phone.dc.html",
       "title": "Settings \u00b7 phone",
       "x": 1300,
-      "y": 1900,
+      "y": 2460,
       "w": 390,
       "h": 844
     },
@@ -52,7 +52,7 @@
       "file": "AltVoice.dc.html",
       "title": "Alternative \u00b7 the HUD voice",
       "x": 1810,
-      "y": 1900,
+      "y": 2460,
       "w": 1440,
       "h": 810
     }
@@ -70,14 +70,14 @@
       "x": -450,
       "y": 640,
       "w": 390,
-      "text": "The language, in one breath.\n\nEverything is a panel; a panel is rows; a row is one shape. One glass, one edge, one head, one band, one wash pair, one breathing key.\n\nThe menu speaks in the menu face at 17, sentence case; it reads in the mono at 14; it quotes names raw. Capitals belong to the HUD and to the small labels, which are the mono at 12.\n\nA row's right end is what the row does: opens, reads, steps, fills, switches, or walks. Six ends spell every menu in the game.\n\nEvery number is the shipped one: the type ladder 12-14-17-21, the washes .18 and .07, the 44-point touch floor, the 560 cap, the 14-point margin."
+      "text": "The language, in one breath.\n\nEverything is a panel; a panel is rows; a row is one shape. One glass, one edge, one head, one band, one wash pair, one breathing key.\n\nThe menu speaks in the menu face at 17, sentence case; it reads in the mono at 14; it quotes names raw. Capitals belong to the HUD and to the small labels, which are the mono at 12.\n\nA row's right end is what the row does: opens, reads, steps, fills, switches, or walks. Six ends spell every menu in the game, and a row is 44 tall on every one of them.\n\nA panel is as tall as what it holds, standing on the bottom margin it slid out of, and eases to a new height when a stack changes what is on top. Every number is the shipped one."
     },
     {
       "id": "note-shipped",
       "x": -450,
-      "y": 1300,
+      "y": 1360,
       "w": 390,
-      "text": "What shipped, and what did not.\n\nChris picked the menu's voice, so every row in the game speaks it: the AltVoice board is the road not taken, kept as the record of the choice.\n\nTwo captions on these boards are deliberately not in the code. A reading is 14 points, not 12: every settings row already read at 14 and it is the right size beside a name at 17, so 12 is the band label's rung and nothing else's. And there is no dense 36-point row: no surface wanted one, and two heights is the thing the decision exists to stop.\n\nA confirm is still a card. The room-change question has two equal answers and no commit, and a question that costs a pilot their hold should not be the size of the screen."
+      "text": "What shipped, and what changed after it did.\n\nChris picked the menu's voice, so every row in the game speaks it: the AltVoice board is the road not taken, kept as the record of the choice.\n\nThen he used it, and decision 105 corrected six things these boards now carry. The wash is flat: the brighter left edge is what a selection looks like against a lit rule, which the drawer had and a panel does not. The head lights, because it is a control. A switch takes enter and space. A panel is as tall as what it holds rather than the height of the window. A pointer lights every row, not the ones that had been thought about. And shrapnel reads the fragments a rung throws rather than the rung, because it is the one add-on whose magnitude is another weapon.\n\nA reading is 14 points, not the 12 these boards first captioned, and there is no dense 36-point row: no surface wanted one.\n\nA confirm is still a card. The room-change question has two equal answers and no commit, and a question that costs a pilot their hold should not be the size of the screen."
     }
   ],
   "launch": {

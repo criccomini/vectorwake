@@ -5510,4 +5510,5 @@ than it was; the panel grows to hold them and scrolls past the room it has.
 
 **Reconsider if:** the height easing reads as slack. It runs on the same curve
 and span the rise does, which is the right default and is one constant away
-from being its own.
+from being its own. The boards in `.design/menu-language` carry all six
+corrections, so the sheet and the client agree again.

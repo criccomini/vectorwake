@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Assemble the artboards for the menu design language.
 
-A proposal, not a record of what runs. Decision 103 gave every menu one
-container -- a stop slides a frosted panel up through the bottom edge --
-and what is inside the container still speaks three dialects. The zone
+Shipped as decision 104 and corrected by decision 105; these boards are
+what runs. Decision 103 gave every menu one container -- a stop slides a
+frosted panel up through the bottom edge -- and what was inside the
+container still spoke three dialects. The zone
 and account panels set their rows in the HUD's 12-point mono capitals;
 the settings panel sets its rows in the menu face at 17, sentence case;
 the ship panel is a third anatomy again, with two heads stacked and its
@@ -16,7 +17,10 @@ The language here says each of those once:
 - Everything is a panel; a panel is rows; a row is one shape.
 - One glass, one edge, one head, one band, one wash pair, one key.
 - The menu speaks in the menu face, sentence case, at 17; it reads in
-  the mono at 12; it quotes names raw. Capitals belong to the HUD.
+  the mono at 14; it quotes names raw. Capitals belong to the HUD and
+  to the small labels, which are the mono at 12.
+- A panel is as tall as what it holds, standing on the bottom margin it
+  slid out of, and eases to a new height when a stack changes.
 - A row's right end is what the row does: opens, reads, steps, fills,
   switches, or walks. Nothing else varies.
 
@@ -30,7 +34,8 @@ Every number is lifted from the client rather than invented:
 client/arena/palette.lua for hues, ui.lua for TYPE {12, 14, 17, 21},
 LIT {0.18, 0.07}, the 44-point touch floor, PANEL_MAX 560, the
 14-point margin, the 34x18 switch, the range cells, and the head's
-back triangle. The scene behind the glass is ../dropdown-stack's.
+back triangle. Shrapnel's four fragments are sim_splinter_count's, off
+the shipped baseline. The scene behind the glass is ../dropdown-stack's.
 
 Rebuild with: python3 build.py
 """
@@ -125,18 +130,25 @@ def mixer(col=MUTE, k=15):
 
 
 # --- the row: one shape, six right ends --------------------------------------
-# Heights: 44 is the touch floor and the standing height; 36 is the dense
-# variant where a pointer is certain. Inset 14 both ends. The name is the
-# menu face at 17, sentence case, quoted names raw; the reading is the mono
-# at 12 in READ.
+# 44 tall, which is the touch floor, and there is no second height: a dense
+# variant was drawn here once and no surface wanted one, so decision 104 kept
+# the larger number everywhere. Inset 14 both ends. The name is the menu face
+# at 17, sentence case, quoted names raw; the reading is the mono at 14.
 
-WASH_CURSOR = ("background:linear-gradient(90deg,rgba(79,214,255,.26),"
-               "rgba(79,214,255,.14) 130px,rgba(79,214,255,.14))")
+# Flat, all the way across. These were drawn with a brighter left edge, which
+# is what a selection looks like against a lit rule: the drawer had one and a
+# panel does not, so on 560 points of glass it read as a brighter quarter of a
+# row with an edge where the falloff ran out. Decision 105 took it out of the
+# client and it comes out here.
+WASH_CURSOR = "background:rgba(79,214,255,.18)"
 WASH_HERE = "background:rgba(79,214,255,.07)"
 
 
 def reading(text, col=READ):
-    return (f'<span class="mono" style="font-size:12px;color:{col};'
+    # Fourteen, which is the rung beside a name at seventeen. The sheet said
+    # twelve and every settings row already read at fourteen; decision 104
+    # settled it the other way, and twelve is the band label's alone.
+    return (f'<span class="mono" style="font-size:14px;color:{col};'
             f'margin-left:auto">{text}</span>')
 
 
@@ -147,7 +159,7 @@ def r_caret():
 def r_stepper(value, down=True, up=True, lit=True):
     col = FRIEND if lit else DIM
     return (f'<span class="row" style="margin-left:auto;gap:10px">'
-            f'{step_tri(-1, down)}<span class="mono" style="font-size:12px;'
+            f'{step_tri(-1, down)}<span class="mono" style="font-size:14px;'
             f'color:{col};min-width:18px;text-align:center">{value}</span>'
             f'{step_tri(1, up)}</span>')
 
@@ -159,7 +171,7 @@ def r_range(word, n, on):
            else 'border:1px solid rgba(108,122,144,.6)')
         + '"></span>' for k in range(n))
     return (f'<span class="row" style="margin-left:auto;gap:12px">'
-            f'<span class="mono" style="font-size:12px;color:{READ}">{word}'
+            f'<span class="mono" style="font-size:14px;color:{READ}">{word}'
             f'</span><span class="row" style="gap:5px">{cells}</span></span>')
 
 
@@ -185,7 +197,7 @@ def row(name, right="", h=44, state=None, tint=None, offer=False, dim=False,
         body = (f'<span style="display:flex;flex-direction:column;gap:2px">'
                 f'<span style="font-size:21px;color:{col};{alpha[:-1] or ""}'
                 f'">{name}</span>'
-                f'<span class="mono" style="font-size:12px;color:{READ}">'
+                f'<span class="mono" style="font-size:14px;color:{READ}">'
                 f'{note}</span></span>')
     else:
         body = f'<span style="font-size:{name_px}px;color:{col};{alpha}">{name}</span>'
@@ -202,14 +214,21 @@ def band(word):
             '</div>')
 
 
-def head(section, foot_note=None, h=44):
+def head(section, foot_note=None, h=44, hot=False):
+    """The head is the way back and it takes a press, so it lights like the
+    control it is. It did not, and a hand walking the panel with the arrows
+    could stand on it with nothing on screen saying so."""
     note = ""
     if foot_note:
         note = (f'<span style="font-size:11px;color:{READ};margin-left:auto;'
                 f'font-family:var(--menu)">{foot_note}</span>')
+    wash = WASH_CURSOR if hot else ""
+    ink = INK if hot else MUTE
     return (f'<div class="row" style="height:{h}px;padding:0 14px;gap:10px;'
-            f'flex:none;border-bottom:1px solid rgba(63,88,120,.6)">'
-            f'{back_tri()}<span class="lbl">{section}</span>{note}</div>')
+            f'flex:none;border-bottom:1px solid rgba(63,88,120,.6);{wash}">'
+            f'{back_tri(1 if hot else 0.9)}'
+            f'<span class="lbl" style="color:{ink}">{section}</span>'
+            f'{note}</div>')
 
 
 def pager_row(name, h=44):
@@ -319,20 +338,29 @@ def wrap(w, h, body, seed=9):
 PANEL_MAX = 560
 
 
-def panel(w, h, section, inner, margin=14, foot_note=None):
+def panel(w, h, section, inner, margin=14, foot_note=None, hot=False):
+    """As tall as what it holds, and no taller.
+
+    These boards drew the whole window less its margin, which decision 103
+    asked for and is right for a hull's build and absurd for three account
+    acts: a head, three rows and six hundred points of empty glass over a
+    fight somebody is watching. Anchored at the foot instead -- the edge it
+    slides out of -- so it grows upward from there, and where its content
+    outruns the room it takes the room and scrolls."""
     pw = min(w - 2 * margin, PANEL_MAX)
     left = (w - pw) / 2
     return (f'<div class="glass" style="position:absolute;left:{left:.0f}px;'
-            f'width:{pw:.0f}px;top:{margin}px;bottom:{margin}px;'
+            f'width:{pw:.0f}px;bottom:{margin}px;'
+            f'max-height:calc(100% - {2 * margin}px);'
             f'display:flex;flex-direction:column;overflow:hidden">'
-            + head(section, foot_note)
+            + head(section, foot_note, hot=hot)
             + '<div style="padding:5px 0;display:flex;flex-direction:column;'
-            'flex:1;min-height:0">' + "".join(inner) + '</div></div>')
+            'min-height:0">' + "".join(inner) + '</div></div>')
 
 
-def exemplar(w, h, section, inner, seed, foot_note=None, foot=None):
+def exemplar(w, h, section, inner, seed, foot_note=None, foot=None, hot=False):
     body = [scene(w, h, seed), score_band(),
-            panel(w, h, section, inner, foot_note=foot_note)]
+            panel(w, h, section, inner, foot_note=foot_note, hot=hot)]
     if foot:
         body.append(foot)
     return wrap(w, h, body, seed)
@@ -360,10 +388,10 @@ def settings_board():
         row("Fullscreen", reading("fill the screen")),
         band("the machine"),
         row("Controls", '<span class="row" style="margin-left:auto;gap:8px">'
-            + f'<span class="mono" style="font-size:12px;color:{READ}">'
+            + f'<span class="mono" style="font-size:14px;color:{READ}">'
             'keys and pads</span>' + caret() + '</span>'),
         row("About", '<span class="row" style="margin-left:auto;gap:8px">'
-            + f'<span class="mono" style="font-size:12px;color:{READ}">'
+            + f'<span class="mono" style="font-size:14px;color:{READ}">'
             'this build</span>' + caret() + '</span>'),
         band("ship"),
         row("Wake", r_range("Standard", 3, 1)),
@@ -398,6 +426,13 @@ def ship_board():
         row("Rung", r_stepper(1), state="cursor"),
         row("Spray", r_stepper(1)),
         row("Bounce", r_switch(False)),
+        band("bomb"),
+        # The one row whose figure is not what it cost. Shrapnel's magnitude
+        # is another weapon: a rung throws four fragments and the rungs above
+        # climb by two, so a pilot spending a credit is choosing between four
+        # in the air and six. It read the rung until decision 105.
+        row("Shrapnel", r_stepper(4)),
+        row("Proximity detonation", r_switch(True)),
         band("rack"),
         row("Repel", r_stepper(2)),
         row("Burst", r_stepper(1, lit=True)),
@@ -409,9 +444,16 @@ def ship_board():
 
 def login_board():
     inner = [
+        # Where the fleet's reply lands. It used to replace the head, which on
+        # a card is the whole point and on a panel costs a pilot the section
+        # name and the label on the way back, exactly when a press has just
+        # failed. Decision 105 put it here, in the caution color, superseding
+        # whatever note the panel carried.
+        (f'<div style="padding:12px 14px 2px;font-size:14px;color:{CAUTION}">'
+         'That password is too short.</div>'),
         field_line("call sign", "Vesper 412"),
         field_line("password", "&middot;" * 6, dimmed=True),
-        ('<div style="margin-top:auto;padding:0 14px 10px">'
+        ('<div style="padding:14px 14px 10px">'
          '<div class="play" style="height:50px;font-size:15px">LOG IN</div>'
          '</div>'),
     ]
@@ -501,12 +543,15 @@ def stack_diagram():
         for b in (34, 22))
     key = ('<div style="position:absolute;left:38px;width:74px;height:12px;'
            'bottom:6px;border:1px solid rgba(79,214,255,.7)"></div>')
-    pan = ('<div style="position:absolute;left:10px;right:10px;top:8px;'
+    # A panel is as tall as what it holds and stands on the edge it slid out
+    # of, so these two are different heights on purpose: a stack that opens
+    # something shorter slides the glass down to fit it.
+    pan = ('<div style="position:absolute;left:10px;right:10px;top:30px;'
            'bottom:8px;border:1px solid rgba(63,88,120,.9);'
            'background:rgba(10,15,24,.72)">'
            '<div style="height:12px;border-bottom:1px solid '
            'rgba(63,88,120,.6)"></div></div>')
-    pan2 = ('<div style="position:absolute;left:10px;right:10px;top:34px;'
+    pan2 = ('<div style="position:absolute;left:10px;right:10px;top:52px;'
             'bottom:8px;border:1px solid rgba(79,214,255,.5);'
             'background:rgba(10,15,24,.85)">'
             '<div style="height:12px;border-bottom:1px solid '
@@ -518,10 +563,10 @@ def stack_diagram():
             f'<div style="display:flex;flex-direction:column;gap:7px">'
             f'{mini(stops + key)}{chip("the column")}</div>{arrow}'
             f'<div style="display:flex;flex-direction:column;gap:7px">'
-            f'{mini(pan)}{chip("a stop opens: full height, 560 cap")}</div>'
+            f'{mini(pan)}{chip("a stop opens: as tall as it needs, 560 cap")}</div>'
             f'{arrow}'
             f'<div style="display:flex;flex-direction:column;gap:7px">'
-            f'{mini(pan + pan2)}{chip("a row opens: it stacks")}</div></div>')
+            f'{mini(pan + pan2)}{chip("a row opens: it stacks, sliding to the new height")}</div></div>')
 
 
 def main_board():
@@ -540,7 +585,7 @@ def main_board():
     # -- 1 the voice --
     parts.append(spec_h("1 · The voice",
         "The menu <b>speaks</b> in the menu face, sentence case, 17. It "
-        "<b>reads</b> in the mono at 12. It <b>quotes</b> a name in the case "
+        "<b>reads</b> in the mono at 14. It <b>quotes</b> a name in the case "
         "its owner gave it. Capitals belong to the HUD and to the small "
         "labels, never to a row. The type ladder is the shipped one: "
         "12 · 14 · 17 · 21, and nothing between rungs."))
@@ -553,8 +598,8 @@ def main_board():
       <span style="font-size:17px">Team Battle</span>{chip("quotes · raw case")}
     </div>
     <div style="display:flex;flex-direction:column;gap:9px">
-      <span class="mono" style="font-size:12px;color:{READ}">4v4 · 3 min</span>
-      {chip("reads · mono 12")}
+      <span class="mono" style="font-size:14px;color:{READ}">4v4 · 3 min</span>
+      {chip("reads · mono 14")}
     </div>
     <div style="display:flex;flex-direction:column;gap:9px">
       <span class="lbl">the machine</span>{chip("labels · mono 12 caps")}
@@ -567,11 +612,12 @@ def main_board():
     # -- 2 the glass --
     parts.append(spec_h("2 · The glass",
         "One ground for every surface: the fight blurred, the button tint "
-        "at 0.72 over it, one tile-colored outline. The window less a "
-        "14-point margin, capped at 560 and centered. Cards are not exempt: "
-        "a card is a panel that stacked. Two washes say where a hand is: "
-        "the cursor at 0.18, brighter against the left rule; where you "
-        "already are at 0.07, in the friend color both."))
+        "at 0.72 over it, one tile-colored outline. Capped at 560 wide, "
+        "centered, and as tall as what it holds -- standing on the bottom "
+        "margin it slid out of, taking the room and scrolling only where its "
+        "content outruns it. Cards are not exempt: a card is a panel that "
+        "stacked. Two washes say where a hand is, flat across the row: the "
+        "cursor at 0.18 and where you already are at 0.07, friend color both."))
     parts.append(f'''
   <div class="row" style="gap:22px;align-items:flex-start;flex-wrap:wrap">
     {swatch("rgba(10,15,24,.72)", "the glass", "frost + 0a0f18 at .72")}
@@ -584,8 +630,9 @@ def main_board():
 
     # -- 3 the row --
     parts.append(spec_h("3 · The row",
-        "44 points tall, which is the touch floor; 36 where a pointer is "
-        "certain. 14 in from either edge. The name at the left; what stands "
+        "44 points tall, which is the touch floor, and there is no second "
+        "height: a dense variant was drawn here and no surface wanted one. "
+        "14 in from either edge. The name at the left; what stands "
         "at the right end is what the row <b>does</b>, and it is the only "
         "thing that varies. Six ends, and every menu is spelled with them."))
     rows_w = 470
@@ -598,7 +645,8 @@ def main_board():
     {demo(rows_w, row("Repel", r_stepper(2)), "steps · arrows spend and refund")}
     {demo(rows_w, row("Sound", r_range("Half", 3, 2)),
           "fills · one cell per step, the word beside it")}
-    {demo(rows_w, row("Bounce", r_switch(True)), "switches · lit right for on")}
+    {demo(rows_w, row("Bounce", r_switch(True)),
+          "switches · lit right for on; enter and space flip it")}
     {demo(rows_w, pager_row("Apex"), "walks · arrows at the edges page a set")}
   </div>''')
 
@@ -610,7 +658,7 @@ def main_board():
   <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));
        gap:20px 40px;max-width:{rows_w * 2 + 40}px">
     {demo(rows_w, row("Duel", r_caret(), state="cursor"),
-          "the cursor · 0.18, from either hand")}
+          "the cursor · 0.18 flat, from either hand")}
     {demo(rows_w, row("Team Battle", reading("4v4 · 3 min"), state="here"),
           "here · 0.07, where you already are")}
     {demo(rows_w, row("Sign up", reading("keep your points", READ),
@@ -621,6 +669,8 @@ def main_board():
           "a side · written in its own color")}
     {demo(rows_w, row("Apex", "", note="Turns on a wingtip, thin armor"),
           "carries a note · name to 21, note under")}
+    {demo(rows_w, row("Shrapnel", r_stepper(4)),
+          "reads what it throws · not what it cost")}
   </div>''')
 
     # -- 4 the head and the band --
@@ -631,8 +681,11 @@ def main_board():
         "two rules, 24 tall. The ship page's second head is gone; what it "
         "held is the walker row."))
     parts.append(f'''
-  <div class="row" style="gap:40px;align-items:flex-start">
+  <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));
+       gap:20px 40px;max-width:{rows_w * 2 + 40}px">
     {demo(rows_w, head("settings"), "the head · the whole line is the press")}
+    {demo(rows_w, head("settings", hot=True),
+          "and it lights, like the control it is")}
     {demo(rows_w, head("ship", foot_note="enter flies it"),
           "with its one sentence")}
   </div>
@@ -660,10 +713,12 @@ def main_board():
 
     # -- 6 the motion --
     parts.append(spec_h("6 · The motion",
-        "One movement, decision 103's: press a stop and the column goes out "
-        "through the bottom edge while the panel comes up through it; press "
-        "a row that opens and the next panel rides the same slide over this "
-        "one; back steps one level out. Nothing pauses behind any of it."))
+        "One movement: press a stop and the column goes out through the "
+        "bottom edge while the panel comes up through it; press a row that "
+        "opens and the next panel rides the same slide over this one; back "
+        "steps one level out. A panel arrives at the height it wants and "
+        "eases to a new one when what it holds changes, so a stack slides to "
+        "fit rather than swapping two rectangles. Nothing pauses behind it."))
     parts.append(stack_diagram())
 
     parts.append('</div>')
