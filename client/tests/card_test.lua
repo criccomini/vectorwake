@@ -160,7 +160,10 @@ local function frame(ask, o)
             me = 0,
             side = 0,
             viewer_name = "you",
-            menu_open = true,
+            menu_open = o.column ~= false,
+            -- The question itself, which is what tells the HUD to recede. The
+            -- arena passes it every frame; see `M.hud`.
+            card = true,
             pilots = SEATS,
             watchers = {},
             teams = {},
@@ -254,6 +257,20 @@ for _, h in ipairs(ui.hits) do
 end
 check("only the answers can be pressed", answers == 2 and others == 0,
       answers .. " answers, " .. others .. " other boxes")
+
+-- And it quiets the HUD with no column up as well. The account acts stand on
+-- the landing now, so a sign-up card is raised over a bare fight with nothing
+-- else over it. The rule was written for the drawer, which was always up
+-- behind a card, so the card alone never reached it: the wash went down and
+-- every instrument's label stayed at full brightness through it.
+frame(menu.ask, {behind = true, column = false})
+local lit_alone = 0
+for i = 1, state.n do
+    local t = state.text[i]
+    if not (t.dim and t.dim < 1) then lit_alone = lit_alone + 1 end
+end
+check("a card over a bare fight quiets it too", lit_alone == 3,
+      lit_alone .. " lit")
 
 -- --- the lines a card is filled in on --------------------------------------
 --
