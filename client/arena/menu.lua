@@ -663,6 +663,7 @@ function M.tune_rows(cls)
         local made = {}
         for _, it in ipairs(slots) do
             local slot, label2, note, base = it[1], it[2], it[3], it[4]
+            local kind = it[5]
             local cap = slot_cap(cls, slot)
             if cap >= 1 then
                 local at = mine[slot] or 0
@@ -676,6 +677,18 @@ function M.tune_rows(cls)
                     -- `land_row`, which adds it to the figure it draws and
                     -- leaves the spend to say the color.
                     base = base,
+                    -- What the row reads at, where that is not its own count.
+                    --
+                    -- Shrapnel is the one add-on whose magnitude is another
+                    -- weapon rather than a number: rung one throws four
+                    -- fragments and the rungs above it climb by two. A pilot
+                    -- spending a credit here is choosing between four in the
+                    -- air and six, so the row that read "1" was telling them
+                    -- the wrong thing about the only slot whose number is not
+                    -- its own. The ladder is the core's, so the core is asked.
+                    reads = kind == "shrapnel" and _G.sim
+                        and _G.sim.splinter_count
+                        and _G.sim.splinter_count(at) or nil,
                     -- What the arrows may do, asked the same way the act
                     -- asks it, so an arrow drawn live is one that works.
                     can_up = at < cap and M.build_free(cls) >= 1,
@@ -710,7 +723,8 @@ function M.tune_rows(cls)
                 or ("add-on " .. m)
             slots[#slots + 1] = {mod0 + t * mods + m, M.titled(name),
                                  SLOT_NOTES[word .. "_"
-                                            .. (mod and mod.name or m)]}
+                                            .. (mod and mod.name or m)],
+                                 nil, mod and mod.name or nil}
         end
         section(word, slots)
     end
@@ -1702,7 +1716,11 @@ end
 -- file a password under a user name, and this card has no line for one
 -- because the name is not in question here.
 function M.ask_password()
-    local head = account.claimed and "Choose a new password." or "Sign up."
+    -- Named rather than said. These were sentences because they headed a
+    -- card, which is a question put to somebody; the head of a panel is the
+    -- name of the section you are standing in, and a section name does not end
+    -- in a full stop. See decision 104.
+    local head = account.claimed and "new password" or "sign up"
     M.ask = {head = head,
              -- The one line the old page said in three places, kept where
              -- the act is: what signing up buys.
@@ -1717,7 +1735,7 @@ end
 
 -- The card that brings a claimed pilot onto this device.
 function M.ask_login()
-    M.ask = {head = "Log in.",
+    M.ask = {head = "log in",
              keys = {{label = "log in", act = "do_login"}, {label = "cancel"}},
              sel = 1, field = 1,
              fields = {{label = "call sign", value = "", kind = "username",
@@ -1818,10 +1836,21 @@ end
 -- the guard against a card that has since been replaced, the flag that stops
 -- a second press while the first is in flight, and the trim that keeps a
 -- reason which already ends in a full stop from growing another one.
+--
+-- Where the message goes depends on what raised it. A confirm is a question
+-- and its head is the question, so the answer replaces it. A card with lines
+-- to fill in is a panel (decision 104), and a panel's head is the name of the
+-- section you are standing in with the way back on it: a status put there
+-- would cost a pilot both of those every time they pressed the key. So it goes
+-- on the line under the head, where the card's own note already stands, and
+-- supersedes it while it is up.
 local function send_card(asked, busy, send, won)
     M.ask = asked
     asked.sending = true
-    asked.head = busy
+    local function say(msg)
+        if asked.fields then asked.status = msg else asked.head = msg end
+    end
+    say(busy)
     send(function(ok, why)
         -- A different question is up now; this answer is about nothing.
         if M.ask ~= asked then return end
@@ -1831,8 +1860,7 @@ local function send_card(asked, busy, send, won)
             return
         end
         asked.sending = false
-        asked.head = string.gsub((why or "That did not work.") .. ".",
-                                 "%.%.$", ".")
+        say(string.gsub((why or "That did not work.") .. ".", "%.%.$", "."))
     end)
 end
 

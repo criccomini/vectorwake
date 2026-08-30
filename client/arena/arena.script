@@ -709,9 +709,16 @@ TUNE.PANEL_HANDLERS = {
 -- pointer's own last answer rather than the cursor itself. A hand lying still moves nothing,
 -- which is what lets the arrows walk away from a pointer parked on a stop,
 -- and a hand that leaves a control and comes back makes the noise again.
+-- Every row a panel publishes, because every row a panel publishes lights.
+--
+-- This was a list of the controls that happened to have been thought about,
+-- and two whole panels were missing from it: an account act and a hull's slot
+-- lit under the arrows and stayed dark under a pointer resting on them. One
+-- row, one way of being under a hand, whichever hand it is.
 local LAND_HOT = {
     play_now = true, land_account = true, land_zone = true, land_ship = true,
     land_pick_zone = true, land_pick_ship = true, land_back = true,
+    land_pick_account = true, land_kit_row = true, land_kit_reset = true,
     -- And the menu's own column, which is the same interface with a different
     -- set of stops on it: one cursor, one pointer, one rule for what lights.
     menu_go = true, menu_stop = true, menu_pick = true, menu_row = true,
@@ -1611,7 +1618,15 @@ function update(self, dt)
             local action, value = ui.col_side(side)
             if action then land_act(self, action, value) end
         end
-        if tapped[hash("select")] then
+        -- Enter or space presses what the cursor is on. Space is the guns key
+        -- in flight and cannot be a second enter there, but nothing in this
+        -- branch is flying: it runs only while a column or a panel is the
+        -- thing on screen, and space is what a hand expects to press a row
+        -- with on every other interface it has used.
+        --
+        -- Not while a card is taking type, which is the branch above: a call
+        -- sign has a space in it, and the trigger belongs to the line.
+        if tapped[hash("select")] or tapped[hash("k_space")] then
             local action, value = ui.col_go()
             if action then land_act(self, action, value) end
         end
@@ -3058,10 +3073,26 @@ function land_act(self, action, value)
         sfx.ui("ui_move")
         return true
     end
-    -- Standing on a row is not doing anything to it: the row is where a hand
-    -- on a pad stands so that left and right can spend, and enter on it does
-    -- nothing rather than guessing which of the two was meant.
-    if action == "land_kit_row" then return true end
+    -- Standing on a row that counts is not doing anything to it: the row is
+    -- where a hand on a pad stands so that left and right can spend, and enter
+    -- on it does nothing rather than guessing which of the two was meant.
+    --
+    -- A switch is the exception, because there is nothing to guess. It holds
+    -- one of two answers and both arrows already mean "the other one", so
+    -- enter and space mean it too. Without this the only row in the panel a
+    -- keyboard could not work was the only row with a single obvious act.
+    if action == "land_kit_row" then
+        local at = self.land_ship_at or menu.panel_home()
+        for _, r in ipairs(menu.ship_panel(at).rows or {}) do
+            if r.kind == "slot" and r.slot == value and r.toggle then
+                if menu.build_step(at, value, r.value > 0 and -1 or 1) then
+                    sfx.ui("ui_go")
+                end
+                break
+            end
+        end
+        return true
+    end
     -- Spending a credit, or handing one back. The menu holds the build and
     -- tells the arena about it; a step that cannot happen was drawn dim and
     -- has no hit box, so this does not have to check.

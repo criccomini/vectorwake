@@ -322,7 +322,8 @@ do
     -- without the budget it lets a pilot spend forever, and without the
     -- flight steps it offers rows that buy nothing.
     for _, name in ipairs({"class_kit", "class_flight", "class_up_step",
-                           "slot_cap", "ship_kit", "KIT_CREDITS",
+                           "slot_cap", "ship_kit", "splinter_count",
+                           "KIT_CREDITS",
                            "SLOT_COUNT", "SLOT_MOD0", "SLOT_CHARGE0",
                            "SLOT_LEVEL0", "MOD_COUNT", "MAX_CHARGES"}) do
         check("the core still exports " .. name, exported[name] == true)

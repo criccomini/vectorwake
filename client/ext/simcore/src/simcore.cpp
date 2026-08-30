@@ -479,6 +479,20 @@ int SlotCap(lua_State* L) {
     return 1;
 }
 
+// How many fragments a rung of shrapnel breaks into, for the row that reads
+// it out. Shrapnel is the one add-on whose magnitude is another weapon, so
+// the number a pilot is choosing between is fragments in the air rather than
+// credits spent, and only the core knows the ladder.
+int SplinterCount(lua_State* L) {
+    int rung = (int)luaL_checkinteger(L, 1);
+    if (rung < 0) {
+        lua_pushnumber(L, 0);
+        return 1;
+    }
+    lua_pushnumber(L, sim_splinter_count(&g_cfg, (uint8_t)rung));
+    return 1;
+}
+
 int ShipMod(lua_State* L) {
     int i = CheckShip(L);
     int t = (int)luaL_checkinteger(L, 2);
@@ -1259,6 +1273,7 @@ const luaL_reg kFunctions[] = {
     {"ship_up", ShipUp},
     {"ship_kit", ShipKit},
     {"slot_cap", SlotCap},
+    {"splinter_count", SplinterCount},
     {"class_up_step", ClassUpStep},
     {"class_kit", ClassKit},
     {"class_flight", ClassFlight},

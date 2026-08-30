@@ -915,6 +915,20 @@ void sim_deal_kit(sim_ship *sh, const sim_settings *cfg, int ammunition);
  * both call this. */
 uint8_t sim_slot_cap(const sim_settings *cfg, uint8_t cls, uint8_t slot);
 
+/* How many fragments a rung of shrapnel breaks into.
+ *
+ * Shrapnel is the one add-on whose magnitude is another weapon rather than a
+ * number, so the count a pilot cares about is not the count they bought: rung
+ * one throws four fragments, and the rungs above it climb by two. A pilot
+ * spending a credit is choosing between four in the air and six, and the row
+ * that says "1" is telling them the wrong thing about the only add-on here
+ * whose number is not its own.
+ *
+ * Zone-wide, because `mod_splinter` is: what a rung breaks into is a property
+ * of the zone's weapons rather than of the hull throwing them. Zero for rung
+ * zero, for a rung past the ladder, and for a zone that fills none of it. */
+uint8_t sim_splinter_count(const sim_settings *cfg, uint8_t rung);
+
 /* What a build costs, which is the sum of it: every step is one credit. */
 int sim_kit_cost(const uint8_t *kit);
 

@@ -1021,9 +1021,16 @@ account.refuse = "a password needs at least six characters"
 menu.ask_password()
 for ch in string.gmatch("abc", ".") do menu.type_field(ch) end
 menu.step({go = true})
+-- On its own line rather than in the head. A card with lines to fill in is a
+-- panel now (decision 104), and a panel's head is the name of the section with
+-- the way back on it: a reason written there costs a pilot both of those
+-- exactly when a press has just failed and they most need the way out.
 check("a refusal keeps the card up with the reason on it",
-      menu.ask ~= nil and menu.ask.head == account.refuse .. "."
+      menu.ask ~= nil and menu.ask.status == account.refuse .. "."
           and menu.ask.fields[1].value == "abc",
+      tostring(menu.ask and menu.ask.status))
+check("and the head goes on naming the section",
+      menu.ask ~= nil and menu.ask.head == "sign up",
       tostring(menu.ask and menu.ask.head))
 account.refuse = nil
 menu.ask = nil

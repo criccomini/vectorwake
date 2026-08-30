@@ -482,7 +482,21 @@ local LIT = {
 -- there was exactly one panel in the interface and one place it could be. The
 -- column's panel stands where its stop stands, so the span is handed in.
 function LIT.field(x, y, w, h, weight)
-    wash(x, y, w, h, pal.a(pal.FRIEND, weight))
+    -- Flat, all the way across.
+    --
+    -- It was `wash`: most of the weight laid flat with the rest put in a skirt
+    -- against the left edge, falling off over a hundred and thirty points.
+    -- That is what a selection looks like *against a lit rule*, and it was
+    -- written for the drawer, which was docked to the left of the screen and
+    -- hung its rows off one. A panel is a floating rectangle outlined all the
+    -- way round: there is no rule there for the accent to bleed off, so what
+    -- it drew was a brighter quarter of the row with a visible edge where the
+    -- falloff ran out, and on a panel five hundred and sixty points wide that
+    -- edge lands a long way from anything that explains it.
+    --
+    -- The scoreboard and the plate keep the skirt, because they still hang off
+    -- a `vrule` and it is still the right mark there.
+    rect(x, y, w, h, pal.a(pal.FRIEND, weight))
 end
 
 -- How bright the label on a standing row is this frame. It breathes on the
@@ -4271,14 +4285,32 @@ end
 local PANEL_MAX = 560
 local PANEL_MARGIN = 14
 
-local function panel_geom()
+-- The most a panel can grow to, which is the window less its margins.
+local function panel_room()
+    local margin = PANEL_MARGIN * F.scale
+    return (F.h - F.safe_b - margin) - (F.safe_t + margin)
+end
+
+-- Where a panel of this height stands.
+--
+-- As tall as what it holds, and no taller. Decision 103 gave every panel the
+-- whole window, which is right for a hull's build and absurd for three account
+-- acts: a head, three rows and six hundred points of empty glass over a fight
+-- somebody is watching. The panel is the thing on screen, not the screen.
+--
+-- Anchored at the foot rather than the top, which is the edge it slides out of
+-- and back into: it grows upward from there, so its head moves and the rows
+-- nearest a thumb stay where they are. Over the room it has it takes the room
+-- and scrolls inside it, which is what the ship page and the settings page
+-- have always done.
+local function panel_geom(want)
     local margin = PANEL_MARGIN * F.scale
     local span = F.w - F.safe_l - F.safe_r - 2 * margin
     local w = math.min(span, (M.compact and 440 or PANEL_MAX) * F.scale)
     local mid = F.safe_l + (F.w - F.safe_l - F.safe_r) / 2
-    local top = F.safe_t + margin
-    local foot = F.h - F.safe_b - margin
-    return mid - w / 2, top, w, foot - top
+    local room = panel_room()
+    local h = math.min(want or room, room)
+    return mid - w / 2, F.h - F.safe_b - margin - h, w, h
 end
 
 -- How far an open panel has come up: 0 fully below the bottom edge, 1
@@ -4294,7 +4326,15 @@ end
 local function new_slide()
     return {at = 0, from = 0, to = 0, when = 0}
 end
+-- Two apiece: how far up the panel has come, and how tall it is.
+--
+-- The height eases on the same curve the rise does, because it moves for the
+-- same reason: a panel that opens over another is a different amount of
+-- content, and the glass under it growing or shrinking to fit is the same
+-- gesture as the glass arriving. Snapping between two heights reads as two
+-- panels swapped rather than one sliding to fit what it now holds.
 local land_slide, menu_slide = new_slide(), new_slide()
+local land_h, menu_h = new_slide(), new_slide()
 
 -- Advance one of them toward `want` and answer where it reached. Called once a
 -- frame by the column that owns it.
@@ -4314,12 +4354,75 @@ local function panel_slide(s, want)
     return s.at
 end
 
--- Put both slides back on the floor without playing them, for the caller that
+-- A panel's height, which eases between two panels and snaps on arrival.
+--
+-- Opening one is already a movement: it rises through the bottom edge, and a
+-- height easing out of nothing at the same time makes it arrive as a sliver
+-- that grows, which is two gestures for one act. So the first frame takes the
+-- height it wants. What eases is the change from one panel's worth to the
+-- next, which is the only time the glass is asked to be a different size while
+-- it is standing still.
+--
+-- `at` is zero exactly when nothing was open, because closing zeroes it.
+local function panel_height(s, want)
+    if s.at <= 0 then
+        s.at, s.from, s.to, s.when = want, want, want, F.now
+        return want
+    end
+    return panel_slide(s, want)
+end
+
+-- Put every slide back on the floor without playing it, for the caller that
 -- is tearing the whole screen down rather than closing a panel.
 function M.panel_shut()
-    for _, s in ipairs({land_slide, menu_slide}) do
+    for _, s in ipairs({land_slide, menu_slide, land_h, menu_h}) do
         s.at, s.from, s.to, s.when = 0, 0, 0, 0
     end
+end
+
+-- What each panel wants to be, in points, before the window has its say.
+--
+-- Measured rather than assumed, because the whole point of a panel that is as
+-- tall as what it holds is that only the thing holding it knows. Each of these
+-- counts exactly what its own drawing lays down, so a row added to a page
+-- moves the glass with it.
+--
+-- On `pages` rather than as four more locals: this chunk sits at Lua's own
+-- ceiling of two hundred, and a coherent group belongs on one table. See
+-- client/tests/upvalues_test.lua.
+pages.HEAD_H = 44
+
+function pages.list_h(list, drh)
+    local h = pages.HEAD_H * F.scale + 10 * F.scale
+    for _, r in ipairs(list) do
+        h = h + (r.rule and 9 * F.scale or drh)
+    end
+    return h
+end
+
+function pages.ship_h(panel, drh)
+    -- The head, the walker under it, the flight bars, the credit tray, and a
+    -- row apiece. A section band is shorter than a row and says so.
+    local h = pages.HEAD_H * F.scale * 2 + 10 * F.scale
+    if panel.bars then h = h + 34 * F.scale end
+    if panel.rows then
+        h = h + 30 * F.scale
+        for _, r in ipairs(panel.rows) do
+            h = h + (r.kind == "sect" and 24 * F.scale or drh)
+        end
+    else
+        h = h + drh
+    end
+    return h
+end
+
+function pages.page_h(v, rowh, secth, noted)
+    local rh = noted and rowh + pages.NOTE_LINE * F.scale or rowh
+    local h = pages.HEAD_H * F.scale + 10 * F.scale
+    for _, r in ipairs(v.rows) do
+        h = h + rh + (r.sect and secth or 0)
+    end
+    return h
 end
 
 -- The panel itself: the glass, and the head that says where you are with the
@@ -4347,12 +4450,20 @@ local function panel_frame(px, py, pw, ph, title, back, foot_note, back_value)
     frost(px, py, pw, ph)
     rect(px, py, pw, ph, pal.a(pal.BTN_BG, 0.72))
     key_box(px, py, pw, ph, nil, pal.a(pal.RADAR_TILE, 0.75))
+    -- The head is a control like any other row, so it lights like one. It did
+    -- not, and a hand walking the panel with the arrows could stand on the way
+    -- back with nothing on screen saying so: the walk named it, the drawing
+    -- never did. Both hands write `M.col_sel` through the same `M.pick`, so
+    -- this answers a pointer resting on it as well.
+    local hot = back and M.col_sel == back
+    if hot then LIT.field(px, py, pw, headh, LIT.CURSOR) end
     local hy = py + headh / 2
     F.layer:tri(px + pad + 2 * F.scale, ry(hy),
                 px + pad + 9 * F.scale, ry(hy - 6 * F.scale),
                 px + pad + 9 * F.scale, ry(hy + 6 * F.scale),
-                pal.a(pal.FRIEND, 0.9))
-    lbl(title or "", px + pad + 18 * F.scale, hy, pal.MUTE)
+                pal.a(pal.FRIEND, hot and 1 or 0.9))
+    lbl(title or "", px + pad + 18 * F.scale, hy,
+        hot and pal.a(pal.INK, 0.95) or pal.MUTE)
     -- What a control waiting for a key has to say, where it says it: on the
     -- head of the page that asked, so a hand looking at the row is looking at
     -- the sentence about it.
@@ -4506,8 +4617,8 @@ local function land_row(kx, kw, y, h, r)
     menu_row(kx + pad, y, kw - 2 * pad, h, {
         label = r.label,
         toggle = r.toggle or nil,
-        step = {value = r.value, base = r.base, can_up = r.can_up,
-                can_down = r.can_down, slot = r.slot,
+        step = {value = r.value, base = r.base, reads = r.reads,
+                can_up = r.can_up, can_down = r.can_down, slot = r.slot,
                 action = "land_kit_step"},
     }, on)
 end
@@ -4719,6 +4830,12 @@ local function landing(land, covered)
         shown = nil
     end
     local at = panel_slide(land_slide, shown and 1 or 0)
+    -- With nothing open the height goes back to nought, so the next panel
+    -- arrives at its own size rather than easing out of whatever the last one
+    -- happened to be.
+    if not shown then
+        land_h.at, land_h.from, land_h.to, land_h.when = 0, 0, 0, 0
+    end
     local col_top = math.min(g.mark_y - g.size, g.stops[1] and g.stops[1].y
                              or g.ky)
     local drop = at * (F.h - col_top)
@@ -4837,7 +4954,13 @@ local function landing(land, covered)
         -- when the whole stack does rather than jumping back the moment the
         -- upper panel opens.
         if open and not covered then
-            local px, py, pw, ph = panel_geom()
+            -- As tall as what it holds, eased between one panel's worth and
+            -- the next so opening one over another slides the glass to fit
+            -- rather than swapping two rectangles.
+            local want = panel and pages.ship_h(panel, drh)
+                or pages.list_h(list, drh)
+            local px, py, pw, ph =
+                panel_geom(panel_height(land_h, math.min(want, panel_room())))
             py = py + (1 - at) * (F.h - py)
             hit(0, 0, F.w, F.h, "land_shut", nil, nil, -1)
             -- The menu's voice, for as long as the menu is the thing on
@@ -5676,8 +5799,13 @@ function menu_row(x, y, w, h, r, hot)
         local s = r.step
         local vx = x + w - 26 * F.scale
         local mid = y + h / 2
-        txt(tostring(s.value + (s.base or 0)), vx - 24 * F.scale, mid,
-            TYPE.BODY * F.scale,
+        -- What the row reads at, which is the row's to say: every slot but
+        -- two counts what has been bought, a rung counts from one because a
+        -- hull nobody has spent on still fires its first gun, and shrapnel
+        -- reads the fragments a rung throws rather than the rung. The color is
+        -- off the spend either way, so rung one is dim because it cost nothing.
+        txt(tostring(s.reads or (s.value + (s.base or 0))),
+            vx - 24 * F.scale, mid, TYPE.BODY * F.scale,
             s.value > 0 and pal.FRIEND or pal.a(pal.DIM, 0.9), "center")
         for _, d in ipairs({{-1, vx - 54 * F.scale, s.can_down},
                             {1, vx, s.can_up}}) do
@@ -5984,15 +6112,28 @@ function M.land_card(a)
     F.text_dim = 1
     local was_case = F.case
     F.case = "sentence"
-    local px, py, pw, ph = panel_geom()
+    -- The head, a note where it carries one, a line apiece, and the commit at
+    -- the foot with its own margin. As tall as that and no taller: a panel
+    -- asking for one password is not the height of the window.
+    local kh = (M.compact and 44 or 50) * F.scale
+    local said = a.status or a.note
+    local want = pages.HEAD_H * F.scale + 10 * F.scale
+        + (said and 34 * F.scale or 0)
+        + #a.fields * 48 * F.scale
+        + kh + 28 * F.scale
+    local px, py, pw, ph =
+        panel_geom(panel_height(land_h, math.min(want, panel_room())))
     -- Back is cancel, which is the last of the answers the card carries. It
     -- travels the way every other answer does, by its place in that list.
     local top = panel_frame(px, py, pw, ph, a.head or "", a.action or "answer",
                             nil, #a.keys)
     local pad = 14 * F.scale
-    if a.note then
-        txt(a.note, px + pad, top + 12 * F.scale, TYPE.BODY * F.scale,
-            pal.READ)
+    -- What signing up buys, or what the fleet said about the last press. A
+    -- status supersedes the note while it stands and wears the caution color,
+    -- since the two it carries are "wait" and "that did not work".
+    if said then
+        txt(said, px + pad, top + 12 * F.scale, TYPE.BODY * F.scale,
+            a.status and pal.CHARGE_COL or pal.READ)
         top = top + 34 * F.scale
     end
     local fx, fw = px + pad, pw - 2 * pad
@@ -6015,7 +6156,6 @@ function M.land_card(a)
         end
     end
     -- And the commit, at the foot of what it commits.
-    local kh = (M.compact and 44 or 50) * F.scale
     local ky = py + ph - pad - kh
     commit_key(fx, ky, fw, kh, (M.compact and TYPE.BODY or TYPE.ROW) * F.scale,
                a.keys[1] and a.keys[1].label or "", a.sel == 1)
@@ -6321,6 +6461,9 @@ function M.menu(v)
         if s.open then open = s end
     end
     local at = panel_slide(menu_slide, open and 1 or 0)
+    if not open then
+        menu_h.at, menu_h.from, menu_h.to, menu_h.when = 0, 0, 0, 0
+    end
     local drop = at * (F.h - g.top)
     local live = at < 0.5
 
@@ -6369,24 +6512,38 @@ function M.menu(v)
     end
 
     if open then
-        local px, py, pw, ph = panel_geom()
-        -- The panel rides the column's own slide as well as its own, so
-        -- dismissing the whole menu with a page open takes the page with it
-        -- rather than leaving it standing over the fight.
-        py = py + (1 - at) * (F.h - py) + rise
-        -- The rows are the panel's now, so that is the span they are lit at.
-        column_x, column_w = px, pw
+        -- The sides, one row each. A row per side rather than a stepper: with
+        -- three or more, arrows would walk a pilot through every team between
+        -- here and the one they want.
+        local list = nil
         if open.stop == "side" then
-            -- The sides, one row each. A row per side rather than a stepper:
-            -- with three or more, arrows would walk a pilot through every team
-            -- between here and the one they want.
-            local list = {}
+            list = {}
             for _, r in ipairs(v.rows) do
                 list[#list + 1] = {label = r.label, note = r.detail,
                                    raw = r.named, here = r.mark,
                                    tint = r.tint,
                                    action = "menu_pick", value = r.index}
             end
+        end
+        -- As tall as what it holds, eased between one page's worth and the
+        -- next: walking from settings into the controls board slides the glass
+        -- to the new page's height rather than swapping two rectangles.
+        local noted = false
+        for _, r in ipairs(v.rows) do
+            if r.note then noted = true end
+        end
+        local tall = list and pages.list_h(list, g.rh)
+            or pages.page_h(v, (M.compact and 40 or 44) * F.scale,
+                            24 * F.scale, noted)
+        local px, py, pw, ph =
+            panel_geom(panel_height(menu_h, math.min(tall, panel_room())))
+        -- The panel rides the column's own slide as well as its own, so
+        -- dismissing the whole menu with a page open takes the page with it
+        -- rather than leaving it standing over the fight.
+        py = py + (1 - at) * (F.h - py) + rise
+        -- The rows are the panel's now, so that is the span they are lit at.
+        column_x, column_w = px, pw
+        if list then
             local top = panel_frame(px, py, pw, ph, open.label, "menu_back")
             land_list(px, pw, top, list, g.rh)
         else

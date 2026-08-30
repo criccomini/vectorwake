@@ -1607,6 +1607,20 @@ uint8_t sim_slot_cap(const sim_settings *cfg, uint8_t cls, uint8_t slot) {
     }
 }
 
+/* What a rung of shrapnel breaks into, as a count of fragments.
+ *
+ * Two lookups and both can miss: a rung past the ladder, and a rung whose
+ * entry is SIM_NO_PATTERN, which is how rung zero says "no shrapnel". Read
+ * only, and by the interface rather than by the step: nothing in flight asks
+ * this, because the pattern is what flight uses and the count is what a pilot
+ * reads. */
+uint8_t sim_splinter_count(const sim_settings *cfg, uint8_t rung) {
+    if (rung >= SIM_MAX_RUNGS) return 0;
+    uint8_t p = cfg->mod_splinter[rung];
+    if (p == SIM_NO_PATTERN || p >= cfg->pattern_count) return 0;
+    return cfg->patterns[p].count;
+}
+
 /* Add one step to a slot, stopping where `sim_slot_cap` says that slot ends. */
 static void grant_count(sim_ship *sh, const sim_settings *cfg, uint8_t type) {
     uint8_t cap = sim_slot_cap(cfg, sh->cls, type);

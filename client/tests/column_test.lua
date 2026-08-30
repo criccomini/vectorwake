@@ -436,10 +436,19 @@ do
           hit_of("menu_go") == nil)
     check("and so are the stops", hit_of("menu_stop", "side") == nil
           and hit_of("menu_stop", "leave") == nil)
-    local top = math.huge
-    for _, r in ipairs(rows) do top = math.min(top, r.y) end
-    check("the panel stands where the column was and higher",
-          top < 810 / 2, "panel top " .. top)
+    -- As tall as what it holds, standing on the edge it slid out of. It used
+    -- to take the whole window, which is right for a hull's build and absurd
+    -- for four rows, so what is checked is that it reaches the foot and stops
+    -- short of the top rather than that it fills everything.
+    local top, foot = math.huge, 0
+    for _, r in ipairs(rows) do
+        top = math.min(top, r.y)
+        foot = math.max(foot, r.y + r.h)
+    end
+    check("the panel stands on the foot it slid out of",
+          foot > 810 - 90, "last row ends at " .. foot)
+    check("and is no taller than the rows it holds",
+          top > 120, "panel top " .. top)
 end
 
 -- The rows come in bands, which is what a page of eight settings cannot say in

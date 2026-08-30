@@ -274,27 +274,29 @@ end
 -- The lists lit a flat field at the full weight and the pages washed theirs,
 -- which is one idea drawn two ways: the same row moved between two panels
 -- changed how being under the cursor looked.
+--
+-- Both are flat now. The wash put part of the weight in a skirt against the
+-- left edge, which is the right mark against a lit rule and was written for
+-- the drawer, which had one; a panel is outlined all the way round, so what
+-- the skirt drew was a brighter quarter of a row with an edge where it ran
+-- out and nothing there to explain it.
 
 do
-    -- `wash` lays most of the weight flat and puts the rest in a skirt against
-    -- the panel's rule, so what reaches the layer is a fraction of what the
-    -- interface published. Asked as the fraction rather than restating it.
     local function washed(open, weight, menu)
         frame({open = open, menu = menu,
                sel = open == "zone" and "land_pick_zone" or nil,
                sel_value = open == "zone" and "duel" or nil})
-        local want = weight * 0.8
         for _, r in ipairs(rects) do
             local c = r.col
             if c and math.abs(c[1] - pal.FRIEND[1]) < 0.01
                and math.abs(c[2] - pal.FRIEND[2]) < 0.01
-               and math.abs((c[4] or 0) - want) < 0.005 then
+               and math.abs((c[4] or 0) - weight) < 0.005 then
                 return r
             end
         end
         return nil
     end
-    check("a list lights the row under the cursor with the menu's wash",
+    check("a list lights the row under the cursor at the menu's weight",
           washed("zone", ui.LIT.CURSOR) ~= nil,
           "no wash at the cursor's weight")
     check("and the row you are already in at the standing weight",

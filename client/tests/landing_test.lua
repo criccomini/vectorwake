@@ -926,17 +926,6 @@ do
         return false
     end
     local CURSOR = pal.a(pal.FRIEND, ui.LIT.CURSOR)
-    -- The same weight in the shape a row wears it in.
-    --
-    -- A stop and the key are objects standing on their own, outlined all the
-    -- way round, and they take the field flat. A row inside a panel takes the
-    -- menu's wash: most of the weight laid flat and the rest put in a skirt
-    -- against the panel's left rule, which is what a selection looks like
-    -- everywhere a row is drawn. One weight, two shapes, because they are two
-    -- kinds of thing; `wash` is where the 0.8 comes from.
-    local function washed(b, weight)
-        return lit(b, pal.a(pal.FRIEND, weight * 0.8))
-    end
 
     frame(1440, 810)
     check("nothing is lit with the pointer off the stops",
@@ -966,10 +955,14 @@ do
     for _, r in ipairs(ui.hits) do
         if r.action == "land_pick_zone" then rows[r.value] = r end
     end
+    -- At the same weight in the same shape a stop wears it in. A row used to
+    -- take the menu's wash, which is a flat field plus a skirt against the
+    -- panel's left rule; a panel is outlined all the way round and has no such
+    -- rule, so the field is flat everywhere and one check answers both.
     check("a row of an open list lights under the pointer",
-          washed(rows.chaos, ui.LIT.CURSOR), "the second game did not light")
+          lit(rows.chaos, CURSOR), "the second game did not light")
     check("and the row above it does not",
-          not washed(rows.melee, ui.LIT.CURSOR))
+          not lit(rows.melee, CURSOR))
 
     -- --- and the arrows put it in the same place --------------------------
     --

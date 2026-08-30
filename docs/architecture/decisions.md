@@ -5435,3 +5435,79 @@ reach it rather than drawn once inside whichever page wanted it.
 it drives two or more real panels per check and asks whether what came back is
 the same, because a test that drove one of them would pass forever while the
 language came apart. Drawn in `.design/menu-language`.
+
+## 105. Six corrections to the menu language
+
+**Status:** accepted, correcting
+[decision 104](#104-one-menu-language) where the language was right and the
+drawing was not
+
+**Decision:** a row's field is flat; a panel's head lights like the control it
+is; a switch answers enter and space; a panel is as tall as what it holds and
+slides between heights; a pointer lights every row a panel publishes; and the
+shrapnel row reads the fragments a rung throws rather than the rung.
+
+**Why:** Chris used it and found six things. Each is small and each was the
+language failing to reach somewhere, rather than the language being wrong.
+
+**The field was flat everywhere but one shape.** `LIT.field` laid most of the
+weight flat and put the rest in a skirt against the left edge, falling off over
+a hundred and thirty points. That is what a selection looks like against a lit
+rule, and it was written for the drawer, which was docked to the left of the
+screen and hung its rows off one. A panel is a floating rectangle outlined all
+the way round: there is no rule for the accent to bleed off, so it drew a
+brighter quarter of a row with a visible edge where the falloff ran out. The
+scoreboard and the plate keep the skirt, because they still hang off a `vrule`.
+
+**The head did not light.** It is the way back and it takes a press, and
+`M.col_walk` names it, so the arrows could stand on it with nothing on screen
+saying so. It lights now, from either hand, exactly as a row does.
+
+**A switch took neither enter nor space.** Standing on a row that counts is
+deliberately inert -- the row is where a hand stands so the arrows can spend,
+and enter on it would have to guess which arrow was meant. A switch has nothing
+to guess: it holds one of two answers and both arrows already mean "the other
+one". Space presses in a menu now as well as enter; it is the guns key in
+flight and cannot be a second enter there, but nothing in that branch is
+flying.
+
+**A panel was the height of the window.** Decision 103 said the whole screen
+less the padding, which is right for a hull's build and absurd for three
+account acts: a head, three rows and six hundred points of empty glass over a
+fight somebody is watching. A panel is as tall as what it holds now, anchored
+at the foot it slides out of, and over the room it has it takes the room and
+scrolls. Its height eases when it changes, so opening a panel over another
+slides the glass to fit rather than swapping two rectangles -- and it snaps on
+arrival, because a panel rising through the edge is already a movement and a
+height growing out of nothing at the same time is two gestures for one act.
+
+**A pointer lit some rows and not others.** `LAND_HOT` was a list of the
+controls that had been thought about, and two whole panels were missing: an
+account act and a hull's slot lit under the arrows and stayed dark under a
+pointer. One row, one way of being under a hand, whichever hand it is.
+
+**Shrapnel counted the wrong thing.** It is the one add-on whose magnitude is
+another weapon rather than a number: rung one throws four fragments and the
+rungs above climb by two. A pilot spending a credit there is choosing between
+four in the air and six, and the row said "1". `sim_splinter_count` is a new
+read-only accessor on the core, because the ladder is the core's and nothing
+else knows it; the row reads it through a `reads` field, which is the same
+shape the rung rows' `base` already had for the same reason.
+
+Two things followed from decision 104 rather than from Chris. The account
+panels' heads were sentences ending in full stops, which is right for a card
+asking a question and wrong for a head naming the section you are standing in.
+And a claim or a log-in in flight replaced that head with "One moment.", which
+on a card is the whole point and on a panel costs a pilot both the section name
+and the label on the way back, exactly when a press has just failed: the status
+goes on the line under the head now, in the caution color, superseding the
+note.
+
+**Cost:** the row height moved to forty four everywhere, which is what a list
+row was not and what every settings row already was. That is more generous than
+the thirty a monitor used to get, and a games list of eight zones is now taller
+than it was; the panel grows to hold them and scrolls past the room it has.
+
+**Reconsider if:** the height easing reads as slack. It runs on the same curve
+and span the rise does, which is the right default and is one constant away
+from being its own.

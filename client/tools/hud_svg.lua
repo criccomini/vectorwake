@@ -136,6 +136,14 @@ _G.sim = {
         return 1
     end,
     ship_charge = function() return 0 end,
+    -- What a rung of shrapnel breaks into, as the shipped baseline sets it:
+    -- rung one throws four fragments and the rungs above climb by two. The
+    -- ship page reads this rather than the rung, so a stub answering nought
+    -- would draw the page telling a pilot the wrong number. See
+    -- `sim_splinter_count`.
+    splinter_count = function(rung)
+        return ({[0] = 0, 4, 6, 8})[rung or 0] or 0
+    end,
     -- The loadout frame flies what most of the shipped hulls actually hold:
     -- the gun two rungs up wearing a fan and a bounce, the bomb a rung up
     -- wearing a fuse and fragments.
@@ -248,16 +256,22 @@ end
 -- This was a list of hull names, and had been since the stop stopped opening
 -- one, so the picture showed an empty stop and nobody could see that the gun
 -- and bomb Rung rows had gone missing from it.
-local function slot_row(slot, label, note, value, cap, free)
+local function slot_row(slot, label, note, value, cap, free, reads)
     return {kind = "slot", slot = slot, label = label, note = note,
             value = value, cap = cap, toggle = cap == 1,
+            -- What the row reads at, where that is not its own count. The
+            -- menu sets this off the core; here it is passed in, and the one
+            -- row that wants it is shrapnel.
+            reads = reads,
             can_up = value < cap and free >= 1, can_down = value > 0}
 end
 
 local function ship_panel()
-    -- The Apex: one credit of spray, two repels and a burst, which leaves
-    -- three of the seven in hand.
-    local free = 3
+    -- The Apex: one credit of spray, one of shrapnel, two repels and a
+    -- burst, which leaves two of the seven in hand. The shrapnel rung is
+    -- spent on purpose: it is the one row that reads out something other
+    -- than what it cost, and at nought there is nothing to see.
+    local free = 2
     return {
         at = 0, pages = 8, watching = false, class = 0,
         label = "Apex", detail = "dart",
@@ -288,7 +302,8 @@ local function ship_panel()
                      "A fuse, so a near miss counts.", 0, 1, free),
             slot_row(16, "Shrapnel",
                      "Fragments thrown by the blast, each carrying the "
-                     .. "gun's damage.", 0, 3, free),
+                     .. "gun's damage.", 1, 3, free,
+                     _G.sim.splinter_count(1)),
             slot_row(17, "Freeze",
                      "The blast stops whoever it catches recharging.",
                      0, 1, free),
