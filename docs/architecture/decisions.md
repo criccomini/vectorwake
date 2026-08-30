@@ -5347,3 +5347,91 @@ where a row stops being one object, made against the two lists this holds
 today; a panel that grows a third column of figures would want more, and the
 number is one constant in `ui.lua`. Mocked in `.design/dropdown-stack`, where
 the full-width version Chris corrected is still on the canvas.
+
+## 104. One menu language
+
+**Status:** accepted, finishing
+[decision 103](#103-a-stop-opens-a-panel-not-a-list) by giving the container
+it shipped one interior
+
+**Decision:** every menu in the game is a panel, every panel is rows, and a row
+is one shape. The name stands at the left in the menu's own voice; what stands
+at the right end says what the row does, and it is the only thing that varies.
+Six ends: opens, reads, steps, fills, switches, walks. One glass, one head, one
+band, one wash pair, one breathing key. A card is a panel that stacked.
+
+**Why:** Chris looked at the panels decision 103 shipped and said the menus were
+not quite standardized in look and feel. They were not, and it was measurable.
+
+The games and account lists set their names in the HUD's twelve point mono
+capitals, because a list grew out of a strip drawn over a fight. The settings
+page set its in the menu's own face at seventeen, sentence case. A hull's slots
+were a third shape again, with their own row height, their own arrows and their
+own inset. Walking from the games list into settings into a ship changed
+dialect twice. Grounds sat at four opacities, rules at four alphas, and the
+account card was the one menu surface in the game standing on no glass at all.
+
+None of it had been decided. Each was written by whoever wrote the page, and
+every one was defensible where it was written.
+
+So there is one row now, and it draws all of them. `stage_row` was already the
+richest of the three and closest to what the language wanted, so it became
+`menu_row` and grew the four ends it did not have: the caret, the stepper, the
+switch and the walker. The lists hand it their rows, the ship panel hands it
+its slots, the settings page always did.
+
+The voice is the menu's everywhere a panel stands. That was the whole of what
+made the lists shout: a string takes its case from `F.case`, which the HUD sets
+to upper, and a panel drawn over the landing inherited the case of the screen
+it was drawn on rather than the case of the thing it is. The landing sets the
+menu's voice around its panel now, the way `M.menu` always did around its own.
+
+Three measures were unified on the way, and each was a real difference rather
+than a rounding: rows are inset fourteen points on every panel, where the
+settings page used twelve; a row is forty four points tall on every panel,
+where a list row was thirty on a monitor; and the head's mark now starts on the
+same line its rows' names do. Forty four is the touch floor and it is also what
+a row needs before it can carry a sentence of its own, which is why the whole
+interface moves to it rather than to the smaller number.
+
+The ship panel stopped heading itself twice. It had the section's name on one
+line and the roster's pager on another, which is two answers to "where am I";
+the pager is an ordinary row now, the walker, with the arrows at its own edges
+and the name between them.
+
+The account card became a panel. It was a small centered rectangle on a ground
+of its own at 0.98, outlined in a color nothing else here uses, with no way
+back on it and no glass behind it: the odd one out on every count the language
+names. As a panel it takes the head with the way back, the lines to fill in are
+its rows, and the answer that commits is the breathing key at its foot. Cancel
+and back were always the same act and one of them had no button.
+
+That is also the first thing to stack. Pressing an account act used to shut the
+account panel and raise a card over the bare landing; the panel stays open
+underneath now and back steps onto it rather than all the way out, which is
+what decision 103 said the grammar had bought and nothing had yet spent. It
+turned up the one thing a stack needs that a single panel does not: glyphs come
+from the gui and draw over every mesh, so a panel cannot cover the type of the
+panel beneath it. The covered one stands down, which is the rule the nameplates
+and the lockup already follow.
+
+**Cost:** two things the mocked sheet drew are not in the code, deliberately.
+The sheet captioned a reading at twelve points; every settings row already read
+at fourteen, and fourteen is right beside a name at seventeen, so twelve is now
+the band label's rung and nothing else's. And the sheet drew a dense thirty six
+point row beside the forty four; no surface wanted one, and two heights is the
+thing this decision exists to stop, so there is one.
+
+A question with two equal answers is still a card. `M.room_card` asks whether
+to move room, which costs a pilot everything they are carrying, and a confirm
+is not a menu: it has no commit, both answers are real, and it should not be
+the size of the screen. It stays a card and says so in its own head.
+
+**Reconsider if:** a row wants a seventh end. Six is not a law, but the reason
+this decision exists is that three surfaces each grew their own vocabulary
+quietly, and a seventh end should be added to `menu_row` where every panel can
+reach it rather than drawn once inside whichever page wanted it.
+`client/tests/menu_language_test.lua` is where the cross-surface rules live:
+it drives two or more real panels per check and asks whether what came back is
+the same, because a test that drove one of them would pass forever while the
+language came apart. Drawn in `.design/menu-language`.

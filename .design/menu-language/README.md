@@ -1,16 +1,17 @@
 # The menu language
 
-A proposal: one design language for every menu and submenu, drawn after
-Chris said the menus were not quite standardized in look and feel.
+Shipped as [decision 104](../../docs/architecture/decisions.md). One design
+language for every menu and submenu, drawn after Chris said the menus were not
+quite standardized in look and feel, and then built.
 
 Decision 103 gave every menu one container -- a stop slides a frosted
-panel up through the bottom edge -- and the interiors still speak three
+panel up through the bottom edge -- and the interiors still spoke three
 dialects. The zone and account panels set their rows in the HUD's
-12-point mono capitals; the settings panel speaks the menu face at 17,
-sentence case; the ship panel is a third anatomy again, two heads
-stacked and its own row height. Grounds sit at four opacities, rules at
-four alphas, the two scroll thumbs disagree, and the log-in card stands
-on no ground at all.
+12-point mono capitals; the settings panel spoke the menu face at 17,
+sentence case; the ship panel was a third anatomy again, two heads
+stacked and its own row height. Grounds sat at four opacities, rules at
+four alphas, rows were inset by two different measures and stood at two
+different heights, and the log-in card stood on no ground at all.
 
 The language says each of those once:
 
@@ -44,9 +45,16 @@ helper:
 Main is the language sheet: voice, glass, the row and its six ends and
 its states, head and band, key, and the one motion. The four shipped
 surfaces are restated in the language beside it, plus the settings
-panel on a phone. AltVoice is the one deliberate alternative: the zone
-panel keeping today's HUD voice, so the single open choice -- which
-register a list speaks -- is judged by looking rather than by argument.
+panel on a phone. AltVoice was the one deliberate alternative -- the
+zone panel keeping the HUD's voice -- and it is the road not taken:
+Chris picked the menu's voice, and every row in the game speaks it now.
+
+Two things on these boards are not in the code, and the difference is
+deliberate. The sheet captions a reading at 12 points; every settings
+row already read at 14, which is the right size beside a name at 17, so
+14 is what shipped and 12 is the band label's rung and nothing else's.
+And the sheet draws a dense 36-point row beside the 44: no surface
+wanted one, and two heights is the thing the decision exists to stop.
 
 Every number is lifted from the client rather than invented:
 `client/arena/palette.lua` for hues, `ui.lua` for the type ladder

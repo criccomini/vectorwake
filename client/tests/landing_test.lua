@@ -521,7 +521,11 @@ do
     check("and says its name", word("Chaos") ~= nil)
     -- The format is the interface describing the game rather than naming it,
     -- so it is set the way the rest of the HUD is set.
-    check("and its format beside it", word("1V1") ~= nil)
+    -- In the menu's voice rather than the HUD's. A panel is read rather than
+    -- glanced at, so its rows speak the way every other row in the game does:
+    -- the catalog's own words, not shouted back at the reader.
+    check("and its format beside it", word("1v1") ~= nil,
+          "the format is not in the menu's voice")
     -- The head says which stop you are in, in the same register the stop said
     -- it in, and takes the press that steps back out of it.
     check("the panel names the stop it came from", word("ZONE") ~= nil)
@@ -653,8 +657,11 @@ do
     -- rather than published, because it is not a thing to press.
     check("the account list publishes a press for each act", #rows == 3,
           #rows .. " rows")
-    check("and names them", word("SIGN UP") ~= nil and word("NEW NAME") ~= nil
-          and word("LOG IN") ~= nil)
+    -- In the menu's voice, which is where these lists went wrong: they
+    -- inherited the case of the screen they were drawn over rather than the
+    -- case of the thing they are.
+    check("and names them", word("Sign up") ~= nil and word("New name") ~= nil
+          and word("Log in") ~= nil, "an act is not in the menu's voice")
     -- The acts travel by their place in the list rather than by name: they
     -- are the interface's own words, and what goes back is a row of the list
     -- this frame drew.
@@ -662,7 +669,7 @@ do
           rows[1].value == 1 and rows[3].value == 4,
           tostring(rows[1].value) .. ".." .. tostring(rows[3].value))
     check("and what signing up buys is beside it",
-          word("KEEP YOUR POINTS") ~= nil)
+          word("Keep your points") ~= nil)
     local first = rows[1]
     if first then
         check("a press on the row is the pick",
@@ -919,6 +926,17 @@ do
         return false
     end
     local CURSOR = pal.a(pal.FRIEND, ui.LIT.CURSOR)
+    -- The same weight in the shape a row wears it in.
+    --
+    -- A stop and the key are objects standing on their own, outlined all the
+    -- way round, and they take the field flat. A row inside a panel takes the
+    -- menu's wash: most of the weight laid flat and the rest put in a skirt
+    -- against the panel's left rule, which is what a selection looks like
+    -- everywhere a row is drawn. One weight, two shapes, because they are two
+    -- kinds of thing; `wash` is where the 0.8 comes from.
+    local function washed(b, weight)
+        return lit(b, pal.a(pal.FRIEND, weight * 0.8))
+    end
 
     frame(1440, 810)
     check("nothing is lit with the pointer off the stops",
@@ -949,9 +967,9 @@ do
         if r.action == "land_pick_zone" then rows[r.value] = r end
     end
     check("a row of an open list lights under the pointer",
-          lit(rows.chaos, CURSOR), "the second game did not light")
+          washed(rows.chaos, ui.LIT.CURSOR), "the second game did not light")
     check("and the row above it does not",
-          not lit(rows.melee, CURSOR))
+          not washed(rows.melee, ui.LIT.CURSOR))
 
     -- --- and the arrows put it in the same place --------------------------
     --

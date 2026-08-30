@@ -526,10 +526,20 @@ do
     if #lit == 2 then
         local hi = math.max(lit[1].col[4], lit[2].col[4])
         local lo = math.min(lit[1].col[4], lit[2].col[4])
+        -- Asked as a ratio, exactly as the pages above are asked, and for the
+        -- same reason: `wash` lays most of the field flat and puts the rest in
+        -- the skirt, so what reaches the layer is a fraction of the published
+        -- weight rather than the weight.
+        --
+        -- This used to compare against CURSOR and HERE themselves, and passed
+        -- because a list lit its rows with a flat rect at the full weight
+        -- while every page washed them. Two shapes for one idea is the thing
+        -- the file's own opening paragraph is about, and the list draws the
+        -- page's shape now, so the page's question is the one to ask.
         check("at the same two weights the pages use",
-              math.abs(hi - CURSOR) < 0.001 and math.abs(lo - HERE) < 0.001,
-              string.format("%.3f / %.3f against %.3f / %.3f", hi, lo,
-                            CURSOR, HERE))
+              math.abs(hi / lo - RATIO) < 0.01,
+              string.format("%.3f / %.3f is %.2f, against %.2f", hi, lo,
+                            hi / lo, RATIO))
     end
 end
 

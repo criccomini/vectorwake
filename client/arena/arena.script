@@ -3112,6 +3112,19 @@ function land_act(self, action, value)
             if act then apply_menu(self, act) end
             sfx.ui("ui_go")
         end
+        -- An act that raised a panel of its own leaves the one it was pressed
+        -- on standing under it. That is the whole of what stacking is: back
+        -- steps out of the log-in panel onto the account acts rather than all
+        -- the way to the landing, and the column does not slide home behind a
+        -- panel that covers it.
+        --
+        -- Asked after the act rather than before, because whether an act opens
+        -- anything is the menu's answer to give: `reroll` rolls a name and
+        -- returns, `claim` and `enter_login` raise a card.
+        if menu.ask then
+            ui.col_open = "account"
+            ui.col_sel, ui.col_sel_value = nil, nil
+        end
         return true
     end
     return false

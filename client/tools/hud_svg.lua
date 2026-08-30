@@ -5,7 +5,8 @@
 -- Scenarios: after (a match part way through), before (with the banner the
 -- server used to send), ending (a room at the whistle), landing (the front
 -- end, watched from the stands; landing-zones, landing-ships and
--- landing-account open a stop's list), waiting (what the loader hands off to
+-- landing-account open a stop's list, landing-login the panel an
+-- account act opens over one), waiting (what the loader hands off to
 -- before a room answers), loadout (a loaded hull with charges in hand, for
 -- the corner stack).
 -- Rasterize with any browser:
@@ -226,6 +227,7 @@ end
 -- lists down.
 local landing = scenario == "landing" or scenario == "landing-zones"
     or scenario == "landing-ships" or scenario == "landing-account"
+    or scenario == "landing-login"
 if landing then
     room.count = 8
     room.teams = {[0] = 0, 0, 0, 0, 1, 1, 1, 1}
@@ -333,7 +335,10 @@ local land = landing and {
 -- the wrong picture without saying so is worse than one that fails.
 ui.col_open = (scenario == "landing-zones" and "zone")
     or (scenario == "landing-ships" and "ship")
-    or (scenario == "landing-account" and "account") or nil
+    -- The log-in panel stands over the account panel it was raised from,
+    -- which is what makes it a picture of the stack rather than of a card.
+    or ((scenario == "landing-account" or scenario == "landing-login")
+        and "account") or nil
 
 ui.details = true
 state.n = 0
@@ -357,6 +362,10 @@ ui.hud({
     watch = landing and {subject = 0} or nil,
     landing = landing or nil,
     land = land,
+    -- Something is being read over the fight, so the instruments
+    -- behind it stand down: glyphs draw over every mesh, so a label
+    -- is quieted where it is written or not at all.
+    card = (scenario == "landing-login") or nil,
     side = 0,
     viewer_name = scenario == "ending" and "DRiFT" or "Kestrel 8",
     class_names = {"Apex", "Wedge", "Chord", "Anvil", "Facet", "Cipher", "Lattice"},
@@ -401,6 +410,20 @@ ui.hud({
     room = 1,
     fps = 60, frame_ms = 16.7, rx_rate = 31000, tx_rate = 700,
 })
+end
+-- What an account act opens: the log-in panel, over the account panel it was
+-- pressed from. Drawn after everything else, which is where the arena's own
+-- frame loop draws it, and it clears every box published before it.
+if scenario == "landing-login" then
+    ui.land_card({
+        head = "Log in.",
+        keys = {{label = "log in", act = "do_login"}, {label = "cancel"}},
+        sel = 1, field = 1,
+        fields = {{label = "call sign", value = "Vesper 412",
+                   kind = "username", max = 24},
+                  {label = "password", value = "hunter2", mask = true,
+                   kind = "current-password", max = 64}},
+    })
 end
 ui.finish()
 

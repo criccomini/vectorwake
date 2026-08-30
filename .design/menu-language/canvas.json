@@ -1,29 +1,86 @@
 {
   "artboards": [
-    { "file": "Main.dc.html", "title": "The language", "x": 0, "y": 0, "w": 1180, "h": 2040 },
-    { "file": "Zone.dc.html", "title": "Zone, restated", "x": 1300, "y": 0, "w": 1440, "h": 810 },
-    { "file": "Settings.dc.html", "title": "Settings, restated", "x": 2860, "y": 0, "w": 1440, "h": 810 },
-    { "file": "Ship.dc.html", "title": "Ship, restated", "x": 1300, "y": 950, "w": 1440, "h": 810 },
-    { "file": "LogIn.dc.html", "title": "The card, become a panel", "x": 2860, "y": 950, "w": 1440, "h": 810 },
-    { "file": "Phone.dc.html", "title": "Settings · phone", "x": 1300, "y": 1900, "w": 390, "h": 844 },
-    { "file": "AltVoice.dc.html", "title": "Alternative · the HUD voice", "x": 1810, "y": 1900, "w": 1440, "h": 810 }
+    {
+      "file": "Main.dc.html",
+      "title": "The language",
+      "x": 0,
+      "y": 0,
+      "w": 1180,
+      "h": 2040
+    },
+    {
+      "file": "Zone.dc.html",
+      "title": "Zone, restated",
+      "x": 1300,
+      "y": 0,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Settings.dc.html",
+      "title": "Settings, restated",
+      "x": 2860,
+      "y": 0,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Ship.dc.html",
+      "title": "Ship, restated",
+      "x": 1300,
+      "y": 950,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "LogIn.dc.html",
+      "title": "The card, become a panel",
+      "x": 2860,
+      "y": 950,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Phone.dc.html",
+      "title": "Settings \u00b7 phone",
+      "x": 1300,
+      "y": 1900,
+      "w": 390,
+      "h": 844
+    },
+    {
+      "file": "AltVoice.dc.html",
+      "title": "Alternative \u00b7 the HUD voice",
+      "x": 1810,
+      "y": 1900,
+      "w": 1440,
+      "h": 810
+    }
   ],
   "annotations": [
     {
       "id": "note-audit",
-      "x": -450, "y": 0, "w": 390,
-      "text": "What disagrees today.\n\nDecision 103 gave every menu one container and the interiors still speak three dialects. The zone and account panels set rows in the HUD's 12-point mono capitals; settings speaks the menu face at 17, sentence case; the ship panel is a third anatomy with two heads stacked and its own row height.\n\nGrounds sit at four opacities (stops .6, panels .72, the old lists .96, the card on none), rules at four alphas, the two scroll thumbs disagree, and the log-in card is the one surface with no glass behind it at all.\n\nNone of it was decided; each was written by whoever wrote the page."
+      "x": -450,
+      "y": 0,
+      "w": 390,
+      "text": "What disagreed, before decision 104.\n\nThe zone and account panels set rows in the HUD's 12-point mono capitals; settings spoke the menu face at 17, sentence case; the ship panel was a third anatomy with two heads stacked and its own row height.\n\nGrounds sat at four opacities, rules at four alphas, rows were inset by two different measures and stood at two different heights, and the log-in card was the one surface with no glass behind it at all.\n\nNone of it was decided; each was written by whoever wrote the page. All of it is one thing now."
     },
     {
       "id": "note-language",
-      "x": -450, "y": 640, "w": 390,
-      "text": "The language, in one breath.\n\nEverything is a panel; a panel is rows; a row is one shape. One glass, one edge, one head, one band, one wash pair, one breathing key.\n\nThe menu speaks in the menu face at 17, sentence case; it reads in the mono at 12; it quotes names raw. Capitals belong to the HUD and the small labels.\n\nA row's right end is what the row does: opens, reads, steps, fills, switches, or walks. Six ends spell every menu in the game.\n\nEvery number is the shipped one: the type ladder 12-14-17-21, the washes .18 and .07, the 44-point touch floor, the 560 cap, the 14-point margin."
+      "x": -450,
+      "y": 640,
+      "w": 390,
+      "text": "The language, in one breath.\n\nEverything is a panel; a panel is rows; a row is one shape. One glass, one edge, one head, one band, one wash pair, one breathing key.\n\nThe menu speaks in the menu face at 17, sentence case; it reads in the mono at 14; it quotes names raw. Capitals belong to the HUD and to the small labels, which are the mono at 12.\n\nA row's right end is what the row does: opens, reads, steps, fills, switches, or walks. Six ends spell every menu in the game.\n\nEvery number is the shipped one: the type ladder 12-14-17-21, the washes .18 and .07, the 44-point touch floor, the 560 cap, the 14-point margin."
     },
     {
-      "id": "note-choice",
-      "x": -450, "y": 1300, "w": 390,
-      "text": "The one open choice: the voice of a list.\n\nThe games and account lists inherited the HUD's register; settings has always spoken the menu's. This proposal gives every row the menu's voice, because a full-screen panel is read rather than glanced at, and 12-point capitals across 560 points is an instrument label stretched into a sentence.\n\nThe alternative board keeps today's HUD voice on the zone panel so the two can be judged side by side rather than by argument.\n\nWhat adopting costs in code: the landing's lists take stage_row's vocabulary, the ship pager becomes the walker row under one head, and the log-in card becomes a stacked panel with the breathing key at its foot."
+      "id": "note-shipped",
+      "x": -450,
+      "y": 1300,
+      "w": 390,
+      "text": "What shipped, and what did not.\n\nChris picked the menu's voice, so every row in the game speaks it: the AltVoice board is the road not taken, kept as the record of the choice.\n\nTwo captions on these boards are deliberately not in the code. A reading is 14 points, not 12: every settings row already read at 14 and it is the right size beside a name at 17, so 12 is the band label's rung and nothing else's. And there is no dense 36-point row: no surface wanted one, and two heights is the thing the decision exists to stop.\n\nA confirm is still a card. The room-change question has two equal answers and no commit, and a question that costs a pilot their hold should not be the size of the screen."
     }
   ],
-  "launch": { "view": "canvas" }
+  "launch": {
+    "view": "canvas"
+  }
 }
