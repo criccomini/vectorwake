@@ -1,0 +1,109 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "The ship menu",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Stack.dc.html",
+      "title": "A section, coming up",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Body.dc.html",
+      "title": "Body",
+      "x": 0,
+      "y": 950,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Guns.dc.html",
+      "title": "Guns",
+      "x": 1560,
+      "y": 950,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Bombs.dc.html",
+      "title": "Bombs",
+      "x": 3120,
+      "y": 950,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Specials.dc.html",
+      "title": "Specials",
+      "x": 0,
+      "y": 1900,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Flair.dc.html",
+      "title": "Flair",
+      "x": 1560,
+      "y": 1900,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "AltReading.dc.html",
+      "title": "Alternative · sections read their contents",
+      "x": 3120,
+      "y": 1900,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Phone.dc.html",
+      "title": "The menu · phone",
+      "x": 0,
+      "y": 2850,
+      "w": 390,
+      "h": 844
+    }
+  ],
+  "annotations": [
+    {
+      "id": "note-today",
+      "x": -520,
+      "y": 0,
+      "w": 420,
+      "text": "What is there today.\n\nOne panel with everything on it. The hull is walked on the top row, five flight bars read under it, the credit tray sits under those, and then every slot the hull can spend on runs down the rest of the glass under three band labels: gun, bomb, rack.\n\nOn an Apex that is fourteen rows. It scrolls on a laptop and scrolls twice on a phone, and the first thing off the top is the tray: a pilot stepping a slot near the foot is spending a purse they cannot see.\n\nFive rows and a reset fit any window without scrolling, and the tray stops being the third strip of the content and becomes part of the panel."
+    },
+    {
+      "id": "note-rules",
+      "x": -520,
+      "y": 700,
+      "w": 420,
+      "text": "The three rules these boards follow.\n\nThe tray is chrome. It is drawn by the panel, under the back bar, above everything the page is about, and it is identical on the menu and on all five sections. Nothing else moves it: the rows change, the diamonds do not.\n\nA section reads what it holds, in credits, in the color a credit is spent in. Six credits are spread over guns, bombs and specials, and those three counts are the six the tray has hollowed out. Body and flair cost nothing, so they read what they are instead: a hull's name, and a wake.\n\nNothing new in the language. A section row opens, which is the caret every stop already wears, and the rows inside are decision 104's six ends unchanged: the walker in body, steppers and switches in guns and bombs and specials, the range cells in flair."
+    },
+    {
+      "id": "note-sections",
+      "x": -520,
+      "y": 1560,
+      "w": 420,
+      "text": "Where the five came from.\n\nFour are the sections menu.tune_rows already builds, under Chris's words: flight becomes body, gun becomes guns, bomb becomes bombs, rack becomes specials. Which rows appear inside each is still the core's answer, not a list written in the client, so a zone that gives a hull no bomb rack opens a bombs section with nothing in it rather than one nobody remembered to hide.\n\nBody is the one section that is a choice rather than a set of slots, so it keeps the walker, the flight bars and the press that flies the hull. Nothing in it costs a credit on the shipped roster: every hull's flight step is zero, which is why the shipped panel has no flight rows either.\n\nFlair is the pair the settings page is holding for the ship, the wake and which key throws which charge. They went there because a panel a player opens to spend credits was the wrong home for two things that cost nothing. A section that costs nothing sits fine beside four that do, so they come back here and settings loses them: one control, one home."
+    },
+    {
+      "id": "note-open",
+      "x": -520,
+      "y": 2560,
+      "w": 420,
+      "text": "One open choice, and two small ones.\n\nOpen: what a section reads. The count is the same currency the tray is denominated in, so the two read as one instrument and a pilot hunting a credit to free knows which row to open. The contents say something the tray cannot, and cost that: with six credits over three sections, nothing on the page says where the sixth went. Both are drawn, at the top left and far right of the middle row.\n\nSmall: reset stays on the menu, because what it puts back is all five sections at once. A reset inside each section is the other reading and is not drawn here.\n\nSmall: the tray is drawn the same on body and flair, where nothing is spendable. It is a label and seven chips, never a control, so it reads as the fact it is."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}
