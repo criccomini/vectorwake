@@ -358,31 +358,66 @@ credits went. A build that beats its own hull's row well past even is one the
 roster would converge on, and since a step cannot be made expensive the answer
 is a lower ceiling or a weaker step. `sim_slot_cap` is where a ceiling lives.
 
-Where the ceilings above left it, at twenty bouts a build on the pit. The
-median column is the one to read: it is what an ordinary re-spend does against
-the hull's own row, so a hull near even is a hull whose credits are already
-well spent.
+Where the ceilings above left it, at forty bouts a build on the pit, with the
+weapon rungs in. The median column is the one to read: it is what an ordinary
+re-spend does against the hull's own row, so a hull near even is a hull whose
+credits are already well spent.
 
 | hull | ships | builds past 65% | median |
 |---|---:|---:|---:|
-| Anvil | 3/7 | 6 of 28 | 45% |
-| Cipher | 3/7 | 2 of 27 | 40% |
-| Apex | 4/7 | 10 of 28 | 55% |
-| Wedge | 5/7 | 5 of 27 | 48% |
-| Chord | 6/7 | 1 of 26 | 5% |
-| Facet | 7/7 | 12 of 26 | 55% |
-| Lattice | 7/7 | 4 of 24 | 43% |
+| Anvil | 3/7 | 6 of 32 | 49% |
+| Cipher | 3/7 | 2 of 29 | 38% |
+| Apex | 4/7 | 8 of 32 | 52% |
+| Wedge | 5/7 | 8 of 31 | 48% |
+| Chord | 6/7 | 3 of 30 | 21% |
+| Facet | 7/7 | 13 of 30 | 52% |
+| Lattice | 7/7 | 4 of 28 | 44% |
 
 The hulls that ship with credits in hand are meant to sit high here: an Anvil
-holds four and spending them is supposed to be worth something. The Chord at
-5% is the other end, and it is the roster working: a hull spent to six credits
-on the things it wants has little left to gain by moving them.
+holds four and spending them is supposed to be worth something. The Chord is
+the other end, and it is the roster working: a hull spent to six credits on
+the things it wants has little left to gain by moving them.
 
-Run it on both rooms. The pit is one box a pilot can see across, which
-flatters everything that wants to be close and charges nothing for being slow;
-the arena has cover and somewhere to run to. A hull whose weakness is written
-down as "slow" or "must choose its fights" only pays for it on the second, and
-a number from one room alone is a fact about that room.
+Two rungs a weapon added 26 shapes to that space and did not make it more
+runaway-prone: 44 of 212 past 65% against 40 of 186 before them, which is the
+same fifth of the space either way.
+
+What the sweep says a slot is worth, as the mean over the seven hulls of
+dumping every credit into it alone. The rows that ship are the yardstick a new
+one is read against:
+
+| slot | mean | dearest hull |
+|---|---:|---:|
+| gun bounce | 57.9 | 92.5 |
+| burst | 54.1 | 87.5 |
+| gun freeze | 53.9 | 87.5 |
+| gun rung | 46.2 | 95.0 |
+| gun spray | 32.5 | 85.0 |
+| bomb rung | 30.4 | 47.5 |
+| bomb bounce | 26.2 | 65.0 |
+| bomb shrapnel | 25.7 | 52.5 |
+| bomb freeze | 23.4 | 45.0 |
+| bomb proximity | 20.9 | 41.2 |
+
+So a gun rung is the fourth-strongest gun slot, under three that already
+ship, and a bomb rung is the strongest of the bomb slots without leaving
+their band. Its one tall reading, the Wedge at 95, is not separable from the
+Apex's 92.5 on gun bounce: at forty bouts those are 95.0 plus or minus 6.8
+and 92.5 plus or minus 8.2. The Wedge's own row also loses to gun bounce at
+86 and gun freeze at 88, so what that column is measuring there is a hull
+whose seven credits are badly spent rather than a slot that is too strong.
+
+Run the hull tournament on both rooms. The pit is one box a pilot can see
+across, which flatters everything that wants to be close and charges nothing
+for being slow; the arena has cover and somewhere to run to. A hull whose
+weakness is written down as "slow" or "must choose its fights" only pays for
+it on the second, and a number from one room alone is a fact about that room.
+
+`calibrate builds` is the exception, and it is a pit question only. It is a
+mirror, so the arena's cover gives two identical hulls at one skill somewhere
+to not die: 4223 of 4240 bouts drew there, every rate collapsed onto the half
+point a draw scores, and the run still printed that nothing ran away with it.
+Read the draw count before believing a flat table.
 
 Where the shipped roster stands, mean of the two rooms at 24 bouts a pair:
 

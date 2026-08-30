@@ -5163,6 +5163,15 @@ set up. The ceiling on a level is not a number anybody writes: it is the
 length of the hull's ladder, so shortening a ladder is how a rung gets cheaper
 to hold and there is nothing to keep in step with it.
 
+The sweep was run at forty bouts a build on the pit and neither rung needed
+one. A gun rung is the fourth-strongest gun slot, under gun bounce, the burst
+and gun freeze, all three of which already ship; a bomb rung is the strongest
+of the bomb slots and still inside their band. The two of them added 26 shapes
+to the space and left the share of it that runs away where it was, at a fifth.
+The numbers are tabled in [ships.md](../design/ships.md), along with the one
+tall reading, and with the reason a build sweep is a pit question: the arena
+is a room where a mirror match does not finish.
+
 The other cost is the tables. Three rungs on seven hulls is 42 of the core's
 64 weapon specs and 44 of its 64 patterns, where one rung each was 16 and 18.
 A zone adding weapons of its own has half the room it had.
