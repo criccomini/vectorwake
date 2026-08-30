@@ -4925,8 +4925,16 @@ function M.hud(o)
     -- An open board is the same case: it is the thing being read, so the fight
     -- and every instrument around it recede while it is up. See the wash under
     -- the board below, which is the mesh half of the same move.
+    -- `o.card` is the menu's own question, which is raised from the landing's
+    -- account stop and drawn by `M.land_card` after this returns. The room's
+    -- question beside it has always been read off `M.room_ask`, and this one
+    -- was not read at all: a sign-up card washed the meshes behind it and left
+    -- every instrument's label at full brightness, which is the exact fault
+    -- the paragraph above is about. It went unnoticed while the only card the
+    -- interface raised stood inside a drawer that was always up.
     local reading = M.details and not o.menu_open and not ending
-    F.text_dim = (ending or o.menu_open or M.room_ask or reading) and 0.34 or 1
+    F.text_dim = (ending or o.menu_open or o.card or M.room_ask or reading)
+        and 0.34 or 1
 
     -- On a touchscreen the bottom of the screen belongs to the thumbs. The
     -- stick sits in the bottom left corner and the pads in the bottom right,

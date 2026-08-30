@@ -2222,6 +2222,9 @@ function update(self, dt)
             -- came back the frame the menu was dismissed would appear under
             -- the one still sliding out of the same place.
             menu_open = menu.open or ui.column_up(),
+            -- And whether a question is standing over all of it, which is the
+            -- one thing on screen that takes the keys off everything else.
+            card = menu.ask ~= nil,
             -- The server's roster, because those are other people's names and
             -- only it knows them.
             pilots = net.pilots,
