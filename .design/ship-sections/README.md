@@ -54,8 +54,12 @@ column, in the face the numbers in flight are set in: that is what "4v4 3:00"
 wears on the zone stop, and it is what "2 rounds, bouncing" wears here. It is
 quieter than the name it answers and can never be mistaken for a control.
 
-**The stats belong to body.** The section turns one ship at a time with its
-five rows read out one to a line underneath it. They stood on the menu too for
+**The stats belong to body, and so does the sentence.** The section turns one
+ship at a time with its five rows read out one to a line underneath it, and
+the hull's own line over them says where it stands in those same five, so the
+eye can check it against the bars (decision 119). It named the weapons for a
+day, which stopped describing the hull on the day the build became the
+pilot's. They stood on the menu too for
 four decisions, under the row that names the hull; the row already answers
 with the hull's name, and a page of five plain rows does not want an
 instrument wedged under the first (decision 116). The bars take a floor, so
@@ -141,10 +145,12 @@ their own boards, Phone is the menu at 390, and AltReading is the reading that
 was not taken.
 
 One pilot flies every one of them, on the build everybody starts in: the
-second rung of both weapons, a gun that comes off walls, a fuse on the bomb
-and one of each charge. Six credits of the seven, one in hand. Since decision
-117 the build is the pilot's rather than the hull's, so that is the same menu
-on every body, and a hull that cannot reach a slot is charged nothing for it.
+second rung of both weapons, a gun that comes off walls, a fuse on the bomb,
+four fragments off the blast, and one of each charge. All seven credits and
+nothing in hand, which is why every up arrow on these boards is drawn dead
+(decision 120). Since decision 117 the build is the pilot's rather than the
+hull's, so that is the same menu on every body, and a hull that cannot reach a
+slot is charged nothing for it.
 
 Every number is lifted from the client rather than invented:
 `client/arena/palette.lua` for hues, `ui.lua` for the type ladder

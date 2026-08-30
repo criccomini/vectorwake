@@ -1432,6 +1432,11 @@ do
         -- Flight steps nothing, as the shipped roster does not, so no stat row
         -- is offered; the mods and the rack are what a pilot can reach.
         class_up_step = function() return {0, 0, 0, 0, 0} end,
+        -- The shipped ladder: a rung of shrapnel is four fragments and the
+        -- rungs above it climb by two. Stubbed because the reading is the
+        -- one number on the panel that is not its own count, so a stub that
+        -- left it out would test the fallback rather than the ship.
+        splinter_count = function(n) return ({[0] = 0, 4, 6, 8})[n] or 0 end,
         slot_cap = function(cls, slot)
             local _ = cls
             if slot < 5 then return 8 end          -- a stat
@@ -1464,11 +1469,11 @@ do
     -- rows; they belong to the section that is about the hull.
     check("and nothing on it but rows", kinds.bars == nil
           and #panel.rows == 7, tostring(#panel.rows))
-    -- Six of the seven are spent before a pilot touches anything: the ship
-    -- everybody starts in is the second rung of both weapons, a bouncing
-    -- gun, a fused bomb and one of each charge.
+    -- All seven are spent before a pilot touches anything: the ship everybody
+    -- starts in is the second rung of both weapons, a bouncing gun, a fused
+    -- bomb throwing four fragments and one of each charge.
     check("and the credits it has left to spend",
-          panel.credits == 7 and panel.free == 1,
+          panel.credits == 7 and panel.free == 0,
           tostring(panel.free) .. " of " .. tostring(panel.credits))
     check("with a way back to the hull's own build under them",
           kinds.reset == 1)
@@ -1494,31 +1499,38 @@ do
           #stats == 5 and stats[1] == "speed" and stats[5] == "recharge"
           and type(body[2].share) == "number",
           table.concat(stats, " "))
-    -- Every hull says what flying it is like, which is what that sentence is
-    -- for now. It described the silhouette while every hull flew the same
-    -- row; they have their own engines back, and a page that draws the shape
-    -- above the sentence does not need the sentence to describe it.
+    -- Every hull says where it stands in the five rows drawn under it, which
+    -- is what that sentence is for now. It was the silhouette while every
+    -- hull flew the same row, and then the weapons for a day, and both of
+    -- those stopped being the hull's.
     local said = {}
     for at = 0, 6 do
         local art = menu.sect_rows(0, "body", at)[1]
         said[#said + 1] = art.note or ""
     end
-    check("every hull says what flying it is like", #said == 7
+    check("every hull says where it stands in its flight", #said == 7
           and said[5]:find("fastest") ~= nil and said[4]:find("slowest") ~= nil
-          and said[7]:find("round") ~= nil, said[5])
-    -- And only about what the hull owns. What a ship carries is the pilot's,
-    -- so a line naming an add-on is a line about somebody's build.
+          and said[7]:find("speed") ~= nil, said[5])
+    -- And about nothing but those five. A gun that comes off walls and a
+    -- blast that throws fragments are the pilot's since decision 117, so a
+    -- line naming one describes somebody's build; the two ladders are the
+    -- hull's and are still not here, because they are nowhere on the page the
+    -- sentence sits on. Matched on whole words, so a hull that outruns
+    -- everything around it is not read as a hull with rounds.
     local carried = nil
     for _, line in ipairs(said) do
-        for _, word in ipairs({"fragments", "repel", "burst", "rack",
-                               "bouncing", "fused", "rounds off"}) do
-            if line:lower():find(word) then carried = line end
+        for _, word in ipairs({"gun", "guns", "bomb", "bombs", "blast",
+                               "round", "rounds", "shot", "shots", "fragment",
+                               "fragments", "repel", "burst", "rack",
+                               "bouncing", "fused"}) do
+            if line:lower():find("%f[%a]" .. word .. "%f[%A]") then
+                carried = line
+            end
         end
     end
-    check("and only about what the hull owns", carried == nil,
+    check("and about nothing it does not fly with", carried == nil,
           tostring(carried))
-    -- And none of them is about the shape any more, which is the drawing's
-    -- job on that page.
+    -- Nor about the shape, which is the drawing's job on that page.
     local shaped = nil
     for _, line in ipairs(said) do
         for _, word in ipairs({"narrow", "delta", "pentagon", "square",
@@ -1528,6 +1540,22 @@ do
     end
     check("and none of them describes its shape", shaped == nil,
           tostring(shaped))
+    -- Every line is a claim about the `flight` table, and a claim naming a
+    -- row has to name one that is drawn. The five under the drawing are
+    -- speed, thrust, turn, energy and recharge; "pool" is what this interface
+    -- calls the energy row out loud, so it counts.
+    local blank = nil
+    for _, line in ipairs(said) do
+        local names = 0
+        for _, word in ipairs({"speed", "fast", "slow", "thrust", "moves",
+                               "turn", "pool", "fill", "shallow", "deep",
+                               "thin"}) do
+            if line:lower():find(word) then names = names + 1 end
+        end
+        if names < 2 then blank = line end
+    end
+    check("and every one of them names two rows it can be checked against",
+          blank == nil, tostring(blank))
 
     -- Turning wraps at either end, and sitting out is the page past the
     -- roster: no ship to draw, and a sentence where one would have been.
@@ -1569,10 +1597,20 @@ do
           levels.gun and levels.gun.label == "Level"
           and levels.bomb and levels.bomb.label == "Level",
           tostring(levels.gun and levels.gun.label))
-    check("and it is a stepper a pilot with credits can move",
-          levels.gun and levels.gun.cap == 2 and levels.gun.toggle ~= true
-          and levels.gun.can_up == true,
+    check("and it is a stepper rather than a switch",
+          levels.gun and levels.gun.cap == 2 and levels.gun.toggle ~= true,
           tostring(levels.gun and levels.gun.cap))
+    -- Its arrow is drawn off the purse, and the default leaves nothing in it,
+    -- so the arrow is dead until a pilot hands something back. Asked of the
+    -- rows twice, before and after, because the drawing takes `can_up` at its
+    -- word and dims what it says cannot happen.
+    check("and its arrow is dead while the purse is empty",
+          levels.gun and levels.gun.can_up == false,
+          tostring(levels.gun and levels.gun.can_up))
+    menu.build_step(0, 16, -1)
+    local freed = menu.sect_rows(0, "guns")[1]
+    check("and live once a credit is free",
+          freed and freed.can_up == true, tostring(freed and freed.can_up))
     check("levelling a weapon spends a credit like anything else",
           menu.build_step(0, 5, 1) == true and menu.build_of(0)[5] == 2
           and menu.build_free(0) == 0)
@@ -1614,18 +1652,26 @@ do
 
     -- Spending. The first step copies the default into a build of the
     -- pilot's own, so moving one slot keeps everything else the ship came
-    -- with.
+    -- with. What is different about a default that spends the whole purse is
+    -- which step comes first: there is nothing to add until something is
+    -- handed back, so a pilot trades rather than shops.
     check("a pilot who has spent nothing is on the ship everybody starts in",
           menu.build_edited() == false)
-    check("which is both weapons a rung up, bouncing and fused, with one of "
-          .. "each charge",
+    check("which is both weapons a rung up, bouncing, fused and throwing "
+          .. "fragments, with one of each charge",
           menu.build_of(0)[5] == 1 and menu.build_of(0)[6] == 1
           and menu.build_of(0)[8] == 1 and menu.build_of(0)[15] == 1
+          and menu.build_of(0)[16] == 1
           and menu.build_of(0)[19] == 1 and menu.build_of(0)[20] == 1
-          and menu.build_cost(0) == 6)
-    check("a credit can be spent", menu.build_step(0, 7, 1) == true)
+          and menu.build_cost(0) == 7)
+    check("and it spends the whole purse", menu.build_free(0) == 0)
+    check("so nothing goes up until something comes down",
+          menu.build_step(0, 7, 1) == false)
+    check("a credit can be handed back", menu.build_step(0, 16, -1) == true)
     check("and the build says so", menu.build_edited() == true
-          and menu.build_of(0)[7] == 1)
+          and menu.build_of(0)[16] == 0 and menu.build_free(0) == 1)
+    check("and then spent on something else",
+          menu.build_step(0, 7, 1) == true and menu.build_of(0)[7] == 1)
     check("what it did not touch it kept", menu.build_of(0)[19] == 1)
     check("and the purse says what is left", menu.build_free(0) == 0)
 
@@ -1646,7 +1692,9 @@ do
             end
             return kept(cls, slot)
         end
-        -- Four of the default's six, plus the spray bought just above.
+        -- Five of the pilot's seven: what a hull with no bomb cannot reach is
+        -- the bomb's own rung and its fuse, the fragments having already been
+        -- traded for the spray just above.
         check("and a hull with no bomb is charged nothing for one",
               menu.build_of(3)[15] == 0 and menu.build_cost(3) == 5
               and menu.build_free(3) == 2, tostring(menu.build_cost(3)))
@@ -1685,19 +1733,23 @@ do
     -- word. The credits are the tray's to report, once, over the whole ship.
     menu.kit = nil
     check("a weapon says the rung it fires and what is bolted to it",
-          menu.sect_reading(0, "bombs") == "level 2 " .. SEP .. " fused",
+          menu.sect_reading(0, "bombs")
+              == "level 2 " .. SEP .. " fused " .. SEP .. " 4 fragments",
           "'" .. menu.sect_reading(0, "bombs") .. "'")
     -- And nothing at all where there is nothing to say. A pilot who has taken
     -- the bomb back down to its own bottom rung and stripped it has a bomb
     -- the reading has no news about.
     menu.build_step(0, 6, -1)
     menu.build_step(0, 15, -1)
+    menu.build_step(0, 16, -1)
     check("and nothing where it has none",
           menu.sect_reading(0, "bombs") == "",
           "'" .. menu.sect_reading(0, "bombs") .. "'")
     menu.kit = nil
     -- Spray is the one add-on a pilot reads as rounds in the air rather than
-    -- as steps bought: a spray of one is two rounds.
+    -- as steps bought: a spray of one is two rounds. Bought with the credit
+    -- the fragments were holding, because the default holds all seven.
+    menu.build_step(0, 16, -1)
     menu.build_step(0, 7, 1)
     check("spray reads as the rounds it puts in the air",
           menu.sect_reading(0, "guns"):find("2 rounds") ~= nil,
@@ -1709,12 +1761,14 @@ do
     check("the rack counts each kind it carries",
           menu.sect_reading(0, "specials") == "1 repel " .. SEP .. " 1 burst",
           menu.sect_reading(0, "specials"))
+    menu.build_step(0, 16, -1)
     menu.build_step(0, 19, 1)
     check("and pluralizes what it carries more than one of",
           menu.sect_reading(0, "specials") == "2 repels " .. SEP .. " 1 burst",
           menu.sect_reading(0, "specials"))
     menu.kit = nil
     -- Two facts about one part read as one strip, with the dot between them.
+    menu.build_step(0, 16, -1)
     menu.build_step(0, 7, 1)
     check("and the facts about one part read as one strip",
           menu.sect_reading(0, "guns")

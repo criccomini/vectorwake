@@ -209,8 +209,8 @@ local BODY = {
     label = "body", class = 1, free = 2, credits = 7,
     rows = {
         {kind = "art", label = "Wedge", value = 1, cls = 1, at = 1, pages = 8,
-         note = "Slow and hard to turn, behind a fused blast and six "
-             .. "fragments"},
+         note = "A deep pool that fills slower than any, on a hull slow to "
+             .. "turn"},
         {kind = "stat", label = "speed", share = 0.2},
         {kind = "stat", label = "thrust", share = 0.14},
         {kind = "stat", label = "turn", share = 0.09},
@@ -870,16 +870,27 @@ do
     frame(1440, 810, {land = land_in(BODY), col_open = "ship"})
 
     -- The hull's own line stands under its name, and it wraps to the glass
-    -- rather than running off it: the longest of them is wider than a phone's
-    -- panel, and a centred run has no edge to be cut against.
-    frame(390, 844, {land = land_in(BODY), col_open = "ship"})
+    -- rather than running off it: the longest of the seven is wider than a
+    -- phone's panel, and a centred run has no edge to be cut against. On the
+    -- hull that owns that line, since the page above is a Wedge and the
+    -- longest belongs to the Anvil.
+    local LONGEST = {
+        label = "body", class = 3, free = 0, credits = 7,
+        rows = {
+            {kind = "art", label = "Anvil", value = 3, cls = 3, at = 3,
+             pages = 8,
+             note = "The deepest pool and the quickest to fill it, on the "
+                 .. "slowest hull"},
+        },
+    }
+    frame(390, 844, {land = land_in(LONGEST), col_open = "ship"})
     -- The glass is the window less its margin, capped, and the type stands
     -- the row's own inset inside that.
     local edge_l = 14 + 14
     local edge_r = 390 - 14 - 14
     local over, lines, shouted = nil, 0, nil
     for _, t in ipairs(words()) do
-        if t.s:find("Slow and") or t.s:lower():find("fragments") then
+        if t.s:find("The deepest") or t.s:lower():find("slowest hull") then
             lines = lines + 1
             local half = #t.s * t.px * 0.3 / 2
             if t.x - half < edge_l or t.x + half > edge_r then over = t.s end

@@ -230,11 +230,12 @@ drift apart again, and the sim's own tests hold the diagonal ceiling.
 
 > These paragraphs describe the ships as they were when a hull came with a
 > kit. It does not any more: what a ship carries is the pilot's, and every
-> pilot starts on the same six credits (decision 117). So a Wedge's six
-> fragments, a Facet's five bouncing rounds and a Lattice's three repels are
-> builds somebody chose rather than ships the roster deals, and what is left
-> to a hull is its flight row, its gun and its bomb. Read what follows as what
-> each hull is *for* rather than what it arrives with.
+> pilot starts on the same build, which spends all seven credits (decisions
+> 117 and 119). So a Wedge's six fragments, a Facet's five bouncing rounds and
+> a Lattice's three repels are builds somebody chose rather than ships the
+> roster deals, and what is left to a hull is its flight row, its gun and its
+> bomb. Read what follows as what each hull is *for* rather than what it
+> arrives with.
 
 
 **Apex** is the fighter, and the ship most players should be flying while they

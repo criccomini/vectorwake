@@ -54,9 +54,10 @@ the row a pilot presses having to say so.
 
 One pilot flies every board, on the build everybody starts in: the
 second rung of both weapons, a gun that comes off walls, a fuse on the
-bomb and one of each charge. Six credits of the seven, one in hand.
-The build is the pilot's rather than the hull's since decision 117, so
-this is the same menu on every body.
+bomb, four fragments off the blast, and one of each charge. All seven
+credits, nothing in hand, which is why every up arrow here is drawn
+dead. The build is the pilot's rather than the hull's since decision
+117, so this is the same menu on every body.
 
 Rebuild with: python3 build.py
 """
@@ -542,16 +543,17 @@ def board(w, h, section, inner, seed, foot_note=None, free=1, margin=14):
 
 # --- the pilot every board flies ---------------------------------------------
 #
-# An Apex on spray 1, gun bounce 1, bomb shrapnel 1, repel 2 and burst 1. The
-# first, fourth and fifth come with the hull and the other two were stepped on
-# top of it, which is a distinction the purse does not make: a hull's own
-# profile is spent from the same seven `SIM_KIT_CREDITS` hands out. Six of
-# them, one still in hand.
+# The build everybody starts in, which since decision 117 is the pilot's and
+# not the hull's, so it is the same seven credits on every body: the second
+# rung of both weapons, a gun that comes off walls, a fuse on the bomb, four
+# fragments off the blast, and one of each charge. All seven of
+# `SIM_KIT_CREDITS`, nothing in hand.
 #
-# The three counts on the menu are those six, split the way the submenus split
-# them, which is the whole reason a count is what a section reads.
+# That is what the tray draws empty on every board here, and it is the point
+# of the default rather than an accident of it: a pilot who wants something
+# else trades for it. See decision 120.
 
-FREE = 1
+FREE = 0
 
 
 def menu_rows(cursor="Guns", open_row=None):
@@ -567,7 +569,7 @@ def menu_rows(cursor="Guns", open_row=None):
         row("Body", r_open(reading("Apex")), state=state("Body")),
         row("Guns", r_open(reading("Level 2 \u00b7 bouncing")),
             state=state("Guns")),
-        row("Bombs", r_open(reading("Level 2 \u00b7 fused")),
+        row("Bombs", r_open(reading("Level 2 \u00b7 fused \u00b7 4 fragments")),
             state=state("Bombs")),
         row("Specials", r_open(reading("1 repel \u00b7 1 burst")),
             state=state("Specials")),
@@ -595,8 +597,8 @@ def body_board():
     The tray is still drawn, because the purse is a fact about the ship rather
     than about the page, and nothing here costs a credit on the shipped
     roster: every hull's flight step is zero."""
-    rows = [carousel("Apex", "Second fastest, and nothing about it "
-                     "is a weakness")]
+    rows = [carousel("Apex", "Quick at everything that moves it, and "
+                     "shallow in the pool")]
     for name, share in zip(STATS, shares("Apex")):
         rows.append(stat_line(name, share))
     return board(1440, 810, "body", rows, seed=3,
@@ -606,10 +608,15 @@ def body_board():
 def guns_board():
     return board(1440, 810, "guns", [
         # Counted from one, because the bottom of a ladder is a rung: the
-        # slot counts credits and the row draws value plus base, so an
-        # untouched gun reads 1 and its down arrow is dead.
-        row("Level", r_stepper(1, down=False), state="cursor"),
-        row("Spray", r_stepper(1)),
+        # slot counts credits and the row draws value plus base, so a gun
+        # nobody has spent on reads 1 and its down arrow is dead. The default
+        # spends one here, so it reads 2.
+        #
+        # Every up arrow on these boards is dead, and that is the purse
+        # rather than the ceiling: the default holds all seven credits, so
+        # `can_up` is false on every row until something comes down.
+        row("Level", r_stepper(2, up=False), state="cursor"),
+        row("Spray", r_stepper(0, down=False, up=False)),
         row("Bounce", r_switch(True)),
         row("Freeze", r_switch(False)),
     ], seed=11, free=FREE)
@@ -617,13 +624,14 @@ def guns_board():
 
 def bombs_board():
     return board(1440, 810, "bombs", [
-        row("Level", r_stepper(1, down=False)),
+        row("Level", r_stepper(2, up=False)),
         row("Bounce", r_switch(False)),
-        row("Proximity detonation", r_switch(False)),
+        row("Proximity detonation", r_switch(True)),
         # The one row whose figure is not what it cost: shrapnel's magnitude
         # is another weapon, so the row reads the fragments a rung throws.
-        # One rung is four. See decision 105.
-        row("Shrapnel", r_stepper(4), state="cursor"),
+        # One rung is four, and one rung is what the default buys. See
+        # decisions 105 and 120.
+        row("Shrapnel", r_stepper(4, up=False), state="cursor"),
         row("Freeze", r_switch(False)),
     ], seed=5, free=FREE)
 
@@ -632,8 +640,8 @@ def specials_board():
     """The rack, under the word Chris used for it. Repel to three and burst
     to two, which is what the baseline caps them at."""
     return board(1440, 810, "specials", [
-        row("Repel", r_stepper(2), state="cursor"),
-        row("Burst", r_stepper(1)),
+        row("Repel", r_stepper(1, up=False), state="cursor"),
+        row("Burst", r_stepper(1, up=False)),
     ], seed=17, free=FREE)
 
 
@@ -702,15 +710,15 @@ def alt_reading_board():
     in the fight. The count is the same currency the tray above is
     denominated in, so the two read as one instrument and a pilot hunting a
     credit to free knows which row to open without opening any of them. What
-    it cannot do is say anything about the ship: three sections reading 2, 1
-    and 3 describe a purse, and the pilot is here about a gun.
+    it cannot do is say anything about the ship: three sections reading 2, 3
+    and 2 describe a purse, and the pilot is here about a gun.
 
     Chris took the contents. This is what the other one looked like."""
     return board(1440, 810, "ship", [
         row("Body", r_open(reading("Apex"))),
         row("Guns", r_open(r_spend(2)), state="cursor"),
-        row("Bombs", r_open(r_spend(1))),
-        row("Specials", r_open(r_spend(3))),
+        row("Bombs", r_open(r_spend(3))),
+        row("Specials", r_open(r_spend(2))),
         row("Flair", r_open(r_spend(0))),
         rule(),
         row("Reset", ""),

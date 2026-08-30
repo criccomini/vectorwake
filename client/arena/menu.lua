@@ -201,34 +201,35 @@ local CAPS = {{0, "display"}, {60, "60 a second"}, {30, "30 a second"}}
 -- and a guard written against a table declared below it is not a guard: Lua
 -- resolves the name at compile time, so it would read a nil global and admit
 -- everything.
--- The roster, as a name and what flying it is like.
+-- The roster, as a name and where the hull stands in the five rows under it.
 --
--- The sentence described the silhouette for a long time, and the reason it
--- did has since stopped being true. Every hull flew alike then: a kit was
--- thirty points and thirty points had to buy the same ship whatever you were
--- sitting in, so one flight row stood for all seven and the only thing that
--- differed was the shape between a bullet and the pilot. There is no kit to
--- be fair about any more, the hulls have their engines back (see `flight` in
--- sim/src/baseline.c), and a page that says a Cipher is long and narrow while
--- drawing a long narrow ship above the sentence is saying twice what the
--- drawing says once.
+-- Nothing else. Every line reads the `flight` table in sim/src/baseline.c and
+-- says where this hull is in speed, thrust, turn, energy and recharge against
+-- the other six, which is what the bars directly beneath it are drawing. A
+-- sentence about the same five is one the eye can check on the spot.
 --
--- So it is what the numbers are again, and this time they are numbers.
+-- It has now described the wrong thing twice, for reasons that both expired.
+-- It was the silhouette for years, because every hull flew alike then: a kit
+-- was thirty points and thirty points had to buy the same ship whatever you
+-- were sitting in, so one flight row stood for all seven and the only thing
+-- that differed was the shape between a bullet and the pilot. Then it was the
+-- weapons, for a day, which stopped being the hull's on the day the build
+-- did. A gun that comes off walls and a blast that throws fragments belong to
+-- whoever bought them (decision 117), so a line naming one describes a pilot
+-- rather than a ship, and a pilot reading it on a hull they are about to fly
+-- is reading somebody else's build.
 --
--- Only the ones the hull owns. What a ship carries is the pilot's since
--- decision 117, so a Wedge's fragments and a Facet's five rounds are not the
--- Wedge's and the Facet's any more: they are whatever those pilots bought.
--- What is left to a hull is its flight row and the two weapons its gun and
--- bomb ladders climb, and every line here is one of those, off `flight`,
--- `gun_row` and `bomb_row` in sim/src/baseline.c.
+-- Not the two ladders either, though those really are the hull's. They are
+-- nowhere on this page, so a line about them is one a pilot has to take on
+-- faith, and it would be sitting over five bars that say something else.
 local HULLS = {
-    {"Apex", "Second fastest, and nothing about it is a weakness"},
-    {"Wedge", "A wide blast and a chipping gun, on a hull that turns badly"},
+    {"Apex", "Quick at everything that moves it, and shallow in the pool"},
+    {"Wedge", "A deep pool that fills slower than any, on a hull slow to turn"},
     {"Chord", "Turns inside everything and outruns nothing"},
-    {"Anvil", "The deepest pool and the hardest round, on the slowest hull"},
-    {"Cipher", "The fastest hull in the game, and the only one with no bomb"},
-    {"Facet", "A heavy round, and a shallow pool to fire it from"},
-    {"Lattice", "A light round fired cheaply, on a hull that is best at nothing"},
+    {"Anvil", "The deepest pool and the quickest to fill it, on the slowest hull"},
+    {"Cipher", "The fastest hull in the game, on the thinnest pool in it"},
+    {"Facet", "Second quickest into a turn, on a pool as thin as the game has"},
+    {"Lattice", "Third in speed, third in the pool, and slow to fill it back"},
 }
 
 local SAVE = sys.get_save_file("vectorwake", "pilot")
@@ -527,9 +528,10 @@ end
 -- What a pilot arrives with before they have spent anything of their own.
 --
 -- Chris's, and it is a whole ship rather than a bare one: the second rung of
--- both weapons, a gun that comes off walls, a fuse so a near miss counts, and
--- one of each charge to get out with. Six credits of the seven, which leaves
--- one to put somewhere.
+-- both weapons, a gun that comes off walls, a fuse so a near miss counts,
+-- four fragments off the blast, and one of each charge to get out with. All
+-- seven credits, so a pilot who wants something else trades for it rather
+-- than finding a spare.
 --
 -- Written as slot names rather than indices, because the indices are macros
 -- in another language and a table of numbers here would be a second copy of
@@ -539,6 +541,10 @@ local DEFAULT_KIT = {
     {"level", 1, 1},        -- and the bomb's
     {"mod", 0, "bounce", 1},
     {"mod", 1, "prox", 1},
+    -- One rung of shrapnel, which the core throws as four fragments. Its
+    -- number is the only one on the panel that is not its own count, so this
+    -- line reads one and the row it fills reads four.
+    {"mod", 1, "shrapnel", 1},
     {"charge", 0, 1},       -- one repel
     {"charge", 1, 1},       -- and one burst
 }

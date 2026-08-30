@@ -14,10 +14,24 @@
 > day, which compared the seven and drew none of them. The bars take a floor,
 > so the hull at the bottom of a row is a stub rather than a blank.
 >
+> The hull's line reads the same five bars: where this hull stands in speed,
+> thrust, turn, energy and recharge, and nothing else. It was the silhouette
+> while every hull flew alike, then the weapons for a day, and both of those
+> stopped being the hull's. A sentence about the five drawn under it is one
+> the eye can check.
+>
 > A section reads what it holds in the fight, in the games list's voice: the
 > detail at 14 in the mute, hard against the right of the type column. The
 > credits are the tray's to report. Flair is back off the settings page, and
 > the level row says Level.
+>
+> The build everybody starts in spends all seven credits: both weapons a rung
+> up, a gun off walls, a fuse, four fragments and one of each charge. So the
+> purse starts empty and every arrow on the panel is dead until a pilot hands
+> something back, which makes their first act deciding what to trade rather
+> than finding somewhere to park a credit nobody spent for them. A hull that
+> cannot reach a slot is charged nothing for it, so a Cipher arrives with the
+> bomb's three in hand.
 
 > **A column's labels are one weight.** The settings stop had its name in ink,
 > because it has no answer beside it and a stop with nothing at full strength

@@ -6189,3 +6189,95 @@ Photographed on the Linux build: a Wedge, one press of the right arrow, and
 the ship menu behind it reading Chord with the build untouched; then the same
 again, reopening body to find it turned to the ship that was chosen rather
 than back at the start.
+
+## 119. A hull's line reads the five bars under it
+
+**Status:** accepted
+
+**Decision:** the sentence under a hull's name on the body carousel says where
+that hull stands in speed, thrust, turn, energy and recharge, and says nothing
+else. Every line is a claim about the `flight` table in `sim/src/baseline.c`,
+and the five bars it is claiming about are drawn directly underneath it.
+
+**Why:** Chris said the old lines no longer make sense, and they do not. They
+named the weapons: a wide blast and a chipping gun on the Wedge, a heavy round
+on the Facet, a light round fired cheaply on the Lattice. Those stopped being
+the hull's the day the build became the pilot's (decision 117). A pilot
+reading "a wide blast" on a Wedge they are about to fly is reading somebody
+else's build, and the blast they actually throw is whatever they bought.
+
+This is the second time the line has described the wrong thing, and the first
+time is worth remembering because it is the same mistake. It was the
+silhouette for years, and that was right while a kit was thirty points and
+thirty points had to buy the same ship whatever you were sitting in: one
+flight row stood for all seven hulls and the only thing that told them apart
+was their shape. The hulls got their engines back, the reason expired, and the
+line went on saying it. A sentence describing something that used to be the
+difference is how both faults look from inside.
+
+What is left is what the hull owns and cannot be talked out of. Two things
+qualify: the flight row, and the two ladders its gun and bomb climb. The
+ladders are out too, and for a reason about the page rather than about
+ownership: they are nowhere on it, so a line about them is one a pilot has to
+take on faith, and it would be sitting directly over five bars saying
+something else. The five under the sentence are the five the sentence is
+about, and the eye can check it on the spot.
+
+**Cost:** the lines are duller. "A wide blast and a chipping gun" tells you
+what a Wedge does to somebody; "a deep pool that fills slower than any, on a
+hull slow to turn" tells you what it is like to fly. The first is the better
+sentence and the wrong one. What a hull does to somebody now depends on who is
+flying it, and the panel already has a place that answers that: the four
+sections under body, which read out the build the pilot is actually carrying.
+
+They are also claims about the shipped roster, so a zone that retunes flight
+makes them wrong. They were already that kind of claim, and the alternative is
+generating a sentence from the numbers, which reads like a spreadsheet.
+
+**Verified:** `menu_test` holds every line to the five rows: the Cipher's says
+fastest, the Anvil's says slowest, and each of the seven names at least two of
+the rows drawn beneath it. Two lists of words are banned outright, one for the
+weapons and one for the shape, matched on whole words so a hull that outruns
+everything is not read as a hull with rounds. Photographed on the Linux build.
+
+## 120. The default build spends all seven credits
+
+**Status:** accepted
+
+**Decision:** the build every pilot starts in carries one rung of shrapnel on
+the bomb, which the core throws as four fragments. With it the default spends
+all seven credits: the second rung of both weapons, a gun that comes off
+walls, a fuse, four fragments and one of each charge.
+
+**Why:** Chris asked for the fragments. What comes with them is that the purse
+starts empty, and that is worth stating rather than discovering. Before this
+the default spent six and left one loose, so a pilot's first act was to find
+somewhere to put a credit nobody had spent for them. Now it is to decide what
+they are trading away.
+
+That is the better first question. A loose credit is a small unfinished chore
+handed to somebody who has not flown the ship yet and has no idea what they
+want; a full purse is a ship, and every arrow on the panel is dead until the
+pilot has an opinion. The rows say so on their own: `can_up` is false
+everywhere while nothing is free, which the drawing already dims.
+
+A hull that cannot reach a slot is charged nothing for it, so the purse is not
+empty on every body. A Cipher has no bomb, so its rung, its fuse and its
+fragments all come back: three credits in hand the moment a pilot climbs into
+one, and the same three go back into the bomb when they climb out.
+
+**Cost:** nothing on the ship menu can be bought without first selling
+something, and on a first visit that reads as a panel where every arrow is
+off. The tray says why, in the one place a purse belongs, and the alternative
+is holding a credit back from the ship a pilot flies so the menu looks
+livelier.
+
+Bots are unaffected. `pilots::kit` spends the whole seven off personality and
+seed and never read this default (decision 117).
+
+**Verified:** `menu_test` holds the default to seven credits and to the seven
+slots it fills, checks that no row goes up until one comes down, and reads the
+bomb section back as "level 2, fused, 4 fragments" with the core's own
+shrapnel ladder stubbed, since that reading is the one number on the panel
+that is not its own count. Photographed on the Linux build: an empty tray over
+five rows, and the bomb section reading its four fragments.
