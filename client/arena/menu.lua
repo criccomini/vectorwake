@@ -1439,8 +1439,13 @@ function M.stops()
     -- Everything about the machine rather than about a match, in one page:
     -- audio, video, the bindings, and about. It opens the way the landing's
     -- ship stop opens, as a panel climbing off its own row.
-    out[#out + 1] = {stop = "settings", label = "settings", mark = "settings",
-                     go = "settings"}
+    -- No answer beside the name, because what it opens is a page rather than
+    -- a value. It wore a gauge in that slot, drawn by the tab rail's own mark
+    -- table, and a rail is not what this column is: the mark was a seventh
+    -- right end in a language with six, it sat on the caret it was drawn
+    -- beside, and what it said was the word already on the row. The stop puts
+    -- its own name in ink instead. See `land_stop`.
+    out[#out + 1] = {stop = "settings", label = "settings", go = "settings"}
     -- And which side you are on. Last because it is the one stop a room can
     -- fail to offer: a zone names its sides on the roster broadcast rather
     -- than in the join, so this arrives a frame or two after the rest of the
@@ -2049,7 +2054,7 @@ function M.view()
                  stops = {}, rows = {}}
     for i, s in ipairs(M.stops()) do
         out.stops[i] = {stop = s.stop, label = s.label, value = s.value,
-                        mark = s.mark, named = s.named,
+                        named = s.named,
                         -- Lit while its own page is open, which is what the
                         -- caret on it turns over.
                         open = M.stack[1] == s.stop}

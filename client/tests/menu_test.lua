@@ -215,17 +215,17 @@ check("benched, the same stop is the way out of the room",
 check("and the column is the same three stops either way",
       stop_names() == "leave/settings", stop_names())
 
--- Settings is a page rather than a value, so it says so with a mark instead of
--- a word: it is the one stop here whose answer is somewhere to go.
+-- Settings is a page rather than a value, so it is the one stop here with
+-- nothing to say in the slot the others put an answer in.
 local machine = stop_of("settings")
 check("the machine stop opens a page", machine.go == "settings",
       tostring(machine.go))
--- Named as `ui_menu_marks` names it, because that table is what draws it. It
--- said "mixer" for a while, which is what the mark looks like; `MARKS` has no
--- such key, so `draw_mark` fell through to its default and the stop wore the
--- info circle the about page uses.
-check("and wears a mark where the others carry a word",
-      machine.mark == "settings" and machine.value == nil,
+-- And nothing at all beside its name. It carried a gauge for a while, drawn
+-- by the tab rail's mark table: a seventh right end in a language with six,
+-- sitting on the caret it was drawn next to and saying the word already on the
+-- row. `land_stop` gives a stop with no answer the ink instead.
+check("and carries no answer and no mark",
+      machine.value == nil and machine.mark == nil,
       tostring(machine.mark))
 
 -- The sides arrive on the roster broadcast rather than in the join, so this

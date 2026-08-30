@@ -158,6 +158,33 @@ local function settings_view()
                      detail = "quiet", pick = true}}}
 end
 
+-- The in-match column with nothing open on it: three stops over the key.
+local function column_view()
+    return {open = true,
+            stops = {{stop = "leave", label = "leave", value = "seat"},
+                     {stop = "settings", label = "settings"},
+                     {stop = "side", label = "side", value = "Pylon",
+                      named = true}},
+            rows = {}}
+end
+
+-- The other panel the in-match column opens, and the one nothing here drove
+-- until it was found standing its rows at the height decision 104 replaced.
+-- It is a list rather than a page, and it is built by `M.menu` from the
+-- column's own geometry rather than by the landing, which is how it kept the
+-- old measure while every panel around it moved.
+local function side_view()
+    return {open = true, at = "side",
+            stops = {{stop = "leave", label = "leave", value = "seat"},
+                     {stop = "settings", label = "settings"},
+                     {stop = "side", label = "side", value = "Pylon",
+                      named = true, open = true}},
+            rows = {{label = "Pylon", detail = "4 pilots", named = true,
+                     mark = true, tint = 0, index = 0},
+                    {label = "Caisson", detail = "4 pilots", named = true,
+                     tint = 1, index = 1}}}
+end
+
 -- Where a line of type landed, and at what size and in what face.
 local function said(s)
     for i = 1, state.n do
@@ -240,13 +267,34 @@ do
     local acct = name_inset("account", "Sign up")
     local ship = name_inset("ship", "Spray")
     local sets = name_inset(nil, "Sound", settings_view())
+    local side = name_inset(nil, "Pylon", side_view())
     check("every panel insets its names by the same measure",
-          zone and acct and ship and sets
+          zone and acct and ship and sets and side
           and math.abs(zone - acct) < 1 and math.abs(zone - ship) < 1
-          and math.abs(zone - sets) < 1,
-          string.format("zone %s, account %s, ship %s, settings %s",
+          and math.abs(zone - sets) < 1 and math.abs(zone - side) < 1,
+          string.format("zone %s, account %s, ship %s, settings %s, side %s",
                         tostring(zone), tostring(acct), tostring(ship),
-                        tostring(sets)))
+                        tostring(sets), tostring(side)))
+
+    -- And so does a stop, which is the row a panel climbs out of. It was on
+    -- twelve: press a stop and the type column stepped two points sideways at
+    -- the moment the panel replaced it, on both columns. Measured off the
+    -- stop's own published box, since a stop is a control rather than a row
+    -- inside one.
+    local function stop_inset(action, label, menu)
+        frame({menu = menu})
+        local t = said(label)
+        local box = hit_of(action)
+        if not (t and box) then return nil end
+        return t.x - box.x
+    end
+    local land_at = stop_inset("land_zone", "ZONE")
+    local menu_at = stop_inset("menu_stop", "LEAVE", column_view())
+    check("and a stop insets its name by that same measure",
+          land_at and menu_at and math.abs(land_at - ui.ROW_INSET) < 1
+          and math.abs(menu_at - ui.ROW_INSET) < 1,
+          string.format("landing %s, menu %s, inset %s", tostring(land_at),
+                        tostring(menu_at), tostring(ui.ROW_INSET)))
 
     -- And stands them the same height apart. A games row was thirty points on
     -- a monitor against a settings row's forty four, which is the same object
@@ -261,11 +309,18 @@ do
     local list = pitch("zone", "Team Battle", "Duel")
     local slots = pitch("ship", "Spray", "Bounce")
     local page = pitch(nil, "Sound", "Music", settings_view())
+    -- The sides, which is the panel that was still on it. Thirty six points
+    -- on a monitor and thirty on a phone: the two numbers decision 104
+    -- replaced, kept because `M.menu` handed this list the column's stop
+    -- height instead of the row height every other panel uses.
+    local sides = pitch(nil, "Pylon", "Caisson", side_view())
     check("and stands its rows the same height apart",
-          list and slots and page
-          and math.abs(list - slots) < 1 and math.abs(list - page) < 1,
-          string.format("list %s, slots %s, settings %s", tostring(list),
-                        tostring(slots), tostring(page)))
+          list and slots and page and sides
+          and math.abs(list - slots) < 1 and math.abs(list - page) < 1
+          and math.abs(list - sides) < 1,
+          string.format("list %s, slots %s, settings %s, sides %s",
+                        tostring(list), tostring(slots), tostring(page),
+                        tostring(sides)))
 end
 
 -- --- one wash ---------------------------------------------------------------

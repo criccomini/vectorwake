@@ -5660,3 +5660,62 @@ row, and the feed's strip starting under it rather than under a square nobody
 drew. The same file checks that a pilot the room is holding a seat for keeps
 all of it. The pictures `hud_svg` writes for the landing show an empty corner
 at 1280 by 800 and at 390 by 844, and a match still shows the dial.
+
+## 109. The in-match column speaks the menu language too
+
+**Status:** accepted, finishing
+[decision 104](#104-one-menu-language) on the one surface it did not reach
+
+**Decision:** the settings stop carries no mark. A stop with no answer beside
+it puts its own name in ink. Every stop insets its name by `ROW_INSET`, and
+the sides list stands its rows at the panel row height like every other panel
+in the game.
+
+**Why:** Chris opened the in-match menu and said he saw dim text and an icon
+on the settings button. Both were there, and pulling on them found four things
+wrong with the one column decision 104 never drove.
+
+The icon was the tab rail's. `ui_menu_marks` drew a destination for each tab
+of the drawer, and decision 102 deleted the drawer; one mark survived, on the
+settings stop, because that stop had no word to put in the slot the others put
+an answer in. It was a seventh right end in a language with six. It said the
+word already written on the row, which is the argument that took LINK off the
+bars and CHANNEL out of the corner. And it was drawn from the stop's right
+edge at the same measure as the caret, so the two overlapped: the gauge ran
+17.6 to 34.4 points in, the caret 11 to 19.
+
+The dim text was the same stop. Every other stop is a question at the label's
+weight with its answer beside it at full strength, and this one had no answer
+to carry the ink, so it was a muted word alone on a lit box. That reads as a
+control you cannot press. Its name is the answer, so its name takes the
+strength.
+
+Two measures were still on the numbers decision 104 replaced. A stop inset its
+name by twelve, so pressing one stepped the type column two points sideways at
+the moment the panel climbed out of it, on both columns. And the sides list
+stood its rows thirty six points apart on a monitor and thirty on a phone,
+because `M.menu` handed it the column's stop height rather than a panel's row
+height. Thirty on a monitor is the exact number decision 104 quotes as the one
+it was replacing. It survived because that list is built from the column, and
+because the language sheet in `.design/menu-language` draws panels and rows
+and has never drawn a stop.
+
+**Cost:** `ui_menu_marks.lua` loses its last caller and goes, and with it eight
+hand-drawn marks, `thumb` and its two tests. Seven of the eight were already
+unreachable, and everything is one revert away in the history. The settings
+stop is now a name and a caret, which is less than it had; what it says is
+what the other two stops say, in the same words.
+
+**Reconsider if:** a stop somewhere earns a picture. The rule that removed this
+one is that a mark repeating the label is the label said twice, not that stops
+may not have marks.
+
+**Verified:** `menu_language_test` grew the two checks that would have caught
+this, both cross-surface like the rest of the file: a stop insets its name by
+`ROW_INSET` on both columns, and the sides list stands its rows the same height
+apart as the games list, a hull's slots and the settings page. Both fail on the
+old drawing (`landing 12, menu 12` and `sides 36`) and pass now. `column_test`
+asks the settings stop for exactly two strokes in its right corner where it
+used to allow more than two, since the mark shared that corner. `hud_svg` grew
+`menu`, `menu-settings` and `menu-side`, which is how the collision was seen
+in the first place, and the three were read at 1440 by 810.

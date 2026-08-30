@@ -8,7 +8,8 @@
 -- landing-account open a stop's list, landing-login the panel an
 -- account act opens over one), waiting (what the loader hands off to
 -- before a room answers), loadout (a loaded hull with charges in hand, for
--- the corner stack).
+-- the corner stack), menu (the in-match column; menu-settings and menu-side
+-- open a stop's panel).
 -- Rasterize with any browser:
 --
 --     chromium --headless --screenshot=out.png --window-size=1280,800 out.svg
@@ -99,6 +100,11 @@ function layer:arc(x, y, r, a0, a1, w, segs, col)
 end
 function layer:outline(pts, w, col)
     shapes[#shapes + 1] = {k = "outline", p = pts, w = w, col = col}
+end
+-- A convex fill through a point list. The mesh fans it into triangles; an SVG
+-- has a polygon, so the same points go straight down as one.
+function layer:fan(pts, col)
+    shapes[#shapes + 1] = {k = "poly", p = pts, col = col}
 end
 
 -- --- the engine, as much of it as ui.lua touches ---------------------------
@@ -233,6 +239,8 @@ end
 
 -- Four frames of the front end: the stops closed, and each of the three
 -- lists down.
+local in_menu = scenario == "menu" or scenario == "menu-settings"
+    or scenario == "menu-side"
 local landing = scenario == "landing" or scenario == "landing-zones"
     or scenario == "landing-ships" or scenario == "landing-account"
     or scenario == "landing-login"
@@ -401,7 +409,7 @@ ui.hud({
     side = 0,
     viewer_name = scenario == "ending" and "DRiFT" or "Kestrel 8",
     class_names = {"Apex", "Wedge", "Chord", "Anvil", "Facet", "Cipher", "Lattice"},
-    menu_open = false,
+    menu_open = in_menu,
     pilots = (landing or scenario == "ending") and (function()
         local out = {}
         local names = ending
@@ -455,6 +463,43 @@ if scenario == "landing-login" then
                    kind = "username", max = 24},
                   {label = "password", value = "hunter2", mask = true,
                    kind = "current-password", max = 64}},
+    })
+end
+-- The in-match column, drawn after the HUD the way the arena's frame loop
+-- draws it: three stops over a breathing key, and whatever one of them opened.
+-- `menu.view()` is the payload, written out here rather than driven through
+-- menu.lua, which wants an account, a directory and a socket to answer.
+if in_menu then
+    local open = scenario ~= "menu"
+    local side = scenario == "menu-side"
+    ui.menu({
+        open = true,
+        at = side and "side" or "settings",
+        page = open and (side and "side" or "settings") or nil,
+        depth = open and 1 or nil,
+        stops = {
+            {stop = "leave", label = "leave", value = "seat"},
+            {stop = "settings", label = "settings", mark = "settings",
+             open = open and not side},
+            {stop = "side", label = "side", value = "Pylon", named = true,
+             open = side},
+        },
+        rows = open and (side and {
+            {label = "Pylon", detail = "4 pilots", named = true,
+             mark = true, tint = 0, index = 0},
+            {label = "Caisson", detail = "4 pilots", named = true,
+             tint = 1, index = 1},
+        } or {
+            {sect = "audio"},
+            {label = "Sound", choice = 2, choices = 3, detail = "half",
+             pick = true},
+            {label = "Music", choice = 1, choices = 3, detail = "quiet",
+             pick = true},
+            {sect = "video"},
+            {label = "Effects", choice = 3, choices = 3, detail = "full",
+             pick = true},
+            {label = "Controls", go = "controls", caret = true},
+        }) or {},
     })
 end
 ui.finish()

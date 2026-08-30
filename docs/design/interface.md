@@ -272,12 +272,16 @@ not the letter x.
 ## Marks
 
 Every mark is a picture of the thing, not a symbol somebody has to learn.
-The rail's settings stop is a gauge off the panel in front of you, dark in the
-body and lit at the rim with a needle up among its graduations, because that
-stop is the one thing on the row about the machine rather than the match; leave
-is a doorway with the arrow going out the open side. The ship stop is the hull
-you are flying, drawn as itself. Play was a world with a ring around it, for as
-long as the menu carried the games.
+
+The menu has none. It had a set: a gauge for settings, a doorway for leave, a
+world for the games, the hull you are flying for the ship. They were the tab
+rail's destinations, and decision 102 deleted the rail. The gauge outlived it
+by a few decisions on the settings stop, which was the one stop with no word
+to put where the others put an answer, until decision 109 took it off: a mark
+that repeats the label is the label said twice, and in a column whose rows end
+in one of six things it was a seventh. A stop that opens wears the caret. The
+rule that removed the gauge is not that a stop may not have a mark, so if one
+earns a picture it can have one.
 
 A drawing that appears in two places is one function. The weapon marks live
 in `marks.lua` because the corner stack and the touch pads both draw them,
@@ -291,11 +295,13 @@ being drawn at eleven points.
 Stroke weight has one rule with one exception. A mark's pen comes off its own
 size with a floor (`marks.pen`: a ratio of the mark, never under about a
 pixel), so a mark drawn twice as large is drawn twice as heavy and a small
-one never loses its hairlines. The exception is a set: the menu rail's marks
-and the hull thumbnails hold one line weight against the screen
-(`RAIL_PEN`, `HULL_PEN`), because a column of six marks in six sizes of line
-reads as six styles. Anything that draws itself into such a set has to be
-told the set's weight. The floor bites hardest on hard edges: a segment's
+one never loses its hairlines. The exception is a set: marks standing together
+hold one line weight against the screen, because a column of six marks in six
+sizes of line reads as six styles, and anything drawing itself into such a set
+has to be told the set's weight. The set that taught this was the menu rail's,
+and it went with the rail; the rule is kept for the next one.
+
+The floor bites hardest on hard edges: a segment's
 edges carry falloff and survive under a pixel, a stroked box's do not, so the
 layer floors a frame's stroke at one device pixel (`vec.lua`), after the
 podium's chips, stroked at 0.9 on a density-1 screen, drew three edges each

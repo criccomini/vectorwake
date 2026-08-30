@@ -24,7 +24,6 @@ local marks = require("arena.marks")
 local menu_face = require("arena.menu_face")
 local state = require("arena.state")
 local ui_frame = require("arena.ui_frame")
-local ui_menu_marks = require("arena.ui_menu_marks")
 local world = require("arena.world")
 
 local M = {}
@@ -4280,7 +4279,12 @@ local function land_stop(x, y, w, h, label, value, action, lit, stacked, o)
                 or pal.a(pal.RADAR_TILE, 0.75))
     o = o or {}
     local raw = o.raw
-    local pad = 12 * F.scale
+    -- The measure every panel in the game insets its names by. A stop was on
+    -- twelve, which is the exact number decision 104 unified away on the
+    -- panels: a hand walking from a stop into the panel that climbs off it saw
+    -- the type column step two points sideways at the moment the panel
+    -- replaced the stop, which is the seam the language exists to close.
+    local pad = M.ROW_INSET * F.scale
     local cx = x + w - pad - 3 * F.scale
     -- Down the column an answer is set on the type ladder like everything
     -- else. A rail cell is the one place in this interface where an answer has
@@ -4305,10 +4309,22 @@ local function land_stop(x, y, w, h, label, value, action, lit, stacked, o)
             nil, nil, raw)
         F.clip_r = kept
     else
-        lbl(label, x + pad, y + h / 2)
+        -- A question at the label's weight with the answer beside it at full
+        -- strength, which is what every stop on both columns is. Except the
+        -- one whose answer is a page rather than a value: it has nothing to
+        -- put the ink on, and a muted word alone on a lit box reads as a
+        -- control that cannot be pressed. So where a stop has no answer its
+        -- name is the answer and takes the strength.
+        local names = value == nil or value == ""
+        lbl(label, x + pad, y + h / 2, names and pal.a(pal.INK, 0.95) or nil)
         if not o.flat then land_caret(cx, y + h / 2, pal.a(pal.INK, 0.75)) end
-        txt(value or "", cx - 11 * F.scale, y + h / 2, px,
-            pal.a(pal.INK, 0.95), "right", nil, raw)
+        -- And nothing is set where there is nothing to say. An empty string
+        -- went down the type list every frame, which draws nothing and is one
+        -- more word for anything reading this frame back to walk past.
+        if not names then
+            txt(value, cx - 11 * F.scale, y + h / 2, px,
+                pal.a(pal.INK, 0.95), "right", nil, raw)
+        end
     end
     -- The guest warning, where a guest has something a lost account would
     -- cost them: one dot in the caution color beside the name it is about.
@@ -5601,69 +5617,6 @@ end
 
 -- --- the menu --------------------------------------------------------------
 
--- A hull drawn small, inside its button. The silhouette is what picks a ship;
--- the name only confirms it. The canopy comes along because at this size it is
--- the only thing that says which end is the front.
---
--- `turn` is an angle about the hull's own vertical axis. For a flat body that
--- is a squeeze across it, which is what an orthographic projection does to a
--- shape turning about an axis lying in the screen plane: the same move the
--- asteroids tumble with, on one axis instead of two.
---
--- Never quite to a hairline. A cutout seen exactly edge-on is a line, which is
--- honest and reads as the drawing having blinked, so the end of the turn is
--- spent rather than drawn: the width bottoms out at a fifth and carries on
--- through, keeping its sign so the far side comes round rather than bouncing
--- back off the near one.
---
--- The line is held against the screen rather than struck off the hull, so a
--- grid of seven hulls at one size is drawn in one weight whatever each of them
--- measures. Anything else standing in that grid has to be told this: the
--- spectate cell draws a helmet rather than a hull, and left to work its own
--- weight out it came out at twice the ships beside it.
-local HULL_PEN = 1.4
-
-local function vertical_turn(turn)
-    if not turn then return 1 end
-    local ct = math.cos(turn)
-    return (ct >= 0 and 1 or -1) * (0.2 + 0.8 * math.abs(ct))
-end
-
--- Local now that it is. It was declared up with the glossary's figures and
--- assigned here, because the bounty card drew one; the card is gone and every
--- caller left is below this, so the forward declaration went with it rather
--- than leaving a global behind.
-local function thumb(cx, cy, cls, col, scale, turn, detail)
-    local h = world.HULLS[cls + 1]
-    if not h then return end
-    local k = vertical_turn(turn)
-    local function trace(src, width, c, open)
-        local pts = {}
-        for i = 1, #src, 2 do
-            pts[i] = cx + src[i] * scale * k
-            pts[i + 1] = ry(cy - (src[i + 1] - h.mid) * scale)
-        end
-        F.layer:outline(pts, width, c, not open)
-    end
-    -- The interior, where the drawing is big enough to hold one. At thumb
-    -- sizes the plates read as noise inside the silhouette; at the landing's
-    -- hero size a bare outline reads as a decal, and the plates and panel
-    -- lines are what make it the machine you are about to be sitting in.
-    -- Panel ink, like the arena draws them, so the team color stays on the
-    -- silhouette.
-    if detail then
-        local ink = pal.a(pal.PANEL_INK, 0.5)
-        for _, loop in ipairs(h.plates or {}) do
-            trace(loop, 0.9 * F.scale, ink)
-        end
-        for _, line in ipairs(h.lines or {}) do
-            trace(line, 0.9 * F.scale, pal.a(pal.PANEL_INK, 0.38), true)
-        end
-    end
-    trace(h.poly, HULL_PEN * F.scale, col)
-    if h.canopy then trace(h.canopy, 1.0 * F.scale, pal.a(col, 0.55)) end
-end
-
 -- One circle, in the three states a count has.
 --
 -- Solid is one in hand, a ring is a slot a spent one leaves, and a dim grey
@@ -5686,20 +5639,6 @@ function pages.dot(cx, cy, r, kind, col)
                      pal.a(pal.DIM, 0.5))
     end
 end
-
--- --- menu marks ----------------------------------------------------------
---
--- Rail destinations and the same marks reused by page controls live in one
--- drawing module. Layout and hit publication stay here so their ordering
--- remains explicit in the menu renderer.
-local draw_mark = ui_menu_marks.new({
-    frame = F,
-    palette = pal,
-    rect = rect,
-    ry = ry,
-    pilot_mark = pilot_mark,
-    thumb = thumb,
-})
 
 
 -- How tall a line of a row's sentence is, and how that sentence breaks.
@@ -6629,14 +6568,6 @@ function M.menu(v)
                       -- Leave acts rather than opening, so no caret.
                       {raw = s.named, value = s.stop,
                        flat = s.stop == "leave"})
-            -- The stop's own mark where it has no word to say: settings is
-            -- the mixer, and it is the one stop here whose answer is a page
-            -- rather than a value.
-            if s.mark then
-                draw_mark(s.mark, box.x + box.w - 26 * F.scale,
-                          sy + box.h / 2, 8 * F.scale,
-                          pal.a(pal.INK, 0.9), 0)
-            end
         end
     end
     -- A stop on its way out is not a stop.
@@ -6665,9 +6596,15 @@ function M.menu(v)
         for _, r in ipairs(v.rows) do
             if r.note then noted = true end
         end
-        local tall = list and pages.list_h(list, g.rh)
-            or pages.page_h(v, (M.compact and 40 or 44) * F.scale,
-                            24 * F.scale, noted)
+        -- The row the language settled on, which is not the stop's height.
+        -- The sides were the one panel in the game still handed the column's
+        -- own measure: thirty six points on a monitor and thirty on a phone,
+        -- which are the two numbers decision 104 unified away everywhere it
+        -- looked. It did not look here, because this list is drawn from the
+        -- column rather than from the landing.
+        local prh = (M.compact and 40 or 44) * F.scale
+        local tall = list and pages.list_h(list, prh)
+            or pages.page_h(v, prh, 24 * F.scale, noted)
         local px, py, pw, ph =
             panel_geom(panel_height(menu_h, math.min(tall, panel_room())))
         -- The panel rides the column's own slide as well as its own, so
@@ -6678,7 +6615,7 @@ function M.menu(v)
         column_x, column_w = px, pw
         if list then
             local top = panel_frame(px, py, pw, ph, open.label, "menu_back")
-            land_list(px, pw, top, list, g.rh)
+            land_list(px, pw, top, list, prh)
         else
             -- Settings, and the pages it opens, which name themselves on the
             -- head rather than being named by the stop: one level in, the head

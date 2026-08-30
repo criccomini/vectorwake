@@ -1,5 +1,23 @@
 # Landing, and the menu
 
+> **The column speaks the menu language too.** The settings stop wears no
+> mark. It carried a gauge, drawn by the tab rail's own mark table, and a rail
+> is not what this column is: it was a seventh right end in a language with
+> six, it said the word already on the row, and it sat on the caret it was
+> drawn beside. What the stop wears now is a caret, like every other stop that
+> opens something.
+>
+> A stop with no answer beside it puts its own name in ink. The others are a
+> question at the label's weight with an answer at full strength; settings has
+> a page rather than a value to answer with, so its name is the answer. A
+> muted word alone on a lit box reads as a control that cannot be pressed.
+>
+> Every stop insets its name by the measure the panels use, and the sides list
+> stands its rows at the height they do. Both were on the numbers decision 104
+> replaced everywhere it looked, and it did not look here: the sides are drawn
+> from the column rather than from the landing, and the language sheet draws
+> panels and rows and no stops at all.
+
 > **The drawer is gone, and settings live in the match.** There is no slide-out
 > panel, no rail of tabs, no stage, no topbar and no head row with an x on it.
 > What is left of the menu is a column at the foot of the screen, raised by a

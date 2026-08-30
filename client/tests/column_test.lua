@@ -343,10 +343,12 @@ do
         end
         return n
     end
-    -- Settings shares that corner with its own mixer mark, so it is asked for
-    -- the caret's two strokes on top of whatever the mark drew rather than for
-    -- a bare two.
-    check("the settings stop wears a caret", strokes_in("settings") > 2,
+    -- Exactly two, on both. Settings shared that corner with a gauge for a
+    -- while and was asked for the caret's two strokes on top of whatever the
+    -- mark drew; the mark stood on the caret it was drawn beside, and it is
+    -- gone, so the corner is the caret and nothing else on every stop that
+    -- opens something.
+    check("the settings stop wears a caret", strokes_in("settings") == 2,
           tostring(strokes_in("settings")))
     check("and so does the side stop", strokes_in("side") == 2,
           tostring(strokes_in("side")))
