@@ -208,8 +208,7 @@ local GUNS = {
 local BODY = {
     label = "body", class = 1, free = 2, credits = 7,
     rows = {
-        {kind = "art", label = "Wedge", value = 1, cls = 1, here = true,
-         at = 1, pages = 8,
+        {kind = "art", label = "Wedge", value = 1, cls = 1, at = 1, pages = 8,
          note = "Slow and hard to turn, behind a fused blast and six "
              .. "fragments"},
         {kind = "stat", label = "speed", share = 0.2},
@@ -774,33 +773,40 @@ do
           down_off == nil)
 
     -- Body is one ship, turning, with an arrow either side of the drawing
-    -- and its flight read out underneath. A press on the ship flies it.
+    -- and its flight read out underneath. The arrows are the whole control:
+    -- what a pilot turns to is what they fly, so the drawing itself only
+    -- anchors a cursor.
     frame(1440, 810, {land = land_in(BODY), col_open = "ship"})
     local fly, turns = nil, {}
     for _, r in ipairs(ui.hits) do
         if r.action == "land_pick_ship" then fly = r end
         if r.action == "land_page_ship" then turns[r.value] = r end
     end
-    check("body turns one ship and publishes a press to fly it",
+    check("body turns one ship, an arrow either side of it",
           fly ~= nil and fly.value == 1 and turns[-1] and turns[1],
           tostring(fly and fly.value))
-    -- And the press actually lands on it. `M.pick` keeps the first box of the
-    -- highest priority, and the glass publishes `panel_hold` before any row
-    -- draws, so a control sharing that priority is one the panel swallows.
-    -- The roster's press was at that priority from the walker onward: the box
-    -- was published, every check here said so, and pressing the ship did
-    -- nothing. Asking what a press resolves to is the only question that
-    -- catches it.
-    if fly then
-        check("and a press on the ship reaches it, not the glass",
-              press(fly.x + fly.w / 2, fly.y + fly.h / 2) == "land_pick_ship",
-              tostring(press(fly.x + fly.w / 2, fly.y + fly.h / 2)))
-    end
+    -- And the arrow's press actually lands on it. `M.pick` keeps the first
+    -- box of the highest priority, and the glass publishes `panel_hold`
+    -- before any row draws, so a control sharing that priority is one the
+    -- panel swallows. The roster's own press was at that priority from the
+    -- walker onward: the box was published, every check here said so, and
+    -- pressing it did nothing. Asking what a press resolves to is the only
+    -- question that catches it.
     if turns[1] then
         local t = turns[1]
         check("and a press on an arrow turns the carousel",
               press(t.x + t.w / 2, t.y + t.h / 2) == "land_page_ship",
               tostring(press(t.x + t.w / 2, t.y + t.h / 2)))
+    end
+    -- The drawing is not a control. It is where a hand stands so that left
+    -- and right can turn, the job `land_kit_row` does for a count, so it is
+    -- published under the glass and a press on it is the glass's. Drawing a
+    -- box a finger lands on and nothing answers is the failure worth naming:
+    -- a press on the ship has to reach the panel, not stop somewhere silent.
+    if fly then
+        check("and the ship itself is a rest, not a press",
+              press(fly.x + fly.w / 2, fly.y + fly.h / 2) == "panel_hold",
+              tostring(press(fly.x + fly.w / 2, fly.y + fly.h / 2)))
     end
     -- Every section row is a press too, and the same glass sits under them.
     frame(1440, 810, {col_open = "ship"})
@@ -1455,6 +1461,46 @@ do
         handler()
         check("and opens it in a room, which is what it is for",
               rang.menu == true)
+    end
+
+    -- Turning the carousel is the whole of choosing a ship. There is no
+    -- press after it, so if this branch only moved the page the panel would
+    -- draw an Anvil, name it, read out how it flies, and leave the pilot in
+    -- an Apex. Pulled out of the file and run rather than read, so what is
+    -- checked is what it does.
+    local turn = src:match('if action == "land_page_ship" then(.-)\n    end\n')
+    check("the arena has a branch for turning the carousel", turn ~= nil)
+    if turn then
+        local flew, ui_stub = {}, {col_hull = nil}
+        local env = {
+            ui = ui_stub,
+            menu = {
+                hull_page = function(at, dir) return at + dir end,
+                panel_home = function() return 0 end,
+                hull_count = function() return 7 end,
+                pick_profile = function(at)
+                    flew[#flew + 1] = at
+                    return at == "spectate" and "spectate" or "ship"
+                end,
+            },
+            sfx = {ui = function() end},
+            apply_menu = function(_, act) flew.applied = act end,
+        }
+        local chunk = assert(loadstring(
+            "return function(self, action, value)" .. turn .. "\nend", "turn"))
+        setfenv(chunk, env)
+        local handler = chunk()
+        handler(nil, "land_page_ship", 1)
+        check("and one step right flies the ship it lands on",
+              flew[1] == 1 and flew.applied == "ship" and ui_stub.col_hull == 1,
+              tostring(flew[1]) .. ", " .. tostring(flew.applied))
+        -- And off the end of the roster, where the page past the last hull is
+        -- sitting out and is chosen by turning onto it like any other.
+        ui_stub.col_hull = 6
+        handler(nil, "land_page_ship", 1)
+        check("and turning past the last one sits out",
+              flew[2] == "spectate" and flew.applied == "spectate",
+              tostring(flew[2]))
     end
 end
 

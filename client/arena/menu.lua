@@ -881,8 +881,9 @@ function M.panel_home()
 end
 
 -- Step the carousel one ship, wrapping at either end, and answer where it
--- landed. Nothing is chosen by turning: a pilot looking at an Anvil has not
--- climbed into one until they press.
+-- landed. Where it lands is what the pilot flies: the arena picks the page
+-- this answers as it turns, so a pilot looking at an Anvil is in one. This
+-- only says which page, and knows nothing about who is flying what.
 function M.hull_page(at, dir)
     local n = #HULLS
     local to = (at or 0) + dir
@@ -927,7 +928,7 @@ function M.sect_rows(cls, sect, at)
         if h then
             local hull = HULLS[at + 1]
             rows[#rows + 1] = {kind = "art", label = h.label, value = h.value,
-                               here = h.here, at = at, pages = #HULLS + 1,
+                               at = at, pages = #HULLS + 1,
                                cls = type(h.value) == "number" and h.value
                                    or nil,
                                -- What this hull is, in the one line the

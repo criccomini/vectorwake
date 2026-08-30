@@ -361,21 +361,21 @@ def hull_art(cx, cy, r, squash, col=FRIEND):
     return "".join(parts)
 
 
-def carousel(hull, note, squash=0.62, h=228, pad=14, here=True):
+def carousel(hull, note, squash=0.62, h=228, pad=14):
     """The body section: one ship turning, an arrow either side of it level
     with the ship rather than with the row, and the name and the hull's own
     line under it.
 
-    The ship is the press that flies it; the arrows only look. That press sits
-    at the priority every other control on a panel does, which is what it did
-    not do at first: the glass publishes its own box before any row draws, and
-    a control sharing that priority is one the panel swallows."""
-    col = FRIEND if here else INK
+    The arrows are the whole control: a pilot is flying whatever they turn to,
+    so the ship on the glass is always theirs and is always drawn in their own
+    color. There is nothing under the drawing to press, and no mark to tell one
+    of seven from the rest, because only one of them is ever shown. See
+    decision 118."""
+    col = FRIEND
     nameh, noteh = 30, 22
     mid = (h - nameh - noteh) / 2
-    wash = WASH_HERE if here else ""
     art = hull_art(560 / 2, mid, min(mid - 6, 78), squash, col)
-    return (f'<div style="position:relative;height:{h}px;{wash}">'
+    return (f'<div style="position:relative;height:{h}px">'
             f'<svg width="560" height="{h}" style="position:absolute;'
             f'inset:0">{art}</svg>'
             f'<div style="position:absolute;left:{pad + 10}px;top:{mid - 9}px">'

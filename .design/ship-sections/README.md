@@ -7,9 +7,11 @@ back bar, and still there in the submenus.
 
 Shipped as [decision 112](../../docs/architecture/decisions.md), with body
 corrected to a carousel by [decision
-113](../../docs/architecture/decisions.md) and to the ship's own drawing by
-[decision 114](../../docs/architecture/decisions.md). Nine boards, drawn
-before the client was, and kept in step with it.
+113](../../docs/architecture/decisions.md), to the ship's own drawing by
+[decision 114](../../docs/architecture/decisions.md), and to turning as the
+whole of choosing by [decision
+118](../../docs/architecture/decisions.md). Nine boards, drawn before the
+client was, and kept in step with it.
 
 Artifact: [Ship Menu Sections](https://claude.ai/code/artifact/165ecbef-f9b9-4392-bcf9-27bf0938653a)
 
@@ -66,6 +68,12 @@ specials, the range cells in flair. Body is the one thing here that is not a
 row. It is a drawing with the walker's two arrows either side of it, level
 with the ship rather than with a line of type, and a reading block under it.
 
+**And the two arrows are the whole control.** A pilot is flying whatever they
+turn to, so there is nothing under the drawing to press and no mark on it to
+say which of seven it is: one is ever shown, and it is theirs. That is why the
+boards draw the ship in the pilot's own color with no wash behind it. See
+decision 118.
+
 ## Where the five came from
 
 Four are the sections `menu.tune_rows` already builds, under Chris's words:
@@ -82,6 +90,11 @@ side of it, the name and the hull's own line under it, the five rows beneath.
 What the list bought was reading two hulls against each other; what it cost
 was seeing either of them, and what a hull looks like is most of what a pilot
 is choosing between. See decisions 113 and 114.
+
+It kept the list's press for a while after it stopped being a list, which is
+how a control outlives the shape that needed one. A list is walked and then
+answered; a carousel has already narrowed to the ship on the glass, so the
+turn was the answer and the press was the same question asked twice.
 
 Nothing in body costs a credit on the shipped roster: every hull's flight step
 is zero, which is why the shipped panel has no flight rows either.

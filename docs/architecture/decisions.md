@@ -6137,3 +6137,55 @@ default to its six credits, holds the build across three hulls, and takes the
 bomb away from a hull to watch the credit come back. Photographed: a Wedge
 reading "Level 2, bouncing", "Level 2, fused", "1 repel, 1 burst" with one
 credit in hand, which is the same menu every hull now opens on.
+
+## 118. Turning the carousel is choosing the ship
+
+**Status:** accepted
+
+**Decision:** the arrows either side of the body carousel are the whole of
+picking a hull. One step and the pilot is in it: the profile is set, the build
+goes with it and the identity is saved, on the step rather than on a press
+afterwards. The drawing itself takes no press. Its box stays, at the priority
+a row that only anchors a cursor is published at, so a hand on a pad can stand
+there and step left and right, which is what `land_kit_row` does for the
+arrows either side of a count.
+
+**Why:** Chris asked for it, and the panel was already telling the pilot they
+had chosen. It drew the hull they turned to, named it in their own color, read
+out how it flies and wrapped a line about it underneath, and then flew a
+different one until they found the press. Everything on the glass said Anvil
+and the ship in the stands was an Apex.
+
+The press was there because the roster used to be a list and a list needs one:
+you walk it to compare and then say which. A carousel shows one ship at a time
+and has already narrowed to it, so the turn and the choice were the same act
+being asked for twice.
+
+An ask per step costs nothing because of where this panel lives. `land` is
+built only while the stands are up, so `apply_menu` takes its home-screen arm
+every time: a hull remembered and saved, nothing sent, nothing closed. The
+arms that spend a respawn and shut the panel belong to the drawer's roster,
+which is still a press and should be.
+
+**Cost:** the carousel cannot be browsed without arriving. A pilot curious what
+an Anvil looks like flies one to find out, and lands back where they started by
+turning back. That is cheap on the home screen, where nothing has begun, and it
+is the same trade the zone stop makes: turning the games list changes which
+game PLAY NOW joins.
+
+The `here` mark went with the press. There was a wash and a breath on the
+carousel saying "this is the one you fly", which had something to point at only
+while the drawing and the flown hull could differ. They cannot now, so the ship
+is drawn in the pilot's own color, always.
+
+**Verified:** `landing_test` pulls the `land_page_ship` branch out of
+`arena.script` and runs it, the way the escape handler is run there: one step
+right picks the hull it lands on and applies it, and a step off the end of the
+roster sits out. The press checks that go with it hold the shape the drawing
+has to have, since a box published at the wrong priority is invisible to a
+finger and to nothing else: the arrows resolve to a turn, and the ship's own
+box resolves to the glass behind it rather than to a control nothing answers.
+Photographed on the Linux build: a Wedge, one press of the right arrow, and
+the ship menu behind it reading Chord with the build untouched; then the same
+again, reopening body to find it turned to the ship that was chosen rather
+than back at the start.

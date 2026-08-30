@@ -4892,13 +4892,18 @@ local function land_row(kx, kw, y, h, r)
     end
     if r.kind == "art" then
         -- The carousel: one ship turning, an arrow either side of it at its
-        -- own middle, and the name under it. The name is the press that flies
-        -- it, so a pilot who has turned to a ship is one press from arriving
-        -- in it; the arrows only look.
+        -- own middle, and the name under it. The arrows are the choice: what
+        -- a pilot turns to is what they are flying by the time it stops
+        -- moving, so there is nothing here to commit afterwards.
+        --
+        -- Your color, always: the ship on the carousel is the ship you fly,
+        -- since turning is what chooses. There is no other for a mark to tell
+        -- it from, so the field the roster used to light on "this is the one"
+        -- is gone with the press that made one of them the one.
         local on = M.col_sel == "land_pick_ship" and M.col_sel_value == r.value
-        LIT.state(kx, y, kw, h, on, r.here)
-        local col = r.here and pal.FRIEND or pal.INK
-        local a = (r.here and not on) and LIT.breath() or 1
+        LIT.state(kx, y, kw, h, on, false)
+        local col = pal.FRIEND
+        local a = 1
         -- The name and the hull's own line under the drawing, and the
         -- drawing over what is left. The line wraps to the glass rather than
         -- running off it: at a phone's measure the longest of them is wider
@@ -4939,17 +4944,18 @@ local function land_row(kx, kw, y, h, r)
             hit(ax - 24 * F.scale, mid - 26 * F.scale, 48 * F.scale,
                 52 * F.scale, "land_page_ship", dir, nil, 1)
         end
-        -- The ship takes the press, published clear of the arrows either
-        -- side of it, so a thumb aiming at the ship gets the ship.
+        -- The ship itself takes no press. Turning the carousel is the whole
+        -- of choosing: what a pilot arrives as changes as they turn, so
+        -- there is nothing left for a press on the drawing to do and a row
+        -- that looks pressable and is not is worse than one that plainly is
+        -- not. See decision 118.
         --
-        -- At the priority every other control on a panel is published at.
-        -- `M.pick` keeps the first box of the highest priority, and the glass
-        -- publishes `panel_hold` at nought before any row draws, so a control
-        -- sharing that priority is one the panel swallows every time. The
-        -- roster's own press had been at nought since the walker had it,
-        -- which is the whole of why a ship could be turned to and not flown.
+        -- The box stays, at the priority a row that only anchors a cursor is
+        -- published at. It is where a hand stands so that left and right can
+        -- turn, which is the same job `land_kit_row` does for the arrows
+        -- either side of a count.
         hit(kx + 56 * F.scale, y, kw - 112 * F.scale, h, "land_pick_ship",
-            r.value, nil, 1)
+            r.value, nil, 0)
         return
     end
     if r.kind == "sect" then
@@ -5369,11 +5375,6 @@ function M.col_walk()
                or r.action == "land_pick_ship" or r.action == "land_kit_row"
                or r.action == "land_flair" or r.action == "land_kit_reset"
             then
-                -- The two arrows either side of the ship are not stops of
-                -- their own: a hand standing on the carousel turns it with
-                -- left and right, which is the rule every value row here
-                -- follows. They are a pointer's way in and nothing else.
-
                 out[#out + 1] = r
             end
         end

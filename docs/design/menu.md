@@ -8,8 +8,9 @@
 > Body turns one ship at a time, about the axis running up the screen: the
 > hull drawn the way the arena draws one, an arrow either side of it and level
 > with it, the name and a line about how it flies under it, and the five rows
-> one to a line below. The ship is the press that flies it, at the priority a
-> control has to be published at to survive the glass. It was a list for a
+> one to a line below. Turning is the whole of choosing: the ship on the
+> carousel is the ship you fly, so the arrows are the only control and the
+> drawing under them is a place for a cursor to stand. It was a list for a
 > day, which compared the seven and drew none of them. The bars take a floor,
 > so the hull at the bottom of a row is a stub rather than a blank.
 >

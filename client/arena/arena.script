@@ -3003,19 +3003,9 @@ function land_act(self, action, value)
     end
     -- The landing's one key. See session.deploy.
     if action == "play_now" then
-        -- With the roster on screen, the key flies the ship it is showing.
-        -- Turning the carousel does not pick, so without this a pilot who
-        -- turned to a Wedge and pressed the one key on the screen would
-        -- arrive in the Apex they turned away from, with the panel in front
-        -- of them saying Wedge the whole time.
-        if ui.col_open == "ship" and ui.col_sect == "body" and ui.col_hull then
-            if ui.col_hull >= menu.hull_count() then
-                apply_menu(self, "spectate")
-            else
-                local act = menu.pick_profile(ui.col_hull)
-                if act then apply_menu(self, act) end
-            end
-        end
+        -- Nothing to settle first. The key had to fly whatever the carousel
+        -- was showing while turning it was only a look; turning is the choice
+        -- now, so what this pilot arrives as was decided as they turned.
         ui.col_open, ui.col_sect, ui.col_hull = nil, nil, nil
         ui.col_sel, ui.col_sel_value = nil, nil
         session.deploy(self)
@@ -3110,11 +3100,28 @@ function land_act(self, action, value)
         return true
     end
     -- Turning the carousel: one hull along the roster, wrapping at either
-    -- end. Nothing is chosen by turning, so a pilot reading through the seven
-    -- is not changing what they will fly until they press.
+    -- end, and arriving as whatever it lands on.
+    --
+    -- Turning is the choice. It used to be a look, with a press on the ship
+    -- to commit, which is a step a pilot should not have to find: the panel
+    -- draws the ship they turned to, names it, and reads out how it flies,
+    -- and then flew a different one until they pressed. What changes as the
+    -- arrows move is what they will arrive in. See decision 118.
+    --
+    -- An ask per step is free because of where this panel lives. `land` is
+    -- built only while the stands are up, so the carousel is a home screen
+    -- control and `apply_menu` takes its attract arm every time: a hull
+    -- remembered and saved, nothing sent, nothing closed. The arms that cost
+    -- a respawn and shut the panel are the drawer's roster, which is a press
+    -- and should still be one.
     if action == "land_page_ship" then
-        ui.col_hull = menu.hull_page(ui.col_hull or menu.panel_home(),
-                                     value or 1)
+        local at = menu.hull_page(ui.col_hull or menu.panel_home(), value or 1)
+        ui.col_hull = at
+        -- Sitting out is the page past the roster and is chosen the same way,
+        -- by turning onto it.
+        local act = menu.pick_profile(
+            at >= menu.hull_count() and "spectate" or at)
+        if act then apply_menu(self, act) end
         sfx.ui("ui_move")
         return true
     end
@@ -3164,20 +3171,11 @@ function land_act(self, action, value)
         end
         return true
     end
-    -- A ship picked from that panel, or sitting out. Both run the acts the
-    -- drawer's own rows ran, so the choice reaches the account and the join
-    -- exactly as it would have from there.
-    if action == "land_pick_ship" then
-        land_shut()
-        if value == "spectate" then
-            apply_menu(self, "spectate")
-        else
-            local act = menu.pick_profile(value)
-            if act then apply_menu(self, act) end
-        end
-        sfx.ui("ui_go")
-        return true
-    end
+    -- Standing on the ship is not doing anything to it: the drawing is where
+    -- a hand stands so that left and right can turn the carousel, and turning
+    -- is what chooses. Enter on it does nothing rather than repeating a
+    -- choice already made, which is the rule every value row here follows.
+    if action == "land_pick_ship" then return true end
     -- An account act from that stop's list, by its place in the list the
     -- frame drew. The acts are the menu's own, the same ones the pilot page's
     -- rows ran: it settles what it can settle and hands anything else back
