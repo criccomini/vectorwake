@@ -5549,3 +5549,46 @@ on all four surfaces, which is one rectangle now rather than two. It fails on
 the old drawing. `row_field_test` measures the type column off the field and
 the published inset, and the pictures `hud_svg` writes carry a cursor at last,
 so the panels can be looked at with a row lit.
+
+## 107. The front page carries no instruments of a room nobody is in
+
+**Status:** accepted
+
+**Decision:** the landing draws no radar, no board behind the band, and no
+ending board at the whistle. The band keeps the clock and both sides' scores.
+The instruments arrive with the room: spectating counts as joining, because a
+spectator has walked into one.
+
+**Why:** decision 61 made the front page a live room watched from the stands,
+and it inherited the watcher's HUD whole. A radar answers what is near you,
+and there is no you on that screen: the camera is standing behind somebody
+else's hull and the blips are their neighbors. A roster is the list of a room,
+read by somebody in it to know which end of the gun they are on. The ending is
+that same board with a head over it, so every three minutes the wordmark spent
+twenty five seconds under a full roster and a line saying who took a match
+nobody had watched the start of.
+
+`ui.waiting` had already made the argument for the screen one step earlier:
+before a room answers, the radar and the roster are absent rather than drawn
+empty. The landing found a room and put them back. What it owes a stranger is
+the fight, the name and the way in.
+
+The keys stand down with the panels. The map key on the front page used to set
+a flag nothing drew, which the next seat then cashed: press it in the stands
+and the whole thousand tiles opened the moment you arrived in a room.
+
+**Cost:** a visitor cannot look up who is in the fight they are watching until
+they are in it. That is a press away rather than a screen away, and the band
+still says what the score is. Two layout facts hang off the corner and answer
+differently: the feed reads the corner's extent, so it starts at the top row's
+own line when there is nothing in it, and the band's width does not, so an
+upright phone gives up its two side names out here exactly as it does in a
+match. A band that spread into the empty corner would hand a phone those names
+and take them away again on PLAY NOW.
+
+**Verified:** `landing_test` checks both directions on four windows: no radar
+box, no press on the band, no board with the roster flag set anyway, no board
+at the whistle and no wash for one, and the strip under the corner starting at
+the row. The same file checks that a pilot the room is holding a seat for
+keeps all of it. The pictures `hud_svg` writes for the landing show an empty
+corner at 1280 by 800 and at 390 by 844, and a match still shows the dial.

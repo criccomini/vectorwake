@@ -348,6 +348,15 @@ where you are, and a pair of tile numbers beside it was the same fact in the
 form nobody reads. Bottom left: the corner stack, what your triggers do and
 what you carry, growing upward.
 
+The corner and the board belong to a room you are in, the way the key at the
+foot does. The front page has neither: no dial, and a band that opens nothing.
+A radar answers what is near you and there is no you out there, and a roster is
+the list of a room somebody is standing outside of. The whistle is the same
+rule, since the ending is that board with a head over it, so on the front page
+a finished match is a word under the clock and the fight carrying on behind
+the name. What the band keeps either way is the clock and both scores, which
+are the fight reading out rather than an instrument about a seat.
+
 The top of that geography is a row with an instrument at each end. The corner
 key and the band share one center, a key's height is what that center is taken
 from, and the band grows outward from the middle until it reaches the key on
@@ -377,14 +386,13 @@ clock's own height so the whole
 thing reads as one line. The clock is one key tall, the same at every window
 size, so the band and the way into the menu are the same height and the top
 row reads as a row. Under it, the flag pennants and whatever the room
-has to say. The band is also the control: a press opens the board under it,
-which is the roster, then the pilot box a row was pressed on. While that
-board is up the fight behind it is washed and every other instrument's type
-recedes, because the board is the thing being read. Dead center is reserved for
-the big statements, DESTROYED and SAFE ZONE, and for the cards and tables a
-player asks for. On a
-touchscreen the bottom of the screen belongs to the thumbs and everything else
-lifts out of their way.
+has to say. The band is also the control, in a room you are in: a press opens
+the board under it, which is the roster, then the pilot box a row was pressed
+on. While that board is up the fight behind it is washed and every other
+instrument's type recedes, because the board is the thing being read. Dead
+center is reserved for the big statements, DESTROYED and SAFE ZONE, and for
+the cards and tables a player asks for. On a touchscreen the bottom of the
+screen belongs to the thumbs and everything else lifts out of their way.
 
 Panels in the left column size themselves to their content, count their rows,
 and measure their columns against the widest thing actually in them, headed
