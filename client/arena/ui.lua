@@ -888,9 +888,18 @@ end
 -- word rather than the weight. The word rides along on a phone as well, which
 -- the corner never had the room for.
 --
--- The box stays. `key_box` is the one shape a pressable thing wears here, and
--- three bars floating on the glass would make this control the exception the
--- keys were drawn as boxes to stop being.
+-- No box. `key_box` is the one shape a pressable thing wears here, and every
+-- other one of them keeps it, but this key is not standing among them: it is
+-- alone at the foot, over the fight in a seat and under PLAY NOW in the
+-- stands, and in both places the box was the thing that read wrong. On the
+-- landing it made a fourth stop under the three, since a stop is a box at
+-- that width in that column. Over a match it made an instrument, since the
+-- band, the dial and the corner chips are the boxes up there and a box at the
+-- foot joins them.
+--
+-- The mark and the word carry it instead, which is what the footer line in
+-- `.design/no-drawer` was already doing. What the box was buying was "this is
+-- pressable", and the three bars say that on every screen anybody has used.
 local BURGER = {w = 12, bar = 1.6, gap = 3.8, h = 22}
 local function burger_w()
     return BURGER.w * F.scale + 3 * KEY_PAD * F.scale
@@ -903,10 +912,9 @@ local function burger_cap(x, y, on)
     local bars = BURGER.w * F.scale
     local w = burger_w()
     -- Under a fingertip whatever it looks like: `M.pick` grows a box to the
-    -- touch floor for a finger, so a key drawn at 22 points answers a press
-    -- aimed anywhere near it.
-    key_box(x, y, w, h, pal.a(col, on and 0.16 or 0.05),
-            pal.a(col, on and 0.9 or 0.35))
+    -- touch floor for a finger, so a mark drawn at 22 points answers a press
+    -- aimed anywhere near it, and the box it grows is the one it publishes
+    -- rather than the one it draws.
     local bx = x + KEY_PAD * F.scale
     local mid = y + h / 2
     local ink = pal.a(col, on and 1 or 0.5)

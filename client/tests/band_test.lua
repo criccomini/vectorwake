@@ -36,10 +36,29 @@ end
 local rects = {}
 local layer = {n = 0}
 local function noop(self) self.n = self.n + 1 end
-for _, name in ipairs({"arc", "disc", "flush", "frame", "halo", "outline", "quad",
+for _, name in ipairs({"arc", "disc", "flush", "halo", "outline", "quad",
                        "reset", "ring", "seg", "seg_fade", "seg_flat",
                        "skirt", "tri", "tri_fade"}) do
     layer[name] = noop
+end
+
+-- How thin the thinnest outline on the row came out.
+--
+-- A hard-edged rect thinner than a pixel covers a pixel center or misses it on
+-- where the row happens to sit, so the same edge goes missing on every chip
+-- that shares the row at once. It is arithmetic no assertion about strings can
+-- see and no screenshot in CI would catch, so the thickness is recorded rather
+-- than trusted.
+--
+-- This lived in podium_test, guarding the saying chips on the match ending.
+-- Those chips went, and the check spent a while satisfied by the corner MENU
+-- key's own box, which was the last outline on that frame; when the key
+-- stopped wearing a box there was nothing left for it to measure at all. The
+-- chips it is really about are the ones in this corner.
+local thinnest = nil
+layer.frame = function(self, _, _, _, _, t)
+    self.n = self.n + 1
+    if t and (not thinnest or t < thinnest) then thinnest = t end
 end
 -- Recorded rather than counted: the wash the board lays over the fight is a
 -- rect the size of the window, and nothing else on screen is.
@@ -125,6 +144,7 @@ local function frame(o)
     o = o or {}
     w_now, h_now = o.w or W, o.h or H
     rects = {}
+    thinnest = nil
     state.n = 0
     ui.begin(layer, w_now, h_now, 1, false, o.now)
     ui.hud({
@@ -253,6 +273,16 @@ if pylon and fifteen and caisson and nineteen and clock then
               and math.abs(clock.px - key.h) < 0.5,
           key and string.format("%.1f against %.1f", clock.px, key.h)
               or "no room chip")
+end
+
+-- --- the outlines up there hold a pixel -------------------------------------
+
+do
+    frame({rooms = ROOMS, room = 1})
+    check("the corner chips are outlined at all", thinnest ~= nil,
+          "nothing on the row drew an outline")
+    check("and no outline on the row is thinner than a pixel",
+          thinnest ~= nil and thinnest >= 1, tostring(thinnest))
 end
 
 -- --- the top row is a row ---------------------------------------------------

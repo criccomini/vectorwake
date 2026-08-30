@@ -851,15 +851,18 @@ local eight = {
     [6] = {name = "Tessellate", label = "bot", ai = true, house = true},
     [7] = {name = "Ozone", label = "bot", ai = true, house = true},
 }
--- The chip outlines have to hold a whole pixel as well: a hard-edged rect
--- thinner than one covers a pixel center or misses it on where the row
--- happens to sit, and the six chips share a row, so the same edge went
--- missing on all of them at once. Thickness is recorded rather than trusted.
-local thinnest = nil
-layer.frame = function(self, _, _, _, _, t)
-    self.n = self.n + 1
-    if not thinnest or t < thinnest then thinnest = t end
-end
+-- The saying chips used to be outlined here, and their outlines had to hold a
+-- whole pixel: a hard-edged rect thinner than one covers a pixel center or
+-- misses it on where the row happens to sit, and the six of them shared a row,
+-- so the same edge went missing on all of them at once.
+--
+-- There are no chips on this frame any more, which the block above checks
+-- directly, and with them went every stroked rectangle the ending drew. The
+-- thickness check outlived its subject: for a while it was satisfied by the
+-- corner MENU key's own box, which was the one outline left on screen, and
+-- when that key stopped wearing a box it had nothing at all to measure. The
+-- rule is real and still worth holding, so it moved to band_test, where the
+-- corner chips it is about are drawn.
 ui.details = true
 ui.inspect = 1
 frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
@@ -885,8 +888,6 @@ for _, phrase in ipairs(SAYS) do
     end
     check("no chip is drawn for " .. phrase, at == nil, tostring(at))
 end
-check("no outline on the ending is thinner than a pixel",
-      thinnest ~= nil and thinnest >= 1, tostring(thinnest))
 ui.details = false
 ui.inspect = nil
 

@@ -212,9 +212,12 @@ inside a panel keep `BORDER` and have nothing to find.
 The interface owns a small number of shapes and each one means one thing.
 
 **A button is a stroked box**: a rectangle outlined all the way round with a
-wash inside it (`key_box`). It is what the `MENU` key wears at the foot, what a
-card's answers wear, what the help board draws a key as, so a hand
-that has learned one has learned all of them. On or off is one rule
+wash inside it (`key_box`). It is what a card's answers wear, what the help
+board draws a key as, and what the corner chips wear, so a hand that has
+learned one has learned all of them. The `MENU` key at the foot is the one
+exception, and it is the exception because it stands alone: a box down there
+joins the column above it or the instruments across the top, depending which
+screen you are on. Its three bars do the work the box would. On or off is one rule
 everywhere: lit in cyan with a stronger wash when active, dim otherwise.
 
 **The chamfered bracket holds everything that is not a button**: a field, a

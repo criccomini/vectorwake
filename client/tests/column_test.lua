@@ -252,6 +252,33 @@ do
           t and t.col and ("alpha " .. tostring(t.col[4])) or "no word")
 end
 
+-- And it wears no box. Every other pressable thing here is a stroked
+-- rectangle, and this one is not, because it is the only one standing alone:
+-- at the foot of the landing a box reads as a fourth stop under the three,
+-- since a stop is a box at that width in that column, and over a match it
+-- reads as an instrument, since the band, the dial and the corner chips are
+-- the boxes up there. The mark and the word carry it instead.
+do
+    frame(1440, 810)
+    local key = hit_of("open")
+    local boxed = 0
+    for _, b in ipairs(boxes) do
+        if key and b.w and math.abs(b.w - key.w) < 2 then boxed = boxed + 1 end
+    end
+    check("the menu key is drawn without a box", boxed == 0,
+          tostring(boxed) .. " outlines at the key's width")
+    frame(1440, 810, {landing = true})
+    local lkey = hit_of("open")
+    local lboxed = 0
+    for _, b in ipairs(boxes) do
+        if lkey and b.w and math.abs(b.w - lkey.w) < 2 then
+            lboxed = lboxed + 1
+        end
+    end
+    check("and without one on the landing either", lboxed == 0,
+          tostring(lboxed) .. " outlines at the key's width")
+end
+
 -- Nothing in the corner opens it any more.
 do
     frame(1440, 810)

@@ -5220,6 +5220,14 @@ fight rather than beside it, and a first visit should be reading the word
 rather than working around the weight. The word rides along on a phone as well,
 which the corner never had the room for.
 
+It wears no box, which makes it the one pressable thing in this interface that
+is not a stroked rectangle. That is because it is the only one standing alone.
+On the landing a box at that width in that column reads as a fourth stop under
+the three, and over a match it reads as an instrument, since the band, the dial
+and the corner chips are the boxes up there. The mark and the word carry it
+instead, which is what the footer line in `.design/no-drawer` was already
+doing: three bars say "press me" on every screen anybody has used.
+
 Side is a list rather than a value stepped left and right. Arrows walk, which
 is fine while a room holds two sides and wrong the moment it holds three:
 reaching the third means crossing the second, and a pilot who wanted the third

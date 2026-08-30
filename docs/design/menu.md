@@ -23,7 +23,9 @@
 > of the left edge. It is at the bottom middle, where the column stands, so the
 > press and what it raises share a spot; the column slides up out of that edge
 > and RESUME settles onto the key's own pixels. It carries the word on every
-> window, which the corner never had room for on a phone.
+> window, which the corner never had room for on a phone, and it wears no box:
+> alone at the foot, a box reads as a fourth stop under the landing's three and
+> as an instrument over a match.
 >
 > Nothing pauses. The wash behind the column is a tint, and the clock band and
 > the radar keep their line, because a pilot reading settings is still being
