@@ -40,7 +40,11 @@ local function world_stub()
         HULLS = setmetatable({}, {
             __index = function()
                 return {poly = {0, 12, 8, -8, -8, -8}, mid = 2, reach = 12,
+                        hot = {1, 0.6, 0.3},
                         lines = {{0, 12, 0, -8}},
+                        plates = {{0, 6, 3, 0, -3, 0}},
+                        tubes = {{4, 2, 4, -2, 1.4}},
+                        pods = {{0, 10, 1.2}},
                         canopy = {0, 8, 2, 4, -2, 4}}
             end,
         }),

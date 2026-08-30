@@ -313,53 +313,89 @@ APEX_LINES = [[(0, 19.8), (2.6, 5), (6.5, -1)],
               [(5, 0.2), (9.3, -8.2)], [(-5, 0.2), (-9.3, -8.2)],
               [(2.6, 1.5), (6, -1.6)], [(-2.6, 1.5), (-6, -1.6)]]
 APEX_CANOPY = [(0, 15.5), (1.5, 10.5), (0, 7.6), (-1.5, 10.5)]
+APEX_PLATES = [[(0, 6.5), (2.2, 2), (1.8, -6), (0, -8), (-1.8, -6), (-2.2, 2)]]
+APEX_TUBES = [((4.2, 3), (4.2, -1), 1.4), ((-4.2, 3), (-4.2, -1), 1.4)]
 # `reach` is the circle that holds the hull and `mid` is halfway up it, both
 # measured off the polygon when world.lua loads. A drawing about the origin
 # sits low, because every hull reaches further forward than back.
 APEX_REACH = 22.0
 APEX_MID = 4.75
+PANEL_INK = "#9fb6d4"
 
 
-def hull_art(cx, cy, r, ang, col=FRIEND):
-    """One hull, turning, at the size a menu can look at it.
+def hull_art(cx, cy, r, squash, col=FRIEND):
+    """One hull, turning on its own vertical axis, drawn the way the arena
+    draws one.
 
-    Caught mid-turn rather than animated: a still board says what the shape
-    is, and the client turns it once every eleven seconds."""
-    import math
+    Not a tracing. The client gives a hull plates washed and outlined in the
+    panel ink, hardpoints drawn hot, a canopy that is always the brightest
+    closed shape on it, and a silhouette whose every edge carries its own
+    brightness. The bloom is the one part it leaves out: that lives on the
+    fight's additive layer, and a panel draws on one that composites.
+
+    `squash` is the cosine of the turn: local x scaled by it and the length
+    left alone, which is a ship rotating about the axis up the screen.
+    Broadside at 1, edge-on at 0. Caught mid-turn here rather than animated;
+    the client turns it once every eleven seconds."""
     k = r / APEX_REACH
-    ca, sa = math.cos(ang), math.sin(ang)
 
     def put(pts):
-        out = []
-        for px, py in pts:
-            x, y = px * k, (py - APEX_MID) * k
-            out.append((cx + x * ca - y * sa, cy - (x * sa + y * ca)))
-        return out
+        return [(cx + px * squash * k, cy - (py - APEX_MID) * k)
+                for px, py in pts]
 
     def path(pts, close):
         d = "M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts)
         return d + (" Z" if close else "")
 
-    parts = [f'<path d="{path(put(APEX_POLY), True)}" fill="none" '
-             f'stroke="{col}" stroke-width="1.6" stroke-linejoin="round"/>']
+    parts = []
+    for plate in APEX_PLATES:
+        t = put(plate)
+        parts.append(f'<path d="{path(t, True)}" fill="{PANEL_INK}" '
+                     f'fill-opacity=".035" stroke="{PANEL_INK}" '
+                     f'stroke-width="0.85" stroke-opacity=".36"/>')
     for line in APEX_LINES:
         parts.append(f'<path d="{path(put(line), False)}" fill="none" '
-                     f'stroke="{col}" stroke-width="1.1" opacity=".55"/>')
-    parts.append(f'<path d="{path(put(APEX_CANOPY), True)}" fill="none" '
-                 f'stroke="{INK}" stroke-width="1.1" opacity=".7"/>')
+                     f'stroke="{PANEL_INK}" stroke-width="0.7" '
+                     f'stroke-opacity=".26"/>')
+    for a, b, w in APEX_TUBES:
+        t = put([a, b])
+        parts.append(f'<path d="{path(t, False)}" stroke="{col}" '
+                     f'stroke-width="{w * k:.1f}" stroke-opacity=".3"/>')
+        parts.append(f'<path d="{path(t, False)}" stroke="{INK}" '
+                     f'stroke-width="{w * k * 0.34:.1f}" '
+                     f'stroke-opacity=".9"/>')
+    # The silhouette, every edge at its own brightness: a light fixed to the
+    # hull's own nose, so a ship reads the same whichever way it is pointing.
+    hull = put(APEX_POLY)
+    lo = min(p[1] for p in APEX_POLY)
+    span = max(p[1] for p in APEX_POLY) - lo
+    for i, (x, y) in enumerate(hull):
+        x2, y2 = hull[(i + 1) % len(hull)]
+        t = (APEX_POLY[i][1] - lo) / span
+        parts.append(f'<path d="M{x:.1f},{y:.1f} L{x2:.1f},{y2:.1f}" '
+                     f'stroke="{col}" stroke-width="1.5" '
+                     f'stroke-opacity="{max(0.18, t * t):.2f}" '
+                     f'stroke-linecap="round"/>')
+    parts.append(f'<path d="{path(put(APEX_CANOPY), True)}" fill="{INK}" '
+                 f'fill-opacity=".42" stroke="{INK}" stroke-width="0.9" '
+                 f'stroke-opacity=".95"/>')
     return "".join(parts)
 
 
-def carousel(hull, ang=0.42, h=206, pad=14, here=True):
+def carousel(hull, note, squash=0.62, h=228, pad=14, here=True):
     """The body section: one ship turning, an arrow either side of it level
-    with the ship rather than with the row, and the name under it.
+    with the ship rather than with the row, and the name and the hull's own
+    line under it.
 
-    The name is the press that flies it; the arrows only look."""
+    The ship is the press that flies it; the arrows only look. That press sits
+    at the priority every other control on a panel does, which is what it did
+    not do at first: the glass publishes its own box before any row draws, and
+    a control sharing that priority is one the panel swallows."""
     col = FRIEND if here else INK
-    nameh = 30
-    mid = (h - nameh) / 2
+    nameh, noteh = 30, 22
+    mid = (h - nameh - noteh) / 2
     wash = WASH_HERE if here else ""
-    art = hull_art(560 / 2, mid, min(mid - 6, 80), ang, col)
+    art = hull_art(560 / 2, mid, min(mid - 6, 78), squash, col)
     return (f'<div style="position:relative;height:{h}px;{wash}">'
             f'<svg width="560" height="{h}" style="position:absolute;'
             f'inset:0">{art}</svg>'
@@ -367,9 +403,13 @@ def carousel(hull, ang=0.42, h=206, pad=14, here=True):
             f'{step_tri(-1, k=18)}</div>'
             f'<div style="position:absolute;right:{pad + 10}px;'
             f'top:{mid - 9}px">{step_tri(1, k=18)}</div>'
+            f'<div style="position:absolute;left:0;right:0;'
+            f'bottom:{noteh}px;height:{nameh}px;display:flex;'
+            f'align-items:center;justify-content:center;font-size:21px;'
+            f'color:{col}">{hull}</div>'
             f'<div style="position:absolute;left:0;right:0;bottom:0;'
-            f'height:{nameh}px;display:flex;align-items:center;'
-            f'justify-content:center;font-size:21px;color:{col}">{hull}</div>'
+            f'height:{noteh}px;display:flex;align-items:center;'
+            f'justify-content:center;font-size:14px;color:{READ}">{note}</div>'
             f'</div>')
 
 
@@ -579,7 +619,8 @@ def body_board():
     The tray is still drawn, because the purse is a fact about the ship rather
     than about the page, and nothing here costs a credit on the shipped
     roster: every hull's flight step is zero."""
-    rows = [carousel("Apex")]
+    rows = [carousel("Apex", "Long and narrow, with a larger broadside "
+                     "target")]
     for name, share in zip(STATS, shares("Apex")):
         rows.append(stat_line(name, share))
     return board(1440, 810, "body", rows, seed=3,

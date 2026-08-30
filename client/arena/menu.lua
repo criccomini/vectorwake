@@ -850,11 +850,17 @@ function M.sect_rows(cls, sect, at)
         if at < 0 or at > #HULLS then at = M.panel_home() end
         local h = roster[at + 1]
         if h then
+            local hull = HULLS[at + 1]
             rows[#rows + 1] = {kind = "art", label = h.label, value = h.value,
                                here = h.here, at = at, pages = #HULLS + 1,
                                cls = type(h.value) == "number" and h.value
                                    or nil,
-                               note = h.note}
+                               -- What this hull is, in the one line the
+                               -- roster has carried since it was written.
+                               -- Nothing had ever drawn it: the page that
+                               -- named a hull was a row, and a row of a list
+                               -- has no second line to put a sentence on.
+                               note = hull and hull[3] or h.note}
             for i, name in ipairs(FLIGHT_NAMES) do
                 if h.bars then
                     rows[#rows + 1] = {kind = "stat", label = name,

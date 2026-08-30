@@ -5936,3 +5936,63 @@ empty on speed, thrust and turn and full on energy and recharge, which is its
 row in `sim/src/baseline.c` exactly. `landing_test` holds the two arrows level
 with each other, either side of the drawing and above the name under it;
 `menu_test` covers the page, the wrap and the sitting-out page.
+
+## 114. The carousel draws the ship, and the ship takes the press
+
+**Status:** accepted, correcting [decision
+113](#113-body-is-a-carousel)
+
+**Decision:** four corrections to the body section.
+
+The hull turns about the axis running up the screen rather than spinning in
+the plane of it: local x scaled by the cosine of the angle and the length left
+alone, which is the bank `world.ship` already has. Broadside at nought,
+edge-on at a quarter turn, nose up the whole way round.
+
+The drawing is the ship rather than an outline of one. Plates washed and
+outlined in the panel ink, hardpoints drawn hot, the canopy, and a silhouette
+whose every edge carries its own brightness off `h.hot`. Every element and
+every weight is `world.ship`'s, read off the same tables. What it leaves out
+is the two skirts of bloom, which live on the fight's additive layer; a panel
+draws on the interface's, which composites, so a skirt there hazes rather than
+lights.
+
+The ship carries the hull's own line under its name, which is the sentence the
+roster in `menu.lua` has held since it was written and nothing had ever drawn.
+
+And the press that flies a ship is published at the priority every other
+control on a panel is published at.
+
+**Why:** Chris said the rotation was about the wrong axis, that he could not
+select the ship, that going back still showed an Apex, and that the graphics
+were fake. All four are his, and the middle two are one bug.
+
+`M.pick` keeps the first box of the highest priority it finds. `panel_frame`
+publishes `panel_hold` at priority nought before any row draws, so that box
+is first and any control sharing that priority is one the glass swallows.
+The roster's press has been at nought since the walker had it, which means
+pressing the ship to fly it has never worked on any shape this section has
+taken: the box was published, every check asked whether it was published, and
+none of them asked what a press resolved to. That is the test that was
+missing, and it is the one that catches this class of bug rather than this
+instance of it.
+
+Nothing else was wrong with picking. `apply_menu` sets `menu.class` from
+`menu.pending` on the landing, so the moment the press lands the menu follows
+it: the Apex that would not go away was the press never arriving.
+
+**Cost:** the drawing repeats `world.ship`'s recipe rather than calling it.
+Threading a scale through that function reaches about twenty-five sites in the
+arena's hot draw path, all of them multiplying by one for every ship in every
+frame, and the two drawings can now drift. What the repetition buys is the
+fight's own draw path untouched.
+
+**Verified:** built and photographed. Apex broadside, Cipher part way through
+its turn, and a Wedge picked off the carousel with the menu behind it reading
+Wedge, its own bars, "Fused, 6 fragments" on bombs and two credits left of
+seven, which is the Wedge's row in `sim/src/baseline.c` exactly.
+`landing_test` measures the drawing at two points of the turn and holds the
+width to shrink while the height does not, which fails on the spin it
+replaced (`104x130 then 130x104`), and asks what a press on the ship, on an
+arrow and on a section row each resolve to, which fails on the priority this
+decision corrects (`panel_hold`).

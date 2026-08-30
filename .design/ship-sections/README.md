@@ -7,8 +7,9 @@ back bar, and still there in the submenus.
 
 Shipped as [decision 112](../../docs/architecture/decisions.md), with body
 corrected to a carousel by [decision
-113](../../docs/architecture/decisions.md). Nine boards, drawn before the
-client was, and kept in step with it.
+113](../../docs/architecture/decisions.md) and to the ship's own drawing by
+[decision 114](../../docs/architecture/decisions.md). Nine boards, drawn
+before the client was, and kept in step with it.
 
 Artifact: [Ship Menu Sections](https://claude.ai/code/artifact/165ecbef-f9b9-4392-bcf9-27bf0938653a)
 
@@ -73,11 +74,12 @@ bombs section with nothing in it rather than one nobody remembered to hide.
 
 Body is the one section that is a choice rather than a set of slots, and it
 took three shapes to settle. It was a walker with no drawing on it, then a
-list of seven with five bars apiece, and it is a carousel: one hull drawn
-large and turning, an arrow either side of it, the five rows underneath. What
-the list bought was reading two hulls against each other; what it cost was
-seeing either of them, and what a hull looks like is most of what a pilot is
-choosing between. See decision 113.
+list of seven with five bars apiece, and it is a carousel: one hull drawn the
+way the arena draws one, turning about the axis up the screen, an arrow either
+side of it, the name and the hull's own line under it, the five rows beneath.
+What the list bought was reading two hulls against each other; what it cost
+was seeing either of them, and what a hull looks like is most of what a pilot
+is choosing between. See decisions 113 and 114.
 
 Nothing in body costs a credit on the shipped roster: every hull's flight step
 is zero, which is why the shipped panel has no flight rows either.

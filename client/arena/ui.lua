@@ -4731,45 +4731,104 @@ local FLIGHT_ROWS = {"speed", "thrust", "turn", "energy", "recharge"}
 -- under the test harness, which holds every one of these still.
 local HULL_TURN = 11
 
--- One hull, turning, at the size a menu can look at it.
+-- How large a hull is drawn, as the radius of the circle that holds it.
+local HULL_ART_R = 78
+
+-- One hull, turning on its own vertical axis, drawn the way the arena draws
+-- one.
 --
--- The silhouette only, which is what `world.HULLS` calls the part a menu
--- draws, plus the interior lines and the canopy that say which way it is
--- facing. Centred on `mid` rather than on the origin: every hull reaches
--- further forward than back, so a drawing about its own turning point sits
--- low. `reach` is the circle that holds it, so an Anvil and a Cipher come out
--- the same size on screen rather than the same size in world pixels.
+-- Not an outline of a ship. The first of these stroked `poly` and laid the
+-- interior lines over it, which is a tracing: the arena gives a hull plates
+-- washed and outlined in the panel ink, hardpoints drawn hot, a canopy that
+-- is always the brightest closed shape on it, lamps, and a silhouette whose
+-- every edge carries its own brightness off `h.hot`. That last one is most of
+-- what makes a hull look built rather than cut from one sheet of neon, and a
+-- traced outline has none of it. Every element and every weight here is
+-- `world.ship`'s, read off the same tables.
+--
+-- What is left out is the two skirts of bloom and the halo under them.
+-- `world.ship` puts those on the fight's glow layer, which is additive and
+-- sits behind the glass; a panel draws on the interface's layer, which
+-- composites and sits in front of it. A skirt drawn there hazes rather than
+-- lights, so this takes the strokes and leaves the light.
+--
+-- The turn is the bank the renderer already has: local x scaled by the cosine
+-- of the angle, and everything that speaks local x going with it, so hull,
+-- plates, canopy and hardpoints turn together. That is a ship rotating about
+-- the axis running up the screen, broadside at nought and edge-on at a
+-- quarter turn, with its nose up the whole way round. It was a spin in the
+-- plane of the screen, which is a ship tumbling rather than a ship turning.
 local function hull_art(cx, cy, cls, r, col, alpha)
     local h = world.HULLS and world.HULLS[cls + 1]
-    -- `reach` and `mid` are measured off the polygon when world.lua loads, so
-    -- a hull that has neither is a table this drawing was never meant to be
-    -- handed. Nothing rather than a raise: the panel around it is still the
-    -- thing on screen.
-    if not (h and h.poly and h.reach) then return end
+    -- `reach`, `mid` and `hot` are all measured off the polygon when
+    -- world.lua loads, so a hull without them is a table this was never meant
+    -- to be handed. Nothing rather than a raise: the panel around it is still
+    -- the thing on screen.
+    if not (h and h.poly and h.reach and h.hot) then return end
     local k = r / math.max(1, h.reach)
-    local ang = (F.now * math.pi * 2) / HULL_TURN
-    local ca, sa = math.cos(ang), math.sin(ang)
+    local dim = alpha * (h.dim or 1)
+    local squash = math.cos((F.now * math.pi * 2) / HULL_TURN)
+    -- Local pixels to the interface's own, with the nose up the screen: the
+    -- hulls are written with the nose along +y and this counts y downward.
     local out = {}
-    local function turned(src)
+    local function put(src)
         for i = 1, #src, 2 do
-            local x, y = src[i] * k, (src[i + 1] - h.mid) * k
-            out[i] = cx + x * ca - y * sa
-            out[i + 1] = ry(cy - (x * sa + y * ca))
+            out[i] = cx + src[i] * squash * k
+            out[i + 1] = ry(cy - (src[i + 1] - h.mid) * k)
         end
         for i = #src + 1, #out do out[i] = nil end
         return out
     end
-    F.layer:outline(turned(h.poly), 1.6 * F.scale, pal.a(col, alpha), true)
+
+    -- The interior first, so the silhouette closes over it.
+    for _, q in ipairs(h.plates or {}) do
+        local t = put(q)
+        F.layer:fan(t, pal.a(pal.PANEL_INK, 0.035 * dim))
+        F.layer:outline(t, 0.85 * F.scale,
+                        pal.a(pal.PANEL_INK, 0.36 * dim), true)
+    end
     for _, q in ipairs(h.lines or {}) do
-        local t = turned(q)
+        local t = put(q)
         for i = 1, #t - 3, 2 do
-            F.layer:seg(t[i], t[i + 1], t[i + 2], t[i + 3],
-                        1.1 * F.scale, pal.a(col, alpha * 0.55), true)
+            F.layer:seg(t[i], t[i + 1], t[i + 2], t[i + 3], 0.7 * F.scale,
+                        pal.a(pal.PANEL_INK, 0.26 * dim), true)
         end
     end
+    -- Hardpoints: where a hull's damage comes out of is worth knowing at a
+    -- glance, and it is the same element at every size.
+    for _, t in ipairs(h.tubes or {}) do
+        local ax, ay = cx + t[1] * squash * k, ry(cy - (t[2] - h.mid) * k)
+        local bx, by = cx + t[3] * squash * k, ry(cy - (t[4] - h.mid) * k)
+        local w = t[5] * k
+        F.layer:seg(ax, ay, bx, by, w, pal.a(col, 0.30 * dim), true)
+        F.layer:seg(ax, ay, bx, by, w * 0.34,
+                    pal.a(pal.hot(col, 0.55, 1), 0.9 * dim), true)
+    end
+    -- The silhouette, every edge at its own brightness. `hot` is a light
+    -- fixed to the hull's own nose, so a ship reads the same whichever way it
+    -- is pointing.
+    local pts = put(h.poly)
+    local edge = pal.hot(col, 0.34, 1)
+    local n, e = #pts, 1
+    for i = 1, n, 2 do
+        local j = (i + 1 < n) and i + 2 or 1
+        F.layer:seg(pts[i], pts[i + 1], pts[j], pts[j + 1], 1.5 * k,
+                    pal.a(edge, math.min(1, (h.hot[e] or 1) * dim)), true)
+        e = e + 1
+    end
+    -- The canopy: always the brightest closed shape on a hull and always
+    -- forward of centre, so which end is the front never needs a second look.
     if h.canopy then
-        F.layer:outline(turned(h.canopy), 1.1 * F.scale,
-                        pal.a(pal.INK, alpha * 0.7), true)
+        local t = put(h.canopy)
+        F.layer:fan(t, pal.a(pal.hot(col, 0.3, 1), 0.42 * dim))
+        F.layer:outline(t, 0.9 * F.scale,
+                        pal.a(pal.hot(col, 0.8, 1), 0.95 * dim), true)
+    end
+    for _, d in ipairs(h.pods or {}) do
+        local lx, ly = cx + d[1] * squash * k, ry(cy - (d[2] - h.mid) * k)
+        F.layer:halo(lx, ly, d[3] * 2.6 * k, 6, pal.a(col, 0.30 * dim))
+        F.layer:disc(lx, ly, d[3] * 0.45 * k, 4,
+                     pal.a(pal.hot(col, 0.8, 1), 0.8 * dim))
     end
 end
 
@@ -4848,20 +4907,23 @@ local function land_row(kx, kw, y, h, r)
         LIT.state(kx, y, kw, h, on, r.here)
         local col = r.here and pal.FRIEND or pal.INK
         local a = (r.here and not on) and LIT.breath() or 1
+        -- The name and the hull's own line under the drawing, and the
+        -- drawing over what is left.
         local nameh = 30 * F.scale
-        local mid = y + (h - nameh) / 2
+        local noteh = r.note and 22 * F.scale or 0
+        local mid = y + (h - nameh - noteh) / 2
         if r.cls then
             hull_art(kx + kw / 2, mid, r.cls,
-                     math.min((h - nameh) / 2 - 6 * F.scale,
-                              80 * F.scale), col, a)
-        elseif r.note then
-            -- Sitting out has no ship to draw, so what stands in its place is
-            -- the sentence about it.
-            txt(r.note, kx + kw / 2, mid, TYPE.BODY * F.scale, pal.READ,
-                "center", MENU_FONT)
+                     math.min((h - nameh - noteh) / 2 - 6 * F.scale,
+                              HULL_ART_R * F.scale), col, a)
         end
-        txt(r.label, kx + kw / 2, y + h - nameh / 2, TYPE.LEAD * F.scale,
-            pal.a(col, a), "center", MENU_FONT, r.value ~= "spectate")
+        txt(r.label, kx + kw / 2, y + h - noteh - nameh / 2,
+            TYPE.LEAD * F.scale, pal.a(col, a), "center", MENU_FONT,
+            r.value ~= "spectate")
+        if r.note then
+            txt(r.note, kx + kw / 2, y + h - noteh / 2, TYPE.BODY * F.scale,
+                pal.READ, "center", MENU_FONT)
+        end
         -- The two arrows, at the glass's own edges and level with the middle
         -- of the ship rather than with the row: what they turn is the
         -- drawing, so that is what they stand beside.
@@ -4875,10 +4937,17 @@ local function land_row(kx, kw, y, h, r)
             hit(ax - 24 * F.scale, mid - 26 * F.scale, 48 * F.scale,
                 52 * F.scale, "land_page_ship", dir, nil, 1)
         end
-        -- The name takes the press, published under the arrows and clear of
-        -- them, so a thumb aiming at the ship gets the ship.
+        -- The ship takes the press, published clear of the arrows either
+        -- side of it, so a thumb aiming at the ship gets the ship.
+        --
+        -- At the priority every other control on a panel is published at.
+        -- `M.pick` keeps the first box of the highest priority, and the glass
+        -- publishes `panel_hold` at nought before any row draws, so a control
+        -- sharing that priority is one the panel swallows every time. The
+        -- roster's own press had been at nought since the walker had it,
+        -- which is the whole of why a ship could be turned to and not flown.
         hit(kx + 56 * F.scale, y, kw - 112 * F.scale, h, "land_pick_ship",
-            r.value, nil, 0)
+            r.value, nil, 1)
         return
     end
     if r.kind == "sect" then
@@ -4939,7 +5008,7 @@ end
 -- one, the roster's column head is a band, and the hairline over the reset is
 -- the rule the account list already draws between its two groups.
 function pages.land_row_h(r, drh)
-    if r.kind == "art" then return 206 * F.scale end
+    if r.kind == "art" then return 228 * F.scale end
     if r.kind == "bars" then return 34 * F.scale end
     if r.kind == "stat" then return 26 * F.scale end
     if r.kind == "rule" then return 9 * F.scale end

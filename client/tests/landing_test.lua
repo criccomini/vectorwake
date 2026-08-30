@@ -31,11 +31,27 @@ end
 
 local layer = {n = 0}
 local function noop(self) self.n = self.n + 1 end
-for _, name in ipairs({"arc", "flush", "outline", "quad", "reset",
-                       "ring", "seg", "seg_fade", "seg_flat", "skirt", "tri",
+for _, name in ipairs({"arc", "flush", "quad", "reset",
+                       "ring", "seg_fade", "seg_flat", "skirt", "tri",
                        "tri_fade", "fan", "seg_glow", "glow_band", "halo",
                        "ring_fade"}) do
     layer[name] = noop
+end
+
+-- Segments are kept as well, because one drawing out here is made of nothing
+-- else: the hull on the body carousel is strokes, and what it is asked is how
+-- wide and how tall it came out.
+local segs = {}
+layer.seg = function(self, x1, y1, x2, y2)
+    self.n = self.n + 1
+    segs[#segs + 1] = {x1 = x1, y1 = y1, x2 = x2, y2 = y2}
+end
+layer.outline = function(self, pts)
+    self.n = self.n + 1
+    for i = 1, #pts - 3, 2 do
+        segs[#segs + 1] = {x1 = pts[i], y1 = pts[i + 1],
+                           x2 = pts[i + 2], y2 = pts[i + 3]}
+    end
 end
 
 -- Frames and rects are kept, because the key is a stroked box over a wash and
@@ -111,7 +127,11 @@ package.loaded["arena.world"] = {
     HULLS = setmetatable({}, {
         __index = function()
             return {poly = {0, 12, 8, -8, -8, -8}, mid = 2, reach = 12,
-                    lines = {{0, 12, 0, -8}}}
+                    hot = {1, 0.6, 0.3},
+                    lines = {{0, 12, 0, -8}},
+                    plates = {{0, 6, 3, 0, -3, 0}},
+                    tubes = {{4, 2, 4, -2, 1.4}},
+                    canopy = {0, 8, 2, 4, -2, 4}}
         end,
     }),
 }
@@ -760,9 +780,38 @@ do
         if r.action == "land_pick_ship" then fly = r end
         if r.action == "land_page_ship" then turns[r.value] = r end
     end
-    check("body turns one ship and flies it on a press",
+    check("body turns one ship and publishes a press to fly it",
           fly ~= nil and fly.value == 1 and turns[-1] and turns[1],
           tostring(fly and fly.value))
+    -- And the press actually lands on it. `M.pick` keeps the first box of the
+    -- highest priority, and the glass publishes `panel_hold` before any row
+    -- draws, so a control sharing that priority is one the panel swallows.
+    -- The roster's press was at that priority from the walker onward: the box
+    -- was published, every check here said so, and pressing the ship did
+    -- nothing. Asking what a press resolves to is the only question that
+    -- catches it.
+    if fly then
+        check("and a press on the ship reaches it, not the glass",
+              press(fly.x + fly.w / 2, fly.y + fly.h / 2) == "land_pick_ship",
+              tostring(press(fly.x + fly.w / 2, fly.y + fly.h / 2)))
+    end
+    if turns[1] then
+        local t = turns[1]
+        check("and a press on an arrow turns the carousel",
+              press(t.x + t.w / 2, t.y + t.h / 2) == "land_page_ship",
+              tostring(press(t.x + t.w / 2, t.y + t.h / 2)))
+    end
+    -- Every section row is a press too, and the same glass sits under them.
+    frame(1440, 810, {col_open = "ship"})
+    local sect
+    for _, r in ipairs(ui.hits) do
+        if r.action == "land_sect" and r.value == "guns" then sect = r end
+    end
+    check("and a press on a part of the ship opens it",
+          sect ~= nil and press(sect.x + sect.w / 2,
+                                sect.y + sect.h / 2) == "land_sect",
+          tostring(sect and press(sect.x + sect.w / 2, sect.y + sect.h / 2)))
+    frame(1440, 810, {land = land_in(BODY), col_open = "ship"})
     check("and says the five flight rows under it",
           word("SPEED") ~= nil and word("RECHARGE") ~= nil)
     -- The arrows stand either side of the drawing rather than either side of
@@ -781,6 +830,37 @@ do
         check("and above the name under it",
               l.y + l.h / 2 < art.y + art.h - 20)
     end
+
+    -- The ship turns about the axis running up the screen, which is the bank
+    -- the renderer already has: local x by the cosine of the angle, and the
+    -- length untouched. A quarter of the way round it is edge-on and no
+    -- shorter. Drawn in the plane of the screen instead, which is what this
+    -- was first, the width and the height would trade places and neither
+    -- would hold still.
+    local function art_box(now)
+        segs = {}
+        frame(1440, 810, {land = land_in(BODY), col_open = "ship", now = now})
+        local x0, x1, y0, y1 = math.huge, -math.huge, math.huge, -math.huge
+        for _, q in ipairs(segs) do
+            -- Only the hull. The panel's rules run the full width of the
+            -- glass and the arrows are triangles, so a stroke inside the
+            -- drawing's own half of the panel is the drawing.
+            if math.abs(q.x1 - 700) < 120 and math.abs(q.x2 - 700) < 120 then
+                x0 = math.min(x0, q.x1, q.x2)
+                x1 = math.max(x1, q.x1, q.x2)
+                y0 = math.min(y0, q.y1, q.y2)
+                y1 = math.max(y1, q.y1, q.y2)
+            end
+        end
+        return x1 - x0, y1 - y0
+    end
+    -- A quarter of eleven seconds, which is where the cosine is nought.
+    local w0, h0 = art_box(0)
+    local w1, h1 = art_box(11 / 4)
+    check("the ship turns about the axis up the screen",
+          w1 < w0 * 0.2 and math.abs(h1 - h0) < 2,
+          string.format("%.0fx%.0f then %.0fx%.0f", w0, h0, w1, h1))
+    frame(1440, 810, {land = land_in(BODY), col_open = "ship"})
 
     -- Sitting out is the page past the roster: no ship to draw, and the
     -- sentence about it standing where one would have been.

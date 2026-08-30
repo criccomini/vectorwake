@@ -5,11 +5,13 @@
 > the back bar on the menu and on every section. The tray is chrome the panel
 > draws rather than a strip of the content, so it cannot scroll away.
 >
-> Body turns one ship at a time: the hull drawn large and rotating, an arrow
-> either side of the drawing and level with it, the name under it as the press
-> that flies it, and the five flight rows one to a line below. It was a list
-> for a day, which compared the seven and drew none of them. The bars take a
-> floor, so the hull at the bottom of a row is a stub rather than a blank.
+> Body turns one ship at a time, about the axis running up the screen: the
+> hull drawn the way the arena draws one, an arrow either side of it and level
+> with it, the name and the hull's own line under it, and the five flight rows
+> one to a line below. The ship is the press that flies it, at the priority a
+> control has to be published at to survive the glass. It was a list for a
+> day, which compared the seven and drew none of them. The bars take a floor,
+> so the hull at the bottom of a row is a stub rather than a blank.
 >
 > A section reads what it holds in the fight, in the games list's voice: the
 > detail at 14 in the mute, hard against the right of the type column. The
