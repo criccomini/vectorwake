@@ -5275,3 +5275,75 @@ the answer would be a notch of alpha rather than a new location, since the word
 beside the mark is already doing the work brightness would. Drawn in
 `.design/game-menu`, where a corner-docked panel, the console center card and a
 hold-and-flick radial stand beside the column and were not taken.
+
+## 103. A stop opens a panel, not a list
+
+**Status:** accepted, changing what
+[decision 99](#99-the-account-is-a-dropdown-and-the-pilot-page-is-gone) and
+[decision 102](#102-the-drawer-is-gone-and-settings-live-in-the-match) opened
+without changing what either of them holds
+
+**Decision:** pressing a stop no longer unrolls a list above it. It slides the
+column down through the bottom edge and brings a panel up through the same one.
+The panel is the window less its margin, capped at 560 points; it wears the
+frost the stops wear; its head names the stop and carries the way back. Back
+plays the movement in reverse and the column comes home.
+
+**Why:** Chris asked for it, in those terms, off three screenshots.
+
+The lists opened upward because they had to keep off PLAY NOW. That put every
+one of them in the strip between the stops and the top of the window, and made
+the ship panel's height a standing argument with the window: it asked for more
+than the strip had and scrolled inside whatever it was given. The in-match
+settings page had the same argument and lost it outright on a phone, where
+eight rows and two bands over a three-stop column overran the stops they were
+standing on. One of the three screenshots is that overlap.
+
+A panel does not have the argument, because the buttons go with it. Nothing has
+to be kept clear of anything, so the height is the window's and the only
+measure left to choose is the width.
+
+That width is capped, which is the one thing Chris added to the mock. Full
+width is right on a phone and wrong on a monitor: a row eleven hundred points
+wide sets a game's name at one end and its format at the other, two things too
+far apart to read as one row, and glass that wide stops being a panel over a
+fight and becomes the screen. At 560 it is comfortably wider than the 320-point
+column, so opening one reads as a step up rather than sideways, and it leaves
+the room showing either side, which is what the frost was for. A phone never
+reaches the cap and gets the window less its margin, which is what "the whole
+screen" means where there is no width to spare.
+
+The head is the in-match settings page's, which had it first: a triangle
+pointing back and the name of the section. It is worth more now than it was,
+because the stop that opened the panel is no longer on the screen to press
+again. That is also what the walk says: the way back, then the rows.
+
+What this buys beyond the room is that a row which opens something stops being
+a special case. It slides the next panel in over this one and back steps one
+level out, rather than everything shutting at once. Nothing stacks yet -- the
+account acts still raise a card over the landing, which is the one surface out
+here with no ground behind it -- but the grammar no longer forbids it, and that
+card is the obvious first thing to become a panel.
+
+Both columns took the change, because they are one column: decision 102 made
+the in-match menu the landing's grammar carried into a match, and a grammar
+that only half holds is two grammars. Nothing pauses either way, and the cap is
+what keeps that promise honest: the fight goes on showing beside the glass and
+through it.
+
+**Cost:** the clock band and the radar are behind the panel now rather than
+beside it. They read through the frost rather than over it, which is a real
+step down from decision 102's "the two instruments that say so go on saying
+it". Full height is what Chris asked for and what the mock he approved drew, so
+this takes it as asked and leaves the reading to a look at the built page.
+
+The landing loses one small thing with it: the lockup goes down with the stops
+instead of standing over an open panel. That is right -- the column is one
+object -- but it means the game's name is off the screen while a panel is up,
+where before it was merely covered.
+
+**Reconsider if:** the cap reads wrong at either end. 560 is a judgment about
+where a row stops being one object, made against the two lists this holds
+today; a panel that grows a third column of figures would want more, and the
+number is one constant in `ui.lua`. Mocked in `.design/dropdown-stack`, where
+the full-width version Chris corrected is still on the canvas.

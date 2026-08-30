@@ -1,12 +1,13 @@
 # The dropdowns as full-screen panels
 
-Chris's rethink of what a landing stop opens, mocked before anything is
-built. Today a stop opens a list in place, climbing upward from its own
-row over the lockup (decision 99's grammar). The proposal:
+Shipped as [decision 103](../../docs/architecture/decisions.md). A stop
+used to open a list in place, climbing upward from its own row over the
+lockup (decision 99's grammar). Now:
 
 - A tap slides a panel into view from below rather than opening rows
   above the stop.
-- The panel is the whole screen save the padding at the edge.
+- The panel is the whole screen save the padding at the edge, **capped
+  at 560 points wide**.
 - It wears the stops' own glass, the same dim and blur a button has,
   not the near-opaque ground the in-place lists used (`land_list`'s
   0.96 wash).
@@ -17,11 +18,25 @@ row over the lockup (decision 99's grammar). The proposal:
   bottom edge as the panel rose. Back plays the slide the other way and
   they return.
 
-What that buys is stacking. A row that opens something is not a special
-case any more: it slides the next panel in the same way, and back steps
-one level out. The stacked board draws LOG IN, which today raises a
-card over the landing with no ground behind it, as one more panel. The
-ship stop's page falls under the same rule for free.
+The cap is the one thing that changed between these boards and what
+shipped, and Chris is the reason: they were drawn full width, which is
+right on a phone and wrong on a monitor. A row eleven hundred points
+wide sets a game's name at one end and its format at the other, and
+glass that wide stops being a panel over a fight and becomes the screen.
+The boards carry the cap now; `PANEL_MAX` in `build.py` and in
+`client/arena/ui.lua` are the same number.
+
+What the grammar buys is stacking. A row that opens something is not a
+special case any more: it slides the next panel in the same way, and
+back steps one level out. Nothing stacks in the client yet, so the
+Stacked board is the proposal for what comes next rather than a picture
+of what runs: LOG IN still raises a card over the landing, and that card
+is the obvious first thing to become a panel.
+
+The in-match menu took the same change, because decision 102 had already
+made it the landing's grammar carried into a match. That is what fixed
+the overlap in the third screenshot this started from, where the settings
+page ran over the stops it was standing on.
 
 Six boards, built by `build.py` and seeded with the design skill's
 helper:
@@ -48,10 +63,8 @@ What the boards say:
   pressed, its panel rising over the account panel's rows.
 - **Phone** is the zone panel on a phone held upright.
 
-Open question, drawn rather than decided: on a desktop the rows run the
-panel's whole width, about 1400 points. Whether a row should keep the
-column's measure inside the panel instead is left visible on the Main
-board.
+That open question is closed: the rows ran the panel's whole width here
+and now run 560, centered on the middle the column stands on.
 
 The design system is lifted from `../pilot-dropdown/build.py`, which
 lifted it from the real client. The back mark is the game menu's

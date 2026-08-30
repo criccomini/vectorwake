@@ -523,13 +523,16 @@ local function shut_panels()
     ui.help = false
     ui.rooms_open = false
     ui.room_ask = nil
-    -- The landing's open list is a panel like the rest: the menu column coming
+    -- The landing's open panel is a panel like the rest: the menu column coming
     -- up stands it down rather than leaving it to reappear underneath, and the
     -- cursor goes with it. The two columns stand in the same place, so a lit
     -- stop under the one that replaced it is the interface drawn twice.
     ui.col_open = nil
     ui.col_sel, ui.col_sel_value = nil, nil
     ui.page_scroll = 0
+    -- And the slide with it, rather than left half up for the next panel to
+    -- inherit: this is the whole screen changing hands, not a panel closing.
+    ui.panel_shut()
 end
 
 -- Put a stop's list away and leave the cursor on the stop it hung off.
@@ -708,7 +711,7 @@ TUNE.PANEL_HANDLERS = {
 -- and a hand that leaves a control and comes back makes the noise again.
 local LAND_HOT = {
     play_now = true, land_account = true, land_zone = true, land_ship = true,
-    land_pick_zone = true, land_pick_ship = true,
+    land_pick_zone = true, land_pick_ship = true, land_back = true,
     -- And the menu's own column, which is the same interface with a different
     -- set of stops on it: one cursor, one pointer, one rule for what lights.
     menu_go = true, menu_stop = true, menu_pick = true, menu_row = true,
@@ -865,6 +868,7 @@ local function leave_world()
     ui.room_ask = nil
     ui.col_open = nil
     ui.col_sel, ui.col_sel_value = nil, nil
+    ui.panel_shut()
 end
 
 -- Everything that ends a session: a leave, a drop, a give-up on a join.
@@ -3014,13 +3018,20 @@ function land_act(self, action, value)
         sfx.ui("ui_move")
         return true
     end
-    -- The backdrop behind an open list: a press outside it puts the list away
-    -- instead of pulling a trigger.
-    if action == "land_shut" then
+    -- The way back off the head of an open panel, and the backdrop behind it:
+    -- a press on the margin beside the glass means the same thing a press on
+    -- the back means, which is out one level. At the first level, which is the
+    -- only level there is so far, out is the column coming back.
+    if action == "land_back" or action == "land_shut" then
         land_shut()
         sfx.ui("ui_move")
         return true
     end
+    -- The panel's own glass. It swallows a press that missed a row so that one
+    -- does not fall through to the backdrop and put the panel away: with the
+    -- glass covering most of the window, a thumb landing between two rows
+    -- would otherwise dismiss the thing it was aiming at.
+    if action == "panel_hold" then return true end
     -- A game picked from the zone stop's list. The stands re-dial to it at
     -- once, so the fight behind the glass becomes the one the key would join;
     -- PLAY NOW stays the press that commits.

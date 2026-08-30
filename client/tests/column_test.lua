@@ -429,11 +429,17 @@ do
     check("sound is on it", said("Sound") ~= nil)
     check("and the controls board is a row of it", said("Controls") ~= nil)
     check("and the way back out is published", hit_of("menu_back") ~= nil)
-    local go = hit_of("menu_go")
+    -- The column went out through the bottom edge to make room for it, so
+    -- there is no key on the screen to stand over: the panel is the screen
+    -- while it is up, and RESUME comes back when back is pressed.
+    check("the key it came from is off the screen with the column",
+          hit_of("menu_go") == nil)
+    check("and so are the stops", hit_of("menu_stop", "side") == nil
+          and hit_of("menu_stop", "leave") == nil)
     local top = math.huge
     for _, r in ipairs(rows) do top = math.min(top, r.y) end
-    check("the panel stands over the key rather than under it",
-          go and top < go.y, "panel top " .. top)
+    check("the panel stands where the column was and higher",
+          top < 810 / 2, "panel top " .. top)
 end
 
 -- The rows come in bands, which is what a page of eight settings cannot say in
@@ -484,16 +490,34 @@ do
           .. ", worst " .. tostring(widest))
 end
 
--- The panel is the same width as the stops, which is the width the whole
--- interface is laid out on.
+-- The panel is the window less its margin, capped, and centered on the same
+-- middle the column stands on.
+--
+-- Wider than the stop it came from, so opening one reads as a step up rather
+-- than sideways, and capped so that a monitor does not get a row eleven
+-- hundred points wide with a name at one end and its reading at the other. The
+-- cap is what leaves the fight showing either side of the glass, which is what
+-- the frost was for.
 do
     frame(1440, 810, {open = true})
     local stop = hit_of("menu_stop", "settings")
     frame(1440, 810, {open = true, at = "settings"})
     local row = hits_of("menu_row")[1]
-    check("the panel is the column's own width",
-          stop and row and math.abs(stop.w - row.w) < 2,
+    check("the panel is wider than the stop it came from",
+          stop and row and row.w > stop.w,
           stop and row and (stop.w .. " against " .. row.w) or "missing")
+    check("and capped well short of the window",
+          row and row.w <= 560 and row.w < 1440 * 0.5,
+          row and tostring(row.w) or "missing")
+    check("and centered on the column's own middle",
+          stop and row
+          and math.abs((stop.x + stop.w / 2) - (row.x + row.w / 2)) < 2)
+    -- A phone has no width to spare, so there the cap never binds and the
+    -- panel is the window less its margin, the way every panel here is.
+    frame(390, 844, {open = true, at = "settings"})
+    local narrow = hits_of("menu_row")[1]
+    check("and takes the whole width of a phone", narrow and narrow.w > 340,
+          narrow and tostring(narrow.w) or "missing")
 end
 
 -- --- the walk --------------------------------------------------------------
@@ -586,6 +610,79 @@ do
     ui.finish()
     check("a column on its way out answers no press",
           hit_of("menu_go") == nil and hit_of("menu_stop") == nil)
+end
+
+-- And the second slide inside it: opening a stop sends the column down through
+-- the bottom edge while the panel comes up through the same one, so the two
+-- are one movement rather than a swap.
+--
+-- Asked on a clock, because the harness runs at time zero, where the slide
+-- settles in the frame it starts and there is no middle to look at. One frame
+-- at the moment of the press and one a little after it is enough to say which
+-- way each half is travelling.
+do
+    -- Settle the column open with nothing else, so the only thing moving in
+    -- the frames below is the panel and what it displaces.
+    ui.panel_shut()
+    frame(1440, 810, {open = true})
+
+    -- Measured off the drawing rather than off the hit boxes: half way through
+    -- the column stops answering a press, which is the point of it leaving,
+    -- and the question here is where the two of them are rather than what can
+    -- be pressed. `state.text` counts up from the bottom of the window, so a
+    -- thing going down loses y and a thing coming up gains it.
+    local function said_y(word)
+        for i = 1, state.n do
+            local t = state.text[i]
+            if t and t.s == word then return t.y end
+        end
+        return nil
+    end
+    local function at(now, v)
+        boxes, rects, segs = {}, {}, {}
+        state.n = 0
+        ui.begin(layer, 1440, 810, 1, false, now, glass)
+        ui.menu(v)
+        ui.finish()
+        return said_y("RESUME"), said_y("Sound")
+    end
+
+    -- The frame the press lands on: the column is still where it was and the
+    -- panel has not started up yet.
+    local shut_key = at(1, view({open = true}))
+    local mid_key, mid_row = at(1, view({open = true, at = "settings"}))
+    check("the column has not moved on the frame the stop was pressed",
+          shut_key and mid_key and math.abs(shut_key - mid_key) < 1,
+          tostring(shut_key) .. " then " .. tostring(mid_key))
+
+    -- Part way through, both halves are travelling and neither has arrived.
+    local late_key, late_row = at(1.06, view({open = true, at = "settings"}))
+    check("part way through, the column is on its way down",
+          late_key and mid_key and late_key < mid_key - 1,
+          tostring(mid_key) .. " to " .. tostring(late_key))
+    check("and the panel is on its way up through the same edge",
+          late_row and mid_row and late_row > mid_row + 1,
+          tostring(mid_row) .. " to " .. tostring(late_row))
+    local rest_key, rest_row = at(9, view({open = true, at = "settings"}))
+    check("with the panel still short of where it comes to rest",
+          late_row and rest_row and late_row < rest_row - 1,
+          tostring(late_row) .. " against " .. tostring(rest_row))
+
+    -- And at rest the column is gone and the panel is standing.
+    check("and at rest the column has gone and the panel stands",
+          rest_key == nil and hit_of("menu_row") ~= nil,
+          tostring(rest_key))
+
+    -- Back plays it the other way. The frame it is pressed on is the mirror of
+    -- the frame the stop was pressed on: nothing has moved yet, and the column
+    -- is still off the bottom of the screen.
+    at(9, view({open = true}))
+    check("the frame back is pressed on has not moved either",
+          hit_of("menu_go") == nil)
+    at(9.06, view({open = true}))
+    check("and then the column comes home", hit_of("menu_go") ~= nil
+          and hit_of("menu_stop", "leave") ~= nil)
+    ui.panel_shut()
 end
 
 if fails == 0 then

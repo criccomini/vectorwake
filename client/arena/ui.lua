@@ -4212,24 +4212,162 @@ local function land_stop(x, y, w, h, label, value, action, lit, stacked, o)
     hit(x, y, w, h, action, o.value)
 end
 
--- A stop's open list, upward over the glass so it never covers the key. Rows
--- wear the menu's own states from decision 72: the row the pointer rests on
--- washes at 0.18, the row you are already in at 0.07. Nearly opaque ground,
--- unlike the drawer's wash: two or three rows over a live fight have to be
--- read, not read through.
-local function land_list(kx, kw, bottom, list, drh)
-    local padv = 5 * F.scale
-    local h = padv * 2
-    for _, r in ipairs(list) do
-        h = h + (r.rule and 9 * F.scale or drh)
+-- --- what a stop opens -----------------------------------------------------
+--
+-- A panel that slides up out of the bottom edge and takes the window, rather
+-- than a list unrolling upward from the row that opened it.
+--
+-- The lists opened upward because they had to keep off PLAY NOW, which put
+-- every one of them in the strip between the stops and the top of the screen,
+-- and made the ship panel's height a standing argument with the window: it
+-- asked for more than the strip had and scrolled inside whatever it was given.
+-- The panel does not have that argument, because the buttons go with it. Press
+-- a stop and the column sinks out through the bottom edge while the panel
+-- rises through the same edge, so the two are one movement and the screen
+-- holds one thing at a time. Back plays it the other way round.
+--
+-- What that buys beyond the room is that a row which opens something stops
+-- being a special case: it slides the next panel in over this one, and back
+-- steps one level out rather than shutting everything. Nothing stacks yet --
+-- the account acts still raise a card -- but the grammar no longer forbids it.
+-- Mocked in .design/dropdown-stack.
+
+-- How long a column or a panel takes to come up or go down, in seconds.
+--
+-- It is worth the machinery for the same reason the drawer's was: the press
+-- and the panel are the same spot, so without the slide the key would blink
+-- into a column with nothing saying one became the other. What it costs is one
+-- easing and three numbers, and what it buys is the one sentence this
+-- interface most needs to say: the thing you pressed is the thing that opened.
+local COLUMN_SPAN = 0.16
+
+-- Out fast and settling slow, which is the drawer's own curve: a panel that
+-- decelerates into place reads as arriving, and one that moves at a constant
+-- rate reads as being dragged.
+local function column_ease(t)
+    local u = 1 - t
+    return 1 - u * u * u
+end
+
+-- The measure a panel is held to, and the margin it keeps from every edge.
+--
+-- The window less that margin is right on a phone and wrong on a monitor. A
+-- row eleven hundred points wide sets a game's name at one end and its format
+-- at the other, two things too far apart to be read as one row, and glass that
+-- wide stops being a panel over a fight and becomes the screen. Capped, it
+-- stands in the middle of the window with the room showing either side, which
+-- is what the frost was for in the first place. Wider than the column it came
+-- from either way, so opening one reads as a step up rather than sideways.
+local PANEL_MAX = 560
+local PANEL_MARGIN = 14
+
+local function panel_geom()
+    local margin = PANEL_MARGIN * F.scale
+    local span = F.w - F.safe_l - F.safe_r - 2 * margin
+    local w = math.min(span, (M.compact and 440 or PANEL_MAX) * F.scale)
+    local mid = F.safe_l + (F.w - F.safe_l - F.safe_r) / 2
+    local top = F.safe_t + margin
+    local foot = F.h - F.safe_b - margin
+    return mid - w / 2, top, w, foot - top
+end
+
+-- How far an open panel has come up: 0 fully below the bottom edge, 1
+-- standing. The same number moves the buttons the other way.
+--
+-- One of these per column rather than one shared between them. Only ever one
+-- of the two is on a screen, so one set of numbers would do: `M.hud` returns
+-- before the landing wherever the menu is up, and the menu is only up in a
+-- room. But that is a fact about a line a long way from here, and a shared
+-- slide written twice in a frame with two different answers is an animation
+-- that restarts every frame and never lands. Two tables are cheaper than a
+-- dependency on a return staying where it is.
+local function new_slide()
+    return {at = 0, from = 0, to = 0, when = 0}
+end
+local land_slide, menu_slide = new_slide(), new_slide()
+
+-- Advance one of them toward `want` and answer where it reached. Called once a
+-- frame by the column that owns it.
+--
+-- `F.now` is zero under the test harness, which is what settles the panel
+-- instantly there and keeps the layout tests still.
+local function panel_slide(s, want)
+    if want ~= s.to then
+        s.from, s.to, s.when = s.at, want, F.now
     end
-    local py = bottom - h
-    rect(kx, py, kw, h, pal.a(pal.BG, 0.96))
-    F.layer:frame(kx, ry(py, h), kw, h, 1.1 * F.scale,
-                  pal.a(pal.RADAR_TILE, 0.85))
+    if F.now <= 0 then
+        s.at = want
+    else
+        local t = math.min(1, (F.now - s.when) / COLUMN_SPAN)
+        s.at = s.from + (s.to - s.from) * column_ease(t)
+    end
+    return s.at
+end
+
+-- Put both slides back on the floor without playing them, for the caller that
+-- is tearing the whole screen down rather than closing a panel.
+function M.panel_shut()
+    for _, s in ipairs({land_slide, menu_slide}) do
+        s.at, s.from, s.to, s.when = 0, 0, 0, 0
+    end
+end
+
+-- The panel itself: the glass, and the head that says where you are with the
+-- way back out on it.
+--
+-- The same frost the stops wear, rather than the near-opaque ground the lists
+-- had. A list was a strip that had to carry two rows over a firefight; a panel
+-- is the surface the screen is currently about, and the room behind it is what
+-- says this is still a game being watched rather than a settings application.
+--
+-- The head is the in-match settings page's, which had it first: a triangle
+-- pointing back and the name of the section, the whole row being the press.
+-- `title` is the section, `back` the action that steps one level out.
+--
+-- Answers the top of the content and the foot it has to stay above, so a
+-- caller can lay rows into it without measuring the chrome again.
+local function panel_frame(px, py, pw, ph, title, back, foot_note)
+    local headh = 44 * F.scale
+    local pad = 12 * F.scale
+    frost(px, py, pw, ph)
+    rect(px, py, pw, ph, pal.a(pal.BTN_BG, 0.72))
+    key_box(px, py, pw, ph, nil, pal.a(pal.RADAR_TILE, 0.75))
+    local hy = py + headh / 2
+    F.layer:tri(px + pad + 2 * F.scale, ry(hy),
+                px + pad + 9 * F.scale, ry(hy - 6 * F.scale),
+                px + pad + 9 * F.scale, ry(hy + 6 * F.scale),
+                pal.a(pal.FRIEND, 0.9))
+    lbl(title or "", px + pad + 18 * F.scale, hy, pal.MUTE)
+    -- What a control waiting for a key has to say, where it says it: on the
+    -- head of the page that asked, so a hand looking at the row is looking at
+    -- the sentence about it.
+    if foot_note then
+        txt(foot_note, px + pw - pad, hy, (M.compact and 10 or 11) * F.scale,
+            pal.a(pal.READ, 0.95), "right", MENU_FONT, true)
+    end
+    hrule(px, py + headh, pw, 0.6)
+    hit(px, py, pw, headh, back, nil, nil, 1)
+    -- And the panel itself takes a press, so a tap that misses a row lands on
+    -- the glass rather than on the fight behind it. Under the rows and under
+    -- the head, which both publish above it, and over the backdrop that shuts
+    -- the panel: with the glass covering most of the window, a press it did not
+    -- swallow would put the panel away every time a thumb missed a row.
+    hit(px, py, pw, ph, "panel_hold", nil, nil, 0)
+    return py + headh + 5 * F.scale, py + ph - 5 * F.scale
+end
+
+-- A stop's rows, drawn from `top` down the panel that opened them. Rows wear
+-- the menu's own states from decision 72: the row the pointer rests on washes
+-- at 0.18, the row you are already in at 0.07.
+--
+-- The ground under them belongs to the panel now rather than to the list. It
+-- was the list's while a list was a strip of its own unrolled over the fight,
+-- and it had to be nearly opaque for two rows over a firefight to be readable
+-- at all. A panel is one surface with one glass, so the rows draw onto it.
+local function land_list(kx, kw, top, list, drh)
     local pad = 12 * F.scale
     local dpx = TYPE.LABEL * F.scale
-    local y = py + padv
+    local y = top
     for _, r in ipairs(list) do
         if r.rule then
             hrule(kx + pad, y + 4.5 * F.scale, kw - 2 * pad, 0.6)
@@ -4386,32 +4524,22 @@ end
 -- too short to hold it. A landscape phone had a version of its own for a
 -- while, three sections side by side, which is two layouts to learn and two
 -- to keep working for one panel that already fits a scroll.
-local function land_panel(kx, kw, bottom, top, panel, drh)
+--
+-- `top` and `bottom` are the room the section panel has already left for it,
+-- under the head that names the stop. The pager below that head is a second
+-- line of chrome and says a different thing: the head says which stop you are
+-- in, the pager says which of the seven ships you are looking at.
+local function land_panel(kx, kw, top, bottom, panel, drh)
     local pad = 12 * F.scale
     local rowh = drh
     local headh = 44 * F.scale
     local barh = panel.bars and 34 * F.scale or 0
     local trayh = panel.rows and 30 * F.scale or 0
-    -- What the panel would like to be, before the window has its say.
-    local want = headh + barh + trayh
-    if panel.rows then
-        for _, r in ipairs(panel.rows) do
-            want = want + (r.kind == "sect" and 24 * F.scale or rowh)
-        end
-    else
-        want = want + rowh
-    end
-    want = want + 10 * F.scale
-    local room = bottom - top
-    local h = math.min(want, room)
-    local py = bottom - h
-    rect(kx, py, kw, h, pal.a(pal.BG, 0.96))
-    F.layer:frame(kx, ry(py, h), kw, h, 1.1 * F.scale,
-                  pal.a(pal.RADAR_TILE, 0.85))
+    local py = top
 
-    -- The head, which is the pager: an arrow either side of the ship's name.
-    -- The arrows are the wake row's own, which is the control this menu
-    -- already uses for stepping through a short list of answers.
+    -- The pager: an arrow either side of the ship's name. The arrows are the
+    -- wake row's own, which is the control this menu already uses for stepping
+    -- through a short list of answers.
     local hy = py + headh / 2
     local npx = (M.compact and 15 or 17) * F.scale
     local col = panel.mine and pal.FRIEND or pal.INK
@@ -4485,7 +4613,7 @@ local function land_panel(kx, kw, bottom, top, panel, drh)
     -- vertical edge, so a row half off the bottom would draw through the
     -- frame rather than be cut by it. So the scroll is clamped to a row
     -- boundary and a row that does not fit is not drawn at all.
-    local ry0, ry1 = y, py + h - 4 * F.scale
+    local ry0, ry1 = y, bottom
     local content = 0
     if panel.rows then
         for _, r in ipairs(panel.rows) do
@@ -4544,7 +4672,6 @@ local function land_panel(kx, kw, bottom, top, panel, drh)
         txt(panel.note, kx + pad, cy + rowh / 2,
             (M.compact and 11 or 12) * F.scale, pal.READ)
     end
-    return py
 end
 
 -- The landing: the game's name and the column of stops over the one key the
@@ -4576,6 +4703,32 @@ end
 -- one as a front page.
 local function landing(land)
     local g = landing_geom()
+    -- The slide, and how far down it has pushed everything the column holds.
+    --
+    -- One number moves both halves: the buttons go down by however much of the
+    -- window stands above them, so at rest they are where they were drawn and
+    -- fully open they are clear of the bottom edge, while the panel comes up
+    -- through that same edge. What sinks is the lockup as well as the stops
+    -- and the key, because the column is one object and a wordmark left
+    -- hanging over an open panel is the front page refusing to get out of the
+    -- way.
+    -- Which stop is actually showing something. A stop is opened by a press
+    -- and filled by whatever answers next, so between the two there is a frame
+    -- or two where `M.col_open` names a stop with nothing behind it yet. The
+    -- column stays put through those: sliding away to reveal an empty panel is
+    -- worse than a stop that takes a moment to open.
+    local shown = M.col_open
+    if not land
+       or (shown == "account" and not land.account)
+       or (shown == "zone" and not land.zones)
+       or (shown == "ship" and not land.panel) then
+        shown = nil
+    end
+    local at = panel_slide(land_slide, shown and 1 or 0)
+    local col_top = math.min(g.mark_y - g.size, g.stops[1] and g.stops[1].y
+                             or g.ky)
+    local drop = at * (F.h - col_top)
+    local ky = g.ky + drop
     -- The key breathes on the same clock the on-air tally swells at, and the
     -- edge is floored well above dark so the trough never reads as a key that
     -- has stopped working. `F.now` is zero under the test harness, which is
@@ -4588,28 +4741,34 @@ local function landing(land)
     -- begin with, so the cursor's own field goes over that ground as well.
     local key_hot = M.col_sel == "play_now"
     local swell = key_hot and 1 or breath
-    frost(g.kx, g.ky, g.kw, g.kh)
-    rect(g.kx, g.ky, g.kw, g.kh, pal.a(pal.FRIEND, 0.06 + 0.12 * swell))
-    if key_hot then
-        rect(g.kx, g.ky, g.kw, g.kh, pal.a(pal.FRIEND, LIT.CURSOR))
+    -- Everything the column holds is drawn while it is on its way out, so the
+    -- movement is visible, and none of it is pressable once it has gone: a key
+    -- sliding off the screen is not a key. The panel publishes its own boxes
+    -- either way.
+    local live = at < 0.5
+    if at < 1 then
+        frost(g.kx, ky, g.kw, g.kh)
+        rect(g.kx, ky, g.kw, g.kh, pal.a(pal.FRIEND, 0.06 + 0.12 * swell))
+        if key_hot then
+            rect(g.kx, ky, g.kw, g.kh, pal.a(pal.FRIEND, LIT.CURSOR))
+        end
+        key_box(g.kx, ky, g.kw, g.kh, nil,
+                pal.a(pal.FRIEND, 0.62 + 0.38 * swell))
+        txt("PLAY NOW", g.kx + g.kw / 2, ky + g.kh / 2, g.kpx,
+            pal.a(pal.INK, 1), "center")
+        if live then hit(g.kx, ky, g.kw, g.kh, "play_now") end
     end
-    key_box(g.kx, g.ky, g.kw, g.kh, nil,
-            pal.a(pal.FRIEND, 0.62 + 0.38 * swell))
-    txt("PLAY NOW", g.kx + g.kw / 2, g.ky + g.kh / 2, g.kpx,
-        pal.a(pal.INK, 1), "center")
-    hit(g.kx, g.ky, g.kw, g.kh, "play_now")
-    local mark_down = false
+    local mark_down = at > 0.001
     if land then
         local acct_box, zone_box, ship_box =
             g.stops[1], g.stops[2], g.stops[3]
-        -- The open list first, as rows and a height, because whatever it
-        -- covers has to stand down: glyphs come from the gui and the gui
-        -- draws over every mesh, so a stop drawn under the panel would read
-        -- through it.
-        local open, list, from, panel = M.col_open, nil, nil, nil
+        -- What the open stop holds, as rows or as the ship panel, and the word
+        -- the panel's head will call it by.
+        local open, list, panel = shown, nil, nil
+        local title = nil
         local drh = g.narrow and 40 * F.scale or 30 * F.scale
         if open == "account" and land.account then
-            list, from = {}, acct_box
+            list, title = {}, "account"
             for i, a in ipairs(land.account) do
                 -- The rule between what you can do to this account and how to
                 -- be a different one. It arrives as a row of its own from the
@@ -4627,7 +4786,7 @@ local function landing(land)
                 end
             end
         elseif open == "zone" and land.zones then
-            list, from = {}, zone_box
+            list, title = {}, "zone"
             for _, z in ipairs(land.zones) do
                 -- Every game is named rather than described, so every row
                 -- here is quoted.
@@ -4637,83 +4796,55 @@ local function landing(land)
                                    raw = true}
             end
         elseif open == "ship" and land.panel then
-            -- The ship stop opens a panel rather than a list, and it is the
+            -- The ship stop opens a pager rather than a list, and it is the
             -- one stop that does: what it holds is one hull at a time with
             -- its flight and its credits under it, which is not a row and
             -- cannot be made into one. See `land_panel`.
-            panel, from = land.panel, ship_box
+            panel, title = land.panel, "ship"
         else
             open = nil
         end
-        -- Where the panel stands and how far up it reaches. It hangs off the
-        -- stop it belongs to, at the key's width down the column and at its
-        -- own cell's on the rail, held to a measure a row can be read at and
-        -- kept inside the window.
-        local ptop, lx, lw, bottom = nil, g.kx, g.kw, nil
-        if panel then
-            -- The panel takes the stop's own width and climbs from the stop
-            -- to the top of the window, taking as much of that as it needs
-            -- and scrolling inside whatever it gets. On the rail it stands
-            -- over the fight like a list does.
-            if g.rail then
-                lw = math.max(from.w, (M.compact and 240 or 260) * F.scale)
-                lx = math.min(from.x, F.w - F.safe_r - 14 * F.scale - lw)
-                lx = math.max(lx, F.safe_l + 14 * F.scale)
+        -- The stops, riding the same slide the key does. All three are drawn
+        -- whatever is open, because they are leaving rather than being
+        -- replaced: the one that was pressed sinks with its neighbours, and
+        -- the panel comes up through the edge they went out of. That is the
+        -- whole of the sentence this movement says, and hiding the pressed
+        -- stop would cut it in half.
+        local before = #M.hits
+        if at < 1 then
+            for _, s in ipairs({
+                {acct_box, "account", land.name, "land_account",
+                 open == "account", {raw = true, warn = land.warn}},
+                {zone_box, "zone", land.zone, "land_zone", open == "zone",
+                 {raw = true}},
+                {ship_box, "ship", land.ship, "land_ship", open == "ship",
+                 {raw = not land.watching}},
+            }) do
+                local box, label, value, action, lit, o =
+                    s[1], s[2], s[3], s[4], s[5], s[6]
+                land_stop(box.x, box.y + drop, box.w, box.h, label, value,
+                          action, lit, g.rail, o)
             end
-            bottom = from.y - 6 * F.scale
-            ptop = F.safe_t + 14 * F.scale
-        elseif list then
-            local h = 10 * F.scale
-            for _, r in ipairs(list) do
-                h = h + (r.rule and 9 * F.scale or drh)
-            end
-            if g.rail then
-                lw = math.max(from.w, (M.compact and 200 or 220) * F.scale)
-                lx = math.min(from.x,
-                              F.w - F.safe_r - 14 * F.scale - lw)
-                lx = math.max(lx, F.safe_l + 14 * F.scale)
-            end
-            bottom = from.y - 6 * F.scale
-            ptop = bottom - h
         end
-        -- The stops the panel does not cover. Down the column a list opens
-        -- upward from its own stop, so the stops above the open one are the
-        -- covered ones; along the rail it opens over the fight and covers no
-        -- stop at all, the three of them standing side by side.
-        --
-        -- Account is the top stop, so its own list covers no stop at all:
-        -- what it climbs into is the lockup, which stands down for it the
-        -- same way. It is still the stop the other two lists cover, which is
-        -- what this guard is for and why the open one is drawn regardless.
-        if g.rail or (open ~= "zone" and open ~= "ship") then
-            land_stop(acct_box.x, acct_box.y, acct_box.w, acct_box.h,
-                      "account", land.name, "land_account",
-                      open == "account", g.rail,
-                      {raw = true, warn = land.warn})
+        -- A stop on its way out is not a stop: once the column is more than
+        -- half gone, the boxes it just published are dropped, so nothing under
+        -- the glass takes a press meant for the panel over it.
+        if not live then
+            for i = #M.hits, before + 1, -1 do M.hits[i] = nil end
         end
-        if g.rail or open ~= "ship" then
-            land_stop(zone_box.x, zone_box.y, zone_box.w, zone_box.h,
-                      "zone", land.zone, "land_zone", open == "zone", g.rail,
-                      {raw = true})
-        end
-        land_stop(ship_box.x, ship_box.y, ship_box.w, ship_box.h,
-                  "ship", land.ship, "land_ship", open == "ship", g.rail,
-                  {raw = not land.watching})
-        -- The list itself, its rows published above the stops (`pri` 1) and
-        -- a screen-wide backdrop behind everything (`pri` -1), so a press
-        -- outside it puts it away instead of pulling a trigger.
-        if panel then
+        -- And the panel, on its way up through the bottom edge. A backdrop
+        -- behind everything (`pri` -1) so a press on the margin beside the
+        -- glass puts it away rather than pulling a trigger on the fight.
+        if open then
+            local px, py, pw, ph = panel_geom()
+            py = py + (1 - at) * (F.h - py)
             hit(0, 0, F.w, F.h, "land_shut", nil, nil, -1)
-            ptop = land_panel(lx, lw, bottom, ptop, panel, drh)
-        end
-        if list then
-            hit(0, 0, F.w, F.h, "land_shut", nil, nil, -1)
-            land_list(lx, lw, bottom, list, drh)
-            -- And the name stands down when the panel climbs into it.
-            mark_down = ptop < g.mark_y + g.size
-        end
-        if panel and ptop then
-            mark_down = ptop < g.mark_y + g.size
+            local top, foot = panel_frame(px, py, pw, ph, title, "land_back")
+            if panel then
+                land_panel(px, pw, top, foot, panel, drh)
+            else
+                land_list(px, pw, top, list, drh)
+            end
         end
     end
     if not mark_down then landing_mark() end
@@ -4752,14 +4883,18 @@ function M.col_walk()
         end
         return out
     end
+    -- With a panel up the walk is that panel, and only it: the way back out on
+    -- its head, then its rows in the order they were drawn. The stop that
+    -- opened it is off the bottom of the screen and out of the walk with it,
+    -- which is the point of the panel's own head carrying the way back.
     if M.col_open == "ship" then
-        -- The panel walks as the stop, the ship it is on, one stop a row,
-        -- and the way back to the hull's own build. The arrows either side
-        -- of a value are not stops of their own: a hand standing on a row
-        -- steps it with left and right, which is the rule the drawer's own
-        -- rows follow. See `M.col_side`.
+        -- The panel walks as the way back, the ship it is on, one stop a row,
+        -- and back to the hull's own build. The arrows either side of a value
+        -- are not stops of their own: a hand standing on a row steps it with
+        -- left and right, which is the rule the drawer's own rows follow. See
+        -- `M.col_side`.
         for _, r in ipairs(M.hits) do
-            if r.action == "land_ship" or r.action == "land_pick_ship"
+            if r.action == "land_back" or r.action == "land_pick_ship"
                or r.action == "land_kit_row" or r.action == "land_kit_reset"
             then
                 out[#out + 1] = r
@@ -4768,10 +4903,11 @@ function M.col_walk()
         return out
     end
     if M.col_open == "account" or M.col_open == "zone" then
-        local stop = "land_" .. M.col_open
         local pick = "land_pick_" .. M.col_open
         for _, r in ipairs(M.hits) do
-            if r.action == stop or r.action == pick then out[#out + 1] = r end
+            if r.action == "land_back" or r.action == pick then
+                out[#out + 1] = r
+            end
         end
         return out
     end
@@ -5906,15 +6042,10 @@ end
 
 -- --- the column ------------------------------------------------------------
 
--- How long the column takes to come up or go down, in seconds, and the state
--- of that slide between frames.
---
--- It is worth the machinery for the same reason the drawer's was: the press
--- and the panel are the same spot, so without the slide the key would blink
--- into a column with nothing saying one became the other. What it costs is one
--- easing and three numbers, and what it buys is the one sentence this
--- interface most needs to say: the thing you pressed is the thing that opened.
-local COLUMN_SPAN = 0.16
+-- How far the column has come up, 0 down and 1 fully up, and the state of that
+-- slide between frames. It travels on `COLUMN_SPAN` and `column_ease`, which
+-- the panel a stop opens shares: the two movements are halves of one gesture,
+-- so they had better agree about how long it takes.
 M.column = 0            -- 0 down, 1 fully up
 local col_from, col_to, col_at = 0, 0, 0
 
@@ -5928,20 +6059,14 @@ function M.column_shut()
     M.column, col_from, col_to, col_at = 0, 0, 0, 0
 end
 
--- Where the column stood last frame, and how wide. Published for the same
--- reason the drawer's span was: a row's lit field runs the panel's full width,
--- and the thing that lights it is a long way from the thing that measured it.
+-- Where the rows stood last frame, and how wide. Published for the same reason
+-- the drawer's span was: a row's lit field runs the full width of whatever it
+-- is drawn on, and the thing that lights it is a long way from the thing that
+-- measured it. That surface is the column while nothing is open and the panel
+-- once a stop opens one, so this follows the rows rather than the stops.
 local column_x, column_w = 0, 0
 function M.column_span()
     return column_x, column_w
-end
-
--- Out fast and settling slow, which is the drawer's own curve: a panel that
--- decelerates into place reads as arriving, and one that moves at a constant
--- rate reads as being dragged.
-local function column_ease(t)
-    local u = 1 - t
-    return 1 - u * u * u
 end
 
 -- The wash behind the column.
@@ -5994,6 +6119,17 @@ function M.menu(v)
     -- of the key's own strip and sinks back into it.
     local rise = (1 - M.column) * (F.h - g.top)
     local hits_before = #M.hits
+    -- And a second slide inside the first: the stop that is open sends the
+    -- column back out through the bottom edge and brings a panel up through
+    -- it, exactly as the landing's stops do. One grammar for both columns was
+    -- the point of decision 102, so it holds for what a stop opens too.
+    local open = nil
+    for _, s in ipairs(v.stops) do
+        if s.open then open = s end
+    end
+    local at = panel_slide(menu_slide, open and 1 or 0)
+    local drop = at * (F.h - g.top)
+    local live = at < 0.5
 
     wash(0, 0, F.w, F.h, pal.a(pal.BG, COLUMN_WASH * M.column))
     -- A press anywhere off the column puts it away, which is what tapping
@@ -6003,34 +6139,35 @@ function M.menu(v)
 
     -- The key first, under the stops that stand over it, the way the landing
     -- draws PLAY NOW first.
-    local ky = g.ky + rise
+    local ky = g.ky + rise + drop
     local breath = 0.5 + 0.5 * math.sin(F.now * 2.6)
     local key_hot = M.col_sel == "menu_go"
     local swell = key_hot and 1 or breath
-    frost(g.kx, ky, g.kw, g.kh)
-    rect(g.kx, ky, g.kw, g.kh, pal.a(pal.FRIEND, 0.06 + 0.12 * swell))
-    if key_hot then
-        rect(g.kx, ky, g.kw, g.kh, pal.a(pal.FRIEND, LIT.CURSOR))
+    if at < 1 then
+        frost(g.kx, ky, g.kw, g.kh)
+        rect(g.kx, ky, g.kw, g.kh, pal.a(pal.FRIEND, 0.06 + 0.12 * swell))
+        if key_hot then
+            rect(g.kx, ky, g.kw, g.kh, pal.a(pal.FRIEND, LIT.CURSOR))
+        end
+        key_box(g.kx, ky, g.kw, g.kh, nil,
+                pal.a(pal.FRIEND, 0.62 + 0.38 * swell))
+        txt("RESUME", g.kx + g.kw / 2, ky + g.kh / 2, g.kpx, pal.a(pal.INK, 1),
+            "center")
+        if live then hit(g.kx, ky, g.kw, g.kh, "menu_go", nil, nil, 1) end
     end
-    key_box(g.kx, ky, g.kw, g.kh, nil, pal.a(pal.FRIEND, 0.62 + 0.38 * swell))
-    txt("RESUME", g.kx + g.kw / 2, ky + g.kh / 2, g.kpx, pal.a(pal.INK, 1),
-        "center")
-    hit(g.kx, ky, g.kw, g.kh, "menu_go", nil, nil, 1)
 
-    -- Then the stops, and the page one of them is holding open. The open one
-    -- is not drawn: the panel stands where it stood, the way the landing's
-    -- lists cover the stop they hang off, and a stop ghosting under its own
-    -- panel is the interface drawn twice.
-    local open, from = nil, nil
-    for i, s in ipairs(v.stops) do
-        local box = g.stops[i]
-        if s.open then
-            open, from = s, box
-        else
-            local sy = box.y + rise
+    -- Then the stops. All of them, including the open one: they are leaving
+    -- rather than being replaced, and the panel comes up through the edge they
+    -- went out of. Hiding the pressed stop would cut that sentence in half.
+    -- Once they are wholly past that edge they stop being drawn at all.
+    local stops_at = #M.hits
+    if at < 1 then
+        for i, s in ipairs(v.stops) do
+            local box = g.stops[i]
+            local sy = box.y + rise + drop
             land_stop(box.x, sy, box.w, box.h, s.label, s.value,
-                      "menu_stop", false, false,
-                      -- Leave acts rather than opening, so it wears no caret.
+                      "menu_stop", s.open, false,
+                      -- Leave acts rather than opening, so no caret.
                       {raw = s.named, value = s.stop,
                        flat = s.stop == "leave"})
             -- The stop's own mark where it has no word to say: settings is
@@ -6043,13 +6180,23 @@ function M.menu(v)
             end
         end
     end
+    -- A stop on its way out is not a stop.
+    if not live then
+        for i = #M.hits, stops_at + 1, -1 do M.hits[i] = nil end
+    end
 
     if open then
-        local bottom = from.y + from.h + rise
-        local drh = g.rh
+        local px, py, pw, ph = panel_geom()
+        -- The panel rides the column's own slide as well as its own, so
+        -- dismissing the whole menu with a page open takes the page with it
+        -- rather than leaving it standing over the fight.
+        py = py + (1 - at) * (F.h - py) + rise
+        -- The rows are the panel's now, so that is the span they are lit at.
+        column_x, column_w = px, pw
         if open.stop == "side" then
-            -- The sides, one row each, opening upward off their own stop the
-            -- way the landing's zone list does.
+            -- The sides, one row each. A row per side rather than a stepper:
+            -- with three or more, arrows would walk a pilot through every team
+            -- between here and the one they want.
             local list = {}
             for _, r in ipairs(v.rows) do
                 list[#list + 1] = {label = r.label, note = r.detail,
@@ -6057,11 +6204,16 @@ function M.menu(v)
                                    tint = r.tint,
                                    action = "menu_pick", value = r.index}
             end
-            land_list(g.kx, g.kw, bottom, list, drh)
+            local top = panel_frame(px, py, pw, ph, open.label, "menu_back")
+            land_list(px, pw, top, list, g.rh)
         else
-            -- Settings, and the pages it opens: a panel at the column's own
-            -- width, scrolled where the window is too short to hold it.
-            M.menu_panel(g.kx, g.kw, bottom, v)
+            -- Settings, and the pages it opens, which name themselves on the
+            -- head rather than being named by the stop: one level in, the head
+            -- says settings; two levels in, it says controls, and back steps
+            -- one of those at a time.
+            local top, foot = panel_frame(px, py, pw, ph, v.page or open.label,
+                                          "menu_back", v.foot)
+            M.menu_panel(px, pw, top, foot, v)
         end
     end
 
@@ -6075,64 +6227,36 @@ function M.menu(v)
     F.case = was_case
 end
 
--- The settings panel: menu rows at the column's width, climbing off the stop
--- that opened them.
+-- The settings panel's rows, laid into the panel the stop opened.
 --
 -- Its own function because it is the one part of the column that scrolls, and
 -- because the rows are the drawer's rows: sections, values drawn as the range
 -- they sit in, sentences under the row they explain, and a control waiting for
 -- a key. That vocabulary was the good half of the panel this replaced, and
 -- none of it was about being a drawer.
-function M.menu_panel(kx, kw, bottom, v)
+--
+-- The glass and the head belong to `panel_frame` now, which is what lets the
+-- settings page and a landing stop be the same object: `top` and `bottom` are
+-- the room it left. The page used to measure its own height against a ceiling
+-- that kept the clock band clear, and to shrink to whatever its rows wanted.
+-- Both are gone with the full-height panel, and the second of them was the
+-- bug: eight rows and two bands asked for more than the strip above the column
+-- had, so the page overran the stops it was standing on.
+function M.menu_panel(kx, kw, top, bottom, v)
     local pad = 12 * F.scale
     local rowh = (M.compact and 40 or 44) * F.scale
-    local headh = 34 * F.scale
     -- A run of rows under a small label and a rule, which is how the ship
     -- panel bands its own sections and how the settings page has always
     -- grouped: audio, video, the machine. What a band says is what the rows
     -- under it are about, and it is the one thing a page of eight settings
     -- cannot say in its title.
     local secth = 24 * F.scale
-    -- Room between the top of the screen and the panel's foot. The clock band
-    -- and the corner keys keep their line: a pilot reading settings still
-    -- wants to know how long is left.
-    local ceiling = F.safe_t + (PAD + KEY_H + 10) * F.scale
-    local want = headh + 10 * F.scale
     local noted = false
     for _, r in ipairs(v.rows) do
         if r.note then noted = true end
     end
     local rh = noted and rowh + pages.NOTE_LINE * F.scale or rowh
-    for _, r in ipairs(v.rows) do
-        want = want + rh + (r.sect and secth or 0)
-    end
-    local room = bottom - ceiling
-    local h = math.min(want, room)
-    local py = bottom - h
-    rect(kx, py, kw, h, pal.a(pal.BG, 0.96))
-    F.layer:frame(kx, ry(py, h), kw, h, 1.1 * F.scale,
-                  pal.a(pal.RADAR_TILE, 0.85))
-
-    -- The head: what the page is called, and the way back out of it. One level
-    -- in that way is the stop shutting; two levels in it is the page above.
-    local hy = py + headh / 2
-    lbl(v.page or "", kx + pad + 18 * F.scale, hy, pal.MUTE)
-    F.layer:tri(kx + pad + 2 * F.scale, ry(hy),
-                kx + pad + 9 * F.scale, ry(hy - 6 * F.scale),
-                kx + pad + 9 * F.scale, ry(hy + 6 * F.scale),
-                pal.a(pal.FRIEND, 0.9))
-    hit(kx, py, kw, headh, "menu_back", nil, nil, 1)
-    -- What a control waiting for a key has to say, where it says it: on the
-    -- head of the page that asked, so a hand looking at the row is looking at
-    -- the sentence about it.
-    if v.foot then
-        txt(v.foot, kx + kw - pad, hy, (M.compact and 10 or 11) * F.scale,
-            pal.a(pal.READ, 0.95), "right", MENU_FONT, true)
-    end
-    hrule(kx, py + headh, kw, 0.6)
-
-    local top = py + headh
-    local view_h = h - headh - 6 * F.scale
+    local view_h = bottom - top
     -- Where the rows were drawn, for a wheel and a dragging thumb to be tested
     -- against. The same four numbers the drawer's pages published, read back
     -- by `M.page_span`.

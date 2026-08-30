@@ -458,13 +458,18 @@ end
 
 -- --- a sentence too long for the column wraps rather than running on -------
 
+-- Asked at a phone's width, which is where the rule earns its keep and where
+-- it was reported from: the panel is the window less its margin there, so a
+-- sentence has the least room it will ever have. On a monitor the same panel
+-- is capped at 560 and this sentence fits on one line, which is the cap doing
+-- its job rather than the wrap failing.
 do
     local long = "The longer your run, the bigger the bounty on you, and the "
         .. "longer the odds of getting home with it"
     local st = draw(column("settings", "settings", {
         {label = "Apex", note = long, index = 1, pick = true},
         {label = "Lattice", index = 2, pick = true},
-    }), 1)
+    }), 1, nil, 390, 844)
     local pieces = 0
     for i = 1, st.n do
         local t = st.text[i]
@@ -489,7 +494,7 @@ end
 -- --- and a stop that opens a list keeps the same two weights ---------------
 --
 -- The sides are the one stop whose answer is a list rather than a page, so
--- their rows are drawn edge to edge in the column instead of inside a panel.
+-- their rows are drawn edge to edge on the panel instead of inset inside it.
 -- Different extent, same two weights: a walk from the settings page onto the
 -- side list should not change what "here" and "under the cursor" look like.
 
@@ -506,17 +511,13 @@ do
     end
     draw(sides(), 2, "menu_pick")
     local cx, cw = ui.column_span()
-    -- The key at the foot breathes in the same blue at the same width, so the
-    -- list is the fields above it. Nothing else up there is lit: the stops
-    -- answer the cursor only when it is standing on one, and it is not.
-    local go = nil
-    for _, r in ipairs(ui.hits) do
-        if r.action == "menu_go" then go = r end
-    end
+    -- Everything the column held went out through the bottom edge when the
+    -- panel came up, key included, so the fields at the panel's own span are
+    -- the list and nothing else: there is no breathing key left up here to
+    -- tell them apart from.
     local lit = {}
     for _, r in ipairs(fields()) do
-        if go and r.y + r.h <= go.y + 0.5
-           and math.abs(r.x - cx) < 1 and math.abs(r.w - cw) < 1 then
+        if math.abs(r.x - cx) < 1 and math.abs(r.w - cw) < 1 then
             lit[#lit + 1] = r
         end
     end

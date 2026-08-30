@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
 """Assemble the artboards for the full-screen dropdown mocks.
 
-Chris's rethink of what a landing stop opens. Today a stop opens a list
-in place, climbing upward from its own row over the lockup. The proposal:
-a tap slides a panel into view from below, and the panel is the whole
-screen save the padding at the edge. It wears the same frost the stops
-themselves wear (the fight dims and blurs behind the glass), its head
-says the name of the section with the way back on it, and the other
-buttons slide out of view while it stands. Back slides them in again.
+Shipped as decision 103. A stop used to open a list in place, climbing
+upward from its own row over the lockup. A tap slides a panel into view
+from below now: the panel is the screen save the padding at the edge,
+held to a maximum width, it wears the same frost the stops themselves
+wear (the fight dims and blurs behind the glass), its head says the name
+of the section with the way back on it, and the other buttons slide out
+of view while it stands. Back slides them in again.
 
-What that buys is stacking: a row that opens something is not a special
-case any more. It slides the next panel in the same way, and back steps
-one level out. LOG IN, which today raises a card over the landing with
-no ground behind it, becomes an ordinary stacked panel here.
+One thing changed between these boards and what shipped, and it is on
+every board here now: the width is capped at 560. These were drawn full
+width, which is right on a phone and wrong on a monitor, and Chris said
+so. See `PANEL_MAX` below and in client/arena/ui.lua.
+
+What the grammar buys is stacking: a row that opens something is not a
+special case any more. It slides the next panel in the same way, and back
+steps one level out. Nothing stacks in the client yet -- LOG IN still
+raises a card over the landing -- so the Stacked board is the proposal
+for what comes next rather than a picture of what runs.
 
 Six boards: the landing closed, the zone panel open, the account panel
 open, one drawn frame of the slide, one drawn frame of a stack going up,
@@ -465,14 +471,25 @@ def panel_rule():
             'background:rgba(63,88,120,.6)"></div>')
 
 
+# The measure the panel is held to, which is the one thing Chris changed
+# between these boards and what shipped. Full width is right on a phone
+# and wrong on a monitor: a row eleven hundred points wide sets a name at
+# one end and its figure at the other, two things too far apart to read
+# as one row. Capped, the panel stands in the middle with the room
+# showing either side, which is what the frost was for. 560 in the client
+# (`PANEL_MAX` in ui.lua), and the same here.
+PANEL_MAX = 560
+
+
 def full_panel(w, h, edge, label, rows, rise=None, head_h=46):
-    """The screen's worth of glass, less the padding at the edge. `rise`
-    draws it mid-slide instead: risen that many pixels off the bottom
-    edge, on its way to the whole screen."""
-    if rise is None:
-        pos = f"left:{edge}px;right:{edge}px;top:{edge}px;bottom:{edge}px"
-    else:
-        pos = f"left:{edge}px;right:{edge}px;top:{h - rise}px;bottom:{edge}px"
+    """The screen's worth of glass, less the padding at the edge and held
+    to a maximum width. `rise` draws it mid-slide instead: risen that many
+    pixels off the bottom edge, on its way up."""
+    pw = min(w - 2 * edge, PANEL_MAX)
+    left = (w - pw) / 2
+    top = edge if rise is None else h - rise
+    pos = (f"left:{left:.0f}px;width:{pw:.0f}px;top:{top:.0f}px;"
+           f"bottom:{edge}px")
     return (f'<div class="panel" style="{pos}">'
             + panel_head(label, head_h)
             + '<div style="padding:6px 0;display:flex;'

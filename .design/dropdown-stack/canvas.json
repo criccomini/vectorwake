@@ -11,12 +11,17 @@
     {
       "id": "note-proposal",
       "x": -430, "y": 0, "w": 370,
-      "text": "A stop stops opening a list in place.\n\nToday a tap opens rows climbing upward from the stop, over the lockup. Here a tap slides a panel into view from below instead, and the panel is the whole screen save the padding at the edge.\n\nThe panel wears the stops' own glass: the same dim and blur a button has, not the near-opaque ground the in-place lists used, so the fight reads on behind it.\n\nIts head says the name of the section with the way back on it, the grammar the in-match settings page already wears. While it stands, the other buttons are gone: they slid out below the bottom edge as the panel rose. Back plays the slide the other way and they return."
+      "text": "Shipped as decision 103.\n\nA stop used to open rows climbing upward from itself, over the lockup. A tap slides a panel into view from below now, and the panel is the screen save the padding at the edge, capped at 560 points wide.\n\nThe panel wears the stops' own glass: the same dim and blur a button has, not the near-opaque ground the in-place lists used, so the fight reads on behind it and beside it.\n\nIts head says the name of the section with the way back on it, the grammar the in-match settings page already wears. While it stands, the other buttons are gone: they slid out below the bottom edge as the panel rose. Back plays the slide the other way and they return.\n\nThe in-match menu took the same change, which is what fixed the settings page running over the stops it stood on."
+    },
+    {
+      "id": "note-cap",
+      "x": -430, "y": 620, "w": 370,
+      "text": "The cap, which is the one thing that changed on the way in.\n\nThese boards were drawn full width. That is right on a phone and wrong on a monitor: a row eleven hundred points wide sets a game's name at one end and its format at the other, two things too far apart to read as one row, and glass that wide stops being a panel over a fight and becomes the screen.\n\n560 is comfortably wider than the 320-point column, so opening one reads as a step up rather than sideways, and it leaves the room showing either side. A phone never reaches the cap and gets the window less its margin, which is what \"the whole screen\" means where there is no width to spare."
     },
     {
       "id": "note-stacking",
-      "x": -430, "y": 620, "w": 370,
-      "text": "What the grammar buys: stacking.\n\nA row that opens something is not a special case any more. It slides the next panel in the same way, over the one standing, and back steps one level out. On the stacked board LOG IN, which today raises a card over the landing with no ground behind it, is just one more panel.\n\nThe ship stop's panel becomes a full-screen page under the same rule, and anything it opens later stacks for free.\n\nOpen question: on a desktop the rows run the panel's whole width, about 1400 points. Whether a row should keep the column's measure inside the panel, the way the in-place lists did, is drawn full-width here so the question is visible."
+      "x": -430, "y": 1240, "w": 370,
+      "text": "What the grammar buys: stacking.\n\nA row that opens something is not a special case any more. It slides the next panel in the same way, over the one standing, and back steps one level out rather than everything shutting at once.\n\nNothing stacks in the client yet, so the stacked board is the proposal for what comes next rather than a picture of what runs: LOG IN still raises a card over the landing, which is the one surface out here with no ground behind it, and it is the obvious first thing to become a panel."
     }
   ],
   "launch": { "view": "canvas" }

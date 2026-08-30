@@ -327,7 +327,11 @@ local land = landing and {
     },
     warn = true,
 } or nil
-ui.land_open = (scenario == "landing-zones" and "zone")
+-- Which stop is standing open, if any. This was `ui.land_open` for a while,
+-- which is a field the interface has never had: the three scenarios that open
+-- a stop all quietly drew the closed landing instead, and a tool that draws
+-- the wrong picture without saying so is worse than one that fails.
+ui.col_open = (scenario == "landing-zones" and "zone")
     or (scenario == "landing-ships" and "ship")
     or (scenario == "landing-account" and "account") or nil
 

@@ -193,7 +193,10 @@ local function frame(w, h, o)
     if not o.keep then
         ui.col_sel, ui.col_sel_value = o.sel, o.sel_value
     end
-    ui.begin(layer, w, h, o.density or 1, false, 0, glass)
+    -- Time zero settles the panel's slide in the frame it starts, which is
+    -- what keeps every layout check here still. `now` is for the one section
+    -- that is about the slide itself and needs a middle to look at.
+    ui.begin(layer, w, h, o.density or 1, false, o.now or 0, glass)
     ui.hud({
         me = 0,
         -- A watcher's HUD: the camera stands behind a hull that is not yours.
@@ -498,12 +501,13 @@ do
           #frosted .. " frosted boxes with no landing up")
 end
 
--- --- a stop's list opens over the glass -------------------------------------
+-- --- a stop opens a panel over the glass -------------------------------------
 --
--- Zone and ship drop their lists in place, upward so the key stays clear. A
--- row's press beats the stop behind it, open sky puts the list away instead
--- of pulling a trigger, and PLAY NOW answers through all of it: it is the
--- press that commits, whatever else is open.
+-- A stop's press slides a panel up through the bottom edge and sends the
+-- column out through the same edge. The panel is the window less its margin,
+-- capped so a monitor does not get a row the width of the screen; its head
+-- names the stop and carries the way back; a row's press beats the glass
+-- behind it, and the margin beside the glass puts the panel away.
 do
     frame(1440, 810, {col_open = "zone"})
     local pick
@@ -518,20 +522,61 @@ do
     -- The format is the interface describing the game rather than naming it,
     -- so it is set the way the rest of the HUD is set.
     check("and its format beside it", word("1V1") ~= nil)
+    -- The head says which stop you are in, in the same register the stop said
+    -- it in, and takes the press that steps back out of it.
+    check("the panel names the stop it came from", word("ZONE") ~= nil)
+    check("and carries the way back", box("land_back") ~= nil)
     if pick then
         check("a press on the row is the pick",
               press(pick.x + 5, pick.y + pick.h / 2) == "land_pick_zone")
-        local key = box("play_now")
-        check("the list stays clear of the key",
-              key and pick.y + pick.h <= key.y,
-              "a row is over PLAY NOW")
-        check("open sky puts the list away",
-              press(400, 300) == "land_shut",
-              "landed on " .. tostring(press(400, 300)))
-        check("and PLAY NOW still answers",
-              key and press(key.x + key.w / 2, key.y + key.h / 2)
-                  == "play_now")
+        -- The column went with the panel's arrival, so there is nothing of it
+        -- left to press: the panel is the screen while it stands.
+        check("the key went out with the column", box("play_now") == nil)
+        check("and so did the stops", box("land_zone") == nil
+              and box("land_account") == nil and box("land_ship") == nil)
+        -- The glass swallows a press that missed a row, so a thumb landing
+        -- between two rows does not dismiss the thing it was aiming at.
+        local hold = box("panel_hold")
+        check("the glass takes a press that missed a row", hold ~= nil)
+        if hold then
+            check("and that press is not a dismissal",
+                  press(hold.x + hold.w / 2, hold.y + hold.h - 4)
+                      == "panel_hold")
+        end
+        -- And the margin beside it still is one.
+        check("the margin beside the glass puts the panel away",
+              press(4, 300) == "land_shut",
+              "landed on " .. tostring(press(4, 300)))
     end
+
+    -- The cap: wider than the stop it came from and well short of the window,
+    -- centered on the same middle the column stands on.
+    frame(1440, 810, {})
+    local stop = box("land_zone")
+    frame(1440, 810, {col_open = "zone"})
+    local row = nil
+    for _, r in ipairs(ui.hits) do
+        if r.action == "land_pick_zone" then row = row or r end
+    end
+    check("the panel is wider than the stop it came from",
+          stop and row and row.w > stop.w,
+          stop and row and (stop.w .. " against " .. row.w) or "missing")
+    check("and capped well short of a wide window",
+          row and row.w <= 560 and row.w < 1440 * 0.5,
+          row and tostring(row.w) or "missing")
+    check("and centered on the column's own middle",
+          stop and row
+          and math.abs((stop.x + stop.w / 2) - (row.x + row.w / 2)) < 2)
+    -- On a phone the cap never binds: the panel is the window less its margin,
+    -- which is what "the whole screen" means where there is no width to spare.
+    frame(390, 844, {col_open = "zone"})
+    local narrow = nil
+    for _, r in ipairs(ui.hits) do
+        if r.action == "land_pick_zone" then narrow = narrow or r end
+    end
+    check("and takes the whole width of a phone", narrow and narrow.w > 340,
+          narrow and tostring(narrow.w) or "missing")
+    frame(1440, 810, {col_open = "zone"})
 
     frame(1440, 810, {col_open = "ship"})
     -- The panel names the ship it is showing, and the rows that spend its
@@ -623,16 +668,17 @@ do
         check("a press on the row is the pick",
               press(first.x + 5, first.y + first.h / 2)
                   == "land_pick_account")
-        local key = box("play_now")
-        check("the list stays clear of the key",
-              key and first.y + first.h <= key.y, "a row is over PLAY NOW")
-        check("open sky puts the list away", press(400, 300) == "land_shut",
-              "landed on " .. tostring(press(400, 300)))
+        check("the margin beside the glass puts the panel away",
+              press(4, 300) == "land_shut",
+              "landed on " .. tostring(press(4, 300)))
     end
-    -- The stop it hangs off is the top of the column, so its list covers no
-    -- other stop: both of the ones below it are still there to press.
-    check("and the stops below it are still on the screen",
-          box("land_zone") ~= nil and box("land_ship") ~= nil)
+    -- It opens the same panel the other two do, named the same way, and the
+    -- column goes out under it: the stop being the top one of the three buys
+    -- it nothing any more, because none of them stays.
+    check("and the panel names itself", word("ACCOUNT") ~= nil)
+    check("and the whole column went out under it",
+          box("land_zone") == nil and box("land_ship") == nil
+          and box("land_account") == nil and box("play_now") == nil)
 
     -- The guest warning: a dot on the stop wherever a lost account would
     -- cost this guest a rated game. The drawer says the same thing in words
@@ -978,30 +1024,31 @@ do
             {label = "Gauntlet", zone = "gauntlet", live = false},
         }}})
     check("a dark game is not walked onto",
-          walk_of() == "land_zone land_pick_zone land_pick_zone",
+          walk_of() == "land_back land_pick_zone land_pick_zone",
           walk_of())
 
-    -- Inside an open list the walk is that list: the stop it hangs off, which
-    -- is the way back out, and then its rows.
+    -- Inside an open panel the walk is that panel: the way back on its head,
+    -- and then its rows. The stop it came from is off the bottom of the screen
+    -- and out of the walk with it, which is why the head carries the way out.
     frame(1440, 810, {col_open = "zone"})
-    check("an open list is the whole of the walk",
-          walk_of() == "land_zone land_pick_zone land_pick_zone",
+    check("an open panel is the whole of the walk",
+          walk_of() == "land_back land_pick_zone land_pick_zone",
           walk_of())
-    ui.col_sel, ui.col_sel_value = "land_zone", nil
+    ui.col_sel, ui.col_sel_value = "land_back", nil
     step(1)
-    check("down off the stop goes into the list",
+    check("down off the head goes into the rows",
           ui.col_sel == "land_pick_zone" and ui.col_sel_value == "melee",
           tostring(ui.col_sel) .. " " .. tostring(ui.col_sel_value))
     step(1)
-    check("and along it", ui.col_sel_value == "chaos")
+    check("and along them", ui.col_sel_value == "chaos")
     local act, value = ui.col_go()
     check("enter on a row picks that game",
           act == "land_pick_zone" and value == "chaos",
           tostring(act) .. " " .. tostring(value))
     step(-1, 2)
-    check("and up off the first row is the stop again",
-          ui.col_sel == "land_zone")
-    check("where enter shuts the list", ui.col_go() == "land_zone")
+    check("and up off the first row is the head again",
+          ui.col_sel == "land_back")
+    check("where enter steps back out", ui.col_go() == "land_back")
 
     -- The one case where falling back to the key would be wrong: a press
     -- meant for a row would deploy instead of picking one.
@@ -1009,12 +1056,12 @@ do
     check("enter in an open list never reaches the key",
           ui.col_go() == nil, tostring(ui.col_go()))
 
-    -- The ship panel walks its stop, the ship it is on, one stop a row, and
-    -- the way back to the hull's own build. The arrows either side of a
-    -- value are not stops of their own.
+    -- The ship panel walks the way back, the ship it is on, one stop a row,
+    -- and back to the hull's own build. The arrows either side of a value are
+    -- not stops of their own.
     frame(1440, 810, {col_open = "ship"})
     check("the ship panel walks its ship and its rows",
-          walk_of():match("^land_ship land_pick_ship land_kit_row")
+          walk_of():match("^land_back land_pick_ship land_kit_row")
           and walk_of():match("land_kit_reset$"),
           walk_of())
     ui.col_sel, ui.col_sel_value = "land_pick_ship", 1
@@ -1112,32 +1159,24 @@ do
     end
 end
 
--- --- and a rail's panel opens from its own cell ----------------------------
+-- --- and the rail opens the same panel -------------------------------------
 --
--- Lying down changes where the panel hangs from and how much room it has.
--- Down the column it drops out of a stop the key's own width; along the rail
--- it opens over the fight from a cell, climbing to the top of the window and
--- scrolling inside whatever that gives it.
+-- Lying down used to change where the panel hung from and how much room it
+-- had: down the column it dropped out of a stop the key's own width, along the
+-- rail it opened over the fight from one cell of three.
 --
--- The same panel either way, which is the point: a landscape phone had a
--- version of its own for a while, three sections side by side, and that is
--- two layouts to learn and two to keep working for one panel that fits a
--- scroll.
+-- It hangs off nothing now. Whatever shape the landing is in, the stops go out
+-- through the bottom edge and one panel comes up through it, at the same
+-- measure and in the same place. That is one layout for both shapes rather
+-- than two, which is the argument that took the landscape phone's own
+-- three-section version out years' worth of decisions ago.
 do
     frame(844, 390, {col_open = "ship"})
-    local cell, key = box("land_ship"), box("play_now")
     local pick = box("land_pick_ship")
     check("a rail's panel carries the ship it is on", pick ~= nil)
-    if cell and pick then
-        check("the panel hangs off the cell it belongs to",
-              pick.x >= cell.x - 1.5,
-              string.format("panel at %.0f, cell at %.0f", pick.x, cell.x))
-        check("and opens upward, clear of the band",
-              pick.y + pick.h <= cell.y,
-              string.format("panel ends %.0f, cell top %.0f",
-                            pick.y + pick.h, cell.y))
+    if pick then
         check("and stays inside the window",
-              pick.x + pick.w <= 844)
+              pick.x >= 0 and pick.x + pick.w <= 844)
     end
     -- A short window cannot hold the whole panel, so what it does instead is
     -- scroll: every row it draws is a whole one, drawn inside the frame.
@@ -1147,14 +1186,12 @@ do
     end
     check("and draws the rows it has room for", #rows >= 1,
           #rows .. " rows")
-    check("the stops beside it stay on the rail",
-          box("land_account") ~= nil and box("land_zone") ~= nil,
-          "a stop stood down with nothing over it")
-    check("and the key still answers through it",
-          key and press(key.x + key.w / 2, key.y + key.h / 2) == "play_now")
-    -- Open sky is whatever the panel does not cover, which on a rail is the
-    -- fight to either side of it.
-    check("and open sky still puts it away", press(60, 100) == "land_shut")
+    check("the rail went out under it like the column does",
+          box("land_account") == nil and box("land_zone") == nil
+          and box("play_now") == nil)
+    -- Open sky is whatever the panel does not cover, which is the margin it
+    -- keeps from the window's own edge.
+    check("and open sky still puts it away", press(4, 100) == "land_shut")
 
     -- Walking the panel scrolls it, which is the half a scrollbar cannot do
     -- on its own: a row lit under the fold is a row nobody can see
@@ -1432,6 +1469,67 @@ for _, at in ipairs({{720, 300}, {400, 500}, {1000, 420}}) do
     end
 end
 check("the sweep found open sky to press on", free > 0)
+
+-- --- the slide ---------------------------------------------------------------
+--
+-- Pressing a stop sends the column down through the bottom edge and brings the
+-- panel up through the same one, so the two are one movement rather than a
+-- swap. Back plays it the other way and the column comes home.
+--
+-- Asked on a clock, because every frame above runs at time zero, where the
+-- slide settles in the frame it starts and there is no middle to look at.
+-- `state.text` counts up from the bottom of the window, so a thing on its way
+-- down loses y and a thing on its way up gains it.
+do
+    ui.panel_shut()
+    local function said_y(s)
+        for i = 1, state.n do
+            local t = state.text[i]
+            if t and t.s == s then return t.y end
+        end
+        return nil
+    end
+    local function at(now, open)
+        frame(1440, 810, {col_open = open, now = now})
+        return said_y("PLAY NOW"), said_y("Chaos")
+    end
+
+    -- The frame the press lands on: nothing has moved yet.
+    local shut_key = at(1, nil)
+    local mid_key, mid_row = at(1, "zone")
+    check("the column has not moved on the frame the stop was pressed",
+          shut_key and mid_key and math.abs(shut_key - mid_key) < 1,
+          tostring(shut_key) .. " then " .. tostring(mid_key))
+
+    -- Part way through, both halves are travelling.
+    local late_key, late_row = at(1.06, "zone")
+    check("part way through, the column is on its way down",
+          late_key and mid_key and late_key < mid_key - 1,
+          tostring(mid_key) .. " to " .. tostring(late_key))
+    check("and the panel is on its way up through the same edge",
+          late_row and mid_row and late_row > mid_row + 1,
+          tostring(mid_row) .. " to " .. tostring(late_row))
+    local rest_key, rest_row = at(9, "zone")
+    check("with the panel still short of where it comes to rest",
+          late_row and rest_row and late_row < rest_row - 1,
+          tostring(late_row) .. " against " .. tostring(rest_row))
+    check("and at rest the column has gone and the panel stands",
+          rest_key == nil and box("land_pick_zone") ~= nil,
+          tostring(rest_key))
+    -- The lockup goes with the stops rather than hanging over the panel: the
+    -- column is one object, and a wordmark left standing over an open panel is
+    -- the front page refusing to get out of the way.
+    check("and the name went down with them", word("vectorwake") == nil)
+
+    -- And back the other way.
+    at(9, nil)
+    check("the frame back is pressed on has not moved either",
+          box("play_now") == nil)
+    at(9.06, nil)
+    check("and then the column comes home", box("play_now") ~= nil
+          and box("land_zone") ~= nil)
+    ui.panel_shut()
+end
 
 print(fails == 0 and "all landing checks passed"
       or (fails .. " landing checks failed"))
