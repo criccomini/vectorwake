@@ -234,6 +234,73 @@ end
 -- The landing's stops, as the arena builds them: the call sign and what its
 -- list holds, the games with their one-line formats, and the ships with
 -- sitting out as the last row.
+-- The ship stop's panel, as `menu.ship_panel` builds one.
+--
+-- A fixture the way the zones and the account rows above are: `arena.menu`
+-- wants the engine and a meta-layer before it will load, which is more world
+-- than a picture needs. The shape is that function's, the labels and notes
+-- are `menu.tune_rows`, and the ceilings are what `sim_slot_cap` answers for
+-- an Apex, so the row a credit can move is drawn live and one it cannot is
+-- drawn dim.
+--
+-- This was a list of hull names, and had been since the stop stopped opening
+-- one, so the picture showed an empty stop and nobody could see that the gun
+-- and bomb Rung rows had gone missing from it.
+local function slot_row(slot, label, note, value, cap, free)
+    return {kind = "slot", slot = slot, label = label, note = note,
+            value = value, cap = cap, toggle = cap == 1,
+            can_up = value < cap and free >= 1, can_down = value > 0}
+end
+
+local function ship_panel()
+    -- The Apex: one credit of spray, two repels and a burst, which leaves
+    -- three of the seven in hand.
+    local free = 3
+    return {
+        at = 0, pages = 8, watching = false, class = 0,
+        label = "Apex", detail = "dart",
+        bars = {0.95, 0.62, 0.55, 0.28, 0.44},
+        free = free, credits = 7, mine = true,
+        rows = {
+            {kind = "sect", label = "gun"},
+            slot_row(5, "Rung",
+                     "Which gun off this hull's own ladder it fires.",
+                     0, 2, free),
+            slot_row(7, "Spray",
+                     "How many rounds one pull of the trigger throws.",
+                     1, 5, free),
+            slot_row(8, "Bounce",
+                     "Rounds come off walls instead of ending on them.",
+                     0, 1, free),
+            slot_row(11, "Freeze",
+                     "What a round hits stops recharging for a moment.",
+                     0, 1, free),
+            {kind = "sect", label = "bomb"},
+            slot_row(6, "Rung",
+                     "Which bomb off this hull's own ladder it throws.",
+                     0, 2, free),
+            slot_row(14, "Bounce",
+                     "The bomb comes off walls instead of ending on them.",
+                     0, 1, free),
+            slot_row(15, "Proximity detonation",
+                     "A fuse, so a near miss counts.", 0, 1, free),
+            slot_row(16, "Shrapnel",
+                     "Fragments thrown by the blast, each carrying the "
+                     .. "gun's damage.", 0, 3, free),
+            slot_row(17, "Freeze",
+                     "The blast stops whoever it catches recharging.",
+                     0, 1, free),
+            {kind = "sect", label = "rack"},
+            slot_row(19, "Repel",
+                     "A push that answers rounds already on their way to "
+                     .. "you.", 2, 3, free),
+            slot_row(20, "Burst",
+                     "A ring of rounds thrown out around you.", 1, 2, free),
+            {kind = "reset", label = "Reset", on = false},
+        },
+    }
+end
+
 local land = landing and {
     name = "Kestrel 8",
     zone = "Team Battle",
@@ -242,11 +309,13 @@ local land = landing and {
         {label = "Team Battle", zone = "melee", live = true,
          format = "4v4 · 3:00", here = true},
     },
-    ships = {
-        {label = "Gunner", value = 1, here = true},
-        {label = "Bomber", value = 2},
-        {label = "spectate", value = "spectate"},
-    },
+    -- What the ship stop opens: one hull with its flight and its credits,
+    -- and the rows those credits go on. `menu.ship_panel` builds it, driven
+    -- by the roster the core actually ships, so the picture is the real
+    -- panel rather than a list written here. It was a list written here, and
+    -- had been since the stop stopped opening one, which is why nobody could
+    -- see that the gun and bomb Rung rows had gone.
+    panel = ship_panel(),
     -- A guest with a game behind them: the offer, the reroll, and the way
     -- onto an account that already exists. See `menu.account_rows`.
     account = {

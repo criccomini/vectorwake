@@ -515,7 +515,7 @@ _G.sim = {
     slot_cap = function(cls, slot)
         local _ = cls
         if slot < 5 then return 8 end          -- a stat
-        if slot < 7 then return 0 end          -- a ladder with one rung
+        if slot < 7 then return 2 end          -- a ladder of three rungs
         if slot == 7 then return 5 end         -- spray, three bits of it
         if slot < 19 then return 1 end         -- an add-on that is on or off
         if slot < 21 then return 15 end        -- a charge the zone fills
@@ -550,6 +550,30 @@ check("and the sections are the weapons and the rack",
       kinds["sect:gun"] and kinds["sect:bomb"] and kinds["sect:rack"])
 check("with a way back to the hull's own build under them",
       kinds.reset == 1)
+
+-- Which rung of its own ladder a hull fires is the first row under each
+-- weapon, and it is a row a pilot can actually move. It was not: the shipped
+-- roster named one rung a weapon, so the ceiling came back zero and the row
+-- was dropped on every hull, on a page whose every other line was right. A
+-- section that opens on its add-ons is that bug.
+local rungs = {}
+local sect
+for _, r in ipairs(panel.rows) do
+    if r.kind == "sect" then sect = r.label end
+    if r.kind == "slot" and r.label == "Rung" then rungs[sect] = r end
+end
+check("each weapon opens on the rung it fires",
+      rungs.gun ~= nil and rungs.bomb ~= nil,
+      "gun " .. tostring(rungs.gun ~= nil)
+      .. " bomb " .. tostring(rungs.bomb ~= nil))
+check("and it is a stepper a pilot with credits can move",
+      rungs.gun and rungs.gun.cap == 2 and rungs.gun.toggle ~= true
+      and rungs.gun.can_up == true,
+      tostring(rungs.gun and rungs.gun.cap))
+check("levelling a weapon spends a credit like anything else",
+      menu.build_step(0, 5, 1) == true and menu.build_of(0)[5] == 1
+      and menu.build_free(0) == 3)
+menu.builds = {}
 
 -- A slot that only goes to one is on and off and draws as a switch; anything
 -- you can have more of counts. The panel does not decide that, the ceiling

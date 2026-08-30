@@ -75,9 +75,14 @@ It does not survive the kit, which is exactly the condition
 
 ## Weapons
 
-Each hull fires its own gun and throws its own bomb. Both are one rung of a
-ladder the core still has, so a zone may write a hull whose weapon climbs; the
-shipped roster names rung zero for every one of them.
+Each hull fires its own gun and throws its own bomb, and each of those is a
+ladder of three. The row below is rung zero, the weapon a hull arrives with,
+and a pilot's credits buy the two rungs above it: one credit a rung, out of
+the same seven that pay for everything else. That is the original's own shape,
+where a gun and a bomb each have three levels, and it is what the Rung row at
+the top of each weapon section in the hangar spends on. `SIM_MAX_RUNGS` is
+four, so the fourth stays free for a zone that wants a hull climbing further
+than this roster does.
 
 | Class | Gun damage | Energy | Delay | Bomb damage | Blast | Energy | Delay |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -99,6 +104,22 @@ laid out on 200, 300, 400 and 500. Balance has moved four of them off those
 marks by a few percent, which is what a ladder read as fixed points is for.
 The bomb is 750 at every level in the original, which is why every rack here
 does the same damage and the blast radius is what separates them.
+
+What a rung is worth follows from those two facts. A gun rung is half the
+row's round again, on the damage and on the energy a pull costs alike, so the
+three rungs are the row, half again, and double; the rate does not move, since
+BulletFireDelay is one number in the original whatever the level and a rung
+that fired faster as well as harder would be the gun bought twice. What that
+sells is the size of one arriving hit rather than a discount, and it is why a
+level is a trade and not a slot every hull dumps into.
+
+A bomb rung adds forty pixels of blast, two and a half tiles, and half the
+row's energy again. Added rather than multiplied, because this roster's own
+racks already sit up the original's ladder: doubling and tripling would put
+the Wedge's bay at twenty-four tiles and the Anvil's at thirty, with the
+thrower inside their own blast the whole way. Forty a rung lands a plain rack
+on 80, 120 and 160 and the Anvil's on 240, which is the original's L3 for a
+bomb that starts where a bomb starts.
 
 The Cipher has no rack at all. It is the only one, the core has always been
 able to express it, and nothing until now used it.
@@ -299,12 +320,20 @@ down and the only balance lever a flat price list leaves.
 
 | Slot | Gun | Bomb |
 |---|---:|---:|
+| rung | 2 | 2 |
 | spray | 5 | 0 |
 | bounce | 1 | 1 |
 | proximity | 0 | 1 |
 | shrapnel | 0 | 3 |
 | freeze | 1 | 1 |
 | push | 0 | 0 |
+
+The rung ceiling is not a number anybody set: `sim_slot_cap` floors the level
+slot at the length of the hull's own ladder, so three rungs answers two and a
+hull with no rack answers zero without the Cipher being named anywhere. That
+is also how the row went missing for a while. Every line that drew it was
+right, and the roster underneath named one rung a weapon, so the ceiling came
+back zero on every hull and the panel correctly drew nothing.
 
 The rack: three repels, two bursts, which keeps the Lattice the deepest rack
 in the game. Flight keeps its full ladder, since its step is zero across the

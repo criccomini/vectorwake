@@ -5111,3 +5111,58 @@ The other cost is granularity. Thirty points let a pilot shave a fine trade;
 seven picks are coarse, and a build is now a handful of yes-or-no answers. For
 three minute matches that is the right trade, and it is the direction the whole
 front end has been going since decision 61.
+
+## 101. A weapon's level is a slot a pilot spends on
+
+**Status:** accepted, extending
+[decision 100](#100-seven-credits-and-every-step-costs-one)
+
+**Decision:** every hull's gun and every hull's rack is a ladder of three
+rungs. Rung zero is the weapon the ship arrives with, and the two above it
+cost one credit each out of the same seven that pay for spray, an add-on or a
+repel. A gun rung is half the row's round again on the damage and on the
+energy a pull costs; a bomb rung adds forty pixels of blast and half the row's
+energy, since a bomb does the same damage at every level in the original and
+the reach is what a level buys. Neither moves the rate.
+
+**Why:** because the hangar already said you could and you could not. The ship
+page has drawn each weapon section opening on a "Rung" row since decision 100,
+with a note under it saying which gun off this hull's own ladder it fires, and
+the row has never once appeared on a screen.
+
+Nothing between the two ends was broken. `sim_slot_cap` floors a level slot at
+the length of the hull's own ladder, which is right: a rung the hull does not
+carry is a rung nothing climbs to, and it is what gives the Cipher no bomb row
+without the Cipher being named anywhere. The panel draws no row for a slot
+whose ceiling is zero, which is also right, and is what keeps it honest for a
+zone nobody has written yet. The roster underneath named one rung a weapon.
+Two correct rules over a roster of ones is a row that silently does not exist,
+on a page where every line about it was written and tested.
+
+So the ladders are real now, and three is the number because three is what a
+gun and a bomb each have in the original. `SIM_MAX_RUNGS` is four and stays
+four: the fourth is for a zone that wants a hull climbing past this roster,
+which is what the machinery was kept for and is still the only thing keeping
+it honest.
+
+What a rung sells is the size of one arriving hit rather than a discount. The
+energy climbs with the damage, so rounds per bar is where it was and a level
+does not pay for itself; the delay does not move, because BulletFireDelay is
+one number in the original whatever the level and a rung that fired faster as
+well as harder would be the gun bought twice. On the rack the blast is added
+to rather than multiplied, because this roster's own bombs already sit up the
+original's ladder: the Wedge's bay is its L2 and the Anvil's is past it, and
+tripling either would put a hull's own blast most of the way across a room
+with the thrower inside it. Forty pixels a rung puts a plain rack on 80, 120
+and 160 and the Anvil's on 240, which is the original's own L3.
+
+**Cost:** two more slots a pilot can dump seven credits into, on a price list
+that cannot make a step dearer. `calibrate builds` is the answer to that and
+the ceiling is where the answer lands, which is the arrangement decision 100
+set up. The ceiling on a level is not a number anybody writes: it is the
+length of the hull's ladder, so shortening a ladder is how a rung gets cheaper
+to hold and there is nothing to keep in step with it.
+
+The other cost is the tables. Three rungs on seven hulls is 42 of the core's
+64 weapon specs and 44 of its 64 patterns, where one rung each was 16 and 18.
+A zone adding weapons of its own has half the room it had.

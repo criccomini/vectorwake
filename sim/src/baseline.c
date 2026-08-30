@@ -45,10 +45,11 @@ static const sim_class_units flight[SIM_MAX_CLASSES] = {
 
 /* The weapons.
  *
- * Each hull fires its own gun and its own bomb, at rung zero of its own
- * ladder, because a hull is a whole ship again rather than a shape holding
- * whatever a pilot bought. The rung machinery stays for a zone that wants a
- * hull whose weapon climbs; the shipped roster names one rung each.
+ * Every hull fires its own gun and throws its own bomb, and each of those is a
+ * ladder of three: the row below is rung zero, the ship as it arrives, and a
+ * pilot's credits buy the two rungs above it. That is the original's own
+ * shape, where a gun and a bomb each have three levels, and it is what the
+ * "Rung" row at the top of each weapon section in the hangar spends on.
  *
  * The numbers below are the original's where the original had an answer.
  * BulletDamageLevel is 200 and each level after adds 100, so 200, 300, 400
@@ -63,6 +64,42 @@ static const sim_class_units flight[SIM_MAX_CLASSES] = {
  * the thrower is inside their own blast for sixty ticks of a bomb's flight.
  * So the bomber reaches eight tiles and the heavy ten, which are steps a
  * player can feel without either hull spending the match killing itself. */
+
+/* How many rungs each hull's gun and bomb hold, counting the one it arrives
+ * on. Three, which is what the original gives both, and two credits is what
+ * climbing to the top of one costs out of seven.
+ *
+ * `SIM_MAX_RUNGS` is four and this is deliberately one short of it. The
+ * fourth rung stays for a zone that wants a hull whose weapon climbs further
+ * than the shipped roster's, and the tables have room for it either way:
+ * three rungs on seven hulls fills 42 of the 64 specs and 44 of the 64
+ * patterns, where one rung each filled 16 and 18. */
+#define ROSTER_RUNGS 3
+
+/* What a rung is worth, as a numerator over two: rung zero is the row, rung
+ * one is half again, rung two is double.
+ *
+ * The same fraction on both halves of a weapon, what the round does and what
+ * the pull costs, so a rung buys a bigger round at the same rounds per bar
+ * rather than a discount. That is the original's own arrangement, where
+ * BulletDamageLevel and BulletFireEnergy climb together, and it is what stops
+ * a level being a slot every hull dumps into: what it actually sells is the
+ * size of one arriving hit. */
+#define RUNG_NUM(r) (2 + (r))
+#define RUNG_DEN    2
+#define RUNG_UP(v, r) ((int32_t)((v) * RUNG_NUM(r) / RUNG_DEN))
+
+/* And what a rung adds to a blast, in pixels, since a bomb's damage does not
+ * move: 750 at every level in the original, where what a level buys is
+ * BombExplodePixels doubling and tripling.
+ *
+ * Added rather than multiplied, because this roster's own bombs already sit
+ * up that ladder. The Wedge's bay is the original's L2 and the Anvil's is
+ * past it, so tripling either would put a hull's own blast most of the way
+ * across a room with the thrower inside it. Forty pixels is two and a half
+ * tiles a rung, which lands a plain rack on 80, 120 and 160 and the Anvil's
+ * on 240, the original's own L3 for a bomb that starts where a bomb starts. */
+#define BOMB_BLAST_STEP 40
 
 /* Gun, per hull: damage, energy a pull, ticks between pulls.
  *
@@ -573,10 +610,10 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         c->halfw = (int32_t)hull_extent[i][2];
         fill_profile(c, &profile[i]);
 
-        /* Rung zero is the hull's gun, because nobody climbs a ladder any
-         * more. The rungs above it stay reachable for a zone that wants a
-         * hull whose weapon grows; the shipped roster leaves them empty. */
-        {
+        /* The gun ladder. Rung zero is the row, and the two above it are the
+         * same round grown by `RUNG_UP`: what a hull fires is its own gun at
+         * whichever level its pilot paid for, never somebody else's. */
+        for (int r = 0; r < ROSTER_RUNGS; r++) {
             sim_weapon_spec bolt;
             memset(&bolt, 0, sizeof bolt);
             bolt.speed = sim_units_speed(2000);
@@ -585,7 +622,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
             /* The add-on buys one wall, as its single rung says. Infinite
              * ricochets made that one point dominate whole corridors. */
             bolt.bounces = 0;
-            bolt.damage = sim_units_energy(gun_row[i][0]);
+            bolt.damage = sim_units_energy(RUNG_UP(gun_row[i][0], r));
             bolt.splinter = SIM_NO_PATTERN;
 
             sim_fire_pattern gun;
@@ -596,15 +633,19 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
              * being drawn with two of them is a fact about the Facet again. */
             gun.count = 1;
             gun.spacing = 0;
-            gun.energy = sim_units_energy(gun_row[i][1]);
+            gun.energy = sim_units_energy(RUNG_UP(gun_row[i][1], r));
+            /* The rate does not move. BulletFireDelay is one number in the
+             * original whatever the level, and it is the number this roster
+             * was balanced on: a rung that fired faster as well as harder
+             * would be the whole gun bought twice. */
             gun.delay = (uint16_t)gun_row[i][2];
-            c->trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(cfg, &gun);
+            c->trigger[SIM_TRIG_GUN][r] = (uint8_t)sim_add_pattern(cfg, &gun);
         }
 
-        /* A rack, unless the row says otherwise. Cipher is the one hull with
-         * none, and an empty ladder is a trigger that goes dead, which the
-         * core has always handled and nothing until now used. */
-        if (bomb_row[i][0] > 0) {
+        /* And the rack's, unless the row says otherwise. Cipher is the one
+         * hull with none, and an empty ladder is a trigger that goes dead,
+         * which the core has always handled and nothing until now used. */
+        for (int r = 0; r < (bomb_row[i][0] > 0 ? ROSTER_RUNGS : 0); r++) {
             sim_weapon_spec sh;
             memset(&sh, 0, sizeof sh);
             /* BombSpeed=2000 and BombAliveTime=6000. Sixty seconds is not a
@@ -618,18 +659,19 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
             sh.speed = sim_units_speed(2000);
             sh.life = 6000;
             sh.on_wall = SIM_WALL_END;
+            /* 750 at every level, and the reach is what a level buys. */
             sh.damage = sim_units_energy(bomb_row[i][0]);
-            sh.blast = bomb_row[i][1] * 256;
+            sh.blast = (bomb_row[i][1] + r * BOMB_BLAST_STEP) * 256;
             sh.splinter = SIM_NO_PATTERN;
 
             sim_fire_pattern bomb;
             memset(&bomb, 0, sizeof bomb);
             bomb.spec = (uint8_t)sim_add_spec(cfg, &sh);
             bomb.count = 1;
-            bomb.energy = sim_units_energy(bomb_row[i][2]);
+            bomb.energy = sim_units_energy(RUNG_UP(bomb_row[i][2], r));
             bomb.delay = (uint16_t)bomb_row[i][3];
             bomb.recoil = sim_units_speed(BOMB_THRUST);
-            c->trigger[SIM_TRIG_BOMB][0] = (uint8_t)sim_add_pattern(cfg, &bomb);
+            c->trigger[SIM_TRIG_BOMB][r] = (uint8_t)sim_add_pattern(cfg, &bomb);
         }
     }
 }

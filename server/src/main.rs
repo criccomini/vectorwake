@@ -6141,11 +6141,10 @@ mod tests {
     /// A rung above the first is named for its level, and a zone that writes
     /// one gets a ladder its hulls can climb.
     ///
-    /// The baseline builds one rung per hull, because a preconstructed ship
-    /// fires one weapon and nobody climbs. The machinery stays for a zone that
-    /// wants otherwise, and this is what proves it still works: three rungs
-    /// written by name, the profile pointed at the third, and the hull firing
-    /// what the third one says.
+    /// The baseline builds three rungs a weapon, so a zone naming its own has
+    /// to replace the ladder rather than extend it, and this is what proves it
+    /// does: three rungs written by name, the profile pointed at the third,
+    /// and the hull firing what the third one says rather than the roster's.
     #[test]
     fn a_rung_above_the_first_is_named_for_its_level() {
         let (w, warn) = tuned(

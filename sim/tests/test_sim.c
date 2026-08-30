@@ -2594,9 +2594,10 @@ static void test_tech_tree(const sim_settings *base) {
      *
      * Seven ships, and each one is a whole ship: its own flight row, its own
      * gun and bomb, and its own profile over the slot space. Nobody spends
-     * points and nobody buys a rung, so what is checked here is that the
-     * seven differ, that each is internally consistent, and that no profile
-     * asks for something its hull cannot carry. */
+     * points on flight, so what is checked here is that the seven differ,
+     * that each is internally consistent, that every weapon on them is a
+     * ladder a pilot's credits can climb, and that no profile asks for
+     * something its hull cannot carry. */
     {
         const int WEDGE = 1, CHORD = 2, CIPHER = 4, LATTICE = 6;
 
@@ -2648,6 +2649,62 @@ static void test_tech_tree(const sim_settings *base) {
                 CHECK(cfg.classes[i].trigger[SIM_TRIG_BOMB][0]
                           != SIM_NO_PATTERN,
                       "and everybody else does");
+
+        /* And every one of those is a ladder rather than a single weapon,
+         * because a ladder of one is a slot a pilot cannot spend on.
+         *
+         * `sim_slot_cap` floors the level slot at the length of the hull's
+         * own ladder, so a roster that names one rung each answers zero, and
+         * a zero ceiling is a row the hangar does not draw at all. That is
+         * how the gun and bomb Rung rows went missing from the ship page
+         * while every line that drew them was correct: neither end was wrong
+         * and there was no test standing where the two meet. This is that
+         * test, and it asks the claim rather than the depth, so a balance
+         * pass that shortens a ladder fails on the balance and not here.
+         *
+         * What a rung buys differs by trigger: a heavier round on the gun,
+         * and on the rack the reach of the blast, since a bomb does 750 at
+         * every level in the original and the radius is what a level moves.
+         * Both cost more to let go of than the rung below, and neither moves
+         * the rate, which is what keeps a level a trade. */
+        for (int i = 0; i < cfg.class_count; i++) {
+            for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+                uint8_t cap = sim_slot_cap(&cfg, (uint8_t)i,
+                                           SIM_SLOT_LEVEL(t));
+                if (cfg.classes[i].trigger[t][0] == SIM_NO_PATTERN) {
+                    CHECK(cap == 0, "a trigger with no weapon has no rung");
+                    continue;
+                }
+                CHECK(cap >= 1,
+                      "a weapon a hull has is a weapon its pilot can level");
+                for (int r = 1; r <= cap; r++) {
+                    uint8_t hi = cfg.classes[i].trigger[t][r];
+                    uint8_t lo = cfg.classes[i].trigger[t][r - 1];
+                    CHECK(hi != SIM_NO_PATTERN,
+                          "every rung inside the ceiling exists");
+                    if (hi == SIM_NO_PATTERN) continue;
+                    const sim_fire_pattern *up = &cfg.patterns[hi];
+                    const sim_fire_pattern *at = &cfg.patterns[lo];
+                    CHECK(up->energy > at->energy,
+                          "and costs more to pull than the one under it");
+                    CHECK(up->delay == at->delay,
+                          "while the rate it fires at does not move");
+                    const sim_weapon_spec *us = &cfg.specs[up->spec];
+                    const sim_weapon_spec *as = &cfg.specs[at->spec];
+                    if (t == SIM_TRIG_GUN) {
+                        CHECK(us->damage > as->damage,
+                              "a gun rung is a heavier round");
+                        CHECK(us->blast == 0 && as->blast == 0,
+                              "and never grows a blast");
+                    } else {
+                        CHECK(us->damage == as->damage,
+                              "a bomb does the same damage at every level");
+                        CHECK(us->blast > as->blast,
+                              "and what a rung of it buys is reach");
+                    }
+                }
+            }
+        }
 
         /* What the profiles say, which is the roster's other half. */
         /* The claim rather than the count. What makes the Lattice the Lattice
@@ -4978,15 +5035,32 @@ static void test_kits_and_matches(const sim_settings *base) {
               "and the tallest slot is what pays for it");
 
         /* A rung the hull's ladder does not have is a rung it does not climb
-         * to, so a profile reaching past the end of one costs a rung rather
-         * than naming a pattern that is not there. */
+         * to, so a profile reaching past the end of one stops at the top rung
+         * that exists rather than naming a pattern that is not there. Held
+         * inside the budget again, so it is the ladder doing the cutting. */
         sim_settings tall = kc;
-        tall.classes[FACET].kit[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] = 3;
+        memset(tall.classes[FACET].kit, 0, SIM_SLOT_COUNT);
+        tall.classes[FACET].kit[SIM_SLOT_LEVEL(SIM_TRIG_GUN)]
+            = SIM_MAX_RUNGS - 1;
         static sim_state t;
         sim_init(&t, 3);
         int tid = sim_spawn(&t, FACET, 0, 8192, 8192, 0, &tall);
-        CHECK(t.ships[tid].level[SIM_TRIG_GUN] == 0,
-              "the hull stays on the only rung it has");
+        CHECK(t.ships[tid].level[SIM_TRIG_GUN]
+                  == sim_slot_cap(&tall, FACET, SIM_SLOT_LEVEL(SIM_TRIG_GUN)),
+              "the hull stops at the top of the ladder it has");
+
+        /* And a trigger with no ladder at all has no rung to buy: the Cipher
+         * carries no rack, so the credit is refused rather than spent on a
+         * bomb it cannot throw. */
+        const int CIPHER = 4;
+        sim_settings bare = kc;
+        memset(bare.classes[CIPHER].kit, 0, SIM_SLOT_COUNT);
+        bare.classes[CIPHER].kit[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] = 1;
+        static sim_state b;
+        sim_init(&b, 3);
+        int bid = sim_spawn(&b, CIPHER, 0, 8192, 8192, 0, &bare);
+        CHECK(b.ships[bid].level[SIM_TRIG_BOMB] == 0,
+              "and a hull with no rack stays on the rung it has not got");
 
         /* Death re-deals the frame and never the ammunition. */
         sh->charge[SIM_CHARGE_REPEL] = 1;

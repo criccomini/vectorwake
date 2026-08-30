@@ -820,13 +820,12 @@ impl Room {
             world.cfg.wormhole_range = v * 256;
         }
 
-        // Weapons are named here and numbered in the core. The baseline
-        // built one gun and one bomb per hull, so those get the names an
-        // operator would guess -- `apex-gun`, `anvil-bomb` -- and anything
-        // else in the file is a weapon that did not exist before.
-        // A hull's trigger is a ladder now, so every rung gets a name: the
-        // first is `apex-gun` and the ones above it are `apex-gun-2` and up,
-        // which reads as the level it is.
+        // Weapons are named here and numbered in the core. Rung zero of each
+        // hull's gun and rack gets the name an operator would guess,
+        // `apex-gun` or `anvil-bomb`, and anything else in the file is a
+        // weapon that did not exist before. A trigger is a ladder, so the
+        // rungs above that one are `apex-gun-2` and up, which reads as the
+        // level it is.
         let mut named: Vec<(String, u8)> = Vec::new();
         for (i, hull) in ai::CLASS_NAMES.iter().enumerate() {
             let hull: &str = hull;
