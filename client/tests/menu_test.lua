@@ -1444,7 +1444,7 @@ do
         has_trigger = function(cls) return cls ~= 4 end,
     }
 
-    menu.builds = {}
+    menu.kit = nil
     menu.class = 0
     -- Off the landing, `spectating` is `M.watching` rather than the saved
     -- preference: this block is asking what the ship menu says about a pilot
@@ -1464,8 +1464,11 @@ do
     -- rows; they belong to the section that is about the hull.
     check("and nothing on it but rows", kinds.bars == nil
           and #panel.rows == 7, tostring(#panel.rows))
+    -- Six of the seven are spent before a pilot touches anything: the ship
+    -- everybody starts in is the second rung of both weapons, a bouncing
+    -- gun, a fused bomb and one of each charge.
     check("and the credits it has left to spend",
-          panel.credits == 7 and panel.free == 4,
+          panel.credits == 7 and panel.free == 1,
           tostring(panel.free) .. " of " .. tostring(panel.credits))
     check("with a way back to the hull's own build under them",
           kinds.reset == 1)
@@ -1502,7 +1505,18 @@ do
     end
     check("every hull says what flying it is like", #said == 7
           and said[5]:find("fastest") ~= nil and said[4]:find("slowest") ~= nil
-          and said[7]:find("rack") ~= nil, said[5])
+          and said[7]:find("round") ~= nil, said[5])
+    -- And only about what the hull owns. What a ship carries is the pilot's,
+    -- so a line naming an add-on is a line about somebody's build.
+    local carried = nil
+    for _, line in ipairs(said) do
+        for _, word in ipairs({"fragments", "repel", "burst", "rack",
+                               "bouncing", "fused", "rounds off"}) do
+            if line:lower():find(word) then carried = line end
+        end
+    end
+    check("and only about what the hull owns", carried == nil,
+          tostring(carried))
     -- And none of them is about the shape any more, which is the drawing's
     -- job on that page.
     local shaped = nil
@@ -1560,9 +1574,9 @@ do
           and levels.gun.can_up == true,
           tostring(levels.gun and levels.gun.cap))
     check("levelling a weapon spends a credit like anything else",
-          menu.build_step(0, 5, 1) == true and menu.build_of(0)[5] == 1
-          and menu.build_free(0) == 3)
-    menu.builds = {}
+          menu.build_step(0, 5, 1) == true and menu.build_of(0)[5] == 2
+          and menu.build_free(0) == 0)
+    menu.kit = nil
 
     -- And it is the one row on the page that is not counted from nothing.
     -- Everywhere else the figure is what a pilot has bought, so an untouched
@@ -1598,67 +1612,115 @@ do
     check("and one that only goes to one is a switch",
           bounce and bounce.toggle == true)
 
-    -- Spending. The first step copies the hull's own row into a build, so a
-    -- pilot who moves one slot keeps everything else the ship came with.
-    check("a hull nobody has touched is on its own row",
-          menu.build_edited(0) == false)
+    -- Spending. The first step copies the default into a build of the
+    -- pilot's own, so moving one slot keeps everything else the ship came
+    -- with.
+    check("a pilot who has spent nothing is on the ship everybody starts in",
+          menu.build_edited() == false)
+    check("which is both weapons a rung up, bouncing and fused, with one of "
+          .. "each charge",
+          menu.build_of(0)[5] == 1 and menu.build_of(0)[6] == 1
+          and menu.build_of(0)[8] == 1 and menu.build_of(0)[15] == 1
+          and menu.build_of(0)[19] == 1 and menu.build_of(0)[20] == 1
+          and menu.build_cost(0) == 6)
     check("a credit can be spent", menu.build_step(0, 7, 1) == true)
-    check("and the build says so", menu.build_edited(0) == true
-          and menu.build_of(0)[7] == 2)
-    check("what it did not touch it kept", menu.build_of(0)[19] == 2)
-    check("and the purse says what is left", menu.build_free(0) == 3)
+    check("and the build says so", menu.build_edited() == true
+          and menu.build_of(0)[7] == 1)
+    check("what it did not touch it kept", menu.build_of(0)[19] == 1)
+    check("and the purse says what is left", menu.build_free(0) == 0)
+
+    -- And the build is the pilot's rather than the hull's: climbing into
+    -- something else does not change what is bolted to it.
+    check("changing hulls does not change the build",
+          menu.build_of(1)[7] == 1 and menu.build_of(1)[8] == 1
+          and menu.build_of(6)[7] == 1)
+    -- A hull that cannot reach a slot carries nothing in it and is charged
+    -- nothing for it, and the credit comes back the moment the pilot climbs
+    -- into something that can.
+    do
+        local kept = _G.sim.slot_cap
+        _G.sim.slot_cap = function(cls, slot)
+            -- The bomb and only the bomb: its own rung and its own add-ons.
+            if cls == 3 and (slot == 6 or (slot >= 13 and slot < 19)) then
+                return 0
+            end
+            return kept(cls, slot)
+        end
+        -- Four of the default's six, plus the spray bought just above.
+        check("and a hull with no bomb is charged nothing for one",
+              menu.build_of(3)[15] == 0 and menu.build_cost(3) == 5
+              and menu.build_free(3) == 2, tostring(menu.build_cost(3)))
+        check("while the build keeps it for one that has a bomb",
+              menu.build_of(0)[15] == 1)
+        _G.sim.slot_cap = kept
+    end
 
     -- Nothing spends past the purse or past a ceiling, and nothing goes below
     -- nothing. All three are refused rather than clamped, which is what lets a
     -- drawing dim an arrow that would do nothing.
-    menu.builds = {}
+    menu.kit = nil
     for _ = 1, 8 do menu.build_step(0, 19, 1) end
     check("the purse is the end of the spending",
           menu.build_free(0) == 0 and menu.build_step(0, 19, 1) == false)
-    menu.builds = {}
+    menu.kit = nil
     check("a slot stops at its own ceiling",
-          menu.build_step(0, 8, 1) == true
+          menu.build_step(0, 8, -1) == true
+          and menu.build_step(0, 8, 1) == true
           and menu.build_step(0, 8, 1) == false)
     check("and nothing goes below nothing",
           menu.build_step(0, 9, -1) == false)
 
-    -- And back to the hull's own row, which is the whole of the build manager.
-    check("reset puts the hull back on its profile",
-          menu.build_reset(0) == true and menu.build_edited(0) == false)
-    check("and does nothing to a hull that is already on it",
+    -- And back to the ship everybody starts in, which is the whole of the
+    -- build manager. Stepping a slot down and back up is not an edit, so the
+    -- one to reset from has to be a real one.
+    menu.kit = nil
+    menu.build_step(0, 8, -1)
+    check("reset puts the pilot back on the default",
+          menu.build_reset(0) == true and menu.build_edited() == false)
+    check("and does nothing to a pilot already on it",
           menu.build_reset(0) == false)
 
     -- What a part says about itself: what it holds in the fight, in the words
     -- a player would use, and nothing at all where it holds nothing worth a
     -- word. The credits are the tray's to report, once, over the whole ship.
-    menu.builds = {}
-    check("a weapon with nothing bolted to it says nothing",
+    menu.kit = nil
+    check("a weapon says the rung it fires and what is bolted to it",
+          menu.sect_reading(0, "bombs") == "level 2 " .. SEP .. " fused",
+          "'" .. menu.sect_reading(0, "bombs") .. "'")
+    -- And nothing at all where there is nothing to say. A pilot who has taken
+    -- the bomb back down to its own bottom rung and stripped it has a bomb
+    -- the reading has no news about.
+    menu.build_step(0, 6, -1)
+    menu.build_step(0, 15, -1)
+    check("and nothing where it has none",
           menu.sect_reading(0, "bombs") == "",
           "'" .. menu.sect_reading(0, "bombs") .. "'")
+    menu.kit = nil
     -- Spray is the one add-on a pilot reads as rounds in the air rather than
     -- as steps bought: a spray of one is two rounds.
     menu.build_step(0, 7, 1)
     check("spray reads as the rounds it puts in the air",
-          menu.sect_reading(0, "guns"):find("3 rounds") ~= nil,
+          menu.sect_reading(0, "guns"):find("2 rounds") ~= nil,
           menu.sect_reading(0, "guns"))
-    menu.builds = {}
+    menu.kit = nil
     -- And the rack counts what it carries, plural where it is more than one.
     -- This hull's profile deals it two repels and no burst, so what the row
     -- reads is the one kind it has.
     check("the rack counts each kind it carries",
-          menu.sect_reading(0, "specials") == "2 repels",
+          menu.sect_reading(0, "specials") == "1 repel " .. SEP .. " 1 burst",
           menu.sect_reading(0, "specials"))
-    menu.build_step(0, 20, 1)
-    check("and says both where it carries both",
+    menu.build_step(0, 19, 1)
+    check("and pluralizes what it carries more than one of",
           menu.sect_reading(0, "specials") == "2 repels " .. SEP .. " 1 burst",
           menu.sect_reading(0, "specials"))
-    menu.builds = {}
+    menu.kit = nil
     -- Two facts about one part read as one strip, with the dot between them.
-    menu.build_step(0, 8, 1)
-    check("and two facts about one part read as one strip",
-          menu.sect_reading(0, "guns") == "2 rounds " .. SEP .. " bouncing",
+    menu.build_step(0, 7, 1)
+    check("and the facts about one part read as one strip",
+          menu.sect_reading(0, "guns")
+              == "level 2 " .. SEP .. " 2 rounds " .. SEP .. " bouncing",
           menu.sect_reading(0, "guns"))
-    menu.builds = {}
+    menu.kit = nil
 
     -- Sitting out is the roster's last row rather than a page past it, and
     -- the menu reads it off body. Nothing else about the menu changes: a
@@ -1676,7 +1738,7 @@ do
           still .. " parts")
     menu.spectate = false
 
-    menu.builds = {}
+    menu.kit = nil
     _G.sim = kept_core
 end
 

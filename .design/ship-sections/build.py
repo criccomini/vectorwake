@@ -52,12 +52,11 @@ for the thing and not the core's: `SIM_SLOT_LEVEL` and `SLOT_NOTES`
 both say level, and a ladder can go on being a ladder in prose without
 the row a pilot presses having to say so.
 
-One pilot flies every board, on one build: an Apex on spray 1, gun
-bounce 1, bomb shrapnel 1, repel 2 and burst 1. Three of those five
-come with the hull and two were stepped on top of it, and a profile is
-spent from the same purse as a step, so that is six credits of seven
-with one in hand. The three counts on the menu add up to what the tray
-has spent, on purpose: they are the same six.
+One pilot flies every board, on the build everybody starts in: the
+second rung of both weapons, a gun that comes off walls, a fuse on the
+bomb and one of each charge. Six credits of the seven, one in hand.
+The build is the pilot's rather than the hull's since decision 117, so
+this is the same menu on every body.
 
 Rebuild with: python3 build.py
 """
@@ -566,10 +565,11 @@ def menu_rows(cursor="Guns", open_row=None):
         return "cursor" if name == cursor else None
     return [
         row("Body", r_open(reading("Apex")), state=state("Body")),
-        row("Guns", r_open(reading("2 rounds \u00b7 bouncing")),
+        row("Guns", r_open(reading("Level 2 \u00b7 bouncing")),
             state=state("Guns")),
-        row("Bombs", r_open(reading("4 fragments")), state=state("Bombs")),
-        row("Specials", r_open(reading("2 repels \u00b7 1 burst")),
+        row("Bombs", r_open(reading("Level 2 \u00b7 fused")),
+            state=state("Bombs")),
+        row("Specials", r_open(reading("1 repel \u00b7 1 burst")),
             state=state("Specials")),
         row("Flair", r_open(reading("standard wake")), state=state("Flair")),
         rule(),

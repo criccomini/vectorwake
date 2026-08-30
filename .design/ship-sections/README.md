@@ -127,11 +127,11 @@ Main is the menu. Stack is a section coming up over it. The five sections are
 their own boards, Phone is the menu at 390, and AltReading is the reading that
 was not taken.
 
-One pilot flies every one of them, on one build: an Apex on spray 1, gun
-bounce 1, bomb shrapnel 1, repel 2 and burst 1. Three of those five come with
-the hull and two were stepped on top of it, which is a distinction the purse
-does not make: a profile is spent from the same seven a step is. Six of them,
-one in hand, and the three counts on the menu add to the six.
+One pilot flies every one of them, on the build everybody starts in: the
+second rung of both weapons, a gun that comes off walls, a fuse on the bomb
+and one of each charge. Six credits of the seven, one in hand. Since decision
+117 the build is the pilot's rather than the hull's, so that is the same menu
+on every body, and a hull that cannot reach a slot is charged nothing for it.
 
 Every number is lifted from the client rather than invented:
 `client/arena/palette.lua` for hues, `ui.lua` for the type ladder

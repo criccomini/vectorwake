@@ -214,18 +214,21 @@ local CAPS = {{0, "display"}, {60, "60 a second"}, {30, "30 a second"}}
 -- drawing says once.
 --
 -- So it is what the numbers are again, and this time they are numbers.
--- Written off docs/design/ships.md and checkable against the tables in
--- baseline.c: Cipher is the fastest and the only hull with no bomb, Anvil the
--- slowest with the deepest pool and the hardest round, Lattice the weakest
--- gun and the deepest rack.
+--
+-- Only the ones the hull owns. What a ship carries is the pilot's since
+-- decision 117, so a Wedge's fragments and a Facet's five rounds are not the
+-- Wedge's and the Facet's any more: they are whatever those pilots bought.
+-- What is left to a hull is its flight row and the two weapons its gun and
+-- bomb ladders climb, and every line here is one of those, off `flight`,
+-- `gun_row` and `bomb_row` in sim/src/baseline.c.
 local HULLS = {
     {"Apex", "Second fastest, and nothing about it is a weakness"},
-    {"Wedge", "Slow and hard to turn, behind a fused blast and six fragments"},
+    {"Wedge", "A wide blast and a chipping gun, on a hull that turns badly"},
     {"Chord", "Turns inside everything and outruns nothing"},
     {"Anvil", "The deepest pool and the hardest round, on the slowest hull"},
     {"Cipher", "The fastest hull in the game, and the only one with no bomb"},
-    {"Facet", "Five rounds off two barrels, fanned and bouncing"},
-    {"Lattice", "The weakest gun in the roster and the deepest rack"},
+    {"Facet", "A heavy round, and a shallow pool to fire it from"},
+    {"Lattice", "A light round fired cheaply, on a hull that is best at nothing"},
 }
 
 local SAVE = sys.get_save_file("vectorwake", "pilot")
@@ -265,10 +268,10 @@ function M.save_identity()
         -- Which charge the first key throws, which is a preference about a
         -- keyboard and belongs beside the bindings.
         charge_flip = M.charge_flip,
-        -- One build a hull, written as slot and count pairs so a save that
-        -- outlives a change to the slot space carries nothing it cannot
-        -- read back. A hull the pilot has never edited is simply absent.
-        builds = M.builds,
+        -- The pilot's build, written as slot and count pairs so a save that
+        -- outlives a change to the slot space carries nothing it cannot read
+        -- back. Absent while they are flying the one everybody starts in.
+        kit = M.kit,
         -- Only the keys that have been moved, so a stock keyboard writes
         -- nothing here at all and a control this build stops carrying does
         -- not leave a line behind it. See arena/binds.lua.
@@ -302,31 +305,33 @@ function M.load_identity()
         M.spectate = d.spectate == true
         M.help_prompt_seen = d.help_prompt_seen == true
         M.charge_flip = d.charge_flip == true
-        -- The builds, read back a slot at a time and refused where a number
+        -- The build, read back a slot at a time and refused where a number
         -- does not belong. A save is a file on somebody's disk, and the slot
         -- space it was written against may not be this build's: anything out
         -- of range is dropped rather than trusted, and the arena fits what
         -- survives to its own ceilings anyway.
-        M.builds = {}
-        if type(d.builds) == "table" then
+        --
+        -- A save from before the build was one thing wrote `builds`, a table
+        -- of them keyed by hull. There is nothing to migrate it to: seven
+        -- builds do not answer the question "which one is yours", and picking
+        -- one of them would hand a pilot a kit they built for a ship they may
+        -- not be in. Those saves start on the default, which is what a pilot
+        -- who has never edited anything flies anyway.
+        M.kit = nil
+        if type(d.kit) == "table" then
             -- Read straight rather than through `simn`, which this file
             -- declares below here and which would be a nil global at this
             -- point in it.
             local core = _G.sim
             local slots = (core and tonumber(core.SLOT_COUNT)) or 23
-            for cls, mine in pairs(d.builds) do
-                if type(cls) == "number" and HULLS[cls + 1]
-                   and type(mine) == "table" then
-                    local kept = {}
-                    for slot, n in pairs(mine) do
-                        if type(slot) == "number" and type(n) == "number"
-                           and slot >= 0 and slot < slots and n > 0 then
-                            kept[math.floor(slot)] = math.floor(n)
-                        end
-                    end
-                    M.builds[math.floor(cls)] = kept
+            local kept = {}
+            for slot, n in pairs(d.kit) do
+                if type(slot) == "number" and type(n) == "number"
+                   and slot >= 0 and slot < slots and n > 0 then
+                    kept[math.floor(slot)] = math.floor(n)
                 end
             end
+            M.kit = kept
         end
         -- Whatever survives being read against this build's key list. A
         -- missing table is a stock keyboard, which is what `load` does with
@@ -499,67 +504,132 @@ local function credits()
     return simn("KIT_CREDITS", 7)
 end
 
--- --- builds ----------------------------------------------------------------
+-- --- the build --------------------------------------------------------------
 --
--- One remembered build a hull, on this device, beside the wake and the key
--- bindings rather than in an account.
+-- One build, not one a hull. What a pilot spends their credits on is theirs,
+-- and changing the ship it is bolted to does not change it: a pilot who has
+-- decided they want a bouncing gun and a fuse on the bomb wants those on the
+-- Anvil as much as on the Apex, and having to say so seven times is seven
+-- chances to arrive in a ship they did not build.
 --
--- That is the whole of the storage, and it is deliberate. A build is seven
--- ones over a dozen slots: it is worth remembering so a pilot does not spend
--- it twice, and it is not worth a table, a route, a migration and a login to
--- carry it between machines. Nothing is owned, so there is nothing an
--- account could be protecting.
+-- It was one build a hull, defaulting to that hull's own profile off
+-- `baseline.c`, which put the roster's add-ons on the hull rather than on the
+-- pilot: a Wedge came with its own fragments and an Apex with its own repels,
+-- and picking a body picked a kit with it. The hull still owns everything
+-- that cannot be bought, which is the flight row and the two ladders its gun
+-- and bomb climb; what hangs off those is the pilot's. See decision 117.
 --
--- Keyed by class, each a sparse map of slot to count. Absent means this hull
--- has never been edited, which is not the same as an empty build: absent
--- flies the hull's own profile and empty flies a stripped hull, and a pilot
--- can ask for either.
-M.builds = {}
+-- Kept on this device beside the wake and the key bindings rather than in an
+-- account. A build is seven ones over a dozen slots: worth remembering so a
+-- pilot does not spend it twice, and not worth a table, a route, a migration
+-- and a login to carry between machines.
 
--- What this hull flies, as the vector the wire wants: the pilot's build if
--- they have one, otherwise the hull's own profile.
-function M.build_of(cls)
-    local out = {}
-    local n = simn("SLOT_COUNT", 23)
-    local mine = M.builds[cls]
-    local row = class_kit(cls)
-    for slot = 0, n - 1 do
-        if mine then
-            out[slot] = mine[slot] or 0
-        else
-            out[slot] = row and row[slot + 1] or 0
+-- What a pilot arrives with before they have spent anything of their own.
+--
+-- Chris's, and it is a whole ship rather than a bare one: the second rung of
+-- both weapons, a gun that comes off walls, a fuse so a near miss counts, and
+-- one of each charge to get out with. Six credits of the seven, which leaves
+-- one to put somewhere.
+--
+-- Written as slot names rather than indices, because the indices are macros
+-- in another language and a table of numbers here would be a second copy of
+-- them to keep in step.
+local DEFAULT_KIT = {
+    {"level", 0, 1},        -- the gun's second rung
+    {"level", 1, 1},        -- and the bomb's
+    {"mod", 0, "bounce", 1},
+    {"mod", 1, "prox", 1},
+    {"charge", 0, 1},       -- one repel
+    {"charge", 1, 1},       -- and one burst
+}
+
+-- Which slot one of those lines names, or nil where this core has no such
+-- slot. Asked of the core rather than computed here, so a zone that moves the
+-- slot space moves this with it.
+local function named_slot(it)
+    local kind = it[1]
+    if kind == "level" then return simn("SLOT_LEVEL0", 5) + it[2] end
+    if kind == "charge" then return simn("SLOT_CHARGE0", 19) + it[2] end
+    local mods = simn("MOD_COUNT", 6)
+    for m = 0, mods - 1 do
+        local mod = pal.MODS[m + 1]
+        if mod and mod.name == it[3] then
+            return simn("SLOT_MOD0", 7) + it[2] * mods + m
         end
+    end
+    return nil
+end
+
+-- The default, as a sparse map of slot to count.
+local function default_kit()
+    local out = {}
+    for _, it in ipairs(DEFAULT_KIT) do
+        local slot = named_slot(it)
+        if slot then out[slot] = it[#it] end
     end
     return out
 end
 
--- What that build costs, which is the sum of it.
+-- The pilot's own, or nil while they are flying the default. Absent is not
+-- the same as empty: absent is the ship everybody starts in and empty is a
+-- stripped hull, and a pilot can ask for either.
+M.kit = nil
+
+-- What this hull flies, as the vector the wire wants.
+--
+-- The build fitted to the hull: a slot this one cannot reach comes back at
+-- nought however much the pilot has put in it, which is what `sim_kit_fit`
+-- does on the other side of the wire. Nothing is lost by it. The build is
+-- kept whole, so a credit parked on a bomb comes back the moment the pilot
+-- climbs into something with a bomb rack.
+function M.build_of(cls)
+    local out = {}
+    local n = simn("SLOT_COUNT", 23)
+    local mine = M.kit or default_kit()
+    for slot = 0, n - 1 do
+        local want = mine[slot] or 0
+        local cap = slot_cap(cls, slot)
+        out[slot] = want < cap and want or cap
+    end
+    return out
+end
+
+-- What that build costs this hull, which is the sum of what this hull can
+-- actually carry. A Cipher has no bomb, so a fuse bought for one costs a
+-- Cipher nothing and buys it nothing.
 function M.build_cost(cls)
     local total = 0
     for _, n in pairs(M.build_of(cls)) do total = total + n end
     return total
 end
 
--- Credits still in hand for this hull.
+-- Credits still in hand on this hull.
 function M.build_free(cls)
     return math.max(0, credits() - M.build_cost(cls))
 end
 
--- Whether this hull is flying something other than its own profile, which is
--- the one thing the roster says about a build without opening it.
-function M.build_edited(cls)
-    return M.builds[cls] ~= nil
+-- Whether this pilot is flying something other than the ship everybody
+-- starts in, which is the one thing the menu says about a build without
+-- opening it.
+function M.build_edited()
+    if not M.kit then return false end
+    local base = default_kit()
+    local n = simn("SLOT_COUNT", 23)
+    for slot = 0, n - 1 do
+        if (M.kit[slot] or 0) ~= (base[slot] or 0) then return true end
+    end
+    return false
 end
 
 -- Step one slot, by one credit, in the direction asked.
 --
--- Refused rather than clamped where it cannot happen: up with nothing left
--- to spend, up at the slot's own ceiling, down at nothing. A refusal is what
+-- Refused rather than clamped where it cannot happen: up with nothing left to
+-- spend, up at the slot's own ceiling, down at nothing. A refusal is what
 -- lets the drawing dim an arrow that would do nothing, since both ask this
 -- same question.
 --
--- The first edit copies the hull's profile into a build, so a pilot who
--- steps one slot keeps everything else the ship came with.
+-- The first edit copies the default into a build of the pilot's own, so
+-- stepping one slot keeps everything else the ship came with.
 function M.build_step(cls, slot, dir)
     local have = M.build_of(cls)
     local at = have[slot] or 0
@@ -569,24 +639,20 @@ function M.build_step(cls, slot, dir)
         if want > slot_cap(cls, slot) then return false end
         if M.build_free(cls) < 1 then return false end
     end
-    local mine = M.builds[cls]
-    if not mine then
-        mine = {}
-        for k, n in pairs(have) do
-            if n > 0 then mine[k] = n end
-        end
-        M.builds[cls] = mine
+    if not M.kit then
+        M.kit = default_kit()
     end
-    mine[slot] = want > 0 and want or nil
+    M.kit[slot] = want > 0 and want or nil
     M.save_identity()
     M.send_build(cls)
     return true
 end
 
--- Back to the hull's own profile, which is the whole of the build manager.
+-- Back to the ship everybody starts in, which is the whole of the build
+-- manager: there is nothing to name and nothing to save.
 function M.build_reset(cls)
-    if not M.builds[cls] then return false end
-    M.builds[cls] = nil
+    if not M.build_edited() then return false end
+    M.kit = nil
     M.save_identity()
     M.send_build(cls)
     return true

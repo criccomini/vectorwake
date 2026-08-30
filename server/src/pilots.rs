@@ -4,9 +4,11 @@
 //! This module owns the first four. Rating remains a career result in the
 //! meta-layer rather than a number a designer writes into a pilot.
 //!
-//! What a pilot flies with is not among them either, and no longer can be: a
-//! hull is a whole ship, so choosing the hull chooses the ship. A behavior
-//! that wants a bomb picks a hull with a rack.
+//! What a pilot flies with is among them again. It was not for a while: a
+//! hull was a whole ship, so choosing the hull chose the ship, and a behavior
+//! that wanted a bomb picked a hull with a rack. The kit is the pilot's on
+//! both sides of the wire now, so a behavior that wants a bomb buys one, and
+//! `kit` below is where it does. See decision 117.
 
 pub const PILOT_SPEC_VERSION: u16 = 1;
 /// Distinct ordinary house pilots the population director may claim.
@@ -190,6 +192,86 @@ pub struct PilotSpec {
     pub behavior: BehaviorProfile,
     /// Stable seed for content generation. Match randomness has another seed.
     pub configuration_seed: u32,
+}
+
+/// What this pilot spends their seven credits on.
+///
+/// A bot builds its own ship now, and no two build it alike. It used to fly
+/// whatever `sim_deal_kit` put on the hull, which was that hull's own profile
+/// off the baseline: every Wedge in the fleet carried the same two rungs of
+/// shrapnel, and the only thing separating one bombardier from another was
+/// how it flew. The kit is the pilot's on this side of the wire as much as on
+/// the client's, so it comes out of the same personality the rest of the
+/// choices do. See decision 117.
+///
+/// Two halves. The strategy says what the ship is for, and buys first: a
+/// bombardier levels its bomb and fuses it, a duelist levels its gun, a denier
+/// buys the rack it pushes people around with. Then the seed spends whatever
+/// is left, so two duelists off the same strategy are not the same ship.
+///
+/// Every count here is an intent rather than a promise. The arena fits a kit
+/// to the hull's ceilings and to the purse before it deals one, so a bot that
+/// asks for a bomb on a Cipher gets a Cipher, and one that asks for nine
+/// credits' worth gets seven.
+pub fn kit(spec: &PilotSpec) -> [u8; crate::sim::SLOT_COUNT] {
+    use crate::sim::{
+        slot_charge, slot_level, slot_mod, CHARGE_BURST, CHARGE_REPEL, MOD_BOUNCE, MOD_FREEZE,
+        MOD_MULTI, MOD_PROX, MOD_SHRAPNEL, SLOT_COUNT, TRIG_BOMB, TRIG_GUN,
+    };
+    let mut kit = [0u8; SLOT_COUNT];
+    let b = &spec.behavior;
+    let mut left = crate::sim::KIT_CREDITS;
+    let buy = |kit: &mut [u8; SLOT_COUNT], slot: u8, n: u8, left: &mut u8| {
+        let n = n.min(*left);
+        kit[slot as usize] = kit[slot as usize].saturating_add(n);
+        *left -= n;
+    };
+
+    // What the ship is for. A bomb preference at or over one is a pilot whose
+    // whole job is the rack, and under a quarter is one who never opens it.
+    if b.bomb_preference >= 0.75 {
+        buy(&mut kit, slot_level(TRIG_BOMB), 1, &mut left);
+        buy(&mut kit, slot_mod(TRIG_BOMB, MOD_PROX), 1, &mut left);
+        buy(&mut kit, slot_mod(TRIG_BOMB, MOD_SHRAPNEL), 1, &mut left);
+    } else if b.bomb_preference >= 0.35 {
+        buy(&mut kit, slot_level(TRIG_BOMB), 1, &mut left);
+        buy(&mut kit, slot_mod(TRIG_BOMB, MOD_PROX), 1, &mut left);
+    }
+    // A pilot who works close wants more in the air; one who works long wants
+    // the round to arrive. `engagement_range` is in world pixels and the
+    // roster's profiles run from 175 to 260.
+    if b.engagement_range <= 200.0 {
+        buy(&mut kit, slot_mod(TRIG_GUN, MOD_MULTI), 1, &mut left);
+    }
+    buy(&mut kit, slot_level(TRIG_GUN), 1, &mut left);
+    // A way out, for anyone who ever leaves a fight. A retreat bias above
+    // nothing is a pilot who breaks contact early and wants two.
+    let repels = if b.retreat_bias > 0.03 { 2 } else { 1 };
+    buy(&mut kit, slot_charge(CHARGE_REPEL), repels, &mut left);
+
+    // And the rest by the pilot's own seed, so a strategy is a shape rather
+    // than a stamp. The four here are the ones that change how a ship fights
+    // without changing what it is for.
+    let mut r = spec.configuration_seed.wrapping_mul(2_654_435_761).max(1);
+    let mut roll = || {
+        r ^= r << 13;
+        r ^= r >> 17;
+        r ^= r << 5;
+        r
+    };
+    let taste = [
+        slot_mod(TRIG_GUN, MOD_BOUNCE),
+        slot_mod(TRIG_GUN, MOD_FREEZE),
+        slot_charge(CHARGE_BURST),
+        slot_mod(TRIG_BOMB, MOD_BOUNCE),
+    ];
+    let mut guard = 0;
+    while left > 0 && guard < 32 {
+        guard += 1;
+        let slot = taste[(roll() % taste.len() as u32) as usize];
+        buy(&mut kit, slot, 1, &mut left);
+    }
+    kit
 }
 
 impl PilotSpec {
@@ -526,6 +608,69 @@ mod tests {
         ));
         assert!(!is_house_callsign(&individual(HOUSE_PILOT_POOL).callsign));
         assert!(!is_house_callsign("Definitely Not A House Pilot"));
+    }
+
+    /// Every pilot spends what it has, and inside what the purse holds. The
+    /// arena fits a kit anyway, so an overspend is not a crash; it is a bot
+    /// that asked for a ship it cannot have and got a smaller one.
+    #[test]
+    fn a_bots_kit_fits_the_purse() {
+        for n in 0..256usize {
+            let spec = individual(n);
+            let kit = kit(&spec);
+            let spent: u32 = kit.iter().map(|&c| u32::from(c)).sum();
+            assert!(
+                spent == u32::from(crate::sim::KIT_CREDITS),
+                "{} spent {spent} of {}",
+                spec.callsign,
+                crate::sim::KIT_CREDITS
+            );
+        }
+    }
+
+    /// And no two build the same ship. A fleet of identical bombardiers is
+    /// the thing this exists to stop: the strategy is a shape and the seed is
+    /// the pilot, so one strategy has to produce more than one kit.
+    #[test]
+    fn bots_do_not_all_build_the_same_ship() {
+        use std::collections::HashSet;
+        let mut all: HashSet<[u8; crate::sim::SLOT_COUNT]> = HashSet::new();
+        let mut bombardiers: HashSet<[u8; crate::sim::SLOT_COUNT]> = HashSet::new();
+        for n in 0..256usize {
+            let spec = individual(n);
+            let k = kit(&spec);
+            all.insert(k);
+            if spec.behavior.strategy == Strategy::Bombardier {
+                bombardiers.insert(k);
+            }
+        }
+        assert!(all.len() > 8, "the fleet built {} ships", all.len());
+        assert!(
+            bombardiers.len() > 1,
+            "every bombardier built the same ship"
+        );
+    }
+
+    /// The strategy is still the shape, though: a pilot whose whole job is
+    /// the rack buys the rack, and one who never opens it does not.
+    #[test]
+    fn a_kit_answers_the_strategy_that_bought_it() {
+        use crate::sim::{slot_level, slot_mod, MOD_PROX, TRIG_BOMB};
+        let mut bomber = individual(0);
+        bomber.behavior = BehaviorProfile::for_strategy(Strategy::Bombardier);
+        let mut duelist = individual(0);
+        duelist.behavior = BehaviorProfile::for_strategy(Strategy::Duelist);
+        let b = kit(&bomber);
+        let d = kit(&duelist);
+        assert!(
+            b[slot_level(TRIG_BOMB) as usize] > 0 && b[slot_mod(TRIG_BOMB, MOD_PROX) as usize] > 0,
+            "a bombardier levels and fuses its bomb"
+        );
+        assert_eq!(
+            d[slot_mod(TRIG_BOMB, MOD_PROX) as usize],
+            0,
+            "a duelist does not buy a fuse it will not use"
+        );
     }
 
     #[test]

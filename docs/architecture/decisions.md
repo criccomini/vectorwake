@@ -6073,3 +6073,67 @@ menu, so nothing else changes.
 strip among them, which fails with the row back in. Photographed: five rows
 evenly spaced over the tray, and the body section still reading a Wedge's
 five lines under it.
+
+## 117. The build is the pilot's, not the hull's
+
+**Status:** accepted
+
+**Decision:** a pilot has one build, and changing the ship it is bolted to does
+not change it. Guns, bombs, specials and flair are the pilot's; the hull owns
+its flight row, the two ladders its gun and bomb climb, and whether it has a
+bomb at all.
+
+It starts as the second rung of both weapons, a gun that comes off walls, a
+fuse on the bomb and one of each charge: six credits of the seven, which
+leaves one to put somewhere. Every pilot starts there, on every hull.
+
+A hull that cannot reach a slot carries nothing in it and is charged nothing
+for it, and the credit comes back the moment the pilot climbs into something
+that can. The build is kept whole either way; what changes per hull is what it
+costs, which is what `sim_kit_fit` has always done on the other side of the
+wire.
+
+Bots build their own ships too, off the personality the rest of their choices
+come from, and no two off one strategy build alike. `pilots::kit` spends the
+strategy's half first (a bombardier levels and fuses its bomb, a pilot who
+works close buys rounds, one who breaks contact early buys a second repel) and
+the pilot's own seed spends what is left. The bot server sends it as
+`C2S_KIT`, which is the message a player's client sends, right after the
+welcome that seats the pilot.
+
+**Why:** Chris asked for both halves.
+
+What it replaces is one build a hull, defaulting to that hull's own profile
+off `baseline.c`. That put the roster's add-ons on the hull rather than on the
+pilot: a Wedge came with its own fragments and an Apex with its own repels, so
+picking a body picked a kit with it, and a pilot who had decided they wanted a
+bouncing gun had to say so seven times. Seven chances to arrive in a ship they
+did not build.
+
+The bots' half is the same change seen from the other side. Every Wedge in the
+fleet flew the same two rungs of shrapnel, because `sim_deal_kit` put the
+hull's profile on and nothing replaced it; the only thing separating one
+bombardier from another was how it flew. `pilots.rs` said as much at the top,
+that what a pilot flies with is not among the things that make one distinct
+"and no longer can be". It can again.
+
+**Cost:** the roster loses the part of its identity that lived in the add-ons.
+A Wedge is no longer the hull that comes with six fragments, and what is left
+to tell one hull from another is its flight row and its two weapons. That is
+still a real spread, and it is the spread the flight table and `gun_row` were
+written to have; but `docs/design/ships.md` describes seven ships in terms of
+kits that are now nobody's but the pilot's, and three of the hull lines in
+`menu.lua` had to be rewritten for the same reason.
+
+A save from before this wrote a build per hull. There is nothing to migrate it
+to, since seven builds do not answer "which one is yours", so those saves start
+on the default.
+
+**Verified:** `cargo test` over the whole server, with three new checks in
+`pilots`: every generated pilot spends its seven credits, the fleet builds more
+than eight distinct ships and more than one bombardier build, and a bombardier
+levels and fuses its bomb where a duelist buys no fuse. `menu_test` holds the
+default to its six credits, holds the build across three hulls, and takes the
+bomb away from a hull to watch the credit come back. Photographed: a Wedge
+reading "Level 2, bouncing", "Level 2, fused", "1 repel, 1 burst" with one
+credit in hand, which is the same menu every hull now opens on.

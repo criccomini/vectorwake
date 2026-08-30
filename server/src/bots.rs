@@ -1332,6 +1332,31 @@ fn join_msg(class: u8, name: &str, session: &str, room: u32) -> Option<Vec<u8>> 
     Some(join)
 }
 
+/// The build a bot sends, in the shape `C2S_KIT` reads: the hull it was spent
+/// on, how many slots carry anything, and a slot and a count for each.
+///
+/// Out here beside `join_msg` and for its reason: the message a bot sends is
+/// the message a player's client sends, and one written inline is one that
+/// goes stale the next time the wire moves.
+fn kit_msg(class: u8, kit: &[u8; sim::SLOT_COUNT]) -> Vec<u8> {
+    let mut spent: Vec<(u8, u8)> = Vec::new();
+    for (slot, &n) in kit.iter().enumerate() {
+        if n > 0 {
+            spent.push((slot as u8, n));
+        }
+    }
+    let mut msg = vec![
+        crate::C2S_KIT,
+        class.min((sim::MAX_CLASSES - 1) as u8),
+        spent.len().min(u8::MAX as usize) as u8,
+    ];
+    for (slot, n) in spent.into_iter().take(u8::MAX as usize) {
+        msg.push(slot);
+        msg.push(n);
+    }
+    msg
+}
+
 fn welcome_room(message: &[u8]) -> Option<u16> {
     Some(u16::from_le_bytes(message.get(10..12)?.try_into().ok()?))
 }
@@ -1617,20 +1642,31 @@ where
                         welcomed_at.get_or_insert_with(std::time::Instant::now);
                         outcome = FlightEnd::Closed { welcomed: true };
                         // What this pilot is flying, sent the way a player's
-                        // client sends it: the arena deals a starter kit to a
-                        // seat wearing nothing, so without this every bot in
-                        // the fleet flew the same thirty points however long
-                        // its career and whatever it had bought.
+                        // client sends it, because it is the same message: the
+                        // arena fits a kit to the hull and the purse and deals
+                        // the result, so this is an intent rather than a
+                        // promise.
                         //
-                        // Inside both ceilings, which is the pair the arena
-                        // checks it against: the zone's own row and what this
-                        // account owns. A kit outside either is refused whole
-                        // and leaves the pilot in the starter kit, which is
-                        // the same answer a player gets.
-                        // A named opponent substitutes the common base entitlement for
-                        // the career ceiling so a rung stays the same opponent.
-                        // Nothing to send about a loadout. The hull went out
-                        // with the join and the hull is the whole ship.
+                        // Without it a bot flies whatever `sim_deal_kit` puts
+                        // on the hull, which is that hull's own profile: every
+                        // Wedge in the fleet carrying the same two rungs of
+                        // shrapnel, and the only thing separating one
+                        // bombardier from another being how it flew. The kit
+                        // comes off the personality now, and no two pilots off
+                        // one strategy build alike. See `pilots::kit` and
+                        // decision 117.
+                        //
+                        // After the welcome rather than with the join, because
+                        // the arena only takes a kit from a pilot in a seat: a
+                        // watcher asking to spend credits is asking about a
+                        // ship they are not in.
+                        if sink
+                            .send(Message::Binary(kit_msg(who.hull, &pilots::kit(&who))))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
                         let brain_config = who.brain();
                         let b = fresh_brain(ship, brain_config, match_seed, match_number);
                         if !share_world {
