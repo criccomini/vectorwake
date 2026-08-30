@@ -1,5 +1,12 @@
 # Landing, and the menu
 
+> **A column's labels are one weight.** The settings stop had its name in ink,
+> because it has no answer beside it and a stop with nothing at full strength
+> looked unpressable. It looked that way because the whole column was drawn at
+> a third; with that fixed the ink left one white word in a column of muted
+> ones. The left edge of a stop is the question column, and it is one weight
+> all the way down.
+
 > **The column is read at full strength.** It was drawn at a third of it. The
 > HUD quiets every word on screen while a menu is up so the instruments behind
 > it recede, and the column is drawn after that and took the dim meant for what

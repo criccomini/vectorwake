@@ -5666,10 +5666,13 @@ at 1280 by 800 and at 390 by 844, and a match still shows the dial.
 **Status:** accepted, finishing
 [decision 104](#104-one-menu-language) on the one surface it did not reach
 
-**Decision:** the settings stop carries no mark. A stop with no answer beside
-it puts its own name in ink. Every stop insets its name by `ROW_INSET`, and
-the sides list stands its rows at the panel row height like every other panel
-in the game.
+**Decision:** the settings stop carries no mark. Every stop insets its name by
+`ROW_INSET`, and the sides list stands its rows at the panel row height like
+every other panel in the game.
+
+The ink this record also gave a stop with no answer is reversed by
+[decision 111](#111-a-columns-labels-are-one-weight); the paragraph about it
+below is kept as what was argued at the time.
 
 **Why:** Chris opened the in-match menu and said he saw dim text and an icon
 on the settings button. Both were there, and pulling on them found four things
@@ -5777,3 +5780,37 @@ two kinds of charge, since that is the only page carrying both ship rows.
 `toast_test` asks for the line to be absent under a panel and present without
 one. `hud_svg`'s settings scenario carries the real page's four sections now,
 and the three pictures were read at 1440 by 810 and 390 by 844.
+
+## 111. A column's labels are one weight
+
+**Status:** accepted, reversing one clause of
+[decision 109](#109-the-in-match-column-speaks-the-menu-language-too)
+
+**Decision:** every stop's label is drawn at the label's weight, on both
+columns, whether or not the stop has an answer beside it.
+
+**Why:** Chris looked at the column and said the settings stop was too bright
+against the two either side of it. It was. Three labels down a column with one
+of them white is a column that looks broken rather than one that says
+something.
+
+Decision 109 gave that stop its name in ink on the argument that a stop with
+nothing at full strength reads as a control that cannot be pressed. That was a
+true observation with the wrong cause behind it. What made the stop read as
+unpressable was decision 110's dim: the whole column was at a third, so the
+muted label was at 0.34 and there was nothing on the row to say it was live.
+The ink was a second fix for the same symptom, written before the first one was
+found, and once the dim was fixed it was left holding a lit word in a column of
+muted ones.
+
+Which is the thing to take from it rather than the rule. Two changes for one
+symptom is one change too many, and the one that survives is the one that names
+the cause.
+
+**Cost:** none that has shown up. The left edge of a stop is the question
+column and it reads as a column now.
+
+**Verified:** `menu_language_test` asks the color rather than the alpha, since
+both labels were at 1.00 and only the ink differed: the three stops of the
+in-match column and the landing's are one color, and the check fails with 109's
+rule back in (`settings 0.87,0.91,0.96` against the others' `0.52,0.58,0.66`).

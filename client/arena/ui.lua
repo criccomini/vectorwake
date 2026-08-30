@@ -4310,13 +4310,19 @@ local function land_stop(x, y, w, h, label, value, action, lit, stacked, o)
         F.clip_r = kept
     else
         -- A question at the label's weight with the answer beside it at full
-        -- strength, which is what every stop on both columns is. Except the
-        -- one whose answer is a page rather than a value: it has nothing to
-        -- put the ink on, and a muted word alone on a lit box reads as a
-        -- control that cannot be pressed. So where a stop has no answer its
-        -- name is the answer and takes the strength.
+        -- strength, which is what every stop on both columns is, including the
+        -- one whose answer is a page rather than a value.
+        --
+        -- That one had its name in ink for two decisions, on the argument that
+        -- a stop with nothing at full strength reads as a control that cannot
+        -- be pressed. It does not. What made it read that way was decision
+        -- 110's dim, which had the whole column at a third; with that fixed
+        -- the argument was left holding a lit word in a column of muted ones,
+        -- and three labels down a column with one of them white is a column
+        -- that looks broken rather than one that says anything. The left edge
+        -- is the question column and it is one weight the whole way down.
         local names = value == nil or value == ""
-        lbl(label, x + pad, y + h / 2, names and pal.a(pal.INK, 0.95) or nil)
+        lbl(label, x + pad, y + h / 2)
         if not o.flat then land_caret(cx, y + h / 2, pal.a(pal.INK, 0.75)) end
         -- And nothing is set where there is nothing to say. An empty string
         -- went down the type list every frame, which draws nothing and is one
