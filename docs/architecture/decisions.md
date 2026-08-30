@@ -4158,7 +4158,8 @@ damage instead.
 
 ## 86. The dial hugs the corner the link bars left
 
-**Status:** accepted
+**Status:** superseded by
+[decision 107](#107-the-dials-two-readings-stand-over-it)
 
 **Decision:** the radar sits hard in the top right, one PAD from the top edge
 and one from the right, which is the margin the way into the menu keeps from
@@ -4205,7 +4206,8 @@ more than a name that is on the board one press away.
 
 ## 87. The tile readout goes
 
-**Status:** accepted
+**Status:** superseded by
+[decision 107](#107-the-dials-two-readings-stand-over-it)
 
 **Decision:** POS and the pair of numbers beside it are gone from the arena.
 Nothing is captioned in that corner now. The radar keeps its whole square, the
@@ -5549,3 +5551,62 @@ on all four surfaces, which is one rectangle now rather than two. It fails on
 the old drawing. `row_field_test` measures the type column off the field and
 the published inset, and the pictures `hud_svg` writes carry a cursor at last,
 so the panels can be looked at with a row lit.
+
+## 107. The dial's two readings stand over it
+
+**Status:** accepted, reversing
+[decision 86](#86-the-dial-hugs-the-corner-the-link-bars-left) and
+[decision 87](#87-the-tile-readout-goes)
+
+**Decision:** the top right is a stack again. On the top row, over the dial and
+inside its width: the tile you are on at the instrument's left edge, and four
+bars of link quality flush against its right. The strip holds nothing else. The
+radar and the map both begin on the line under it. Pressing the bars opens the
+connection readout; pressing them again closes it, and so does a press on the
+readout itself.
+
+The bars carry no word. LINK stood beside them when the meter was last in this
+corner, and four bars climbing in the corner of a screen are a signal meter on
+every device a player owns.
+
+**Why:** asked for. Both readings were taken out a decision apart and both are
+wanted back where they were.
+
+What each of those decisions said still holds as far as it went. The dial came
+up into the corner because the strip above it was empty and an instrument
+indented off a row that no longer exists reads as having slipped down the
+screen. The strip is not empty now. The tile numbers went because the dial is
+already a picture of where you are, which is true, and a picture is not the
+form a position gets said out loud in: a pilot calling a place across a room
+reads the numbers.
+
+**What is different this time.** The readouts are placed against the dial's own
+resting box rather than against the window, so the strip is exactly as wide as
+the instrument under it and no wider. That is what stops the collision this
+corner had before: the clock band stops at `TOP.dial_x`, which is one
+measurement for the band, the meter and the tile readout together, and opening
+the map moves none of them. The old arrangement placed the bars against the
+window's right edge and the band against the bars, and at 390 points a call
+sign was drawn straight through the coordinates.
+
+Dropping LINK is what buys the room. The meter is 26 points of bars instead of
+a word and bars, which leaves a phone's 112-point strip holding a caption, a
+pair of four-digit tiles and the meter with ten points to spare.
+
+**Cost:** the dial and everything under it start a key's height lower, so the
+feed and the connection readout lose 26 points of the column they hang in,
+which is a line and a half of feed.
+
+A phone's strip is full at 112 points. An arena wider than the 1024 tiles
+`SIM_MAP_TILES` allows would put five digits on each axis and overrun it.
+
+**Reconsider if:** that arena arrives. The answer is to drop POS and keep the
+figures, since the numbers are the reading and the word only says they are a
+place.
+
+**Verified:** `band_test` measures the stack at three window sizes: the meter
+and the readout on the chip's own line, the dial under it at the chip's margin,
+the readout starting where the dial does, the band stopping short of it, and
+the pair holding still when the map opens. `hud_hits_test` presses the bars to
+open the readout and the slab to close it. `hud_svg` draws the corner, and the
+pictures were read at 1280x800 and at 390x844.

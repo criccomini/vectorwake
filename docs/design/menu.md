@@ -631,12 +631,14 @@ deployment's own first zone and is Melee. Moving the cursor down the games list
 re-dials the stands to whatever it lands on, so what is on screen is always
 what the key would join, and the choice outlives the menu closing.
 
-On a phone the band takes a line of its own under the corner key rather than
-sharing it. At 390 points the top right already carries the link bars and the
-tile readout, and a centered band with two names on it was drawn straight
-through them. It keeps the side names down there, which the old band gave up
-to fit beside PLAYERS; that key is gone, so the only thing left to clear is
-the dial's own corner.
+The band shares the corner key's line at every window size, including a phone's
+390 points. It took a line of its own down there for a while, because the top
+right carries the dial's two readouts and a centered band with two call signs
+on it was drawn straight through them. The line under the row is where the dial
+itself is, though, so dropping bought the same collision against a bigger
+instrument and cost the row the one alignment it is for. What gives instead is
+the names. A band with nowhere left to grow drops both of them and keeps the
+two figures, which are the reading; the names are on the board a press opens.
 
 ## Nothing pauses
 

@@ -1269,17 +1269,18 @@ do
           word("PYLON") == nil and word("CAISSON") == nil,
           "a name is drawn where the row has no width for one")
     check("and both figures", word("3") ~= nil and word("5") ~= nil)
-    -- The far end of the row is the dial, at the same margin from its corner
-    -- that the chips keep from the opposite one. The link meter stood out here
-    -- until it went into the menu's head and the dial came up into the corner
-    -- it left. The meter draws no caption, so what answers for it is the box
-    -- it would publish over its bars.
-    check("and nothing in the far corner of the row but the dial",
-          box("debug") == nil, "the link meter is still on the landing")
+    -- The far end of the row is the dial's link meter, with the instrument on
+    -- the line under it at the same margin from its corner that the chips keep
+    -- from the opposite one. The stands are a live connection like any other,
+    -- so the reading is drawn out here too. The meter draws no caption, so what
+    -- answers for it is the box it publishes over its bars.
+    local meter = box("debug")
+    check("the link meter stands at the far end of the row",
+          meter ~= nil, "no meter on the landing")
     local corner = box("map")
     if chip and corner then
-        check("which hugs it at the corner chip's own margin",
-              math.abs(corner.y - chip.y) < 0.5
+        check("with the dial under it at the corner chip's own margin",
+              corner.y >= chip.y + chip.h - 0.5
                   and math.abs((390 - (corner.x + corner.w)) - chip.x) < 0.5,
               string.format("dial at %.0f,%.0f ending %.0f of 390",
                             corner.x, corner.y, corner.x + corner.w))

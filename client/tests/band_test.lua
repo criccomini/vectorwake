@@ -294,11 +294,9 @@ end
 -- spent a while dropping off the row on a phone, which put it through the
 -- radar instead and cost the row the alignment it is for.
 --
--- The link meter used to be the right end of this row and is in the menu's
--- head now. What took the corner it left is the dial, which used to start a
--- line lower, so the row is a chip, a band and an instrument and nothing
--- else: the tile readout that stood up here on the wider windows is gone from
--- the interface entirely.
+-- The right end of the row is the dial's two readouts, standing over the
+-- instrument they are about: the link meter at the far corner and the tile
+-- you are on beside it. The dial itself hangs on the line under them.
 --
 -- Measured against a chip's published box, because that is the height the row
 -- takes from and the one thing here that cannot drift out of step with
@@ -313,19 +311,29 @@ local function row_shares_a_center(where, w, h)
               table.concat(words(), " | "))
         return
     end
-    -- The link meter draws four bars and no caption, so what says it is not
-    -- up here is the box it would publish over itself.
-    check("and the link meter is not on it on " .. where,
-          box("debug") == nil, "the meter is still in the corner")
-    -- And no tile readout anywhere on the screen, not merely off this row.
-    -- Where you are was a caption on the dial and then a word in this corner
-    -- before that, and the instrument under it draws the same fact.
-    check("and nothing writes out where you are on " .. where,
-          drawn("POS") == nil, "the tile readout is back")
+    -- The meter draws four bars and no caption, so what answers for it is the
+    -- box it publishes over them, which is also the switch behind it.
+    check("and the link meter is on it on " .. where,
+          box("debug") ~= nil, "no meter in the corner")
+    -- And the tile you are on, which is the reading the bars are not: a pair
+    -- of numbers with the word that says they are a place.
+    check("and where you are is written out on " .. where,
+          drawn("POS") ~= nil and drawn("6,6") ~= nil,
+          table.concat(words(), " | "))
     local mid = key.y + key.h / 2
     check("the row shares one center on " .. where,
           math.abs(down(tick) - mid) < 0.5,
           string.format("%.1f off a center of %.1f", down(tick), mid))
+    -- The readout at the far end stands on it too, which is the whole of what
+    -- the row is: a chip, a clock and two readings on one line. It took its
+    -- own vertical off the padding once and came out four points high on a
+    -- monitor and ten on a phone.
+    local pos = drawn("POS")
+    if pos then
+        check("and the readout over the dial stands on it on " .. where,
+              math.abs(down(pos) - mid) < 0.5,
+              string.format("%.1f off a center of %.1f", down(pos), mid))
+    end
     -- Both ends of the row are instruments and the band grows outward from
     -- the middle, so it is aligned with neither for longer than it stays off
     -- them.
@@ -348,38 +356,65 @@ local function row_shares_a_center(where, w, h)
     end
 end
 
--- --- the dial hugs the corner ----------------------------------------------
+-- --- the dial hangs under its own readouts ---------------------------------
 
--- What the row's right end is: the dial itself, hard into the corner, at the
--- margin the chips keep from the corner opposite. It hung a row lower for as
--- long as the link bars stood above it, and with those in the menu's head
--- there was nothing left up there to start under.
+-- The corner is a stack: the meter and the tile readout on the row, the
+-- instrument they are about on the line under it. Both stand at the margin the
+-- chips keep from the corner opposite, which is what makes it one column of
+-- furniture rather than two things that happen to be near each other.
 --
--- Both instruments are asked for their own published box rather than for a
--- number written down here, because the check is that the two margins match.
--- A `PAD` that moved on one of them and not the other would pass against a
--- constant and still look wrong on the screen. The chip stands for the near
--- corner, so the window is redrawn with a second room in the zone.
-local function dial_hugs_the_corner(where, w, h)
+-- Everything is asked for its own published box rather than for a number
+-- written down here, because the check is that the margins match. A `PAD` that
+-- moved on one of them and not the others would pass against a constant and
+-- still look wrong on the screen. The chip stands for the near corner, so the
+-- window is redrawn with a second room in the zone.
+local function dial_hangs_under_its_row(where, w, h)
     frame({w = w, h = h, rooms = ROOMS, room = 1})
-    local key, corner = box("rooms"), box("map")
-    if not (key and corner) then
-        check("the dial is in the corner on " .. where, false,
-              "no dial or no room chip")
+    local key, corner, meter = box("rooms"), box("map"), box("debug")
+    if not (key and corner and meter) then
+        check("the corner is drawn on " .. where, false,
+              "no dial, no meter or no room chip")
         return
     end
-    check("the dial starts on the chip's own line on " .. where,
-          math.abs(corner.y - key.y) < 0.5,
-          string.format("dial at %.1f, chip at %.1f", corner.y, key.y))
+    check("the dial starts under the chip's own row on " .. where,
+          corner.y >= key.y + key.h - 0.5,
+          string.format("dial at %.1f, row ends %.1f",
+                        corner.y, key.y + key.h))
     check("and keeps the chip's own margin from its corner on " .. where,
-          math.abs((w - (corner.x + corner.w)) - key.x) < 0.5
-              and math.abs(corner.y - key.y) < 0.5,
-          string.format("gap %.1f right and %.1f top against the chip's %.1f",
-                        w - (corner.x + corner.w), corner.y, key.x))
+          math.abs((w - (corner.x + corner.w)) - key.x) < 0.5,
+          string.format("gap %.1f right against the chip's %.1f",
+                        w - (corner.x + corner.w), key.x))
+    -- The meter is in the row above it, in the same corner, and reaches the
+    -- screen's own edge: a thumb aimed at a corner cannot overshoot off it, and
+    -- four bars are narrower than a fingertip.
+    check("and the meter is on the row over it on " .. where,
+          meter.y + meter.h <= corner.y + 0.5,
+          string.format("meter ends %.1f, dial starts %.1f",
+                        meter.y + meter.h, corner.y))
+    check("and runs into the corner itself on " .. where,
+          meter.x + meter.w >= w - 0.5 and meter.y <= 0.5,
+          string.format("meter %.0f,%.0f to %.0f,%.0f of %.0f",
+                        meter.x, meter.y, meter.x + meter.w,
+                        meter.y + meter.h, w))
+    -- And the tile readout hangs off the dial's own left edge, so the strip is
+    -- as wide as the instrument under it and no wider. That is what keeps the
+    -- clock band clear of both: it stops at one measurement rather than two.
+    local pos, press = drawn("POS"), box("details")
+    if pos then
+        check("the readout starts where the dial does on " .. where,
+              math.abs(pos.x - corner.x) < 0.5,
+              string.format("readout at %.1f, dial at %.1f", pos.x, corner.x))
+        if press then
+            check("and the band stops short of it on " .. where,
+                  press.x + press.w <= pos.x,
+                  string.format("band ends %.1f, readout starts %.1f",
+                                press.x + press.w, pos.x))
+        end
+    end
 end
 
 row_shares_a_center("a monitor", W, H)
-dial_hugs_the_corner("a monitor", W, H)
+dial_hangs_under_its_row("a monitor", W, H)
 
 -- A phone is the same drawing at its own size, and it is on the row: the band
 -- came off the corner row's line once and went back when the keys beside it
@@ -403,7 +438,7 @@ if small_clock and clock then
           string.format("%.0f against %.0f", small_clock.px, clock.px))
 end
 row_shares_a_center("a phone", 390, 844)
-dial_hugs_the_corner("a phone", 390, 844)
+dial_hangs_under_its_row("a phone", 390, 844)
 
 -- Held sideways it is the same phone with 844 points of row, which is width
 -- enough for the names, so the drop above is the width rather than the size
@@ -412,7 +447,7 @@ frame({w = 844, h = 390})
 check("a phone on its side has the room and keeps them",
       drawn("PYLON") ~= nil and drawn("CAISSON") ~= nil,
       table.concat(words(), " | "))
-dial_hugs_the_corner("a phone on its side", 844, 390)
+dial_hangs_under_its_row("a phone on its side", 844, 390)
 
 -- A call sign runs to twenty four characters and the band grows with it, so
 -- the longest one a pilot can register is what decides whether the band fits
@@ -453,17 +488,18 @@ if grown then
 end
 NAMES = SHORT
 
--- --- the map takes the same corner, a line lower --------------------------
+-- --- the map takes the same corner, on the same line ----------------------
 
 -- One corner, one instrument, and the map is the radar pulled back to the
--- whole arena. It does not take the radar's line with it: two thirds of the
--- short side of the window reaches past the middle of an upright phone, so a
--- map on the row would be a map with the clock drawn on top of it. It hangs
--- under the row instead, which is where both of them used to start.
+-- whole arena. Same line, same margin, and wider: two thirds of the short side
+-- of the window reaches past the middle of an upright phone, so a map on the
+-- clock's row would be a map with the clock drawn on top of it, and both
+-- instruments hang under that row for the map's sake.
 --
 -- The row's end does not move when it opens, either. That is the radar's
 -- resting edge, so a band that had room for its names keeps them while a
--- player reads the map.
+-- player reads the map, and the two readouts over the corner stay where the
+-- radar left them.
 do
     -- The same names either way: the section above leaves the longest call
     -- signs there are in `NAMES`, and a band measured against those is not
@@ -471,11 +507,22 @@ do
     -- the row it hangs under has an edge and a height that were published
     -- rather than worked out here.
     frame({rooms = ROOMS, room = 1})
-    local before = box("details")
+    local before, pos_before = box("details"), drawn("POS")
     ui.map = true
     frame({rooms = ROOMS, room = 1})
     local corner, key, press = box("map"), box("rooms"), box("details")
     check("the map stands in the dial's corner", corner ~= nil)
+    -- The strip over it belongs to the corner rather than to whichever
+    -- instrument is in it, and it is measured against the dial at rest. A
+    -- readout that walked left with the map would take the band's names with
+    -- it and land the meter's press somewhere else.
+    local pos_after = drawn("POS")
+    check("and the readouts over it stay where the radar left them",
+          pos_before and pos_after
+              and math.abs(pos_after.x - pos_before.x) < 0.5,
+          pos_before and pos_after
+              and string.format("%.1f against %.1f", pos_after.x, pos_before.x)
+              or "no readout on one of the two frames")
     if corner and key then
         check("wider than the dial at rest",
               corner.w > 168, string.format("%.0f wide", corner.w))

@@ -2317,6 +2317,11 @@ function update(self, dt)
             banner = net.banner,
             lag_notice = net.lag_notice,
             stats = net.stats, zone = net.zone,
+            -- How the line is, in bars, for the meter over the dial. The round
+            -- trip belongs to the connection module and the frame layer slows
+            -- its noisy estimate into a stable count, so what the HUD is handed
+            -- is the reading rather than the packets.
+            link = self.link_bars,
             -- Every room of this game and which one we are in, for the chip
             -- in the corner and the panel it opens. Both are absent until the
             -- directory says there is more than one.

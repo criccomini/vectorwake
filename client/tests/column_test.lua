@@ -473,19 +473,28 @@ do
     -- the rows above it would pass whatever the panel did with that one.
     frame(844, 390, {open = true, at = "settings", scroll = 9999})
     local rows = hits_of("menu_row")
-    local right = nil
-    for _, r in ipairs(rows) do right = right or (r.x + r.w) end
+    local left, right = nil, nil
+    for _, r in ipairs(rows) do
+        left, right = left or r.x, right or (r.x + r.w)
+    end
     -- Measured rather than eyeballed: the panel cuts a run at its own edge
     -- rather than wrapping it, so a sentence that would have spilled comes
     -- back from `state.text` shorter than it was written. What this asks is
     -- where the ink ended. The mono's advance is one number for every glyph,
     -- which is what the face this row is set in gives us.
+    --
+    -- Runs that start inside the panel, since the frame this is measured on is
+    -- a whole screen and the arena has mono of its own on it. A sentence that
+    -- spills is a sentence that begins on its row and ends past the edge, so
+    -- the ones this is about are all in here; what is dropped is the readouts
+    -- standing over the dial in a corner the panel does not reach.
     local ADVANCE = 1233 / 2048
     local widest, over = nil, 0
     for i = 1, state.n do
         local t = state.text[i]
         if t.font ~= "menu" and t.s and t.pivot ~= "right"
-           and t.pivot ~= "center" then
+           and t.pivot ~= "center"
+           and left and t.x >= left and t.x <= right then
             local _, cont = string.gsub(t.s, "[\128-\191]", "")
             local ends = t.x + (#t.s - cont) * t.px * ADVANCE
             if right and ends > right + 1 then

@@ -1269,13 +1269,13 @@ local NODES = {
             {label = "protocol", detail = function()
                 return tostring(net.PROTOCOL)
             end},
-            -- How the line is behaving, as the four bars the drawer's own
-            -- topbar used to carry. That topbar is gone, and the meter
-            -- was the one reading on it worth keeping: the HUD warns when the
-            -- line is bad enough to fly badly, and this is where a player who
-            -- suspects the network goes to look. Set by the arena, because
-            -- smoothing a noisy round trip into a bar count is the frame
-            -- layer's job and this file knows about pages rather than packets.
+            -- How the line is behaving, in the one word the meter over the
+            -- dial says as a picture. The bars are what a player glances at
+            -- mid-fight; this is the page somebody quotes from, and four
+            -- climbing bars are not a thing you can put in a message. Set by
+            -- the arena, because smoothing a noisy round trip into a bar count
+            -- is the frame layer's job and this file knows about pages rather
+            -- than packets.
             {label = "line", detail = function()
                 local n = M.link_bars or 4
                 if n >= 4 then return "good" end

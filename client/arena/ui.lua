@@ -105,7 +105,7 @@ M.map = false          -- the whole map, in the radar's corner
 -- Which pilot is being read about, by ship index, or nil. One at a time: this
 -- answers "who is that", and two of them open at once is a filing cabinet.
 M.inspect = nil
--- The connection, in numbers, behind the link bars in the menu's head. Off by
+-- The connection, in numbers, behind the link bars over the dial. Off by
 -- default and on no page, because it is for whoever is working on the client
 -- rather than for whoever is flying.
 M.debug = false
@@ -1151,27 +1151,34 @@ function TOP.mid()
     return F.safe_t + PAD * F.scale + KEY_H * F.scale / 2
 end
 
+-- The dial's box at rest, left edge and right, whatever is open in that
+-- corner. Both ends of it are read by things that are not the dial: the clock
+-- band stops at one, and the two readouts standing over the instrument hang
+-- off both. Measured at rest so that opening the map moves none of them, since
+-- the map is the same corner drawn wider and says nothing about the row.
+function TOP.dial_x()
+    local right = F.w - F.safe_r - PAD * F.scale
+    return right - RADAR.side * RADAR.factor() * F.scale, right
+end
+
 -- Where the row ends, which is what the clock band may grow into.
 --
--- The radar's left edge at rest. It stood in the strip a line below this row
--- until the link bars went into the menu's head and it came up into the
--- corner they left, and the band, which had grown to the window's own edge in
--- the meantime, gives that width back. Measured at rest so that opening the
--- map does not move it: the map hangs under the row (see `dial`) and has
--- nothing to do with where the row ends.
+-- The dial's left edge, a gap short of it. What stands in the row out there is
+-- the strip the dial's own readouts take (see `over_dial`), and that strip is
+-- exactly as wide as the instrument under it, so one measurement answers for
+-- both.
 --
 -- A phone is where this bites. 390 points hold the way into the menu, a
 -- centered clock and a 112-point dial, and what is left over is not a call
 -- sign, so the band gives up its two names there. The figures under them
 -- always draw.
 function TOP.row_right()
-    return F.w - F.safe_r - PAD * F.scale
-        - RADAR.side * RADAR.factor() * F.scale - KEY_GAP * F.scale
+    return TOP.dial_x() - KEY_GAP * F.scale
 end
 
 -- Both instruments this corner holds, since they are the same corner and one
 -- replaces the other: the radar at rest, and the map when a player has asked
--- for it. They differ in the line they start on and in nothing else.
+-- for it. They start on one line and differ in width alone.
 --
 -- The map is about a quarter of the frame, capped three ways: against the
 -- window's width so it cannot run off the left edge, against its height so
@@ -1181,28 +1188,23 @@ end
 local function dial()
     local pad = PAD * F.scale
     local side = RADAR.side * RADAR.factor() * F.scale
-    -- Hard into the corner, at the margin the way into the menu keeps from
-    -- the other one. The radar started a row lower because the link bars
-    -- stood in the strip above it, and those are in the menu's head now: with
-    -- nothing left up there it was hanging off a row that had gone, which
-    -- read as the instrument having slipped down the screen. The two things
-    -- anchored to the top of the window are hung off one padding rather than
-    -- one of them off the other, so `PAD` here is the same `PAD` the key
-    -- uses, on both axes and at every window size.
-    local iy = F.safe_t + pad
+    -- Under the top row, both of them. The strip up there is the dial's own
+    -- readouts' again: how the line is and where you are, standing over the
+    -- instrument they are about (see `over_dial`). The radar sat hard in the
+    -- corner for as long as that strip was empty, which is what the corner is
+    -- for, and it is not empty now.
+    --
+    -- It is the line the map has to start on in any case. The map is two
+    -- thirds of the window's short side, so on an upright phone it reaches
+    -- past the middle and sharing the band's line would put the clock on top
+    -- of it, while capping its width to clear the band leaves something
+    -- narrower at 390 points than the radar it grew from.
+    local iy = TOP.mid() + KEY_H * F.scale / 2
     if M.map then
         side = math.max(side,
                         math.min(math.min(F.w, F.h) * 0.66, F.h * 0.66,
                                  F.w - F.safe_r - pad - math.max(TOP.chip_right + 8 * F.scale,
                                                          124 * F.scale)))
-        -- The map keeps the line under the row instead. The radar is narrow
-        -- enough to stand beside the clock band, and this is two thirds of
-        -- the short side of the window: on an upright phone it reaches past
-        -- the middle, so sharing the band's line would put the clock on top
-        -- of it. Capping its width to clear the band is not a way out, since
-        -- what that leaves at 390 points is narrower than the radar it grew
-        -- from.
-        iy = TOP.mid() + KEY_H * F.scale / 2
     end
     -- Whole pixels. The dial snaps its contents to its own origin, so an
     -- origin landing on a half pixel would put the fraction back into every
@@ -1215,9 +1217,9 @@ local function dial()
 end
 
 -- How much vertical room it takes, so the feed under it can be told rather
--- than guess. The square and a gap: nothing hangs off the dial's foot now
--- that the tile readout has gone, so this is the instrument's own extent
--- again.
+-- than guess. The square and a gap: what the dial carries hangs over its head
+-- rather than off its foot, and it is already counted here, since the square
+-- starts under the row those readouts stand in.
 function M.radar_span()
     local _, iy, side = dial()
     return iy + side + 14 * F.scale
@@ -1285,10 +1287,10 @@ local function radar(cx, cy, me)
     --
     -- A faint wash stays, because dots over a starfield are dots lost in a
     -- starfield -- but it is a wash rather than a panel.
-    -- The whole corner is the dial's, hard into it. The link bars used to
-    -- stand in the strip above and are in the menu's head now, so there is no
-    -- strip: the square starts at the same margin the way into the menu keeps
-    -- from the corner opposite, and its caption hangs off its foot.
+    -- The corner is the dial's from the top row down. The strip on that row
+    -- carries the two readings the instrument is asked for beside it, the line
+    -- and the tile you are on (see `over_dial`), so the square starts under
+    -- them rather than at the window's own margin.
     local ix, iy, r = dial()
     rect(ix, iy, r, r, pal.a(pal.RADAR_BG, 0.55))
     -- The dial is the way in to the map: a thing you point at to see more of
@@ -1662,11 +1664,14 @@ end
 -- rival's name was drawn straight through the coordinates. The line under the
 -- row is where the dial is, though, so what that bought was the same
 -- collision against a bigger instrument, and it cost the one alignment the
--- row is for. Everything that was crowding it has since left the corner: the
--- readout is gone outright, the bars went into the menu's head (see
--- `pages.link`), and the dial came up into the space they left. A side with
--- nowhere to grow drops its name rather than the whole band dropping a line
--- (see `match_clock`).
+-- row is for.
+--
+-- Both readouts are back up there and neither can do it again, because
+-- neither is placed against the window any more. They stand over the dial and
+-- inside its width (see `over_dial`), and the band stops at that instrument's
+-- left edge, which is one measurement rather than two that have to be kept
+-- clear of each other. A side with nowhere left to grow drops its name rather
+-- than the whole band dropping a line (see `match_clock`).
 local function band_top()
     return F.safe_t + PAD * F.scale
 end
@@ -3335,6 +3340,63 @@ local function corner_row(on_air, watch, room, landed)
     TOP.chip_right = cx - KEY_GAP * F.scale
 end
 
+-- What stands over the dial: how good the line is, and where you are.
+--
+-- One strip, on the top row's own line, as wide as the instrument under it.
+-- Both belong up here with the dial rather than down in the corner stack with
+-- what the ship is carrying, because neither is a fact about the ship.
+--
+-- Four bars from the connection's smoothed quality, hard against the dial's
+-- right edge. They carry no word: four bars climbing in the corner of a screen
+-- are a signal meter on every device a player owns, and LINK beside them was
+-- the interface reading its own label back.
+--
+-- The bars replaced "online  err 0.0 / 1 px", which was the client's own
+-- debugging left on a player's screen, since nobody flying has ever made a
+-- decision on a prediction error in pixels. Those numbers are still here,
+-- behind a press, for whoever is working on this.
+local function over_dial(q, me)
+    local left, right = TOP.dial_x()
+    local mid = TOP.mid()
+    -- The bars are one block on the row rather than four things each centered
+    -- on it. A meter is a staircase standing on a floor, so the floor is what
+    -- gets placed: the tallest bar is centered and the rest stand on its line.
+    local tall = (3 + 3 * 2.6) * F.scale
+    local foot = mid + tall / 2
+    for k = 0, 3 do
+        local bh = (3 + k * 2.6) * F.scale
+        rect(right - (22 - k * 6) * F.scale, foot - bh, 4 * F.scale, bh,
+             k < q and pal.a(pal.PAID, 0.85) or pal.a(pal.DIM, 0.22))
+    end
+    -- The switch is on the bars because they are the one thing on screen the
+    -- readout behind them is about. What answers the press is the cluster and
+    -- the corner around it: from a gap left of the first bar to the screen's
+    -- own edge, and from the top of the safe area down to where the dial
+    -- starts. The corner does as much work as the size, since a thumb aimed
+    -- there cannot overshoot upward or to the right off the screen. Taller
+    -- would mean taking a strip off the dial, which is the control that opens
+    -- the map, and one control does not get to eat another.
+    if not F.menu_up then
+        local x0 = right - (22 + KEY_GAP) * F.scale
+        hit(x0, F.safe_t, F.w - x0,
+            mid + KEY_H * F.scale / 2 - F.safe_t, "debug")
+    end
+    -- And where you are, off the dial's left edge, in tiles: that is the unit
+    -- the map is laid out in and the unit a player says out loud. Pixels would
+    -- be the same place in numbers six digits long that nobody can hold in
+    -- their head or call across a room.
+    --
+    -- Captioned where the bars are not, because a pair of numbers is not a
+    -- shape anybody recognizes. POS is what says they are a place rather than
+    -- a score, a count or a time, all of which the rest of this row carries.
+    if not me then return end
+    local size = (FONT - 3) * F.scale
+    txt("POS", left, mid, size, pal.a(pal.DIM, 0.8))
+    txt(string.format("%d,%d", math.floor(sim.ship_x(me) / 16),
+                      math.floor(sim.ship_y(me) / 16)),
+        left + 26 * F.scale, mid, size, pal.a(pal.INK, 0.85))
+end
+
 -- The connection in numbers, for whoever is debugging it.
 --
 -- Deliberately plain: labeled lines of text, no instrument, no color doing
@@ -3465,13 +3527,13 @@ local function debug_hud(o, top)
         txt(l[2], cx + colw - 10 * F.scale, ly + rowh / 2, size,
             pal.a(pal.INK, 0.9), "right")
     end
-    -- The way out is the thing itself. What opens this is the link meter in
-    -- the menu's head, which is a fine place to keep a switch nobody needs
-    -- and a poor place to look for one: the readout lands under the dial with
-    -- the panel that opened it shut over the top of it, and a player who has
-    -- finished reading it has no reason to think the answer is back inside
-    -- the menu. So a press anywhere on the panel closes it, which is what
-    -- every other slab of text in this interface does.
+    -- The way out is the thing itself. What opens this is the link meter over
+    -- the dial, and the readout lands under the dial: on a phone that is the
+    -- best part of a screen away from the four bars that put it there, and a
+    -- player who has finished reading it has no reason to think the answer is
+    -- back up in the corner. So a press anywhere on the panel closes it, which
+    -- is what every other slab of text in this interface does. The meter
+    -- closes it too, being a switch.
     --
     -- Filed here rather than beside the bars, because it is this rectangle,
     -- and it is this rectangle only once the wrapping above has decided how
@@ -5164,8 +5226,8 @@ end
 -- same place, so when the stands arrive the only thing that happens is that
 -- the room, the stops and the menu key appear. Nothing already on screen
 -- moves. The instruments a watcher gets are all about a room this
--- client has not found yet, so the radar and the roster are simply absent
--- rather than drawn empty.
+-- client has not found yet, so the radar, the readings over it and the roster
+-- are simply absent rather than drawn empty.
 --
 -- What used to be here was a lockup centered in the window, which was the
 -- loading screen held one beat longer and read as a third screen between the
@@ -5327,6 +5389,11 @@ function M.hud(o)
     -- instruments that say so keep saying it.
     dial()
     if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
+    -- And the strip over it, which holds for the map as well: it is measured
+    -- against the dial at rest, so the readings stay put while a player reads
+    -- the whole arena. Four bars for a client that has not been handed a
+    -- reading yet, which is what a fresh connection looks like anyway.
+    over_dial(o.link or 4, me)
     -- Under the dial, wherever the dial now ends: it lost its panel and its
     -- padding, so a constant here would have left a gap or an overlap. Not on
     -- a touchscreen: the lines land where a thumb flies the ship, and a

@@ -340,20 +340,23 @@ are in and nowhere else. Top left held MENU until decision 102 moved it to the
 foot, where the panel it opens stands; the front page carries neither, since
 the menu is about a room you have taken a seat in.
 Top right: the radar or the map (one corner, one instrument), with the feed
-hanging under it. The radar is hard into the corner at the same PAD the button
-row keeps from the other one; the map, which is two thirds of the window's
-short side and reaches past the middle of an upright phone, starts on the line
-under the row instead. Nothing is captioned up there. The instrument draws
-where you are, and a pair of tile numbers beside it was the same fact in the
-form nobody reads. Bottom left: the corner stack, what your triggers do and
-what you carry, growing upward.
+under it and, over both, the two readings that corner is asked for. The tile
+you are on sits at the instrument's left edge with POS in front of it, four
+bars of link quality stand flush against its right, and pressing those bars
+opens the connection readout. Both instruments begin on the line under that
+strip. The map is two thirds of the window's short side and reaches past the
+middle of an upright phone, so it cannot share the clock's row; the radar keeps
+that line too, so the corner reads as one stack. Bottom left: the corner stack,
+what your triggers do and what you carry, growing upward.
 
 The top of that geography is a row with an instrument at each end. The corner
 key and the band share one center, a key's height is what that center is taken
 from, and the band grows outward from the middle until it reaches the key on
-one side or the dial on the other. Anything up there that works its own
-vertical out of the padding drifts, because the padding is a horizontal
-measurement.
+one side or the dial's readouts on the other. Those readouts are measured
+against the dial's resting box, so the strip is exactly as wide as the
+instrument under it and one number answers for the band, the meter and the
+tile readout together. Anything up there that works its own vertical out of the
+padding drifts, because the padding is a horizontal measurement.
 
 A band with nowhere left to grow gives up the two side names rather than the
 line it stands on, and gives up both or neither: the row's ends are a small
@@ -487,7 +490,7 @@ lit steps, not the word "half"; where a hull stands on a flight row is a bar
 against the rest of the roster, not a figure in the core's units. Where a number must be words it comes with its noun ("4 playing, 3 AI",
 spelled out rather than "4/3"). Addresses, wire URLs, and the client's own
 diagnostics never reach a player's screen; the debug readout exists, deliberately
-plain, behind the LINK bars.
+plain, behind the link bars over the dial.
 
 ## Pressing things
 
