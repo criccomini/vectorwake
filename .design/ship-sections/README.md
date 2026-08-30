@@ -5,11 +5,12 @@ specials and flair, each one opening a submenu holding the config for that
 part, with the build credits on display at the top, above body and below the
 back bar, and still there in the submenus.
 
-Not implemented. Nine boards, and one choice left open.
+Shipped as [decision 112](../../docs/architecture/decisions.md). Nine boards,
+drawn before the client was, and the client agrees with them.
 
 Artifact: [Ship Menu Sections](https://claude.ai/code/artifact/165ecbef-f9b9-4392-bcf9-27bf0938653a)
 
-## What is there today
+## What was there
 
 One panel with everything on it. The hull is walked on the top row, five
 flight bars read under it, the credit tray sits under those, and then every
@@ -25,8 +26,8 @@ a pilot stepping a slot near the foot is spending a purse they cannot see.
 `land_panel` has a scroll, a thumb and a cursor-follow to make that bearable,
 all of which exist because the page is longer than the glass.
 
-Five rows and a reset fit any window without scrolling, and the tray stops
-being the third strip of the content and becomes part of the panel.
+Five rows and a reset fit a window a scroll of that could not, and the tray
+stops being the third strip of the content and becomes part of the panel.
 
 ## The rules the boards follow
 
@@ -140,14 +141,27 @@ table off `sim/src/baseline.c`, shared against the roster's own range the way
 seventh of the way up energy. The fight behind the glass is
 `../dropdown-stack`'s.
 
-## What it would cost the client
+## What it cost the client
 
-`menu.tune_rows` already returns the rows grouped and banded, so the sections
-are a split of what it builds rather than new data: it would answer a section
-at a time, and `M.ship_panel` would answer the five rows with a count apiece.
-`land_panel` loses its scroll, its thumb and its cursor-follow, since no page
-in the set is longer than the glass, and gains the tray as part of the frame
-alongside the head. Panels already stack (decision 103), so a section is the
-container that exists rather than a new one. Body is `M.landing_ships` with
-`flight_bars` on each row, both of which the client already has and one of
-which it stopped drawing when the roster became a pager.
+Close to what these boards guessed. `menu.tune_rows` became `M.sect_rows`,
+which answers one section at a time off the same slot descriptors, and
+`M.ship_panel` takes the open section rather than a page of the roster. Body
+is `M.landing_ships` with `flight_bars` on every row, both of which the client
+already had and one of which it had stopped drawing when the roster became a
+pager. The tray moved into `panel_frame`, beside the head.
+
+Two guesses were wrong. The scroll does not go: a landscape phone has 362
+points of room and the roster wants 460, so a section still scrolls where the
+window is short. What the sections actually fixed is that the tray is chrome
+now and cannot scroll away, which is what was asked for and is the better half
+of the claim these boards made.
+
+The other was in the client rather than in these boards. `menu_row` had two
+colors for a reading, `pal.READ` on a row wearing a caret and `pal.MUTE` on
+one that only reads, and nothing had ever worn a caret and carried a reading,
+so the two had never been on a screen together. The boards were drawn in the
+mute off the games list, which is the one that was right; the caret's own
+color was the one that had to move.
+
+The pager, the walker, the band and the old panel's second head are all out of
+`ui.lua` with the page that held them.

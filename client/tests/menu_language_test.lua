@@ -103,15 +103,32 @@ local LAND = {
         {label = "log in", act = "enter_login"},
     },
     panel = {
-        at = 1, pages = 8, class = 1, label = "Wedge", mine = true,
-        bars = {0.2, 0.14, 0.09, 0.71, 0.0}, free = 2, credits = 7,
+        label = "guns", class = 1, free = 2, credits = 7,
         rows = {
-            {kind = "sect", label = "gun"},
             {kind = "slot", slot = 7, label = "Spray", value = 2, cap = 5,
              can_up = true, can_down = true},
             {kind = "slot", slot = 8, label = "Bounce", value = 0, cap = 1,
              toggle = true, can_up = true, can_down = false},
         },
+    },
+}
+
+-- The ship stop's own menu: five parts of a ship, each opening the part it
+-- names, over the same purse a section carries.
+local SHIP_MENU = {
+    label = "ship", class = 1, free = 2, credits = 7,
+    rows = {
+        {kind = "sect", sect = "body", label = "Body", detail = "Wedge",
+         raw = true},
+        {kind = "bars", bars = {0.2, 0.14, 0.09, 0.71, 0.0}},
+        {kind = "sect", sect = "guns", label = "Guns", detail = "3 rounds"},
+        {kind = "sect", sect = "bombs", label = "Bombs", detail = ""},
+        {kind = "sect", sect = "specials", label = "Specials",
+         detail = "1 repel"},
+        {kind = "sect", sect = "flair", label = "Flair",
+         detail = "standard wake"},
+        {kind = "rule"},
+        {kind = "reset", label = "Reset", on = true},
     },
 }
 
@@ -496,17 +513,18 @@ do
         check("the " .. open .. " panel heads itself exactly once",
               backs == 1, backs .. " ways back")
     end
-    -- And the roster is walked on a row of that panel rather than on a head of
-    -- its own: the arrows are published, and the name between them is the
-    -- press that flies the ship.
+    -- And a section of the ship stop heads itself once too, which is what
+    -- makes it a panel of the language rather than a page inside one.
+    LAND.panel = SHIP_MENU
     frame({open = "ship"})
-    local pages = 0
+    local backs, opens = 0, 0
     for _, r in ipairs(ui.hits) do
-        if r.action == "land_page_ship" then pages = pages + 1 end
+        if r.action == "land_back" then backs = backs + 1 end
+        if r.action == "land_sect" then opens = opens + 1 end
     end
-    check("and the roster is walked on one of its rows",
-          pages == 2 and hit_of("land_pick_ship") ~= nil,
-          pages .. " arrows")
+    check("the ship menu heads itself once and opens five parts",
+          backs == 1 and opens == 5, backs .. " ways back, " .. opens
+          .. " parts")
 end
 
 print(fails == 0 and "all menu language checks passed"

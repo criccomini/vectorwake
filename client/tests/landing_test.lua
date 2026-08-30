@@ -129,29 +129,24 @@ local LAND = {
          format = "4v4", here = true},
         {label = "Chaos", zone = "chaos", live = true, format = "1v1"},
     },
-    -- One hull at a time, as `menu.ship_panel` builds it: the ship, where it
-    -- sits on the five flight rows, the credits spent on it, and the rows
-    -- that spend them.
+    -- The ship stop's own menu, as `menu.ship_panel(nil)` builds it: five
+    -- parts of a ship over the credits they are bought with, the hull's
+    -- flight under the row that names it, and the reset under a rule.
     panel = {
-        at = 1, pages = 8, class = 1, label = "Wedge", mine = true,
-        bars = {0.2, 0.14, 0.09, 0.71, 0.0},
-        free = 2, credits = 7,
+        label = "ship", class = 1, free = 2, credits = 7,
         rows = {
-            {kind = "sect", label = "gun"},
-            {kind = "slot", slot = 7, label = "Spray", value = 2, cap = 5,
-             can_up = true, can_down = true},
-            {kind = "slot", slot = 8, label = "Bounce", value = 0, cap = 1,
-             toggle = true, can_up = true, can_down = false},
-            {kind = "sect", label = "bomb"},
-            {kind = "slot", slot = 13, label = "Shrapnel", value = 0, cap = 3,
-             can_up = true, can_down = false},
-            {kind = "slot", slot = 14, label = "Bounce", value = 0, cap = 1,
-             toggle = true, can_up = true, can_down = false},
-            {kind = "sect", label = "rack"},
-            {kind = "slot", slot = 19, label = "Repel", value = 1, cap = 15,
-             can_up = true, can_down = true},
-            {kind = "slot", slot = 20, label = "Burst", value = 1, cap = 15,
-             can_up = true, can_down = true},
+            {kind = "sect", sect = "body", label = "Body", detail = "Wedge",
+             raw = true},
+            {kind = "bars", bars = {0.2, 0.14, 0.09, 0.71, 0.0}},
+            {kind = "sect", sect = "guns", label = "Guns",
+             detail = "3 rounds"},
+            {kind = "sect", sect = "bombs", label = "Bombs",
+             detail = "4 fragments"},
+            {kind = "sect", sect = "specials", label = "Specials",
+             detail = "1 repel"},
+            {kind = "sect", sect = "flair", label = "Flair",
+             detail = "standard wake"},
+            {kind = "rule"},
             {kind = "reset", label = "Reset", on = true},
         },
     },
@@ -166,6 +161,53 @@ local LAND = {
         {label = "log in", act = "enter_login"},
     },
 }
+
+-- One section of that menu, as `menu.ship_panel("guns")` builds it: the same
+-- purse, and the slots this hull can reach with its gun.
+local GUNS = {
+    label = "guns", class = 1, free = 2, credits = 7,
+    rows = {
+        {kind = "slot", slot = 5, label = "Level", value = 0, cap = 2,
+         base = 1, can_up = true, can_down = false},
+        {kind = "slot", slot = 7, label = "Spray", value = 2, cap = 5,
+         can_up = true, can_down = true},
+        {kind = "slot", slot = 8, label = "Bounce", value = 0, cap = 1,
+         toggle = true, can_up = true, can_down = false},
+    },
+}
+
+-- And the body section, which is the roster with each hull's flight beside
+-- its name.
+local BODY = {
+    label = "body", class = 1, free = 2, credits = 7,
+    rows = {
+        {kind = "stat_head"},
+        {kind = "hull", label = "Apex", value = 0,
+         bars = {0.76, 0.86, 0.48, 0.14, 0.57}},
+        {kind = "hull", label = "Wedge", value = 1, here = true,
+         bars = {0.2, 0.14, 0.09, 0.71, 0.0}},
+        {kind = "hull", label = "spectate", value = "spectate"},
+    },
+}
+
+-- The flair section: the two rows that are a ship's and cost nothing.
+local FLAIR = {
+    label = "flair", class = 1, free = 2, credits = 7,
+    rows = {
+        {kind = "flair", index = 1, label = "wake", detail = "standard",
+         choice = 1, choices = 3},
+        {kind = "flair", index = 2, label = "charge keys",
+         detail = "repel first", choice = 1, choices = 2},
+    },
+}
+
+-- The same landing with one of those open over its menu.
+local function land_in(sect)
+    local out = {}
+    for k, v in pairs(LAND) do out[k] = v end
+    out.panel = sect
+    return out
+end
 
 -- A zone holding more than one room, for the checks that need something
 -- standing in the top left corner. The row holds nothing at all in an ordinary
@@ -645,21 +687,30 @@ do
     frame(1440, 810, {col_open = "zone"})
 
     frame(1440, 810, {col_open = "ship"})
-    -- The panel names the ship it is showing, and the rows that spend its
-    -- credits, rather than seven names in a column.
-    check("the ship panel names the hull it is on", word("Wedge") ~= nil)
-    check("and the rows that spend its credits",
-          word("Spray") ~= nil and word("Reset") ~= nil)
-    check("under the section they belong to", word("GUN") ~= nil)
-    -- Both arrows publish a press, so a hand on a pointer and a hand on a
-    -- pad walk the roster the same way.
-    local left, right = nil, nil
+    -- Five parts of a ship, each a row that opens the part it names, and the
+    -- reset under them. The hull is what body reads rather than a head of its
+    -- own.
+    check("the ship menu names the five parts",
+          word("Body") ~= nil and word("Guns") ~= nil and word("Bombs") ~= nil
+          and word("Specials") ~= nil and word("Flair") ~= nil)
+    check("and reads the hull off the row that opens it",
+          word("Wedge") ~= nil and word("Reset") ~= nil)
+    -- The purse is drawn by the frame rather than by the rows, which is what
+    -- keeps it on screen at every level.
+    check("with the credits over all of it", word("BUILD CREDITS") ~= nil)
+    -- Every section takes a press, from a pointer as from a pad.
+    local opens = {}
     for _, r in ipairs(ui.hits) do
-        if r.action == "land_page_ship" then
-            if r.value == -1 then left = r elseif r.value == 1 then right = r end
-        end
+        if r.action == "land_sect" then opens[r.value] = true end
     end
-    check("the pager walks either way", left ~= nil and right ~= nil)
+    check("and each part opens", opens.body and opens.guns and opens.bombs
+          and opens.specials and opens.flair)
+
+    -- Inside one: the slots, and the same tray over them.
+    frame(1440, 810, {land = land_in(GUNS), col_open = "ship"})
+    check("a section carries the rows that spend credits",
+          word("Spray") ~= nil and word("Level") ~= nil)
+    check("and the same purse over them", word("BUILD CREDITS") ~= nil)
     -- A step publishes the slot and the direction, which is the whole of
     -- what spending a credit is.
     local step
@@ -681,13 +732,28 @@ do
     end
     check("and a switch that is already off cannot be turned off",
           down_off == nil)
-    -- The hull's name is the press that flies it, so a pilot who has paged
-    -- to a ship is one press from arriving in it.
-    local flyable
+
+    -- Body is the roster, one hull a row, and a press on one flies it.
+    frame(1440, 810, {land = land_in(BODY), col_open = "ship"})
+    local flyable = {}
     for _, r in ipairs(ui.hits) do
-        if r.action == "land_pick_ship" then flyable = r end
+        if r.action == "land_pick_ship" then flyable[#flyable + 1] = r.value end
     end
-    check("and the ship it is on can be flown", flyable ~= nil)
+    check("body lists the roster and every hull can be flown",
+          #flyable == 3 and flyable[1] == 0 and flyable[3] == "spectate",
+          table.concat({tostring(flyable[1]), tostring(flyable[3])}, " "))
+    check("and says the five flight rows once, over their columns",
+          word("SPEED") ~= nil and word("RECHARGE") ~= nil)
+
+    -- Flair is the two rows that cost nothing, and they take a press.
+    frame(1440, 810, {land = land_in(FLAIR), col_open = "ship"})
+    local flair
+    for _, r in ipairs(ui.hits) do
+        if r.action == "land_flair" and r.value == 1 then flair = r end
+    end
+    check("flair carries the wake and takes a press",
+          word("Wake") ~= nil and flair ~= nil)
+    frame(1440, 810, {col_open = "ship"})
 
     -- Sitting out is the page past the roster, and carries no rows because
     -- there is no ship to say anything about.
@@ -1129,22 +1195,21 @@ do
     check("enter in an open list never reaches the key",
           ui.col_go() == nil, tostring(ui.col_go()))
 
-    -- The ship panel walks the way back, the ship it is on, one stop a row,
-    -- and back to the hull's own build. The arrows either side of a value are
-    -- not stops of their own.
+    -- The ship menu walks the way back and its five parts, and ends on the
+    -- reset. The arrows either side of a value are not stops of their own.
     frame(1440, 810, {col_open = "ship"})
-    check("the ship panel walks its ship and its rows",
-          walk_of():match("^land_back land_pick_ship land_kit_row")
-          and walk_of():match("land_kit_reset$"),
-          walk_of())
-    ui.col_sel, ui.col_sel_value = "land_pick_ship", 1
-    -- Left and right page the roster from the ship's own row.
-    local pact, pvalue = ui.col_side(1)
-    check("right off the ship pages the roster",
-          pact == "land_page_ship" and pvalue == 1,
-          tostring(pact) .. " " .. tostring(pvalue))
-    -- And spend a credit from any other row, which is the same two keys
-    -- doing the same kind of work one row down.
+    check("the ship menu walks the way back and its five parts",
+          walk_of() == "land_back land_sect land_sect land_sect land_sect "
+          .. "land_sect land_kit_reset", walk_of())
+    -- Nothing pages any more, so a part answers nothing to an arrow: it is a
+    -- press, and enter is what presses it.
+    ui.col_sel, ui.col_sel_value = "land_sect", "body"
+    check("and a part answers neither arrow", ui.col_side(1) == nil)
+    check("while enter on one opens it",
+          select(1, ui.col_go()) == "land_sect")
+    -- Inside a section, left and right spend a credit from the row the cursor
+    -- is standing on, which is the same two keys doing the same kind of work.
+    frame(1440, 810, {land = land_in(GUNS), col_open = "ship"})
     ui.col_sel, ui.col_sel_value = "land_kit_row", 7
     local kact, kvalue = ui.col_side(1)
     check("and right on a row spends a credit on it",
@@ -1152,6 +1217,15 @@ do
           and kvalue.slot == 7 and kvalue.dir == 1)
     check("while enter on a row does nothing on its own",
           select(1, ui.col_go()) == "land_kit_row")
+    -- A flair row steps either way, since every answer it holds is the next
+    -- one along.
+    frame(1440, 810, {land = land_in(FLAIR), col_open = "ship"})
+    ui.col_sel, ui.col_sel_value = "land_flair", 1
+    local fact, fvalue = ui.col_side(-1)
+    check("and a flair row steps either way",
+          fact == "land_flair_step" and type(fvalue) == "table"
+          and fvalue.index == 1 and fvalue.dir == -1)
+    frame(1440, 810, {col_open = "ship"})
     -- Nothing answers left and right anywhere else out here.
     ui.col_open = "zone"
     check("and the other stops leave both arrows unread",
@@ -1244,21 +1318,25 @@ end
 -- than two, which is the argument that took the landscape phone's own
 -- three-section version out years' worth of decisions ago.
 do
-    frame(844, 390, {col_open = "ship"})
+    frame(844, 390, {land = land_in(BODY), col_open = "ship"})
     local pick = box("land_pick_ship")
-    check("a rail's panel carries the ship it is on", pick ~= nil)
+    check("a rail's panel carries the roster", pick ~= nil)
     if pick then
         check("and stays inside the window",
               pick.x >= 0 and pick.x + pick.w <= 844)
     end
-    -- A short window cannot hold the whole panel, so what it does instead is
+    -- A short window cannot hold the whole roster, so what it does instead is
     -- scroll: every row it draws is a whole one, drawn inside the frame.
     local rows = {}
     for _, r in ipairs(ui.hits) do
-        if r.action == "land_kit_row" then rows[#rows + 1] = r end
+        if r.action == "land_pick_ship" then rows[#rows + 1] = r end
     end
     check("and draws the rows it has room for", #rows >= 1,
           #rows .. " rows")
+    -- And the purse is drawn whatever the window does to the rows, because
+    -- the frame draws it rather than the list. That is the whole of what the
+    -- sections bought.
+    check("with the credits still over them", word("BUILD CREDITS") ~= nil)
     check("the rail went out under it like the column does",
           box("land_account") == nil and box("land_zone") == nil
           and box("play_now") == nil)
@@ -1271,15 +1349,15 @@ do
     -- themselves spending on. The last row is the one to ask for, since a
     -- short window is exactly where it will not already be drawn.
     local last = nil
-    for _, r in ipairs(LAND.panel.rows) do
-        if r.kind == "slot" then last = r.slot end
+    for _, r in ipairs(BODY.rows) do
+        if r.kind == "hull" then last = r.value end
     end
     ui.col_scroll = 0
-    ui.col_sel, ui.col_sel_value = "land_kit_row", last
-    frame(844, 390, {col_open = "ship", keep = true})
+    ui.col_sel, ui.col_sel_value = "land_pick_ship", last
+    frame(844, 390, {land = land_in(BODY), col_open = "ship", keep = true})
     local lit
     for _, r in ipairs(ui.hits) do
-        if r.action == "land_kit_row" and r.value == last then lit = r end
+        if r.action == "land_pick_ship" and r.value == last then lit = r end
     end
     check("walking to a row under the fold brings it into the panel",
           lit ~= nil, "row " .. tostring(last) .. " stayed off the panel")

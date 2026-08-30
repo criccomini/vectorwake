@@ -1,5 +1,20 @@
 # Landing, and the menu
 
+> **The ship stop is five parts of a ship.** Body, guns, bombs, specials and
+> flair, each a row that opens the part it names, with the build credits under
+> the back bar on the menu and on every section. The tray is chrome the panel
+> draws rather than a strip of the content, so it cannot scroll away.
+>
+> Body is the roster as a list, each row carrying that hull's five flight
+> bars under one column head, and a press flies it. The pager is gone with the
+> page that made a list the wrong shape. The same bars stand under the body
+> row on the menu.
+>
+> A section reads what it holds in the fight, in the games list's voice: the
+> detail at 14 in the mute, hard against the right of the type column. The
+> credits are the tray's to report. Flair is back off the settings page, and
+> the level row says Level.
+
 > **A column's labels are one weight.** The settings stop had its name in ink,
 > because it has no answer beside it and a stop with nothing at full strength
 > looked unpressable. It looked that way because the whole column was drawn at

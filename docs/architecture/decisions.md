@@ -5814,3 +5814,74 @@ column and it reads as a column now.
 both labels were at 1.00 and only the ink differed: the three stops of the
 in-match column and the landing's are one color, and the check fails with 109's
 rule back in (`settings 0.87,0.91,0.96` against the others' `0.52,0.58,0.66`).
+
+## 112. The ship menu is five parts of a ship
+
+**Status:** accepted
+
+**Decision:** the ship stop opens five rows, body, guns, bombs, specials and
+flair, each one opening the part it names, with the build credits under the
+back bar on the menu and on every section.
+
+Body is the roster as a list, one hull a row, each row carrying that hull's
+five flight bars, with the five words said once at the head over the columns
+they name. A press on a row flies that hull. The same bars stand under the
+body row on the menu, so the row names the ship and the strip says how it
+flies.
+
+Each section reads what it holds rather than what it cost, in the voice the
+games list reads a format in: `menu_row` puts a detail at `TYPE.BODY` in
+`pal.MUTE`, hard against the right of the type column. Guns reads "2 rounds ·
+bouncing", specials "2 repels · 1 burst", flair "standard wake", body the
+hull's own name. A part with nothing worth a word says nothing.
+
+Flair comes back from the settings page, which loses its ship band. The level
+row says Level rather than Rung.
+
+**Why:** Chris asked for it, and the panel it replaces had grown into the
+thing this menu language exists to stop. One glass held the roster walked on
+its top row, the flight bars, the credit tray and then every slot the hull
+could reach under three band labels: fourteen rows on an Apex, 762 points of
+panel against the 782 an 810-point window has to give it. It fit a monitor by
+twenty points and scrolled on everything else, and the first thing off the top
+was the tray. A pilot stepping a slot near the foot was spending a purse they
+could not see.
+
+Five sections fix the tray by moving it out of the content: `panel_frame`
+draws it beside the head, so it cannot scroll away at any level or any window
+size. That is the whole of what was asked for, and the rest follows from
+having room again.
+
+The roster stopped being a pager for the reason decision 100 made it one and
+then stopped applying. That decision called seven hulls with five bars apiece
+a page in a list's clothes, which was true of a page that also held every slot
+the hull could spend on. A section that holds nothing else is a list, and a
+list is where the bars pay: seven read down a column compare, seven read one
+at a time have to be remembered.
+
+The readings are contents rather than credits because the tray already reports
+the credits, once, over the whole ship. Both were drawn in
+`.design/ship-sections` and Chris picked the contents; the count version is
+still on that canvas as the record of the choice.
+
+**Cost:** one press deeper to reach a slot. Spending a credit was two presses
+from the landing and is three, which is the trade for a menu that fits and a
+purse that stays on screen. `M.col_sect` is a second level of state on a stop
+that had one, and `land_back` walks it down before it shuts the stop.
+
+The spray reading assumes the zone steps one round a credit off a pattern of
+one, which is the shipped arithmetic and what every hull's line in
+`docs/design/ships.md` counts by. A zone that steps by two would read wrong
+where shrapnel, which asks the core, would not.
+
+**Verified:** built and photographed. The ship menu, all five sections and the
+settings page it took the flair rows off were shot from a local zone through
+`client/tools/shot.sh`; the Apex's tray reads three of seven in hand, guns
+reads "2 rounds", specials "2 repels · 1 burst", bombs reads nothing, and the
+body list stands seven hulls and sitting out under one column head with Anvil
+at the floor of speed and Cipher at the top of it. `landing_test` covers the
+five rows, every section, the walk and the tray at a rail's measure;
+`menu_test` covers the readings, the roster rows and the level counted from
+one. The middle dot in a reading was written `\u{00b7}` first, which is not an
+escape in Lua 5.1 and drew as those six characters: the reading test is what
+caught it.

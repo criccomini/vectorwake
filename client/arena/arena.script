@@ -527,7 +527,7 @@ local function shut_panels()
     -- up stands it down rather than leaving it to reappear underneath, and the
     -- cursor goes with it. The two columns stand in the same place, so a lit
     -- stop under the one that replaced it is the interface drawn twice.
-    ui.col_open = nil
+    ui.col_open, ui.col_sect = nil, nil
     ui.col_sel, ui.col_sel_value = nil, nil
     ui.page_scroll = 0
     -- And the slide with it, rather than left half up for the next panel to
@@ -545,7 +545,7 @@ local function land_shut()
     if ui.col_open then
         ui.col_sel, ui.col_sel_value = "land_" .. ui.col_open, nil
     end
-    ui.col_open = nil
+    ui.col_open, ui.col_sect = nil, nil
 end
 
 local function toggle_menu()
@@ -730,6 +730,7 @@ local LAND_HOT = {
     play_now = true, land_account = true, land_zone = true, land_ship = true,
     land_pick_zone = true, land_pick_ship = true, land_back = true,
     land_pick_account = true, land_kit_row = true, land_kit_reset = true,
+    land_sect = true, land_flair = true,
     -- And the menu's own column, which is the same interface with a different
     -- set of stops on it: one cursor, one pointer, one rule for what lights.
     menu_go = true, menu_stop = true, menu_pick = true, menu_row = true,
@@ -884,7 +885,7 @@ local function leave_world()
     ui.help_prompt = false
     ui.map = false
     ui.room_ask = nil
-    ui.col_open = nil
+    ui.col_open, ui.col_sect = nil, nil
     ui.col_sel, ui.col_sel_value = nil, nil
     ui.panel_shut()
 end
@@ -2209,11 +2210,11 @@ function update(self, dt)
                     -- and a name is quoted rather than set. See `land_stop`.
                     watching = menu.spectating(),
                     zones = zones,
-                    -- What the ship stop opens: one hull with its flight and
-                    -- its credits, paged left and right. `land_ship_at` is
-                    -- which page is up, which is the hull being flown until
-                    -- somebody walks off it.
-                    panel = menu.ship_panel(self.land_ship_at),
+                    -- What the ship stop opens: five parts of a ship over
+                    -- the credits they are bought with, or whichever of the
+                    -- five is open over the same credits. `ui.col_sect` is
+                    -- which, and nil is the menu itself.
+                    panel = menu.ship_panel(ui.col_sect),
                     -- What the account stop opens, and the dot it wears
                     -- while this guest has a rated game a lost account would
                     -- cost them. The drawer says the same thing in words on
@@ -3002,21 +3003,12 @@ function land_act(self, action, value)
     end
     -- The landing's one key. See session.deploy.
     if action == "play_now" then
-        -- With the ship panel open, the key flies the ship the panel is on.
-        -- Walking the roster does not pick, so without this a pilot who
-        -- paged to a Wedge and pressed the one key on the screen would
-        -- arrive in the Apex they walked away from, with the panel in front
-        -- of them saying Wedge the whole time.
-        if ui.col_open == "ship" and self.land_ship_at then
-            local at = self.land_ship_at
-            if at >= menu.hull_count() then
-                apply_menu(self, "spectate")
-            else
-                local act = menu.pick_profile(at)
-                if act then apply_menu(self, act) end
-            end
-        end
-        ui.col_open = nil
+        -- Nothing to settle first. The panel used to page the roster without
+        -- picking, so the key had to fly whatever page was up or a pilot who
+        -- walked to a Wedge would arrive in the Apex they walked away from.
+        -- The roster is a list now and a press on it is the pick, so what
+        -- this pilot arrives as is already decided.
+        ui.col_open, ui.col_sect = nil, nil
         ui.col_sel, ui.col_sel_value = nil, nil
         session.deploy(self)
         return true
@@ -3041,8 +3033,10 @@ function land_act(self, action, value)
             -- A stop opens where the pilot is, not where they last read to:
             -- the ship panel starts on the ship being flown and at the top
             -- of its rows.
+            -- A stop opens where the pilot is rather than where they last
+            -- read to: the ship stop opens on its own menu, at the top of it.
             if which == "ship" then
-                self.land_ship_at = menu.panel_home()
+                ui.col_sect = nil
                 ui.col_scroll = 0
             end
         end
@@ -3054,7 +3048,17 @@ function land_act(self, action, value)
     -- the back means, which is out one level. At the first level, which is the
     -- only level there is so far, out is the column coming back.
     if action == "land_back" or action == "land_shut" then
-        land_shut()
+        -- One level, which is what the back on a panel's head has always
+        -- meant: out of a section onto the ship menu, and out of the menu
+        -- onto the landing. The backdrop behind the glass means the same
+        -- thing, so a press on the margin walks the stack down too.
+        if ui.col_open == "ship" and ui.col_sect then
+            ui.col_sect = nil
+            ui.col_sel, ui.col_sel_value = nil, nil
+            ui.col_scroll = 0
+        else
+            land_shut()
+        end
         sfx.ui("ui_move")
         return true
     end
@@ -3077,16 +3081,28 @@ function land_act(self, action, value)
         sfx.ui("ui_go")
         return true
     end
-    -- Walking the ship stop's panel: one hull along the roster, wrapping at
-    -- either end. Nothing is chosen by walking, so a pilot reading through
-    -- the seven is not changing what they will fly until they press.
-    if action == "land_page_ship" then
-        self.land_ship_at = menu.ship_page(
-            self.land_ship_at or menu.panel_home(), value or 1)
-        -- A different ship is a different set of rows, so the panel opens at
-        -- the top of them rather than wherever the last one was read to.
+    -- One of the five parts of a ship, opened over the menu that names it.
+    -- The tray comes with it, so the purse is on screen wherever a credit is
+    -- spent, and back steps out onto the menu again.
+    if action == "land_sect" then
+        ui.col_sect = value
+        ui.col_sel, ui.col_sel_value = nil, nil
         ui.col_scroll = 0
-        sfx.ui("ui_move")
+        sfx.ui("ui_go")
+        return true
+    end
+    -- A flair row: the wake, or which key throws which charge. Enter steps it
+    -- forward and the arrows step it either way, which is what a row holding
+    -- one of a few answers has always done.
+    if action == "land_flair" then
+        if menu.flair_step(value, 1) then sfx.ui("ui_go") end
+        return true
+    end
+    if action == "land_flair_step" then
+        if type(value) == "table" and menu.flair_step(value.index, value.dir)
+        then
+            sfx.ui("ui_move")
+        end
         return true
     end
     -- Standing on a row that counts is not doing anything to it: the row is
@@ -3098,8 +3114,8 @@ function land_act(self, action, value)
     -- enter and space mean it too. Without this the only row in the panel a
     -- keyboard could not work was the only row with a single obvious act.
     if action == "land_kit_row" then
-        local at = self.land_ship_at or menu.panel_home()
-        for _, r in ipairs(menu.ship_panel(at).rows or {}) do
+        local at = menu.class or 0
+        for _, r in ipairs(menu.sect_rows(at, ui.col_sect) or {}) do
             if r.kind == "slot" and r.slot == value and r.toggle then
                 if menu.build_step(at, value, r.value > 0 and -1 or 1) then
                     sfx.ui("ui_go")
@@ -3113,7 +3129,7 @@ function land_act(self, action, value)
     -- tells the arena about it; a step that cannot happen was drawn dim and
     -- has no hit box, so this does not have to check.
     if action == "land_kit_step" then
-        local at = self.land_ship_at or menu.panel_home()
+        local at = menu.class or 0
         if type(value) == "table" and menu.build_step(at, value.slot,
                                                       value.dir) then
             sfx.ui("ui_go")
@@ -3123,7 +3139,7 @@ function land_act(self, action, value)
     -- And back to the hull's own row, which is the whole of the build
     -- manager: there is nothing to name and nothing to save.
     if action == "land_kit_reset" then
-        if menu.build_reset(self.land_ship_at or menu.panel_home()) then
+        if menu.build_reset(menu.class or 0) then
             sfx.ui("ui_go")
         end
         return true

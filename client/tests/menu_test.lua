@@ -121,6 +121,11 @@ _G.hash = function(s) return s end
 
 local menu = require("arena.menu")
 
+-- The middle dot a reading puts between two facts, as `menu.sect_reading`
+-- writes it.
+local SEP = "\194\183"
+
+
 -- --- the harness -----------------------------------------------------------
 
 -- The column's stops, by name, in the order they are drawn.
@@ -553,22 +558,38 @@ end
 
 -- --- the wake, and which key throws which charge --------------------------
 --
--- The two preferences that used to sit under the drawer's roster. The wake is
--- cosmetic and the charge order is a preference about a keyboard, and the
--- panel that replaced the ship page is for spending credits, so both came
--- here. See decision 100.
+-- The two things a pilot decides that are not about how a ship fights. They
+-- sat under the drawer's roster, went to the settings page when the ship page
+-- became a list of slots to spend credits on, and are the flair section of
+-- the ship menu now: a section that costs nothing sits fine beside four that
+-- do. See decision 112.
 
+-- The one row the settings page kept nothing of.
 open("settings")
+check("settings has no ship band left", row_named("wake") == nil)
+
 menu.wake = 0
-local wake = row_named("wake")
+local function flair_named(name)
+    for _, r in ipairs(menu.sect_rows(menu.class or 0, "flair")) do
+        if r.label == name then return r end
+    end
+    return nil
+end
+local function flair_at(name)
+    for i, r in ipairs(menu.sect_rows(menu.class or 0, "flair")) do
+        if r.label == name then return i end
+    end
+    return nil
+end
+local wake = flair_named("wake")
 check("the wake says which trail this ship leaves",
       wake ~= nil and wake.detail == "standard"
       and wake.choices == #menu.WAKES, tostring(wake and wake.detail))
-menu.press_row(row_at("wake"))
+menu.flair_step(flair_at("wake"), 1)
 check("and a press steps it round",
-      menu.wake == 1 and row_named("wake").detail == "long",
-      tostring(row_named("wake").detail))
-menu.step_row(row_at("wake"), -1)
+      menu.wake == 1 and flair_named("wake").detail == "long",
+      tostring(flair_named("wake").detail))
+menu.flair_step(flair_at("wake"), -1)
 check("as does an arrow, the other way", menu.wake == 0,
       tostring(menu.wake))
 
@@ -596,30 +617,14 @@ do
     menu.spectate = false
 
     local function keys_row()
-        for _, r in ipairs(rows()) do
-            if r.act == "swap_charges" then return r end
+        for _, r in ipairs(menu.sect_rows(menu.class or 0, "flair")) do
+            if r.label == "charge keys" then return r end
         end
         return nil
     end
     local row = keys_row()
     check("a hull carrying two kinds gets a row for the keys", row ~= nil,
           "no row")
-    -- And it opens no section of its own. A `sect` starts a band, and this
-    -- row named the same one the wake above it had already started, so the
-    -- page drew SHIP with one row under it and then SHIP again with one row
-    -- under that. Checked here rather than up with the rest of the page,
-    -- because this is the only hull that has both rows to collide.
-    do
-        local seen, twice = {}, nil
-        for _, r in ipairs(rows()) do
-            if r.sect then
-                if seen[r.sect] then twice = r.sect end
-                seen[r.sect] = true
-            end
-        end
-        check("and no section on the page opens twice", twice == nil,
-              tostring(twice) .. " opens a band of its own more than once")
-    end
     local said = row and row.detail
     check("and the row says which kind the first key throws",
           said ~= nil and said:find("first") ~= nil, tostring(said))
@@ -1440,50 +1445,82 @@ do
     }
 
     menu.builds = {}
-    local panel = menu.ship_panel(0)
-    check("the panel is one hull, not the roster",
-          panel.label ~= nil and panel.pages == 8,
-          tostring(panel.label) .. "/" .. tostring(panel.pages))
-    check("with its flight against the rest of the roster",
-          type(panel.bars) == "table" and #panel.bars == 5,
-          tostring(panel.bars and #panel.bars))
+    menu.class = 0
+    -- Off the landing, `spectating` is `M.watching` rather than the saved
+    -- preference: this block is asking what the ship menu says about a pilot
+    -- with a seat.
+    menu.home, menu.spectate, menu.watching = true, false, false
+    local panel = menu.ship_panel(nil)
+    local kinds, opens = {}, {}
+    for _, r in ipairs(panel.rows) do
+        kinds[r.kind] = (kinds[r.kind] or 0) + 1
+        if r.kind == "sect" then opens[r.sect] = r end
+    end
+    check("the menu is the five parts of a ship",
+          kinds.sect == 5 and opens.body and opens.guns and opens.bombs
+          and opens.specials and opens.flair, tostring(kinds.sect))
+    check("with the hull's flight under the row that names it",
+          kinds.bars == 1 and type(panel.rows[2].bars) == "table"
+          and #panel.rows[2].bars == 5)
     check("and the credits it has left to spend",
           panel.credits == 7 and panel.free == 4,
           tostring(panel.free) .. " of " .. tostring(panel.credits))
-
-    -- Which rows exist is the core's answer. A stat that steps nothing would
-    -- take a credit and change nothing, so it is not offered at all; a ladder
-    -- with one rung is not a choice, so it is not either.
-    local kinds = {}
-    for _, r in ipairs(panel.rows) do
-        kinds[r.kind] = (kinds[r.kind] or 0) + 1
-        if r.kind == "sect" then kinds["sect:" .. r.label] = true end
-    end
-    check("no row is offered for a stat that steps nothing",
-          kinds["sect:flight"] == nil)
-    check("and the sections are the weapons and the rack",
-          kinds["sect:gun"] and kinds["sect:bomb"] and kinds["sect:rack"])
     check("with a way back to the hull's own build under them",
           kinds.reset == 1)
+    -- Each part says what it holds rather than what it cost, in the words a
+    -- player would use for it.
+    check("body reads the hull and quotes it",
+          opens.body.detail == "Apex" and opens.body.raw == true,
+          tostring(opens.body.detail))
+    check("flair reads the wake",
+          opens.flair.detail == "standard wake", tostring(opens.flair.detail))
+
+    -- Body is the roster, one hull a row, each with its own flight beside it.
+    local body = menu.sect_rows(0, "body")
+    local hulls, headed = 0, false
+    for _, r in ipairs(body) do
+        if r.kind == "stat_head" then headed = true end
+        if r.kind == "hull" then hulls = hulls + 1 end
+    end
+    check("body lists the roster under one column head",
+          headed and hulls == 8, hulls .. " rows")
+    check("and every ship in it carries its own flight",
+          type(body[2].bars) == "table" and #body[2].bars == 5)
+    -- A stat that steps nothing would take a credit and change nothing, so no
+    -- row is offered for one even here.
+    local stats = 0
+    for _, r in ipairs(body) do
+        if r.kind == "slot" then stats = stats + 1 end
+    end
+    check("no row is offered for a stat that steps nothing", stats == 0,
+          stats .. " stat rows")
+
+    -- The three that spend, each holding what the core says this hull can
+    -- reach.
+    local guns = menu.sect_rows(0, "guns")
+    local bombs = menu.sect_rows(0, "bombs")
+    local rack = menu.sect_rows(0, "specials")
+    check("the weapons and the rack each open on their own slots",
+          #guns > 0 and #bombs > 0 and #rack > 0,
+          #guns .. "/" .. #bombs .. "/" .. #rack)
+    for _, r in ipairs(guns) do panel.rows[#panel.rows + 1] = r end
+    for _, r in ipairs(bombs) do panel.rows[#panel.rows + 1] = r end
+    for _, r in ipairs(rack) do panel.rows[#panel.rows + 1] = r end
 
     -- Which rung of its own ladder a hull fires is the first row under each
     -- weapon, and it is a row a pilot can actually move. It was not: the
     -- shipped roster named one rung a weapon, so the ceiling came back zero
     -- and the row was dropped on every hull, on a page whose every other line
     -- was right. A section that opens on its add-ons is that bug.
-    local rungs, sect = {}, nil
-    for _, r in ipairs(panel.rows) do
-        if r.kind == "sect" then sect = r.label end
-        if r.kind == "slot" and r.label == "Rung" then rungs[sect] = r end
-    end
-    check("each weapon opens on the rung it fires",
-          rungs.gun ~= nil and rungs.bomb ~= nil,
-          "gun " .. tostring(rungs.gun ~= nil)
-          .. " bomb " .. tostring(rungs.bomb ~= nil))
+    local levels = {gun = guns[1], bomb = bombs[1]}
+    check("each weapon opens on the level it fires",
+          levels.gun and levels.gun.label == "Level"
+          and levels.bomb and levels.bomb.label == "Level",
+          tostring(levels.gun and levels.gun.label))
     check("and it is a stepper a pilot with credits can move",
-          rungs.gun and rungs.gun.cap == 2 and rungs.gun.toggle ~= true
-          and rungs.gun.can_up == true,
-          tostring(rungs.gun and rungs.gun.cap))
+          levels.gun and levels.gun.cap == 2 and levels.gun.toggle ~= true
+          and levels.gun.can_up == true,
+          tostring(levels.gun and levels.gun.cap))
     check("levelling a weapon spends a credit like anything else",
           menu.build_step(0, 5, 1) == true and menu.build_of(0)[5] == 1
           and menu.build_free(0) == 3)
@@ -1500,11 +1537,11 @@ do
             counts_from[r.label] = r.base or 0
         end
     end
-    check("the rung is counted from one", counts_from.Rung == 1,
-          tostring(counts_from.Rung))
+    check("the level is counted from one", counts_from.Level == 1,
+          tostring(counts_from.Level))
     local others = 0
     for label, base in pairs(counts_from) do
-        if label ~= "Rung" and base ~= 0 then others = others + 1 end
+        if label ~= "Level" and base ~= 0 then others = others + 1 end
     end
     check("and every other row from nothing", others == 0,
           others .. " rows count from somewhere else")
@@ -1553,15 +1590,53 @@ do
     check("and does nothing to a hull that is already on it",
           menu.build_reset(0) == false)
 
-    -- Sitting out is the page past the roster and says so in a sentence,
-    -- having no ship to draw bars or rows for.
-    local sitting = menu.ship_panel(7)
-    check("sitting out is the last page",
-          sitting.watching == true and sitting.rows == nil
-          and sitting.bars == nil)
-    check("and the pager wraps at either end",
-          menu.ship_page(7, 1) == 0 and menu.ship_page(0, -1) == 7,
-          menu.ship_page(7, 1) .. "/" .. menu.ship_page(0, -1))
+    -- What a part says about itself: what it holds in the fight, in the words
+    -- a player would use, and nothing at all where it holds nothing worth a
+    -- word. The credits are the tray's to report, once, over the whole ship.
+    menu.builds = {}
+    check("a weapon with nothing bolted to it says nothing",
+          menu.sect_reading(0, "bombs") == "",
+          "'" .. menu.sect_reading(0, "bombs") .. "'")
+    -- Spray is the one add-on a pilot reads as rounds in the air rather than
+    -- as steps bought: a spray of one is two rounds.
+    menu.build_step(0, 7, 1)
+    check("spray reads as the rounds it puts in the air",
+          menu.sect_reading(0, "guns"):find("3 rounds") ~= nil,
+          menu.sect_reading(0, "guns"))
+    menu.builds = {}
+    -- And the rack counts what it carries, plural where it is more than one.
+    -- This hull's profile deals it two repels and no burst, so what the row
+    -- reads is the one kind it has.
+    check("the rack counts each kind it carries",
+          menu.sect_reading(0, "specials") == "2 repels",
+          menu.sect_reading(0, "specials"))
+    menu.build_step(0, 20, 1)
+    check("and says both where it carries both",
+          menu.sect_reading(0, "specials") == "2 repels " .. SEP .. " 1 burst",
+          menu.sect_reading(0, "specials"))
+    menu.builds = {}
+    -- Two facts about one part read as one strip, with the dot between them.
+    menu.build_step(0, 8, 1)
+    check("and two facts about one part read as one strip",
+          menu.sect_reading(0, "guns") == "2 rounds " .. SEP .. " bouncing",
+          menu.sect_reading(0, "guns"))
+    menu.builds = {}
+
+    -- Sitting out is the roster's last row rather than a page past it, and
+    -- the menu reads it off body. Nothing else about the menu changes: a
+    -- pilot watching can still set up the ship they will arrive in.
+    menu.spectate = true
+    local watching = menu.ship_panel(nil)
+    check("sitting out is what body reads",
+          watching.rows[1].detail == "spectate",
+          tostring(watching.rows[1].detail))
+    local still = 0
+    for _, r in ipairs(watching.rows) do
+        if r.kind == "sect" then still = still + 1 end
+    end
+    check("and the other four parts are still there", still == 5,
+          still .. " parts")
+    menu.spectate = false
 
     menu.builds = {}
     _G.sim = kept_core
