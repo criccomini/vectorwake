@@ -619,8 +619,8 @@ def body_board():
     The tray is still drawn, because the purse is a fact about the ship rather
     than about the page, and nothing here costs a credit on the shipped
     roster: every hull's flight step is zero."""
-    rows = [carousel("Apex", "Long and narrow, with a larger broadside "
-                     "target")]
+    rows = [carousel("Apex", "Second fastest, and nothing about it "
+                     "is a weakness")]
     for name, share in zip(STATS, shares("Apex")):
         rows.append(stat_line(name, share))
     return board(1440, 810, "body", rows, seed=3,

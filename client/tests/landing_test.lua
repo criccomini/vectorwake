@@ -210,7 +210,9 @@ local BODY = {
     label = "body", class = 1, free = 2, credits = 7,
     rows = {
         {kind = "art", label = "Wedge", value = 1, cls = 1, here = true,
-         at = 1, pages = 8},
+         at = 1, pages = 8,
+         note = "Slow and hard to turn, behind a fused blast and six "
+             .. "fragments"},
         {kind = "stat", label = "speed", share = 0.2},
         {kind = "stat", label = "thrust", share = 0.14},
         {kind = "stat", label = "turn", share = 0.09},
@@ -860,6 +862,34 @@ do
     check("the ship turns about the axis up the screen",
           w1 < w0 * 0.2 and math.abs(h1 - h0) < 2,
           string.format("%.0fx%.0f then %.0fx%.0f", w0, h0, w1, h1))
+    frame(1440, 810, {land = land_in(BODY), col_open = "ship"})
+
+    -- The hull's own line stands under its name, and it wraps to the glass
+    -- rather than running off it: the longest of them is wider than a phone's
+    -- panel, and a centred run has no edge to be cut against.
+    frame(390, 844, {land = land_in(BODY), col_open = "ship"})
+    -- The glass is the window less its margin, capped, and the type stands
+    -- the row's own inset inside that.
+    local edge_l = 14 + 14
+    local edge_r = 390 - 14 - 14
+    local over, lines, shouted = nil, 0, nil
+    for _, t in ipairs(words()) do
+        if t.s:find("Slow and") or t.s:lower():find("fragments") then
+            lines = lines + 1
+            local half = #t.s * t.px * 0.3 / 2
+            if t.x - half < edge_l or t.x + half > edge_r then over = t.s end
+            -- And every line after the first is drawn raw, because the
+            -- sentence was cased once before it was broken. Cased again on
+            -- the way out, a wrapped line comes back with a capital in the
+            -- middle of the sentence.
+            if lines > 1 and t.s:sub(1, 1):match("%u") then shouted = t.s end
+        end
+    end
+    check("the hull's line wraps to the glass on a phone",
+          lines > 1 and over == nil,
+          tostring(over) .. " / " .. lines .. " lines")
+    check("and the line it wrapped onto is not capitalized",
+          shouted == nil, tostring(shouted))
     frame(1440, 810, {land = land_in(BODY), col_open = "ship"})
 
     -- Sitting out is the page past the roster: no ship to draw, and the

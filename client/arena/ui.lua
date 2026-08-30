@@ -4453,10 +4453,18 @@ end
 -- nearest a thumb stay where they are. Over the room it has it takes the room
 -- and scrolls inside it, which is what the ship page and the settings page
 -- have always done.
-local function panel_geom(want)
+-- How wide a panel comes out at this window, which the height has to know
+-- before the geometry is worked out: a sentence that wraps is a row that
+-- grows, and what it wraps to is the glass it is drawn on.
+local function panel_width()
     local margin = PANEL_MARGIN * F.scale
     local span = F.w - F.safe_l - F.safe_r - 2 * margin
-    local w = math.min(span, (M.compact and 440 or PANEL_MAX) * F.scale)
+    return math.min(span, (M.compact and 440 or PANEL_MAX) * F.scale)
+end
+
+local function panel_geom(want)
+    local margin = PANEL_MARGIN * F.scale
+    local w = panel_width()
     local mid = F.safe_l + (F.w - F.safe_l - F.safe_r) / 2
     local room = panel_room()
     local h = math.min(want or room, room)
@@ -4734,6 +4742,14 @@ local HULL_TURN = 11
 -- How large a hull is drawn, as the radius of the circle that holds it.
 local HULL_ART_R = 78
 
+-- The hull's own line, broken to the glass it is drawn on, and never nothing:
+-- the height and the drawing both count these, so an absent sentence is an
+-- empty list rather than a nil to guard twice.
+local function art_lines(note, kw)
+    if not note or note == "" then return {} end
+    return pages.note_lines(note, kw - 2 * M.ROW_INSET * F.scale) or {}
+end
+
 -- One hull, turning on its own vertical axis, drawn the way the arena draws
 -- one.
 --
@@ -4908,9 +4924,12 @@ local function land_row(kx, kw, y, h, r)
         local col = r.here and pal.FRIEND or pal.INK
         local a = (r.here and not on) and LIT.breath() or 1
         -- The name and the hull's own line under the drawing, and the
-        -- drawing over what is left.
+        -- drawing over what is left. The line wraps to the glass rather than
+        -- running off it: at a phone's measure the longest of them is wider
+        -- than the panel, and a centred run has no edge to be cut against.
+        local lines = art_lines(r.note, kw)
         local nameh = 30 * F.scale
-        local noteh = r.note and 22 * F.scale or 0
+        local noteh = #lines * pages.NOTE_LINE * F.scale
         local mid = y + (h - nameh - noteh) / 2
         if r.cls then
             hull_art(kx + kw / 2, mid, r.cls,
@@ -4920,9 +4939,16 @@ local function land_row(kx, kw, y, h, r)
         txt(r.label, kx + kw / 2, y + h - noteh - nameh / 2,
             TYPE.LEAD * F.scale, pal.a(col, a), "center", MENU_FONT,
             r.value ~= "spectate")
-        if r.note then
-            txt(r.note, kx + kw / 2, y + h - noteh / 2, TYPE.BODY * F.scale,
-                pal.READ, "center", MENU_FONT)
+        local ny = y + h - noteh + pages.NOTE_LINE * F.scale / 2
+        for _, line in ipairs(lines) do
+            -- Raw, because `note_lines` cased the sentence once before it
+            -- broke it. Left to `txt` the case is applied to each line as it
+            -- is drawn, and a sentence that wrapped comes back with a capital
+            -- in the middle of itself: "behind a fused blast and six /
+            -- Fragments".
+            txt(line, kx + kw / 2, ny, TYPE.BODY * F.scale, pal.READ,
+                "center", MENU_FONT, true)
+            ny = ny + pages.NOTE_LINE * F.scale
         end
         -- The two arrows, at the glass's own edges and level with the middle
         -- of the ship rather than with the row: what they turn is the
@@ -5008,7 +5034,10 @@ end
 -- one, the roster's column head is a band, and the hairline over the reset is
 -- the rule the account list already draws between its two groups.
 function pages.land_row_h(r, drh)
-    if r.kind == "art" then return 228 * F.scale end
+    if r.kind == "art" then
+        return (198 + #art_lines(r.note, panel_width()) * pages.NOTE_LINE)
+            * F.scale
+    end
     if r.kind == "bars" then return 34 * F.scale end
     if r.kind == "stat" then return 26 * F.scale end
     if r.kind == "rule" then return 9 * F.scale end

@@ -201,22 +201,31 @@ local CAPS = {{0, "display"}, {60, "60 a second"}, {30, "30 a second"}}
 -- and a guard written against a table declared below it is not a guard: Lua
 -- resolves the name at compile time, so it would read a nil global and admit
 -- everything.
--- The roster, as a name, a silhouette and what that silhouette costs you.
+-- The roster, as a name and what flying it is like.
 --
--- These used to describe stats: the lightest bar, the biggest bomb, no bomb
--- rack. None of it was true of the simulation and all of it is false now on
--- purpose. Every hull flies alike, climbs alike and holds alike; what differs
--- is the shape it puts between a bullet and the pilot, and since weapons test
--- the oriented rectangle rather than a box drawn round it, that shape is a
--- real number in a real fight. So the sentence describes the shape.
+-- The sentence described the silhouette for a long time, and the reason it
+-- did has since stopped being true. Every hull flew alike then: a kit was
+-- thirty points and thirty points had to buy the same ship whatever you were
+-- sitting in, so one flight row stood for all seven and the only thing that
+-- differed was the shape between a bullet and the pilot. There is no kit to
+-- be fair about any more, the hulls have their engines back (see `flight` in
+-- sim/src/baseline.c), and a page that says a Cipher is long and narrow while
+-- drawing a long narrow ship above the sentence is saying twice what the
+-- drawing says once.
+--
+-- So it is what the numbers are again, and this time they are numbers.
+-- Written off docs/design/ships.md and checkable against the tables in
+-- baseline.c: Cipher is the fastest and the only hull with no bomb, Anvil the
+-- slowest with the deepest pool and the hardest round, Lattice the weakest
+-- gun and the deepest rack.
 local HULLS = {
-    {"Apex", "dart", "long and narrow, with a larger broadside target"},
-    {"Wedge", "delta", "a wide delta that turns edge-on to shrink"},
-    {"Chord", "bow", "the widest and shortest hull, almost entirely beam"},
-    {"Anvil", "slab", "blunt and square, with no especially small angle"},
-    {"Cipher", "knife", "the longest and narrowest hull in the roster"},
-    {"Facet", "wedge", "a compact pentagon on a square footprint"},
-    {"Lattice", "cross", "a square truss that turns anywhere it fits"},
+    {"Apex", "Second fastest, and nothing about it is a weakness"},
+    {"Wedge", "Slow and hard to turn, behind a fused blast and six fragments"},
+    {"Chord", "Turns inside everything and outruns nothing"},
+    {"Anvil", "The deepest pool and the hardest round, on the slowest hull"},
+    {"Cipher", "The fastest hull in the game, and the only one with no bomb"},
+    {"Facet", "Five rounds off two barrels, fanned and bouncing"},
+    {"Lattice", "The weakest gun in the roster and the deepest rack"},
 }
 
 local SAVE = sys.get_save_file("vectorwake", "pilot")
@@ -860,7 +869,7 @@ function M.sect_rows(cls, sect, at)
                                -- Nothing had ever drawn it: the page that
                                -- named a hull was a row, and a row of a list
                                -- has no second line to put a sentence on.
-                               note = hull and hull[3] or h.note}
+                               note = hull and hull[2] or h.note}
             for i, name in ipairs(FLIGHT_NAMES) do
                 if h.bars then
                     rows[#rows + 1] = {kind = "stat", label = name,

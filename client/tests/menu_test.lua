@@ -1489,6 +1489,30 @@ do
           #stats == 5 and stats[1] == "speed" and stats[5] == "recharge"
           and type(body[2].share) == "number",
           table.concat(stats, " "))
+    -- Every hull says what flying it is like, which is what that sentence is
+    -- for now. It described the silhouette while every hull flew the same
+    -- row; they have their own engines back, and a page that draws the shape
+    -- above the sentence does not need the sentence to describe it.
+    local said = {}
+    for at = 0, 6 do
+        local art = menu.sect_rows(0, "body", at)[1]
+        said[#said + 1] = art.note or ""
+    end
+    check("every hull says what flying it is like", #said == 7
+          and said[5]:find("fastest") ~= nil and said[4]:find("slowest") ~= nil
+          and said[7]:find("rack") ~= nil, said[5])
+    -- And none of them is about the shape any more, which is the drawing's
+    -- job on that page.
+    local shaped = nil
+    for _, line in ipairs(said) do
+        for _, word in ipairs({"narrow", "delta", "pentagon", "square",
+                               "silhouette", "broadside"}) do
+            if line:lower():find(word) then shaped = line end
+        end
+    end
+    check("and none of them describes its shape", shaped == nil,
+          tostring(shaped))
+
     -- Turning wraps at either end, and sitting out is the page past the
     -- roster: no ship to draw, and a sentence where one would have been.
     check("the carousel wraps at either end",

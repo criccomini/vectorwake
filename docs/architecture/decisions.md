@@ -5996,3 +5996,52 @@ width to shrink while the height does not, which fails on the spin it
 replaced (`104x130 then 130x104`), and asks what a press on the ship, on an
 arrow and on a section row each resolve to, which fails on the priority this
 decision corrects (`panel_hold`).
+
+## 115. A hull's line is about how it flies
+
+**Status:** accepted, replacing the sentence [decision
+114](#114-the-carousel-draws-the-ship-and-the-ship-takes-the-press) drew
+
+**Decision:** the sentence under a hull on the carousel says what flying it is
+like rather than what it is shaped like. The Cipher is the fastest hull in the
+game and the only one with no bomb; the Anvil has the deepest pool and the
+hardest round on the slowest hull; the Lattice has the weakest gun in the
+roster and the deepest rack. The shape word beside each name is gone with the
+shape sentence, nothing having read it.
+
+A sentence that wraps is drawn raw.
+
+**Why:** Chris asked for it, and the reason the sentence described the shape
+had already stopped being true.
+
+It said so itself: "these used to describe stats, none of it was true of the
+simulation, every hull flies alike, so the sentence describes the shape". That
+was right when it was written. A kit was thirty points and thirty points had
+to buy the same ship whatever you were sitting in, so one flight row stood for
+all seven and the shape was the only thing that differed. There is no kit to
+be fair about any more and the hulls have their engines back, which
+`sim/src/baseline.c` says in as many words. Seven distinct rows, and every one
+of the five columns has a hull at the floor and a hull at the top.
+
+The carousel finished the argument. A page that draws a long narrow ship at
+seventy-eight points, turning, and puts "long and narrow" underneath is saying
+twice what the drawing says once. The sentence is the one thing on that page
+that can say what the picture cannot.
+
+The raw drawing is a bug the wrap turned up. `pages.note_lines` cases a
+sentence once and then breaks it, and its own comment says why: left to `txt`,
+the case is applied per line as it is drawn. Drawn cased, the Wedge's line came
+out "behind a fused blast and six / Fragments", with a capital in the middle of
+itself. Only a phone wraps these, so only a phone showed it.
+
+**Cost:** seven sentences to keep true as the roster moves, where the shape
+ones were true as long as the polygons were. They are checkable, at least:
+every claim here is a row in `baseline.c` or a line of `docs/design/ships.md`.
+
+**Verified:** `menu_test` asks all seven for a sentence, holds the three that
+name a superlative to it, and fails if any of them goes back to describing a
+silhouette. `landing_test` draws the longest at a phone's measure and holds it
+inside the glass on more than one line with no capital on the second, which
+fails on the cased drawing with "Fragments". Photographed: the Chord reads
+"Turns inside everything and outruns nothing" over a full turn bar and a speed
+stub, which is its row in the flight table.
