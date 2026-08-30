@@ -1337,13 +1337,19 @@ do
           word("PYLON") == nil and word("CAISSON") == nil,
           "a name is drawn where the row has no width for one")
     check("and both figures", word("3") ~= nil and word("5") ~= nil)
-    -- The far end of the row is nothing. The link meter stood out here until
-    -- it went into the menu's head and the dial came up into the corner it
-    -- left, and the dial itself now waits for a seat. Neither draws a caption,
-    -- so what answers for both is the box each would publish.
-    check("and nothing in the far corner of the row",
-          box("debug") == nil and box("map") == nil,
-          "an instrument is still on the landing's top row")
+    -- The far end of the row is the dial's link meter, and the line under it
+    -- is empty. The stands are a live connection like any other, so that
+    -- reading is drawn out here; the instrument it stands over is about a
+    -- seat, and there is no seat. The meter draws no caption, so what answers
+    -- for it is the box it publishes over its bars.
+    check("the link meter stands at the far end of the row",
+          box("debug") ~= nil, "no meter on the landing")
+    check("with nothing under it", box("map") == nil,
+          "the dial is still on the landing")
+    -- And the half of that strip that is captioned where you are goes with the
+    -- instrument. POS over a stranger's tiles is the one reading on this
+    -- screen that would be wrong rather than merely idle.
+    check("and no POS over a screen with no you", word("POS") == nil)
 
     -- And the band is a reading rather than a control. It says what the fight
     -- behind the name is doing; the roster it opens everywhere else is a list
@@ -1383,6 +1389,7 @@ check("and no name over the fight they are already in",
 -- connection with no seat waiting at the end of it, so this is the whole of
 -- what "before you have joined" means.
 check("and a radar over a room they are in", box("map") ~= nil)
+check("and POS over the corner it stands in", word("POS") ~= nil)
 check("and a band that opens the roster", box("details") ~= nil)
 frame(1440, 810, {landing = false, details = true})
 check("and the board itself when they ask for it", word("PILOTS") ~= nil)

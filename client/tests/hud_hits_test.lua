@@ -226,13 +226,13 @@ for i = 1, 3 do
 end
 check("the sweep found ships to press on", tested > 0)
 
--- --- the debug readout closes itself ---------------------------------------
+-- --- the debug readout opens on the meter and closes on itself -------------
 
--- What opens it is the link meter in the menu's head: the panel that carries
--- the switch is shut over the readout the moment the readout appears,
--- and it lands under the dial besides. So the panel itself has to be the way
--- out, or a player who opened it has nothing to press but a control they have
--- to reopen a menu to reach. See dock_test.lua for the switch end of this.
+-- What opens it is the link meter over the dial, which is the one thing on
+-- screen already about the connection. What closes it is either that meter or
+-- the slab of numbers itself, because the readout lands under the dial and on
+-- a phone that is most of a screen from the four bars that put it there: a
+-- player who has finished reading has no reason to look back up in the corner.
 
 local function debug_boxes()
     local out = {}
@@ -244,15 +244,25 @@ end
 
 ui.debug = false
 frame()
-check("shut, the arena offers no way into it", #debug_boxes() == 0,
-      #debug_boxes() .. " boxes")
+local shut = debug_boxes()
+check("shut, the meter is the one way into it", #shut == 1,
+      #shut .. " boxes")
+if shut[1] then
+    -- Pressed on the bars themselves, at the right of the box: it runs left
+    -- to a gap short of them and on to the screen's edge at the other end, so
+    -- a thumb aimed at the corner cannot overshoot off the screen.
+    local act = press(shut[1].x + shut[1].w - 6,
+                      shut[1].y + shut[1].h / 2)
+    check("a press on the bars is what opens it", act == "debug",
+          "landed on " .. tostring(act))
+end
 
 ui.debug = true
 frame()
 local dbg = debug_boxes()
-check("open, the readout publishes the one box, its own", #dbg == 1,
-      #dbg .. " boxes")
-local panel = dbg[1]
+check("open, the readout publishes a box of its own beside the meter's",
+      #dbg == 2, #dbg .. " boxes")
+local panel = dbg[2]
 if panel then
     check("and it is a slab rather than a chip",
           panel.w > 100 and panel.h > 40,
@@ -261,6 +271,12 @@ if panel then
     local act = press(panel.x + panel.w / 2, panel.y + panel.h / 2)
     check("a press in the middle of it closes it", act == "debug",
           "landed on " .. tostring(act))
+    -- And the two do not stand on each other. The slab is published behind
+    -- everything, so a meter inside it would be unreachable by order alone.
+    check("the meter is clear of the slab it opened",
+          dbg[1].y + dbg[1].h <= panel.y,
+          string.format("meter ends %.0f, slab starts %.0f",
+                        dbg[1].y + dbg[1].h, panel.y))
 end
 ui.debug = false
 
@@ -347,7 +363,7 @@ end
 
 frame({menu_open = true})
 check("the map is not clickable under the menu", box("map") == nil)
-check("the debug readout is not clickable under the menu", box("debug") == nil)
+check("the link meter is not clickable under the menu", box("debug") == nil)
 ui.debug = true
 frame({menu_open = true})
 check("nor is the open readout under the menu", box("debug") == nil)
