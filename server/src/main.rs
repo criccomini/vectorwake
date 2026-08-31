@@ -8,6 +8,7 @@
 
 mod ai;
 mod arena;
+mod bodies;
 mod bots;
 mod calibrate;
 mod catalog;
@@ -352,6 +353,165 @@ fn run_calibration_diagnostic() {
 ///
 /// A mirror on purpose: both seats are the same hull, so the only difference
 /// in the room is how the credits were spent.
+/// `calibrate bodies <per_side> <pairs> <zone> <out.jsonl> [stratum]`: the
+/// roster measured with the build randomized under it.
+///
+/// The hull tournament flies every body on the identical arrival build, which
+/// since decision 121 is every body flying one seventh of the question. This
+/// draws a build per seat out of the whole legal space, plays each lineup
+/// twice with the sides swapped, and asks whether any body's win rate leaves
+/// a band declared in advance.
+///
+/// Equivalence rather than difference, because "no significant difference"
+/// over a small sample is a statement about the sample. `bodies::MARGIN` is
+/// the band and the TOST family is Holm-adjusted across the seven, so what
+/// comes out is one claim about the roster.
+///
+/// With no `pairs`, runs the pilot: enough to measure the pair variance and
+/// print the sample size the margin actually needs.
+fn run_body_balance() {
+    let per_side: usize = std::env::args()
+        .nth(3)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(4);
+    let pairs: u32 = std::env::args()
+        .nth(4)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let zone = std::env::args().nth(5).unwrap_or_else(|| "melee".into());
+    let out = std::env::args().nth(6);
+    let only = std::env::args().nth(7);
+
+    let tuning = if zone == "baseline" {
+        None
+    } else {
+        let cat = match catalog::load("catalog") {
+            Ok(c) => c,
+            Err(e) => {
+                println!("bodies: {e}");
+                std::process::exit(1);
+            }
+        };
+        let Some(def) = cat.zone(&zone) else {
+            println!("bodies: no zone named {zone:?} in the catalog");
+            std::process::exit(1);
+        };
+        Some(def.arena.clone())
+    };
+
+    let world = sim::World::new(1);
+    let builds = bodies::builds(&world);
+    let rooms = bodies::rooms(per_side, "catalog/zones/melee");
+    if rooms.is_empty() {
+        println!("bodies: no rooms for {per_side}v{per_side}");
+        std::process::exit(1);
+    }
+    let names: Vec<&str> = rooms.iter().map(|r| r.name.as_str()).collect();
+    println!(
+        "bodies {per_side}v{per_side} under {zone} tuning on {}: {} builds in the draw",
+        names.join(", "),
+        builds.len()
+    );
+
+    // No count is the pilot: a short run whose only job is to say how long
+    // the real one has to be.
+    let pilot = pairs == 0;
+    let count = if pilot { 60 } else { pairs };
+    let mut lines = Vec::new();
+    for stratum in bodies::STRATA {
+        if only.as_deref().is_some_and(|s| s != stratum.0) {
+            continue;
+        }
+        let began = std::time::Instant::now();
+        let mut got = bodies::run(
+            per_side,
+            count,
+            stratum,
+            &rooms,
+            tuning.as_ref(),
+            &builds,
+            true,
+        );
+        println!(
+            "  {} {} pairs in {:.0}s, {} seats",
+            stratum.0,
+            count,
+            began.elapsed().as_secs_f64(),
+            got.len()
+        );
+        lines.append(&mut got);
+    }
+
+    if pilot {
+        let (variance, needed) = bodies::plan(&lines);
+        let decided = lines.iter().filter(|l| l.decided).count() as f64 / lines.len() as f64;
+        println!(
+            "
+pilot: pair variance {variance:.4}, {:.0}% of matches decided",
+            decided * 100.0
+        );
+        // A body is only in a pair if the draw seats it, so the pairs a
+        // stratum needs is what it takes to give every body that many
+        // appearances: one minus the chance the draw misses it every seat.
+        let seats = (per_side * 2) as i32;
+        let n = sim::MAX_CLASSES as f64;
+        let appears = 1.0 - ((n - 1.0) / n).powi(seats);
+        println!(
+            "to resolve a {:.0}-point margin at power 0.90 with Holm over seven bodies: \
+             {needed} pairs a body, which at {:.0}% appearance is {:.0} pairs a stratum",
+            bodies::MARGIN * 100.0,
+            appears * 100.0,
+            needed as f64 / appears
+        );
+        return;
+    }
+
+    if let Some(path) = &out {
+        match std::fs::File::create(path) {
+            Ok(file) => {
+                use std::io::Write;
+                let mut file = std::io::BufWriter::new(file);
+                for line in &lines {
+                    let _ = writeln!(file, "{}", serde_json::to_string(line).unwrap_or_default());
+                }
+                println!("\nwrote {} seats to {path}", lines.len());
+            }
+            Err(e) => println!("bodies: {path:?} will not open: {e}"),
+        }
+    }
+
+    for stratum in bodies::STRATA {
+        let slice: Vec<bodies::SeatLine> = lines
+            .iter()
+            .filter(|l| l.stratum == stratum.0)
+            .cloned()
+            .collect();
+        if slice.is_empty() {
+            continue;
+        }
+        println!("\n{} skill, {per_side}v{per_side}:", stratum.0);
+        println!(
+            "{:<9} {:>6} {:>7} {:>15} {:>6} {:>6} {:>7} {:>7}",
+            "body", "seats", "win%", "family-wise 95%", "draw%", "k/d", "dmg", "holm p"
+        );
+        for row in bodies::analyze(&slice) {
+            println!(
+                "{:<9} {:>6} {:>6.1}% {:>7.1} to {:<5.1} {:>5.0}% {:>6.2} {:>7.0} {:>7.3}{}",
+                row.body,
+                row.seats,
+                row.win_rate * 100.0,
+                row.low * 100.0,
+                row.high * 100.0,
+                row.draws * 100.0,
+                row.kd,
+                row.damage_per_seat,
+                row.equivalence_p,
+                if row.equivalent { "" } else { "  outside" }
+            );
+        }
+    }
+}
+
 fn run_build_sweep() {
     let bouts: u32 = std::env::args()
         .nth(3)
@@ -750,8 +910,10 @@ async fn main() {
             run_build_sweep();
         } else if std::env::args().nth(2).as_deref() == Some("teams") {
             run_team_tournament();
+        } else if std::env::args().nth(2).as_deref() == Some("bodies") {
+            run_body_balance();
         } else {
-            println!("calibrate needs one of: diagnostics, pilots, hulls, builds, teams");
+            println!("calibrate needs one of: diagnostics, pilots, hulls, builds, teams, bodies");
             std::process::exit(2);
         }
         return;

@@ -234,6 +234,54 @@ balance for every legal kit. The same `calibrate` command also provides `hulls`
 and `teams` measurements for other questions that need the shipped map rotation
 or more than one pilot per side.
 
+## Measure the bodies
+
+```sh
+VW_POOL_DIGEST=sha256:... VW_META_VERIFY=... \
+  vectorwake-server calibrate bodies 4 0 melee          # the pilot
+VW_POOL_DIGEST=sha256:... VW_META_VERIFY=... \
+  vectorwake-server calibrate bodies 4 1200 melee team.jsonl
+```
+
+The question decision 121 made answerable. A hull is a flight row and a
+footprint now, so holding the build distribution fixed and varying the body
+leaves nothing but the body in the difference.
+
+One match seats bodies drawn at random, deals each seat a build drawn
+uniformly from every legal seven-credit vector (5,134 of them, enumerated and
+checked back through the core's own `sim_kit_fit`), and plays the whole thing
+twice with the sides swapped. The pair is the unit of evidence: its two arms
+share a map, a lineup and a build assignment, so side and spawn asymmetry
+cancels inside it and neither arm is evidence on its own. The bootstrap
+resamples whole pairs for that reason, and takes its family-wise critical value
+from the largest standardized deviation any body shows in a replicate.
+
+Formats get the rooms they can be decided in. A 1v1 runs in the pit, because
+two ships in twenty-four thousand open tiles of a melee map mostly never meet
+and the match reports that as a draw; the pit flatters anything wanting to be
+close and charges nothing for being slow, which is the standing limit on what
+a duel number says. A 4v4 runs the zone's own five-map rotation.
+
+Skill is a stratum rather than a draw. All eight seats fly at 0.15, 0.50 or
+0.90, run separately, because body balance genuinely differs along that dial
+and a body that grades even on average can still be dominant against beginners.
+
+`bodies 4 0` is the pilot: sixty pairs a stratum, whose only job is to measure
+the pair variance and print the sample size the declared margin needs. Balance
+is claimed as equivalence, not as an absence of significance, so the margin
+comes first: `bodies::MARGIN` is five win-rate points, the TOST family is
+Holm-adjusted across the seven bodies, and a body is certified only when its
+adjusted p clears 0.05. A wide interval reads as `outside`, which means the
+sample is too small to certify rather than that the body is broken.
+
+Every seat is written to JSONL with its pair, arm, map, stratum, body, build
+index and outcome, so slicing by build cluster afterwards is a query rather
+than another run.
+
+What this cannot say: it measures balance for these bots. Bots under-exploit
+some traits, declining a fight on a fast thin hull most of all, so a body can
+grade even here and still be wrong in a person's hands.
+
 ## Public transport
 
 A page served over HTTPS may connect only to secure transports. For a standalone

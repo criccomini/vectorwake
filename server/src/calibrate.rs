@@ -955,6 +955,7 @@ fn team_match_with_options(
     tuning: Option<&config::ArenaConfig>,
     map: &Arena,
     options: TeamMatchOptions,
+    kits: Option<&[[u8; sim::SLOT_COUNT]]>,
 ) -> (Vec<Seat>, bool) {
     let per_side = lineup.len() / 2;
     let Some(mut world) = team_world(salt, tuning, map) else {
@@ -986,6 +987,18 @@ fn team_match_with_options(
             team,
             ..Default::default()
         });
+    }
+    // Before the restart, which is what fills a rack: `sim_restart` deals
+    // each ship from its own kit with ammunition, so a build set here is the
+    // one the seat opens the match on.
+    if let Some(kits) = kits {
+        for (i, &ship) in ships.iter().enumerate() {
+            if let Some(kit) = kits.get(i) {
+                if !world.set_ship_kit(ship, kit) {
+                    return (Vec::new(), false);
+                }
+            }
+        }
     }
     if !dress_team(&mut world) {
         return (Vec::new(), false);
@@ -1111,6 +1124,34 @@ pub fn team_match(
             tick_limit: MATCH_TICKS,
             kill_target_per_player: Some(KILL_TARGET),
         },
+        None,
+    )
+}
+
+/// The same match, with a build dealt to every seat.
+///
+/// What the body tournament needs and the hull one does not: since decision
+/// 121 every seat opens on the identical arrival build, so a match that does
+/// not vary them measures one build rather than the bodies under all of them.
+pub fn team_match_with_kits(
+    lineup: &[u8],
+    skill: f32,
+    salt: u32,
+    tuning: Option<&config::ArenaConfig>,
+    map: &Arena,
+    kits: Option<&[[u8; sim::SLOT_COUNT]]>,
+) -> (Vec<Seat>, bool) {
+    team_match_with_options(
+        lineup,
+        skill,
+        salt,
+        tuning,
+        map,
+        TeamMatchOptions {
+            tick_limit: MATCH_TICKS,
+            kill_target_per_player: Some(KILL_TARGET),
+        },
+        kits,
     )
 }
 
