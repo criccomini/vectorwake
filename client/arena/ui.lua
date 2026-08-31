@@ -4281,17 +4281,22 @@ end
 -- stop here that keeps its promise by doing something instead should not be
 -- making it.
 local function land_stop(x, y, w, h, label, value, action, lit, stacked, o)
+    o = o or {}
     -- Where a press would land, at the weight every row of the menu is lit
     -- at. Under the outline rather than over it: the edge is the brighter
     -- half of the same signal, and a wash laid over it would mute it.
-    local hot = M.col_sel == action
+    --
+    -- What the box publishes and not the action alone. The landing names its
+    -- three stops apart, so the action was enough out there; the column's
+    -- three all publish `menu_stop` and tell themselves apart by the value,
+    -- and a cursor on any one of them lit all three at once.
+    local hot = M.col_sel == action and M.col_sel_value == o.value
     frost(x, y, w, h)
     rect(x, y, w, h, pal.a(pal.BTN_BG, 0.6))
     if hot then rect(x, y, w, h, pal.a(pal.FRIEND, LIT.CURSOR)) end
     key_box(x, y, w, h, nil,
             (lit or hot) and pal.a(pal.FRIEND, 0.8)
                 or pal.a(pal.RADAR_TILE, 0.75))
-    o = o or {}
     local raw = o.raw
     -- The measure every panel in the game insets its names by. A stop was on
     -- twelve, which is the exact number decision 104 unified away on the

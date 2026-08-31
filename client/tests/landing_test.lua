@@ -1274,6 +1274,19 @@ do
     check("a walk to the zone stop lights what a hover on it lights",
           lit(box("land_zone"), CURSOR),
           "walked to " .. tostring(ui.col_sel))
+
+    -- --- and a panel opens standing on its own head -----------------------
+    --
+    -- The head is a row like the rows under it, so it lights like one, and it
+    -- is where a panel opens: the stop it climbed off has gone out through
+    -- the bottom edge, so a panel that opened with nothing lit opened with
+    -- the cursor on a control that is no longer on the screen. `land_act`
+    -- puts it here; this is the half that says it can be seen.
+    for _, open in ipairs({"account", "zone", "ship"}) do
+        frame(1440, 810, {col_open = open, sel = "land_back"})
+        check("the " .. open .. " panel lights its way back",
+              lit(box("land_back"), CURSOR))
+    end
 end
 
 -- --- the keyboard walks the same controls -----------------------------------
@@ -1512,6 +1525,144 @@ do
         check("and turning past the last one sits out",
               flew[2] == "spectate" and flew.applied == "spectate",
               tostring(flew[2]))
+    end
+
+    -- Where a panel opens standing, which is on its own head. The stop it
+    -- climbed off goes out through the bottom edge with the rest of the
+    -- column, so a panel that opened with the cursor still on that stop
+    -- opened with nothing on it lit: the first arrow had to find the top of a
+    -- page already on the screen, and a pointer had nothing saying which
+    -- level of the stack it was reading. Both the branch and the helper it
+    -- calls are the file's own, pulled out and run.
+    local head = src:match("local function land_open%(%)(.-)\nend\n")
+    check("the arena has a land_open to run", head ~= nil)
+    local function branch(pattern, env)
+        local part = src:match(pattern)
+        if not part then return nil end
+        local chunk = loadstring(
+            "return function(self, action, value)" .. part .. "\nend", "branch")
+        if not chunk then return nil end
+        setfenv(chunk, env)
+        return chunk()
+    end
+    if head then
+        local ui_stub = {}
+        local env = {ui = ui_stub, sfx = {ui = function() end},
+                     menu = {panel_home = function() return 0 end},
+                     land_shut = function() ui_stub.shut = true end}
+        local on_head = loadstring("return function()" .. head .. "\nend",
+                                   "head")
+        setfenv(on_head, env)
+        env.land_open = on_head()
+
+        -- A stop, opening its panel.
+        local stops = branch(
+            '(\n    if action == "land_account" or action == "land_zone".-'
+            .. '\n    end\n)', env)
+        check("the arena has a branch for the landing's stops", stops ~= nil)
+        if stops then
+            for _, open in ipairs({"account", "zone", "ship"}) do
+                ui_stub.col_open = nil
+                ui_stub.col_sel, ui_stub.col_sel_value = "land_" .. open, nil
+                stops(nil, "land_" .. open, nil)
+                check("the " .. open .. " stop opens on the way back",
+                      ui_stub.col_open == open
+                      and ui_stub.col_sel == "land_back"
+                      and ui_stub.col_sel_value == nil,
+                      tostring(ui_stub.col_sel))
+            end
+            -- And the same press again puts it away, which leaves the cursor
+            -- on the stop rather than on a head that has gone.
+            ui_stub.col_open, ui_stub.shut = "zone", nil
+            stops(nil, "land_zone", nil)
+            check("while the same stop again shuts it", ui_stub.shut == true)
+        end
+
+        -- One of the ship's five parts, opened over the menu that names it:
+        -- the same rule a level further in.
+        local sect = branch('(\n    if action == "land_sect" then.-'
+                            .. '\n    end\n)', env)
+        check("the arena has a branch for a ship's parts", sect ~= nil)
+        if sect then
+            ui_stub.col_sel, ui_stub.col_sel_value = "land_sect", "guns"
+            sect(nil, "land_sect", "guns")
+            check("a section opens on the way back too",
+                  ui_stub.col_sect == "guns"
+                  and ui_stub.col_sel == "land_back",
+                  tostring(ui_stub.col_sel))
+        end
+
+        -- And out of one, which leaves the cursor on the part it was opened
+        -- from: what took the panel's place on the screen is what is lit.
+        local back = branch(
+            '(\n    if action == "land_back" or action == "land_shut" then.-'
+            .. '\n    end\n)', env)
+        check("the arena has a branch for the way back", back ~= nil)
+        if back then
+            ui_stub.col_open, ui_stub.col_sect = "ship", "guns"
+            ui_stub.col_sel, ui_stub.col_sel_value = "land_back", nil
+            back(nil, "land_back", nil)
+            check("out of a section stands on the part it came from",
+                  ui_stub.col_sect == nil
+                  and ui_stub.col_sel == "land_sect"
+                  and ui_stub.col_sel_value == "guns",
+                  tostring(ui_stub.col_sel) .. " "
+                  .. tostring(ui_stub.col_sel_value))
+        end
+    end
+
+    -- And the pointer, which shares the cursor with the arrows and can take it
+    -- back. It has to move to do that. It did not have to: the boxes were read
+    -- again on every frame, so the panel a stop opened under a hand nobody was
+    -- touching handed the cursor to whatever landed under it, and the head the
+    -- panel opened on went dark on the frame after it lit.
+    local hover = src:match("local function land_hover%(x, y, vh%)(.-)\nend\n")
+    check("the arena has a land_hover to run", hover ~= nil)
+    if hover then
+        local under = "land_account"
+        local ui_stub = {pick = function() return {action = under} end}
+        local env = {
+            ui = ui_stub, touch = {used = false}, land_over = {},
+            LAND_HOT = {land_account = true, land_back = true,
+                        land_pick_account = true},
+        }
+        local chunk = assert(loadstring(
+            "return function(x, y, vh)" .. hover .. "\nend", "hover"))
+        setfenv(chunk, env)
+        local handler = chunk()
+
+        check("the pointer takes the cursor where it lands",
+              handler(100, 200, 810) == true
+              and ui_stub.col_sel == "land_account")
+        -- The stop is gone and a panel row is under the same pixels now.
+        under = "land_pick_account"
+        check("a hand lying still does not answer for the screen moving",
+              handler(100, 200, 810) == false
+              and ui_stub.col_sel == "land_account",
+              tostring(ui_stub.col_sel))
+        check("and moving it takes the cursor again",
+              handler(101, 200, 810) == true
+              and ui_stub.col_sel == "land_pick_account",
+              tostring(ui_stub.col_sel))
+
+        -- Except for the wheel, which is the one thing that puts a different
+        -- control under a still hand: the rows slide and the pointer does not.
+        local slid = src:match("local function land_slid%(%)(.-)\nend\n")
+        check("the arena has a land_slid to run", slid ~= nil)
+        if slid then
+            local chunk2 = assert(loadstring(
+                "return function()" .. slid .. "\nend", "slid"))
+            setfenv(chunk2, env)
+            under = "land_back"
+            check("a notch of the wheel does not move the cursor by itself",
+                  handler(101, 200, 810) == false
+                  and ui_stub.col_sel == "land_pick_account")
+            chunk2()()
+            check("but it does ask again where the hand is",
+                  handler(101, 200, 810) == true
+                  and ui_stub.col_sel == "land_back",
+                  tostring(ui_stub.col_sel))
+        end
     end
 end
 
