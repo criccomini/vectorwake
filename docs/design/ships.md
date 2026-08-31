@@ -437,38 +437,56 @@ though Gantry still draws 71% of a mirror and a draw carries no information.
 Everything a build sweep says is worth less than its draw count suggests.
 Read the draw count before believing a flat table.
 
-Where the shipped roster stood, mean of the two rooms at 24 bouts a pair.
-Measured while each hull carried its own gun, bomb and profile, so the numbers
-are a record rather than a reading: the roster they rank no longer exists, and
-what a tournament measures now is flight. Rerun it before quoting any of this.
+Where the roster stands, off `calibrate bodies`: 99,600 seats over 14,100
+swapped pairs, with a build drawn uniformly per seat and the sides swapped
+inside every pair. Win rate, both arms, all three skill strata pooled.
 
-Where the shipped roster stands, mean of the two rooms at 24 bouts a pair:
-
-| hull | win% | pit | arena |
+| body | 1v1 | 4v4 | energy |
 |---|---:|---:|---:|
-| Anvil | 54.6 | 51.0 | 58.3 |
-| Lattice | 51.4 | 46.9 | 55.9 |
-| Cipher | 51.2 | 52.8 | 49.7 |
-| Wedge | 50.9 | 51.7 | 50.0 |
-| Chord | 49.7 | 51.7 | 47.6 |
-| Facet | 46.9 | 52.8 | 41.0 |
-| Apex | 45.4 | 43.1 | 47.6 |
+| Anvil | 69.0 | 60.2 | 2100 |
+| Lattice | 51.0 | 50.3 | 1750 |
+| Apex | 50.5 | 49.5 | 1500 |
+| Wedge | 48.0 | 51.2 | 1900 |
+| Chord | 45.6 | 50.8 | 1550 |
+| Cipher | 43.1 | 42.4 | 1400 |
+| Facet | 42.8 | 45.7 | 1400 |
 
-A row is 144 bouts and worth about eight points either way, so the order
-inside that band is not meaningful and the band is. It opened at 28 to 90.
+**The roster is not balanced, and the energy column is why.** Correlating win
+rate against each of the five flight stats across the seven bodies: energy
++0.89 in the team arm and +0.83 in the duel, recharge +0.55, and speed
+**negative** in both, at -0.75 and -0.48. Damage dealt is nearly flat across
+the roster, within ten per cent seat to seat, so every body lands about the
+same; what differs is which of them is still alive to land it. With decision
+121's weapons off the hulls, a 1400 to 2100 spread in the bar is the roster,
+and the anti-correlated speed that was supposed to pay for it pays nothing.
 
-The largest single correction was not a hull. Melee charged a whole base
-cooldown for every round past the first, which was written when spray was a
-rung on a shelf and a cheaper price made it an upgrade nobody could decline.
-Nobody buys spray now, so the same number was a tax on the three ships that
-have barrels, and it put all three in the bottom three on both rooms.
+At the declared five-point margin, tested as equivalence with the family
+Holm-adjusted across the seven, three bodies certify at every skill in the
+team arm: Apex, Wedge and Lattice. The Anvil is eight to thirteen points clear
+of even at every stratum and the Cipher five to nine points under it. The duel
+arm is worse in both directions, the Anvil reaching 80.6% at mid skill.
+
+The one thing that reading cannot settle is whether speed is worth nothing or
+whether these bots cannot use it. The Facet and the Cipher carry identical
+energy and recharge and differ only in speed, thrust, turn and footprint, and
+the slower of the two is three points better in both arms. Either being fast
+is genuinely worthless here, or a bot declines a fight badly enough that the
+hull built to choose its fights never gets to. The answer decides the fix:
+narrowing the energy spread if the first, and fixing the pilot before touching
+the table if the second.
+
+The intervals above are family-wise 95% and run about plus or minus 2.6 points
+in the team arm and 3.4 in the duel, so the order inside the middle of that
+table is not meaningful and the two ends of it are.
 
 ## Open questions
 
-Whether seven distinct ships is more roster than we can keep balanced. It is a
-harder problem than seven silhouettes on one flight row, and the bet is that a
-game where the ships are actually different is worth the work. The tournament
-harness exists so the answer is measured rather than argued.
+Whether seven distinct ships is more roster than we can keep balanced. The
+measurement above says not yet: three of the seven certify and two are a long
+way out. It is a harder problem than seven silhouettes on one flight row, and
+the bet is that a game where the ships are actually different is worth the
+work. The harness exists so the answer is measured rather than argued, and it
+now has an answer to argue with.
 
 Whether five rounds abreast is worth what it costs. The sweep found the spray
 ladder's top the most re-spent thing on the shelf: every build that beat a

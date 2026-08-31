@@ -1,0 +1,36 @@
+bodies 4v4 under melee tuning on maelstrom, gantry, warren, redoubt, ringworks: 5134 builds in the draw
+  low 1200 pairs in 1275s, 19200 seats
+  mid 1200 pairs in 919s, 19200 seats
+  high 1200 pairs in 657s, 19200 seats
+
+wrote 57600 seats to /tmp/claude-0/-home-user-vectorwake/d0f6adb4-27c2-556e-9f59-2c22f519d2ec/scratchpad/team.jsonl
+
+low skill, 4v4:
+body       seats    win% family-wise 95%  draw%    k/d     dmg  holm p
+Apex        2762   48.2%    45.6 to 50.9     10%   0.88 11833770   0.003
+Wedge       2796   51.4%    48.9 to 53.8     10%   1.20 11042791   0.000
+Chord       2732   48.0%    45.4 to 50.7     10%   0.80 11937955   0.005
+Anvil       2700   59.7%    57.1 to 62.2     10%   3.06 12006331   1.000  outside
+Cipher      2758   45.5%    42.7 to 48.2     10%   0.67 11539206   0.638  outside
+Facet       2690   46.7%    43.9 to 49.4      9%   0.82 11556884   0.167  outside
+Lattice     2762   50.7%    48.1 to 53.3     11%   1.12 11487715   0.000
+
+mid skill, 4v4:
+body       seats    win% family-wise 95%  draw%    k/d     dmg  holm p
+Apex        2744   50.8%    48.1 to 53.5      1%   0.94 14504916   0.000
+Wedge       2708   51.6%    48.9 to 54.4      1%   1.06 13571937   0.002
+Chord       2776   49.6%    46.9 to 52.3      1%   0.93 14723681   0.000
+Anvil       2740   62.9%    60.3 to 65.4      2%   1.54 15312743   1.000  outside
+Cipher      2790   40.9%    38.3 to 43.6      1%   0.80 13590785   1.000  outside
+Facet       2776   44.9%    42.2 to 47.5      1%   0.86 13778285   1.000  outside
+Lattice     2666   49.5%    46.7 to 52.4      1%   1.04 14109592   0.000
+
+high skill, 4v4:
+body       seats    win% family-wise 95%  draw%    k/d     dmg  holm p
+Apex        2714   49.4%    46.9 to 52.0      0%   0.97 12192508   0.000
+Wedge       2754   50.5%    48.0 to 53.1      0%   1.02 11384424   0.000
+Chord       2666   54.8%    52.2 to 57.5      0%   1.09 12995027   1.000  outside
+Anvil       2748   58.2%    55.5 to 60.8      0%   1.26 12071197   1.000  outside
+Cipher      2642   40.7%    38.0 to 43.4      0%   0.82 11416490   1.000  outside
+Facet       2860   45.7%    43.2 to 48.3      0%   0.88 11719388   0.875  outside
+Lattice     2816   50.5%    48.0 to 53.1      0%   1.01 11691258   0.000

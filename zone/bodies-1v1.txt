@@ -1,0 +1,36 @@
+bodies 1v1 under melee tuning on pit: 5134 builds in the draw
+  low 3500 pairs in 2062s, 14000 seats
+  mid 3500 pairs in 1681s, 14000 seats
+  high 3500 pairs in 1460s, 14000 seats
+
+wrote 42000 seats to /tmp/claude-0/-home-user-vectorwake/d0f6adb4-27c2-556e-9f59-2c22f519d2ec/scratchpad/duel.jsonl
+
+low skill, 1v1:
+body       seats    win% family-wise 95%  draw%    k/d     dmg  holm p
+Apex        1908   50.4%    47.4 to 53.4     31%   1.02 12028526   0.000
+Wedge       2014   48.9%    46.0 to 51.8     36%   0.97 11802836   0.001
+Chord       2026   45.6%    42.6 to 48.5     28%   0.86 11876292   0.919  outside
+Anvil       2062   59.9%    57.3 to 62.5     44%   1.73 12159860   1.000  outside
+Cipher      1992   45.1%    42.1 to 48.0     27%   0.82 11857227   0.960  outside
+Facet       1974   46.5%    43.6 to 49.4     32%   0.87 11838143   0.337  outside
+Lattice     2024   53.4%    50.6 to 56.2     37%   1.17 12044364   0.303  outside
+
+mid skill, 1v1:
+body       seats    win% family-wise 95%  draw%    k/d     dmg  holm p
+Apex        1968   51.1%    47.7 to 54.6      2%   1.01 12900063   0.009
+Wedge       1936   48.1%    44.6 to 51.6      3%   0.95 13493821   0.048
+Chord       1992   37.1%    33.7 to 40.4      2%   0.78 12057983   1.000  outside
+Anvil       1990   80.6%    77.8 to 83.3      3%   1.93 14854305   1.000  outside
+Cipher      2020   42.8%    39.4 to 46.3      2%   0.89 12368325   1.000  outside
+Facet       2050   39.1%    35.9 to 42.3      2%   0.81 12732302   1.000  outside
+Lattice     2044   51.6%    48.2 to 55.0      3%   1.03 13785772   0.025
+
+high skill, 1v1:
+body       seats    win% family-wise 95%  draw%    k/d     dmg  holm p
+Apex        1994   50.1%    46.5 to 53.7      0%   0.99 10675411   0.001
+Wedge       2002   46.9%    43.3 to 50.5      0%   0.96 10794498   0.388  outside
+Chord       1994   54.1%    50.5 to 57.7      0%   1.05 10835281   0.985  outside
+Anvil       2014   67.0%    63.7 to 70.3      1%   1.34 12034338   1.000  outside
+Cipher      2058   41.4%    38.1 to 44.8      0%   0.88 10185992   1.000  outside
+Facet       2010   42.8%    39.2 to 46.4      0%   0.88 10089480   1.000  outside
+Lattice     1928   47.7%    44.0 to 51.5      1%   0.97 11069106   0.139  outside
