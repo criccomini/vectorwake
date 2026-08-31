@@ -1073,12 +1073,12 @@ static void test_maps(const sim_settings *base) {
          * strength, so the rim is exactly where the setting says. */
         {
             int32_t rim = wc.wormhole_range / (SIM_TILE_PX * 256);
-            CHECK(rim == 76, "the baseline reaches 76 tiles");
+            CHECK(rim == 38, "the baseline reaches 38 tiles");
             static sim_state in, out;
             sim_init(&in, 1);
             sim_init(&out, 1);
-            int i2 = sim_spawn(&in, APEX, 0, 512 * 16, (512 + 74) * 16, 0, &wc);
-            int o2 = sim_spawn(&out, APEX, 0, 512 * 16, (512 + 78) * 16, 0, &wc);
+            int i2 = sim_spawn(&in, APEX, 0, 512 * 16, (512 + 36) * 16, 0, &wc);
+            int o2 = sim_spawn(&out, APEX, 0, 512 * 16, (512 + 40) * 16, 0, &wc);
             step_n(&in, &wc, 0, 0, 30);
             step_n(&out, &wc, 0, 0, 30);
             CHECK(in.ships[i2].vy < 0, "just inside the rim it still pulls");
