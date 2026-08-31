@@ -76,14 +76,34 @@
  * ceiling, and the Cipher gives back some of the refill lead the widened
  * spread handed it. Each hull keeps its rank in the column it was moved in:
  * the Anvil still has the slowest refill in the game and the Chord still has
- * the best turn, by nine points over the Facet rather than by thirty-nine. */
+ * the best turn, by four points over the Facet rather than by thirty-nine.
+ *
+ * That run fixed the Anvil and moved two rows too far, so the last two
+ * numbers here are a correction measured rather than modelled. The regression
+ * priced recharge at one to three win points a hundred units; the roster
+ * answered the moves at about four, so the Anvil's +160 bought seven points
+ * and the Cipher's -150 cost five and a half. Sizing the next pair off the
+ * response instead of the coefficient is what makes them 74 and 75 rather
+ * than another 150.
+ *
+ * The Cipher goes back up, having become the hull that was too weak. And the
+ * Chord pays in the refill rather than in the turn: its rotation is four
+ * points off the Facet's now, so there is nothing left to take there without
+ * ending what a Chord is, and its thrust turns out to buy nothing measurable
+ * at all -- energy, recharge and rotation explain 97% of the high-skill
+ * spread on their own and the Chord's residual is half a point.
+ *
+ * Dropping it under the Apex settles something older as well. Decision 123
+ * wants recharge rising as the bar falls, and the Chord was the one hull
+ * breaking that: more energy than an Apex and a faster refill too. At 750 the
+ * anti-correlation is monotonic across all seven for the first time. */
 static const sim_class_units flight[SIM_MAX_CLASSES] = {
     /*        speed        thrust        rotation       energy      recharge */
     /* Apex    */ {3332,0,3332, 205,0,205, 248,0,248, 1175,0,1175,  759,0, 759},
     /* Wedge   */ {2358,0,2358, 155,0,155, 209,0,209, 1525,0,1525,  589,0, 589},
-    /* Chord   */ {2219,0,2219, 215,0,215, 265,0,265, 1219,0,1219,  824,0, 824},
+    /* Chord   */ {2219,0,2219, 215,0,215, 265,0,265, 1219,0,1219,  750,0, 750},
     /* Anvil   */ {2010,0,2010, 145,0,145, 200,0,200, 1700,0,1700,  560,0, 560},
-    /* Cipher  */ {3750,0,3750, 200,0,200, 235,0,235, 1000,0,1000, 1000,0,1000},
+    /* Cipher  */ {3750,0,3750, 200,0,200, 235,0,235, 1000,0,1000, 1075,0,1075},
     /* Facet   */ {2567,0,2567, 175,0,175, 261,0,261, 1131,0,1131,  857,0, 857},
     /* Lattice */ {2636,0,2636, 165,0,165, 239,0,239, 1394,0,1394,  628,0, 628},
 };

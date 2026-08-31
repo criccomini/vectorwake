@@ -48,9 +48,9 @@ One row a hull, in the settings file's own units.
 |---|---:|---:|---:|---:|---:|
 | Apex | 3332 | 205 | 248 | 1175 | 759 |
 | Wedge | 2358 | 155 | 209 | 1525 | 589 |
-| Chord | 2219 | 215 | 265 | 1219 | 824 |
+| Chord | 2219 | 215 | 265 | 1219 | 750 |
 | Anvil | 2010 | 145 | 200 | 1700 | 560 |
-| Cipher | 3750 | 200 | 235 | 1000 | 1000 |
+| Cipher | 3750 | 200 | 235 | 1000 | 1075 |
 | Facet | 2567 | 175 | 261 | 1131 | 857 |
 | Lattice | 2636 | 165 | 239 | 1394 | 628 |
 
@@ -81,7 +81,7 @@ for it.
 
 The last two columns run against each other, and that is the roster's own
 trade. A deep bar refills slowly and a shallow one refills fast: the Anvil
-takes thirty seconds to fill and the Cipher ten, so the heavy wins the
+takes thirty seconds to fill and the Cipher nine, so the heavy wins the
 long fight and is slow to be ready for the next, and the knife loses any fight
 it stays in and is whole again almost at once. It is also the one thing here
 that makes speed worth having, since a fast refill only pays to a hull that
