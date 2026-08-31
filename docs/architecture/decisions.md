@@ -6513,3 +6513,63 @@ wormhole_top_speed`. State hashes moved, so `make -C sim golden` was rerun.
 459 server tests, clippy, fmt, and the 70 client Lua tests. Maelstrom's
 recipe was re-pinned and its map regenerated; quality is unchanged at 92.5,
 since the theme's fidelity denominator moved with the core it counts.
+
+## 126. The roster flies inside the original's bands
+
+**Status:** accepted
+
+**What:** four of the five flight columns get bounds, and they are the
+original's own. The Alpha Zone settings are eight ships climbing one ladder,
+so the span between what a ship arrives with and what a fully greened one
+reaches is everything anybody ever flew there: speed 2010 to 3750, rotation
+200 to 300, energy 1000 to 1700, recharge 400 to 1150. Ours are seven hulls
+that do not climb, so those become the edges of the roster instead.
+`sim_class_clamp` holds both ends of every ladder wherever a row is written,
+the zone-apply path included, and a zone asking for more gets the edge and a
+warning rather than a number that quietly did something else. Thrust keeps no
+bound: the original runs 15 to 19 across every ship and every upgrade, which
+is narrower than this roster wants and is the one column a bound would flatten
+rather than shape.
+
+Every row was then carried onto the bands by a straight linear rescale, and
+three of them were retuned afterwards to pay for what the rescale cost.
+
+**Why:** the roster had drifted past the game it is copying at both ends,
+running 2650 to 3900 on speed where the original never exceeded 3750, and
+1300 to 2100 on energy against a flat 1700. Bounds make that a rule rather
+than a habit, and they make it a rule a zone cannot leave.
+
+**Cost:** the rescale broke the balance, and the measurement is the record of
+putting it back. Nineteen certified cells fell to fourteen, because narrowing
+the energy spread an eighth while widening the recharge spread a third moved
+weight onto the refill, and because holding speed inside the band slowed the
+roster a sixth, which raised the price of turning. Rotation is worth -0.26 win
+points a hundred units at low skill, +6.76 at mid and +11.78 at high; energy
+and recharge explained 94% of the roster's spread before the rescale and 72%
+after. Two corrections got it back to nineteen: the Anvil off the recharge
+floor to 560, the Chord off the rotation ceiling to 265 and down to 750
+recharge, the Cipher to 1075. The first of the two overshot because it trusted
+the regression's one-to-three points a hundred over the roster's measured
+four, which is the lasting lesson: `calibrate bodies` fits seven bodies
+against three predictors, so it gives a direction and not a magnitude.
+
+The maps got 18.8% longer to cross, since the contact gate times the shortest
+home route against the median hull and that fell from 3050 to 2567. Only
+drydock lacked the headroom; its ceiling was carried across by the same ratio.
+The other recipes now allow less geometry than they were written to.
+
+**Verified:** three runs of `calibrate bodies` at 99,600 seats each, 1,200
+swapped pairs a stratum in the team arm and 3,500 in the duel. Team arm ends
+at nineteen of twenty-one with the high stratum the tightest band in the
+roster, 48.5 to 51.9. The duel arm is unchanged at eleven, Chord 35.5% and
+Cipher 60.1% at mid against the 36.7 and 62.6 already on record: a correction
+solved on the team arm arrives in the pit at roughly double strength, which
+decision 123 predicted and this measured twice. `make -C sim check` with the
+golden regenerated, 460 server tests, clippy and fmt.
+
+Two things fell out worth keeping. The Chord's thrust buys nothing measurable:
+energy, recharge and rotation explain 97% of the high-skill spread and its
+residual is half a point, so the hull at the top of the thrust column is not
+strong because of it. And the roster's energy-against-recharge anti-correlation
+is monotonic across all seven for the first time, the Chord having been the one
+hull with more energy than an Apex and a faster refill besides.
