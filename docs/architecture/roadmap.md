@@ -6,7 +6,7 @@
 |---|---|
 | M0 sim core and determinism | Done. Green in CI on x86-64, arm64, and WebAssembly |
 | M1 a ship on screen | Done. Web client at 60 fps; flight and energy confirmed by playtest |
-| M1.5 prizes and inelastic walls | Built, then simplified: prizes were removed; inelastic walls remain |
+| M1.5 prizes and inelastic walls | Built, then simplified: prizes were removed, and walls are elastic again at the original's BounceFactor |
 | M2 server authoritative | Done. Peak prediction error 0.9 px at 150 ms, 11 KB/s per client |
 | M3.5 AI opponents | Done server-side: input-only bots, labeled, taking and yielding seats |
 | M4 rating and modes | Done: damage ledgers, attribution, and the warzone flag game |

@@ -6204,7 +6204,7 @@ mod tests {
         assert_eq!(w.cfg.mod_multi_energy, 25);
         assert_eq!(w.cfg.mod_multi_delay, 50);
         assert_eq!(w.cfg.mod_spread, 2730, "fifteen degrees, still");
-        assert_eq!(w.cfg.bounce, 10, "and the field past the splinters");
+        assert_eq!(w.cfg.bounce, 16, "and the field past the splinters");
     }
 
     /// `mode` and `flags` were documented keys that nobody read: the arena
@@ -6466,7 +6466,7 @@ mod tests {
 
         // Left out, each is the core's own.
         let (w, _) = tuned("[arena]\nmode = \"warzone\"\n");
-        assert_eq!(w.cfg.bounce, 10);
+        assert_eq!(w.cfg.bounce, 16);
         assert_eq!(w.cfg.door_period, 600);
         assert_eq!(w.cfg.flag_radius, 18 * 256);
     }

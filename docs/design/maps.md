@@ -326,10 +326,12 @@ enough to hold a wormhole should have one.
 
 The safe zones taught a third. Placed near the boundary wall they made a
 cul-de-sac, and a traced flight showed what that feels like: full clamp speed
-across every safe tile, then a bounce-thrust trap in the slot beyond --
-held thrust against an inelastic wall converges to a tenth of a pixel per
-tick, which a pilot reports as "the safe zone is sticky". The zone was never
-sticky; the pocket behind it was. They sit in the open channels now, where
+across every safe tile, then a bounce-thrust trap in the slot beyond. Held
+thrust against a wall converged to a tenth of a pixel a tick, which a pilot
+reports as "the safe zone is sticky". The zone was never sticky; the pocket
+behind it was. That was measured when a wall gave back ten sixteenths and it
+gives back all of it now, so the trap is milder; the placement rule is not
+about the number. They sit in the open channels now, where
 every way out continues somewhere, and the rule generalises: never put a
 safe zone where the natural way through it ends in a wall.
 

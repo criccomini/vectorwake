@@ -6346,3 +6346,43 @@ build deal themselves one; the roster test now asserts that every hull names
 the same two patterns and arrives on the same seven credits. `cargo test`,
 `cargo clippy` and the client's Lua suite pass. The state hashes moved, so
 `make -C sim golden` was rerun.
+
+## 122. Walls give back what they take
+
+**Status:** accepted, superseding the inelastic wall
+
+**Decision:** `Misc:BounceFactor` is 16, which is the original's, so a wall
+returns the whole of the speed that hit it. The baseline moves from 10 and the
+melee zone from 12. `friction`, the speed kept along the face, stays at 14 in
+the baseline and 12 in melee.
+
+**Why:** Chris asked for the original's number. The one it replaces was ours,
+and the argument for it was that clipping a wall should hurt, which is what
+makes tight flying a skill. That argument does not survive being looked at:
+what a lossy wall actually charges is a brake, and it charges it only to
+pilots who touch things. A pilot flying clean pays nothing either way, so the
+tax fell on the ones already having the worse time of it.
+
+It also sat oddly in a model with no drag term anywhere. Velocity here changes
+through thrust, a wall, bomb recoil, a repel and a wormhole, and nothing else,
+so a wall that quietly ate a third of your speed was the only place momentum
+went to die. Now it does not: what you carry into a wall you carry out.
+
+**Cost:** the arena is faster and less forgiving. A ship that hits something at
+speed leaves at that speed rather than being slowed into a place it can
+recover from, which makes a wall a hazard to steer around rather than a
+surface to lean on. Nothing measured that; it is a claim about feel and the
+next playtest is what checks it.
+
+`friction` is the loose end. The original has no term for the slide, so
+matching it fully would be 16 there as well, and what ships is a wall that is
+lossless head on and takes an eighth at an angle. That is a hybrid nobody
+designed; it is left standing rather than changed in the same breath, since
+the ask named one setting.
+
+**Verified:** `make -C sim check`, with the wall test rewritten to read the
+restitution setting in both directions rather than assuming a wall costs
+anything, so it fails at 16 if the bounce loses speed and fails below 16 if it
+does not. The grinding check still holds: a ship leaning on a wall under
+thrust settles rather than buzzing, which was the other half of what the lossy
+number was doing. State hashes moved, so `make -C sim golden` was rerun.

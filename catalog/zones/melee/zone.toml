@@ -63,9 +63,10 @@ max_bots_per_team = 4
 match_seconds = 180
 intermission_seconds = 15
 
-# A wall gives back twelve sixteenths of what hit it. There is no separate term
-# for speed along a wall, so both take the same number.
-bounce = 12
+# Misc:BounceFactor: sixteen sixteenths, so a wall gives back everything that
+# hit it, which is what the original's does. The speed along the face is a term
+# the original has no setting for and this zone keeps at twelve.
+bounce = 16
 friction = 12
 
 # Two seconds dead. The open arena waited four, and four was fine there because

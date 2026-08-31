@@ -36,9 +36,10 @@ bans = []
 mode = "warzone"
 flags = 4
 
-# Walls are inelastic. bounce is the speed a hit gives back out of 16, and
-# friction is the speed retained along the wall. 16 and 16 would be lossless.
-bounce = 10
+# Misc:BounceFactor: the speed a hit gives back, out of 16, and 16 is the
+# original's, so a wall costs a ship nothing head on. friction is the speed
+# retained along the face, which the original has no setting for.
+bounce = 16
 friction = 14
 
 # Pilots the room holds at once, bots included. 255 is the ceiling and not a

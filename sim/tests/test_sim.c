@@ -3810,8 +3810,9 @@ static void test_scoring(const sim_settings *base) {
 static void test_physics_and_wire(sim_map *m, const sim_settings *base) {
     sim_settings cfg = *base;
 
-    /* Walls are inelastic: a bounce returns less speed than it took, and a
-     * ship resting against one settles rather than buzzing. */
+    /* A bounce returns the speed the restitution setting says, and a ship
+     * resting against a wall settles rather than buzzing. The baseline is
+     * Misc:BounceFactor 16, so it comes back with all of it. */
     {
         static sim_state s;
         sim_init(&s, 1);
@@ -3833,8 +3834,11 @@ static void test_physics_and_wire(sim_map *m, const sim_settings *base) {
             int64_t was = -(int64_t)before.ships[0].vy;  /* upward, so negative */
             int64_t now = (int64_t)s.ships[0].vy;        /* downward after */
             CHECK(now > 0, "the bounce reverses direction");
-            CHECK(now < was, "the bounce loses speed");
-            CHECK(now * 16 <= was * cfg.bounce + 16,
+            /* Both ways round, so this reads the setting rather than
+             * assuming a wall costs anything: at 16 it must not, and below
+             * 16 it must. The slack is one fixed-point pixel of rounding. */
+            CHECK(now * 16 <= was * cfg.bounce + 16
+                      && now * 16 >= was * cfg.bounce - 16,
                   "speed retained matches the restitution setting");
         }
 

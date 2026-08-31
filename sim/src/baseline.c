@@ -278,10 +278,21 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * prediction client overrides both after every baseline (decision 40). */
     cfg->deathless = 0;
     cfg->mortal_ship = 255;
-    /* Walls are inelastic: a hit returns about 60% of the speed that went
-     * into it and scrubs some of the speed along it. Clipping a wall should
-     * hurt, which is what makes tight flying a skill. */
-    cfg->bounce = 10;
+    /* Misc:BounceFactor, where 16 is the whole of the speed given back. Walls
+     * are elastic, as the original's are: nothing in that model takes energy
+     * out of a ship except a wall, and its wall takes none, so a shot that
+     * carries you into one carries you out again at the speed you arrived.
+     *
+     * This was 10, on the argument that clipping a wall should hurt and that
+     * paying for it is what makes tight flying a skill. What it actually
+     * bought was a brake that a pilot who never touches anything is not
+     * paying, which is a difficulty knob rather than a rule about the world.
+     *
+     * `friction` is the speed kept along the face, and the original has no
+     * term for it at all: a wall there reverses what hit it and leaves the
+     * slide alone. Ours still scrubs an eighth of it, so a wall is lossless
+     * head on and not quite lossless at an angle. */
+    cfg->bounce = 16;
     cfg->friction = 14;
     /* Four seconds dead, which is longer than the three this was and longer
      * than the original's own EnterDelay. The extra second is not a difficulty
@@ -807,9 +818,11 @@ void sim_map_arena(sim_map *m) {
      * second still funnelled west into one. A traced flight showed the zone
      * itself transparent -- full clamp speed across every safe tile -- and
      * then a bounce-thrust trap in the slot beyond it: held thrust against
-     * an inelastic wall converges to a tenth of a pixel per tick, which a
-     * pilot reports as the zone being sticky. The zone was never sticky.
-     * The cul-de-sac behind it was. */
+     * a wall that gave back ten sixteenths converged to a tenth of a pixel a
+     * tick, which a pilot reports as the zone being sticky. The zone was
+     * never sticky. The cul-de-sac behind it was, and a wall that gives
+     * everything back does not converge like that at all; the placement rule
+     * stands on its own either way. */
     fill(m, 488, 508, 494, 516, SIM_TILE_SAFE);
     fill(m, 530, 508, 536, 516, SIM_TILE_SAFE);
 
