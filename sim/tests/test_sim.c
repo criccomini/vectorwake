@@ -1103,8 +1103,16 @@ static void test_maps(const sim_settings *base) {
             const int32_t cx = 512 * 16 + 8, cy = 512 * 16 + 8;
             int l = sim_spawn(&lifted, APEX, 0, cx, cy + 12 * 16, 0, &wc);
             int h = sim_spawn(&held, APEX, 0, cx, cy + 12 * 16, 0, &flat);
+            /* Long enough for the fall itself, which is what decides the
+             * number of ticks here rather than any round figure: from twelve
+             * tiles the pull needs about 134 of them to bring a hull onto the
+             * mouth. The loop stops at the warp because a hull that has been
+             * thrown is somewhere else and may be falling into something
+             * again, and a second fall is not what this measures. */
             int32_t lmax = 0, hmax = 0;
-            for (int t = 0; t < 80; t++) {
+            for (int t = 0; t < 400; t++) {
+                if (lifted.ships[l].vy == 0 && held.ships[h].vy == 0 && t > 0)
+                    break;
                 step_n(&lifted, &wc, 0, 0, 1);
                 step_n(&held, &flat, 0, 0, 1);
                 int32_t lv = -lifted.ships[l].vy, hv = -held.ships[h].vy;

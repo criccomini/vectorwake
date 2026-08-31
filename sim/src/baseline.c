@@ -348,30 +348,43 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * to commit to a crossing, short enough that the choice matters. */
     cfg->door_period = 600;
     cfg->door_open = 400;
-    /* A wormhole, on the original's own field.
+    /* A wormhole, the original's field shape at our own strength.
      *
      * The pull is quoted one tile from the center and falls off as the square
      * of the distance, so a well is nearly nothing across most of its reach
-     * and overwhelming in the last few tiles. 5859 is what the original's
-     * arithmetic produces at one tile from a Gravity of 1500, which is what
-     * every ship in the Alpha Zone settings carries: its `gravity * 1000 /
-     * distance^2` comes to 5859 at sixteen pixels, and one of ours is the
-     * same number in the file's own speed units.
+     * and overwhelming in the last few tiles.
+     *
+     * 5859 stood here, which is what the original's `gravity * 1000 /
+     * distance^2` produces at sixteen pixels from the Gravity of 1500 every
+     * ship in the Alpha Zone settings carries. That is a number for a
+     * 1024-tile map. On our 160-tile melee maps it put the point of no
+     * return, the distance inside which a hull at rest cannot get out on held
+     * thrust, at seventeen to twenty-one tiles of a 38-tile field: half the
+     * reach decided for the pilot rather than being somewhere to fly. 2000
+     * puts it at ten to twelve and leaves the rest of the field a current to
+     * correct for. At the rim, five seconds of not fighting a well now costs
+     * 69 px/s toward it rather than 202, against a hull's 305.
+     *
+     * Coincident wormhole tiles sum, so how many a map lays at one spot is a
+     * third term and the one to watch: an n-tile core multiplies the pull by
+     * n and the point of no return by the root of n. That is also the
+     * argument for an inverse square over anything shallower, which would
+     * move it by n itself and make a stacked core unflyable.
      *
      * The reach is 38 tiles, half of where the original's field ends, and it
      * is a number here rather than a consequence: there, the range falls out
      * of the strength, so a zone cannot make a well that is strong and small
-     * or weak and wide. Ours can, which is the whole reason it can be turned
-     * down. The original's 76 was sized for a 1024-tile map and our melee
-     * maps are 160 across, so a well that wide is the weather over the entire
-     * room. At half of it a wormhole is a landmark to fly around, and the
-     * pull that matters is still the last few tiles, where it always was.
+     * or weak and wide. Ours can, which is the whole reason both can be
+     * turned down. The original's 76 was sized for that same 1024-tile map,
+     * so a well that wide is the weather over an entire melee room. At half
+     * of it a wormhole is a landmark to fly around, and the pull that matters
+     * is still the last few tiles, where it always was.
      *
      * The ceiling lift is the original's too, and it is small on purpose. It
      * applies anywhere in the field, and the field is most of a small map, so
      * a large one would be a speed bonus for standing near a landmark rather
      * than the kick of being thrown by it. */
-    cfg->wormhole_pull = sim_units_speed(5859);
+    cfg->wormhole_pull = sim_units_speed(2000);
     cfg->wormhole_range = 38 * 16 * 256;
     cfg->wormhole_top_speed = sim_units_speed(100);
     /* GravityBombs. On, as the Alpha Zone settings have it: a bomb thrown

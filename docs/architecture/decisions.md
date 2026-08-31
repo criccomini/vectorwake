@@ -6454,3 +6454,62 @@ melee`, before and after, at three skill strata: 99,600 seats an arm, sides
 swapped inside every pair, equivalence tested at five points with the family
 Holm-adjusted across the seven. `make -C sim check` with the hashes
 regenerated, 457 server tests, clippy and fmt.
+
+## 125. A wormhole you can still fly out of
+
+**Status:** accepted, tuning the field decision 124 gave a wormhole
+
+**Decision:** `wormhole_pull` is 2000, down from 5859. The reach stays at 38
+tiles and the falloff stays an inverse square. Maelstrom's core drops from
+four wormhole tiles to two.
+
+**Why:** 5859 was the original's own number, what its `gravity * 1000 /
+distance^2` produces at one tile from the Gravity of 1500 every Alpha Zone
+ship carries. It is a number for a 1024-tile map, and we fly 160-tile ones.
+
+What it bought here is easiest to see as the point of no return: the distance
+inside which a hull sitting still cannot get out on held thrust. Measured
+against the core by dropping each hull at rest and holding thrust straight
+away from the mouth, that radius was seventeen to twenty-one tiles of a
+38-tile field. Half the reach was not somewhere to fly, it was a verdict
+already delivered. At 2000 it is ten to twelve tiles and the rest of the field
+is a current to correct for.
+
+Maelstrom was worse than the setting, and separately. `spiral_nebula` laid
+four wormhole tiles as a 2x2 block, and every wormhole tile in range sums, so
+that map ran at four times the pull of a lone mouth. Its point of no return
+was 33 to 38 tiles of a 38-tile field: reaching the field at all was the whole
+decision, and the Wedge, the Anvil and the Lattice could not thrust out of it
+from anywhere inside. No amount of tuning the shared number fixes one map
+being four times another, so the core is two tiles now, which is one call to
+`Canvas::wormhole` rather than two.
+
+Chris asked to keep the reach and to stay off a linear falloff, and the second
+of those turns out to carry an argument of its own. An n-tile core multiplies
+the pull by n and the point of no return by the root of n. A shallower law
+moves it by n itself, so a stacked core under anything gentler than an inverse
+square is worse, not better. The shape was already the right one.
+
+**Cost:** the far field goes quiet, and that is the trade the reach could not
+avoid. With one reference distance, an inverse square ties what a well is
+worth at the rim to what it is worth in the middle, so the same cut that frees
+the middle drains the edge. Five seconds of ignoring a well at the very rim
+used to hand a hull 202 px/s toward it, two thirds of a top speed near 305;
+now it hands over 69. The 38 tiles are honest either way, but they are a bend
+to correct for rather than weather that owns the room.
+
+Ringworks scores half marks on the wormhole term of its own theme fidelity,
+because `rings` places one pair against a denominator of four. That is
+untouched here. It predates this and changing it would move which seeds the
+generator picks for a map nobody asked about.
+
+**Verified:** the point-of-no-return figures come from a probe against the
+core itself, spawning each hull at rest at a bisected distance and holding
+thrust outward until it either clears the rim or loses ground. `make -C sim
+check`, with the ceiling-lift test given a window long enough for the slower
+fall: it sampled 80 ticks, and from twelve tiles a hull now needs about 134 to
+reach the mouth. The lift still tops out at exactly `max_speed +
+wormhole_top_speed`. State hashes moved, so `make -C sim golden` was rerun.
+459 server tests, clippy, fmt, and the 70 client Lua tests. Maelstrom's
+recipe was re-pinned and its map regenerated; quality is unchanged at 92.5,
+since the theme's fidelity denominator moved with the core it counts.

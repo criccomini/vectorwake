@@ -10,7 +10,7 @@ contact_seconds_min = 6.0
 contact_seconds_max = 11.6
 allow_doors = false
 allow_wormholes = true
-expected_hash = "89f0e967"
+expected_hash = "52ce1acd"
 
 [envelope]
 width = 160

@@ -1,6 +1,6 @@
 {
   "name": "maelstrom",
-  "hash": "89f0e967",
+  "hash": "52ce1acd",
   "width": 160,
   "height": 160,
   "accepted": true,
@@ -28,7 +28,7 @@
     187.0
   ],
   "route_balance": 0.8716577540106952,
-  "contact_seconds": 12.975159838150114,
+  "contact_seconds": 8.55085389525925,
   "min_opening_tiles": 7,
   "spawn_exit_directions": [
     3,
@@ -42,7 +42,7 @@
   "dead_ends": 2,
   "wall_percent": 1.9823407202216066,
   "thick_generic_wall_tiles": 0,
-  "landmark_count": 118,
+  "landmark_count": 116,
   "cover_quadrants_percent": [
     2.1814404432132966,
     1.7832409972299168,
@@ -58,7 +58,7 @@
     "scenery": 364,
     "slopes": 0,
     "doors": 0,
-    "wormholes": 4,
+    "wormholes": 2,
     "safe": 0,
     "goals": 0,
     "turf": 0
@@ -870,18 +870,5 @@
       ]
     ]
   ],
-  "drill": {
-    "seeds": [
-      2010,
-      2769414579
-    ],
-    "kills": 2,
-    "shots": 229,
-    "hits": 71,
-    "bounces": 20,
-    "crawling_percent": 10.747613997879109,
-    "travel_percent": 52.762460233297986,
-    "fight_percent": 46.13997879109226,
-    "cells_visited": 141
-  }
+  "drill": null
 }
