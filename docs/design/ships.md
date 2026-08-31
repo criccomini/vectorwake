@@ -49,15 +49,24 @@ One row a hull, in the settings file's own units.
 | Apex | 3600 | 205 | 250 | 1500 | 1150 |
 | Wedge | 2900 | 155 | 205 | 1900 | 1020 |
 | Chord | 2800 | 215 | 310 | 1550 | 1200 |
-| Anvil | 2650 | 145 | 195 | 2100 | 1250 |
-| Cipher | 3900 | 200 | 235 | 1400 | 1100 |
-| Facet | 3050 | 175 | 265 | 1400 | 1100 |
+| Anvil | 2650 | 145 | 195 | 2100 | 875 |
+| Cipher | 3900 | 200 | 235 | 1300 | 1450 |
+| Facet | 3050 | 175 | 265 | 1450 | 1225 |
 | Lattice | 3100 | 165 | 240 | 1750 | 1050 |
 
 Speed is tenths of a pixel a second, so the Cipher runs at 390 and the Anvil
 at 265. Thrust is tenths of the settings unit. Rotation counts 400 to a full
 turn a second, so the Chord comes round in a little over a second and a quarter
-and the Anvil takes two. Recharge is energy a second times ten. The mapping is
+and the Anvil takes two. Recharge is energy a second times ten.
+
+The last two columns run against each other, and that is the roster's own
+trade. A deep bar refills slowly and a shallow one refills fast: the Anvil
+takes twenty-four seconds to fill and the Cipher nine, so the heavy wins the
+long fight and is slow to be ready for the next, and the knife loses any fight
+it stays in and is whole again almost at once. It is also the one thing here
+that makes speed worth having, since a fast refill only pays to a hull that
+can break contact. The two ran the same way round until `calibrate bodies`
+measured what that did; see Balance below. The mapping is
 in [simulation-core.md](../architecture/simulation-core.md) and lives in
 `sim_units_*` and nowhere else.
 
@@ -236,18 +245,26 @@ game, best rotation by a wide margin, and the fastest recharge. It wins the
 fight it can keep in a circle and loses any fight that can leave.
 
 **Anvil** wins any fight it is allowed to have: the deepest bar in the roster
-by a fifth and a recharge to match. It is also the slowest thing here with the
-worst turn, so the whole question is whether it gets to have the fight.
+by a fifth, and the slowest refill in it by as much, so what it does not win
+it spends a long time recovering from. It is also the slowest thing here with
+the worst turn, so the whole question is whether it gets to have the fight.
+
+It had that bar and the fastest refill both, for a while, which made it the
+one ship in the game nothing paid for. It took 60% of its seats in a team
+match and 80% of a duel at mid skill.
 
 **Cipher** is the fastest and thinnest ship in the game. Nose-on it is 16
 pixels of target; broadside it is the largest in the roster. Its pool is the
-smallest, so it cannot afford a fight it did not choose, and the thing it is
-best at is choosing.
+smallest and its refill the quickest, nine seconds against the Anvil's
+twenty-four, so it cannot afford a fight it did not choose and is whole again
+almost as soon as it leaves one. The thing it is best at is choosing, and the
+refill is what pays it for choosing well.
 
-The pool is the tightest coupling in the roster and the one the tournament
-found first: at 1300 energy it drew dry in twenty-one rounds and recharged
-slower than its own trigger, which on a map with nowhere to run left it beating
-nothing at all. It flies on 1400 now.
+It flew on 1300 energy once before, with a gun of its own that cost 60 a pull:
+it drew dry in twenty-one rounds and recharged slower than its own trigger,
+which on a map with nowhere to run left it beating nothing at all. The gun is
+everybody's now and an opening shot costs 20, so the same bar is a different
+ship.
 
 **Facet** is quick, handy, and at the top of no row at all. It is the hull with
 no excuse: whatever it loses to, it did not lose to the ship.
@@ -437,47 +454,61 @@ though Gantry still draws 71% of a mirror and a draw carries no information.
 Everything a build sweep says is worth less than its draw count suggests.
 Read the draw count before believing a flat table.
 
-Where the roster stands, off `calibrate bodies`: 99,600 seats over 14,100
-swapped pairs, with a build drawn uniformly per seat and the sides swapped
-inside every pair. Win rate, both arms, all three skill strata pooled.
+Where the roster stands, off `calibrate bodies`. Two runs of 99,600 seats
+each, one against the flight table that came out of decision 121 and one
+against the table that replaced it, at 1,200 swapped pairs a stratum in the
+team arm and 3,500 in the duel.
 
-| body | 1v1 | 4v4 | energy |
-|---|---:|---:|---:|
-| Anvil | 69.0 | 60.2 | 2100 |
-| Lattice | 51.0 | 50.3 | 1750 |
-| Apex | 50.5 | 49.5 | 1500 |
-| Wedge | 48.0 | 51.2 | 1900 |
-| Chord | 45.6 | 50.8 | 1550 |
-| Cipher | 43.1 | 42.4 | 1400 |
-| Facet | 42.8 | 45.7 | 1400 |
+The first run found the roster eight to thirteen points wide at the Anvil and
+five to nine under at the Cipher, at every skill and in both formats. Fitting
+win rate against energy and recharge over those seats explained 94% of the
+spread and priced the two columns: a hundred energy is worth 1.7 win points in
+a team match and a hundred recharge 2.7.
 
-**The roster is not balanced, and the energy column is why.** Correlating win
-rate against each of the five flight stats across the seven bodies: energy
-+0.89 in the team arm and +0.83 in the duel, recharge +0.55, and speed
-**negative** in both, at -0.75 and -0.48. Damage dealt is nearly flat across
-the roster, within ten per cent seat to seat, so every body lands about the
-same; what differs is which of them is still alive to land it. With decision
-121's weapons off the hulls, a 1400 to 2100 spread in the bar is the roster,
-and the anti-correlated speed that was supposed to pay for it pays nothing.
+What that fit found was not a spread that was too wide. It was two columns
+running the same way round. The Anvil held the deepest bar in the game and
+nearly the fastest refill at once, so nothing paid for the bar, and what was
+supposed to pay for it, being slow, pays nothing at all: speed correlates
+**negatively** with winning here, at -0.75 in the team arm. Solving each body
+onto the fit's line left the energy spread exactly where the roster put it and
+moved three rows, none of them the four already inside the margin.
 
-At the declared five-point margin, tested as equivalence with the family
-Holm-adjusted across the seven, three bodies certify at every skill in the
-team arm: Apex, Wedge and Lattice. The Anvil is eight to thirteen points clear
-of even at every stratum and the Cipher five to nine points under it. The duel
-arm is worse in both directions, the Anvil reaching 80.6% at mid skill.
+Team arm, win rate before and after, by skill:
 
-The one thing that reading cannot settle is whether speed is worth nothing or
-whether these bots cannot use it. The Facet and the Cipher carry identical
-energy and recharge and differ only in speed, thrust, turn and footprint, and
-the slower of the two is three points better in both arms. Either being fast
-is genuinely worthless here, or a bot declines a fight badly enough that the
-hull built to choose its fights never gets to. The answer decides the fix:
-narrowing the energy spread if the first, and fixing the pilot before touching
-the table if the second.
+| body | low | mid | high |
+|---|---|---|---|
+| Apex | 48.2 → 48.0 | 50.8 → 49.0 | 49.4 → 49.9 |
+| Wedge | 51.4 → 51.5 | 51.6 → 52.6 | 50.5 → 51.1 |
+| Chord | 48.0 → 47.7 | 49.6 → 49.8 | 54.8 → **55.1** |
+| Anvil | **59.7** → 48.0 | **62.9** → 49.8 | **58.2** → 49.8 |
+| Cipher | **45.5** → 52.7 | **40.9** → 50.4 | **40.7** → **45.2** |
+| Facet | **46.7** → 51.9 | **44.9** → 48.9 | **45.7** → 49.8 |
+| Lattice | 50.7 → 50.1 | 49.5 → 49.6 | 50.5 → 49.1 |
 
-The intervals above are family-wise 95% and run about plus or minus 2.6 points
-in the team arm and 3.4 in the duel, so the order inside the middle of that
-table is not meaningful and the two ends of it are.
+Bold is outside the five-point margin, tested as equivalence with the family
+Holm-adjusted across the seven. Nineteen of the twenty-one cells certify,
+against eleven before. At mid skill the whole roster sits between 48.9 and
+52.6 and its k/d spread has closed from 0.80 to 1.54 down to 0.93 to 1.09.
+
+**Two cells still miss, and both only at high skill.** The Chord is five points
+over and the Cipher five under. Neither should be chased with these two
+columns, and the shape of the miss is why: the Cipher reads 52.7, 50.4, 45.2
+across the strata and the Chord 47.7, 49.8, 55.1, so both are sloped against
+skill while energy and recharge are flat across it. Buying five points at high
+would spend two certified cells to gain one. What is left is about what a good
+pilot does with the best turn in the game and with the fastest hull, which
+lives in the columns this correction deliberately did not touch.
+
+The duel arm went from six certified cells to eleven, and is the honest limit
+on all of this. The Anvil's 80.6% at mid skill came down to 50.3, and the
+Facet certified at every skill, but the Cipher overshot to 62.6% at mid and
+the Chord sits at 36.7% there, before and after, untouched. That was expected
+and accepted rather than discovered: the pit's fitted coefficients are nearly
+twice the team arm's, because a room where a pilot can never break contact
+turns a fast refill into flat extra life, where a room they can leave makes it
+conditional on leaving. The correction was solved on the team arm on purpose,
+melee being the mode that ships. A table that balances both rooms is probably
+not reachable from two columns.
 
 ## Open questions
 
