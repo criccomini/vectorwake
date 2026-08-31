@@ -98,10 +98,20 @@ pub struct ArenaConfig {
     /// period leaves every door shut.
     pub door_period: Option<u16>,
     pub door_open: Option<u16>,
-    /// A wormhole's pull at the mouth in px/s/10, and the px beyond which it
-    /// does not reach.
+    /// A wormhole's pull one tile from its center in px/s/10, falling off as
+    /// the square of the distance, and the px beyond which it does not reach
+    /// at all. The reach is its own number rather than a consequence of the
+    /// strength, so a zone can ask for a well that is strong and small.
     pub wormhole_pull: Option<i32>,
     pub wormhole_range: Option<i32>,
+    /// px/s/10 added to a hull's ceiling while a well has hold of it, which is
+    /// what lets one throw a ship rather than only aim it. Zero is no extra
+    /// speed. Small by design: it applies anywhere in the field.
+    pub wormhole_top_speed: Option<i32>,
+    /// GravityBombs: whether the pull reaches thrown rounds as well as hulls.
+    /// A round counts as thrown when it has a blast, so bombs bend across a
+    /// well and bullets do not.
+    pub gravity_bombs: Option<bool>,
     /// Per class: a flight row, which is the whole of what a hull is.
     /// Anything left out keeps the baseline's, which is the shipped roster.
     pub ships: Vec<ShipConfig>,

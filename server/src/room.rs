@@ -816,6 +816,12 @@ impl Room {
         if let Some(v) = c.wormhole_pull {
             world.cfg.wormhole_pull = unsafe { sim::sim_units_speed(v) };
         }
+        if let Some(v) = c.wormhole_top_speed {
+            world.cfg.wormhole_top_speed = unsafe { sim::sim_units_speed(v) };
+        }
+        if let Some(v) = c.gravity_bombs {
+            world.cfg.gravity_bombs = v as u8;
+        }
         if let Some(v) = c.wormhole_range {
             world.cfg.wormhole_range = v * 256;
         }

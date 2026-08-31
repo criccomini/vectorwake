@@ -1035,7 +1035,7 @@ static void test_maps(const sim_settings *base) {
         sim_init(&s, 1);
         int id = sim_spawn(&s, APEX, 0, 512 * 16, 520 * 16, 0, &wc);
         int32_t y0 = s.ships[id].y;
-        step_n(&s, &wc, 0, 0, 60);
+        step_n(&s, &wc, 0, 0, 20);
         CHECK(s.ships[id].y < y0, "a drifting ship falls toward a wormhole");
         CHECK(s.ships[id].vy < 0, "and keeps accelerating into it");
 
@@ -1047,6 +1047,113 @@ static void test_maps(const sim_settings *base) {
         step_n(&f, &wc, 0, 0, 60);
         CHECK(f.ships[fid].y == fy && f.ships[fid].vy == 0,
               "a ship beyond the rim is untouched");
+
+        /* Inverse square, which is the whole shape of the field: twice as far
+         * out is a quarter of the pull. Measured as one tick's velocity from
+         * rest at four tiles and at eight, because a tick of gravity from a
+         * standstill is the acceleration and nothing else. */
+        {
+            static sim_state near, far;
+            sim_init(&near, 1);
+            sim_init(&far, 1);
+            const int32_t cx = 512 * 16 + 8, cy = 512 * 16 + 8;
+            int n = sim_spawn(&near, APEX, 0, cx, cy + 64, 0, &wc);
+            int fr = sim_spawn(&far, APEX, 0, cx, cy + 128, 0, &wc);
+            step_n(&near, &wc, 0, 0, 1);
+            step_n(&far, &wc, 0, 0, 1);
+            int64_t an = -near.ships[n].vy, af = -far.ships[fr].vy;
+            CHECK(an > 0 && af > 0, "both are pulled in");
+            /* Four, to within what integer division of the last digit can
+             * move: the check is the exponent, not the rounding. */
+            CHECK(an > af * 39 / 10 && an < af * 41 / 10,
+                  "half the distance is four times the pull");
+        }
+
+        /* The reach is a number of its own rather than a consequence of the
+         * strength, so the rim is exactly where the setting says. */
+        {
+            int32_t rim = wc.wormhole_range / (SIM_TILE_PX * 256);
+            CHECK(rim == 76, "the baseline reaches 76 tiles");
+            static sim_state in, out;
+            sim_init(&in, 1);
+            sim_init(&out, 1);
+            int i2 = sim_spawn(&in, APEX, 0, 512 * 16, (512 + 74) * 16, 0, &wc);
+            int o2 = sim_spawn(&out, APEX, 0, 512 * 16, (512 + 78) * 16, 0, &wc);
+            step_n(&in, &wc, 0, 0, 30);
+            step_n(&out, &wc, 0, 0, 30);
+            CHECK(in.ships[i2].vy < 0, "just inside the rim it still pulls");
+            CHECK(out.ships[o2].vy == 0, "just outside it does not");
+        }
+
+        /* The ceiling is lifted while the field has hold of a hull, so a well
+         * throws a ship rather than only aiming it. Without the lift the clamp
+         * takes back every pixel a second the pull just handed over, and a
+         * pilot falling into a wormhole arrives at exactly the speed they
+         * could have flown there under their own thrust. */
+        {
+            static sim_settings flat;
+            flat = wc;
+            flat.wormhole_top_speed = 0;
+            int32_t top = wc.classes[APEX].max_speed;
+            int32_t lift = wc.wormhole_top_speed;
+            CHECK(lift > 0, "the baseline lifts the ceiling at all");
+            static sim_state lifted, held;
+            sim_init(&lifted, 1);
+            sim_init(&held, 1);
+            const int32_t cx = 512 * 16 + 8, cy = 512 * 16 + 8;
+            int l = sim_spawn(&lifted, APEX, 0, cx, cy + 12 * 16, 0, &wc);
+            int h = sim_spawn(&held, APEX, 0, cx, cy + 12 * 16, 0, &flat);
+            int32_t lmax = 0, hmax = 0;
+            for (int t = 0; t < 80; t++) {
+                step_n(&lifted, &wc, 0, 0, 1);
+                step_n(&held, &flat, 0, 0, 1);
+                int32_t lv = -lifted.ships[l].vy, hv = -held.ships[h].vy;
+                if (lv > lmax) lmax = lv;
+                if (hv > hmax) hmax = hv;
+            }
+            CHECK(hmax > 0 && hmax <= top,
+                  "without the lift a fall stops at the hull's own ceiling");
+            CHECK(lmax > top, "with it the well carries a hull past that");
+            CHECK(lmax <= top + lift, "and no further than the lift allows");
+        }
+
+        /* GravityBombs. A thrown round bends and a bullet does not, which is
+         * what makes a well worth building a room around: you can lob across
+         * one, and the arc is the wormhole's to decide. */
+        {
+            static sim_settings dry;
+            dry = wc;
+            dry.gravity_bombs = 0;
+            /* Fired east along a line two tiles under the wormhole, so a pull
+             * that reaches the round shows up as a sideways velocity it was
+             * never given. */
+            const uint16_t east = 65536 / 4;
+            static sim_state wet, off;
+            sim_init(&wet, 1);
+            sim_init(&off, 1);
+            sim_spawn(&wet, APEX, 0, 500 * 16, 514 * 16, east, &wc);
+            sim_spawn(&off, APEX, 0, 500 * 16, 514 * 16, east, &dry);
+            step_n(&wet, &wc, SIM_BTN_BOMB, 0, 1);
+            step_n(&off, &dry, SIM_BTN_BOMB, 0, 1);
+            CHECK(wet.weapon_count == 1 && off.weapon_count == 1,
+                  "each fires one bomb");
+            step_n(&wet, &wc, 0, 0, 20);
+            step_n(&off, &dry, 0, 0, 20);
+            CHECK(wet.weapon_count == 1 && off.weapon_count == 1,
+                  "and both are still in the air");
+            CHECK(off.weapons[0].vy == 0, "with gravity off a bomb flies straight");
+            CHECK(wet.weapons[0].vy < 0, "with it on the bomb is drawn upward");
+
+            /* A bullet is not a thrown round, whatever the setting says. */
+            static sim_state gun;
+            sim_init(&gun, 1);
+            sim_spawn(&gun, APEX, 0, 500 * 16, 514 * 16, east, &wc);
+            step_n(&gun, &wc, SIM_BTN_FIRE, 0, 1);
+            CHECK(gun.weapon_count > 0, "the gun fires");
+            step_n(&gun, &wc, 0, 0, 20);
+            CHECK(gun.weapon_count > 0 && gun.weapons[0].vy == 0,
+                  "a bullet crosses a well without bending");
+        }
         free(wm);
     }
 

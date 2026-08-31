@@ -742,8 +742,36 @@ typedef struct {
      * so one map can breathe rather than blink. */
     uint16_t door_period;  /* ticks for a full cycle; 0 leaves doors shut */
     uint16_t door_open;    /* ticks of that cycle a door stands open */
-    int32_t wormhole_pull;   /* Q16 px/tick^2 at the mouth */
+    /* A wormhole's pull, and how far it carries.
+     *
+     * The falloff is inverse square, so `wormhole_pull` is the pull one tile
+     * from the center and at n tiles it is that over n squared. A reference
+     * distance is what an inverse square law needs and a mouth is not one:
+     * the value at the middle of the well is unbounded. Closer in than a tile
+     * the falloff stops rather than continuing to climb, which bounds the
+     * hardest kick anything can take and costs a ship nothing, since a hull
+     * that close is on the tile and about to be moved anyway.
+     *
+     * `wormhole_range` is a hard edge and is set on its own rather than
+     * derived from the strength. The original derives it: its field ends
+     * where its own arithmetic falls to one, which at the Gravity every ship
+     * in Alpha Zone carries is about 76 tiles. Ours is that reach as a number
+     * a zone can move, because a well sized for a 1024-tile map is most of a
+     * 160-tile one.
+     *
+     * `wormhole_top_speed` is what the field adds to a hull's ceiling while
+     * it is inside one, which is the whole of what makes a well throw a ship
+     * rather than merely aim it: without it the clamp takes back every pixel
+     * per second the pull just handed over. Added to the ceiling rather than
+     * replacing it, so zero is no extra speed. */
+    int32_t wormhole_pull;   /* Q16 px/tick^2, one tile from the center */
     int32_t wormhole_range;  /* Q8 px, beyond which it does not reach */
+    int32_t wormhole_top_speed; /* Q16 px/tick added to the ceiling inside it */
+    /* Whether the pull reaches thrown rounds as well as hulls, which is the
+     * original's GravityBombs. A round counts as thrown when it has a blast,
+     * the same test that decides everything else in this core that is true of
+     * a bomb and not of a bullet. */
+    uint8_t gravity_bombs;
     int32_t flag_radius;    /* Q8 px, pickup distance */
     uint16_t flag_drop_cooldown; /* ticks a dropped flag is untouchable */
     /* Ships this room will hold, which is a rule about the game rather than

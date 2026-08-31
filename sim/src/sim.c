@@ -40,6 +40,62 @@ static int64_t isqrt64(int64_t v) {
     return lo;
 }
 
+/* How far in from the center of a wormhole the falloff stops climbing, and
+ * the distance the pull is quoted at. One tile, squared, in Q8 pixels.
+ *
+ * An inverse square law needs a reference distance, and it needs a floor or
+ * the middle of the well is a divide by nothing. One number does both jobs
+ * here: `wormhole_pull` is the pull one tile out, and one tile out is as
+ * strong as it gets. A hull that close is standing on the tile and is about
+ * to be moved somewhere else anyway, and a bomb that close should not be
+ * handed a kick that its next step cannot be swept for. */
+#define WORMHOLE_NEAR (SIM_TILE_PX * 256)
+#define WORMHOLE_NEAR2 ((int64_t)WORMHOLE_NEAR * WORMHOLE_NEAR)
+
+/* The pull of every wormhole on the map at one point, summed, as the velocity
+ * to add this tick. Returns whether any of them reached, which is what lifts a
+ * hull's ceiling.
+ *
+ * Inverse square, which is the original's shape: gentle across most of a wide
+ * field and violent in the last few tiles. The linear falloff this replaced
+ * was the opposite bargain, strong at the mouth and gone at a hard rim, and it
+ * made a wormhole a thing to be nudged by rather than caught in.
+ *
+ * Ships and thrown rounds both come through here, so a bomb is pulled off its
+ * line by the same arithmetic that pulls the pilot who threw it.
+ */
+static int wormhole_pull_at(const sim_settings *cfg, int32_t px, int32_t py,
+                            int32_t *ax, int32_t *ay) {
+    *ax = 0;
+    *ay = 0;
+    if (cfg->wormhole_pull == 0 || cfg->wormhole_range <= 0) return 0;
+    const int64_t range = cfg->wormhole_range;
+    const int64_t range2 = range * range;
+    int reached = 0;
+    for (uint16_t f = 0; f < cfg->map->feature_count; f++) {
+        const sim_feature *ft = &cfg->map->features[f];
+        if (ft->kind != SIM_TILE_WORMHOLE) continue;
+        int32_t wx = (int32_t)ft->tx * SIM_TILE_PX * 256 + (SIM_TILE_PX * 128);
+        int32_t wy = (int32_t)ft->ty * SIM_TILE_PX * 256 + (SIM_TILE_PX * 128);
+        int64_t dx = (int64_t)wx - px, dy = (int64_t)wy - py;
+        int64_t d2 = dx * dx + dy * dy;
+        if (d2 > range2) continue;
+        /* Inside the range counts as caught even where the pull has fallen to
+         * nothing an integer can hold, which is the rule the original uses for
+         * its own ceiling lift: the edge of the field and the edge of the lift
+         * are the same edge. */
+        reached = 1;
+        if (d2 < WORMHOLE_NEAR2) d2 = WORMHOLE_NEAR2;
+        /* Floored above, so the root is at least a tile and the divide below
+         * has something to divide by. */
+        int64_t d = isqrt64(d2);
+        int64_t strength = (int64_t)cfg->wormhole_pull * WORMHOLE_NEAR2 / d2;
+        *ax += (int32_t)(dx * strength / d);
+        *ay += (int32_t)(dy * strength / d);
+    }
+    return reached;
+}
+
 static uint32_t xorshift32(uint32_t x) {
     x ^= x << 13;
     x ^= x >> 17;
@@ -1736,6 +1792,9 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         const int32_t e_rot = sim_eff_rot(cls, sh);
         int32_t e_thrust = sim_eff_thrust(cls, sh);
         int32_t e_speed = sim_eff_speed(cls, sh);
+        /* Whether a wormhole has hold of this hull, which step 4 reads to
+         * decide the ceiling. Set at 3b below. */
+        int in_well = 0;
 
         /* 1. Rotate. */
         if (b & SIM_BTN_LEFT) sh->heading = (uint16_t)(sh->heading - e_rot);
@@ -1947,22 +2006,12 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             }
         }
 
-        /* 3b. Wormholes. The pull falls off linearly to nothing at the
-         * rim, so a ship can cross the outer edge and still get away. */
-        for (uint16_t f = 0; f < cfg->map->feature_count; f++) {
-            const sim_feature *ft = &cfg->map->features[f];
-            if (ft->kind != SIM_TILE_WORMHOLE) continue;
-            int32_t wx = (int32_t)ft->tx * SIM_TILE_PX * 256 + (SIM_TILE_PX * 128);
-            int32_t wy = (int32_t)ft->ty * SIM_TILE_PX * 256 + (SIM_TILE_PX * 128);
-            int64_t dx = (int64_t)wx - sh->x, dy = (int64_t)wy - sh->y;
-            int64_t d2 = dx * dx + dy * dy;
-            int64_t range = cfg->wormhole_range;
-            if (d2 == 0 || d2 > range * range) continue;
-            int64_t d = isqrt64(d2);
-            if (d == 0) continue;
-            int64_t strength = (int64_t)cfg->wormhole_pull * (range - d) / range;
-            sh->vx += (int32_t)(dx * strength / d);
-            sh->vy += (int32_t)(dy * strength / d);
+        /* 3b. Wormholes. */
+        {
+            int32_t ax, ay;
+            in_well = wormhole_pull_at(cfg, sh->x, sh->y, &ax, &ay);
+            sh->vx += ax;
+            sh->vy += ay;
         }
 
         /* 4. Clamp to top speed. No drag term anywhere.
@@ -1978,6 +2027,15 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         if (!sh->public_only) {
             int64_t mag2 = (int64_t)sh->vx * sh->vx + (int64_t)sh->vy * sh->vy;
             int64_t max = e_speed;
+            /* A well lifts the ceiling rather than setting it, so a zone
+             * asking for no extra speed writes zero and gets its hulls back
+             * unchanged. The lift is deliberately small against a hull's own
+             * top speed, because the field it applies in is wide: this is
+             * what a pull is allowed to add on top of flying, not a second
+             * engine handed to everyone standing near a landmark. */
+            if (in_well && cfg->wormhole_top_speed > 0) {
+                max += cfg->wormhole_top_speed;
+            }
             if (sh->repel > 0 && sh->repel_speed > max) max = sh->repel_speed;
             if (mag2 > max * max) {
                 int64_t mag = isqrt64(mag2);
@@ -2350,6 +2408,25 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             continue;
         }
         w->life--;
+
+        /* 1a. A wormhole pulls a thrown round the way it pulls a hull, which
+         * is the original's GravityBombs and is on by default here.
+         *
+         * A round counts as thrown when it has a blast, the same test this
+         * file already uses to tell a bomb from a bullet when it prices a
+         * bouncing one. Bullets and burst rounds fly straight past a well, so
+         * gunning across one is unchanged and lobbing across one is not.
+         *
+         * Nothing clamps a round's speed, and nothing needs to: the falloff
+         * stops climbing a tile out, so the hardest pull a round can take is
+         * `wormhole_pull` a tick, and a pass through the middle spends on the
+         * way out what it gained on the way in. */
+        if (cfg->gravity_bombs && spec->blast > 0) {
+            int32_t ax, ay;
+            wormhole_pull_at(cfg, w->x, w->y, &ax, &ay);
+            w->vx += ax;
+            w->vy += ay;
+        }
 
         /* The tick's travel, walked in samples no further apart than 4 px
          * rather than tested once at the far end. One endpoint sample was the

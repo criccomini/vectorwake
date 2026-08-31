@@ -1411,6 +1411,48 @@ mod tests {
         (w, warn)
     }
 
+    /// The wormhole keys a zone can reach, read back off the core in the
+    /// units the core keeps them in.
+    ///
+    /// `gravity_bombs` defaults on, so the test that matters is that a zone
+    /// can turn it off: a boolean whose only reachable value is its default
+    /// is not a setting.
+    #[test]
+    fn a_zone_shapes_its_own_wormholes() {
+        let (base, warn) = tuned("[arena]\n");
+        assert!(warn.is_empty());
+        assert_eq!(
+            base.cfg.gravity_bombs, 1,
+            "bombs bend unless a zone says not"
+        );
+        assert_eq!(base.cfg.wormhole_range, 76 * 16 * 256, "76 tiles of reach");
+        assert!(
+            base.cfg.wormhole_top_speed > 0,
+            "the ceiling lifts by default"
+        );
+
+        let (w, warn) = tuned(
+            "[arena]\n\
+             wormhole_pull = 2000\n\
+             wormhole_range = 40\n\
+             wormhole_top_speed = 250\n\
+             gravity_bombs = false\n",
+        );
+        assert!(warn.is_empty(), "{warn:?}");
+        unsafe {
+            assert_eq!(w.cfg.wormhole_pull, sim::sim_units_speed(2000));
+            assert_eq!(w.cfg.wormhole_top_speed, sim::sim_units_speed(250));
+        }
+        assert_eq!(w.cfg.wormhole_range, 40 * 256, "px in, px in the core");
+        assert_eq!(w.cfg.gravity_bombs, 0, "a zone can ground its bombs");
+
+        // Zero is no extra speed rather than a missing setting, which is the
+        // whole reason the lift adds to the ceiling instead of replacing it.
+        let (flat, warn) = tuned("[arena]\nwormhole_top_speed = 0\n");
+        assert!(warn.is_empty());
+        assert_eq!(flat.cfg.wormhole_top_speed, 0);
+    }
+
     fn gun(w: &sim::World, cls: usize) -> (sim::sim_fire_pattern, sim::sim_weapon_spec) {
         let p = w.cfg.patterns[w.cfg.classes[cls].trigger[0][0] as usize];
         (p, w.cfg.specs[p.spec as usize])

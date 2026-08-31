@@ -360,8 +360,18 @@ pub struct sim_settings {
     pub safe_limit: u16,
     pub door_period: u16,
     pub door_open: u16,
+    /// The pull one tile from a wormhole's center, falling off as the square
+    /// of the distance, and the hard edge past which no well reaches. See
+    /// `wormhole_pull` in sim.h for why an inverse square law is quoted at a
+    /// distance rather than at the mouth.
     pub wormhole_pull: i32,
     pub wormhole_range: i32,
+    /// What the field adds to a hull's ceiling while it is inside one. Added
+    /// rather than substituted, so zero is no extra speed.
+    pub wormhole_top_speed: i32,
+    /// Whether the pull reaches thrown rounds as well as hulls. A round counts
+    /// as thrown when it has a blast.
+    pub gravity_bombs: u8,
     pub flag_radius: i32,
     pub flag_drop_cooldown: u16,
     pub max_ships: u8,

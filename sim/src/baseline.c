@@ -348,8 +348,34 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * to commit to a crossing, short enough that the choice matters. */
     cfg->door_period = 600;
     cfg->door_open = 400;
-    cfg->wormhole_pull = sim_units_speed(90);
-    cfg->wormhole_range = 220 * 256;
+    /* A wormhole, on the original's own field.
+     *
+     * The pull is quoted one tile from the center and falls off as the square
+     * of the distance, so a well is nearly nothing across most of its reach
+     * and overwhelming in the last few tiles. 5859 is what the original's
+     * arithmetic produces at one tile from a Gravity of 1500, which is what
+     * every ship in the Alpha Zone settings carries: its `gravity * 1000 /
+     * distance^2` comes to 5859 at sixteen pixels, and one of ours is the
+     * same number in the file's own speed units.
+     *
+     * The reach is 76 tiles because that is where the original's field ends,
+     * but it is a number here rather than a consequence: there, the range
+     * falls out of the strength, so a zone cannot make a well that is strong
+     * and small or weak and wide. Ours can. Worth remembering that 76 tiles
+     * was sized for a 1024-tile map and our melee maps are 160 across, so a
+     * zone playing on a small map may want a smaller well rather than this.
+     *
+     * The ceiling lift is the original's too, and it is small on purpose. It
+     * applies anywhere in the field, and the field is most of a small map, so
+     * a large one would be a speed bonus for standing near a landmark rather
+     * than the kick of being thrown by it. */
+    cfg->wormhole_pull = sim_units_speed(5859);
+    cfg->wormhole_range = 76 * 16 * 256;
+    cfg->wormhole_top_speed = sim_units_speed(100);
+    /* GravityBombs. On, as the Alpha Zone settings have it: a bomb thrown
+     * across a well bends, which is most of what makes one worth building a
+     * room around. */
+    cfg->gravity_bombs = 1;
 
     /* Three kills without dying. The shortest run that cannot be an accident
      * and is still reachable inside a three-minute match, and the only thing

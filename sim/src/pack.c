@@ -510,8 +510,16 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
  * kit vector moves here from the ship record and `kit_ceiling` goes: there is
  * no shelf for an arena-wide row to describe. Bounty goes with the shop, and
  * `bounty_base`, `bounty_per_kill`, `points_per_flag` and `streak_bounty` go
- * with it. `streak_kills` stays, because a streak is what is left. */
-#define CFG_VERSION 20
+ * with it. `streak_kills` stays, because a streak is what is left.
+ *
+ * 21: the wormhole model. `wormhole_top_speed` and `gravity_bombs` travel
+ * because the client predicts both: a hull's ceiling inside a well is not the
+ * ceiling outside it, and a bomb crossing one bends. `wormhole_pull` keeps its
+ * name and its type and changes meaning, from the pull at the mouth of a
+ * linear falloff to the pull one tile out of an inverse square one, which is
+ * exactly the kind of change a version exists to refuse: the bytes still line
+ * up and the flight does not. */
+#define CFG_VERSION 21
 
 static int settings_valid(const sim_settings *cfg) {
     if (cfg->class_count == 0 || cfg->class_count > SIM_MAX_CLASSES
@@ -640,6 +648,8 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     w16(&w, cfg->door_open);
     w32(&w, (uint32_t)cfg->wormhole_pull);
     w32(&w, (uint32_t)cfg->wormhole_range);
+    w32(&w, (uint32_t)cfg->wormhole_top_speed);
+    w8(&w, cfg->gravity_bombs);
     w32(&w, (uint32_t)cfg->flag_radius);
     w16(&w, cfg->flag_drop_cooldown);
     w8(&w, cfg->max_ships);
@@ -750,6 +760,8 @@ int sim_settings_unpack(sim_settings *out, const uint8_t *in, int len) {
     cfg->door_open = (uint16_t)r16(&r);
     cfg->wormhole_pull = (int32_t)r32(&r);
     cfg->wormhole_range = (int32_t)r32(&r);
+    cfg->wormhole_top_speed = (int32_t)r32(&r);
+    cfg->gravity_bombs = (uint8_t)r8(&r);
     cfg->flag_radius = (int32_t)r32(&r);
     cfg->flag_drop_cooldown = (uint16_t)r16(&r);
     cfg->max_ships = r8(&r);

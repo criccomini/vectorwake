@@ -89,11 +89,49 @@ flag_drop_cooldown = 200
 door_period = 600
 door_open = 400
 
-# A wormhole's pull at the mouth, in px/s/10, and the px beyond which it does
-# not reach. One reaches fourteen tiles, which is enough to change how a whole
-# room is flown -- see the note in the map's own source.
-wormhole_pull = 90
-wormhole_range = 220
+# A wormhole.
+#
+# The pull falls off as the square of the distance, so `wormhole_pull` is the
+# pull one tile from the center rather than at the mouth: an inverse square law
+# has no value at the middle of the well, and quoting it somewhere real is what
+# gives the number a meaning. At n tiles it is the pull over n squared, so a
+# well is close to nothing across most of its reach and overwhelming in the
+# last few tiles. Closer in than one tile it stops climbing.
+#
+# 5859 is the original's own field. Its arithmetic is `gravity * 1000` over the
+# distance squared, and at the Gravity every ship in the Alpha Zone settings
+# carries that comes to 5859 one tile out.
+#
+# `wormhole_range` is a hard edge and is set here rather than derived from the
+# strength. The original ties the two together, so it cannot have a well that
+# is strong and small; 76 tiles is where its field ends at that Gravity, and
+# it is the default here because it is the original's reach and not because a
+# room has to use it. Worth sizing against the map: 76 tiles was drawn for a
+# 1024-tile map, and a 160-tile room is mostly inside one well at that reach.
+wormhole_pull = 5859
+wormhole_range = 1216
+
+# What a well adds to a hull's ceiling while it has hold of it, in px/s/10.
+#
+# This is what makes a wormhole throw a ship rather than only aim one. Without
+# it the speed clamp takes back every pixel a second the pull just handed over,
+# so a pilot falling into a well arrives at exactly the speed they could have
+# flown there under thrust, and the well is a steering hazard and nothing more.
+#
+# Added to the ceiling rather than replacing it, so zero is no extra speed and
+# not a hull pinned to a crawl. Small on purpose: it applies anywhere inside the
+# field, and the field is wide, so a large number here is a speed bonus for
+# standing near a landmark rather than the kick of being thrown by one. 100 is
+# the original's.
+wormhole_top_speed = 100
+
+# GravityBombs: whether a well pulls thrown rounds as well as hulls.
+#
+# A round counts as thrown when it has a blast, which is the same test this
+# core uses everywhere else it has to tell a bomb from a bullet. So bombs bend
+# across a well and bullets cross it straight, and lobbing past one becomes a
+# shot with an arc the map decides.
+gravity_bombs = true
 
 # The clock, for `mode = "melee"` and ignored by every other mode. A room that
 # has one plays a match, puts up a podium, and plays another; a room without
