@@ -530,6 +530,68 @@ conditional on leaving. The correction was solved on the team arm on purpose,
 melee being the mode that ships. A table that balances both rooms is probably
 not reachable from two columns.
 
+### Holding the roster inside the original's bands
+
+Then the flight table was bounded and rescaled, and three more runs of the
+same 99,600 seats went into keeping it balanced. Reading them in order is
+worth more than the final table alone, because two of the three were wrong and
+each was wrong in a way the next one measured.
+
+The rescale alone cost five certified cells, nineteen down to fourteen. Two
+things broke and they are the same thing from opposite ends. Narrowing the
+energy spread an eighth while widening the recharge spread a third moved
+weight onto the refill and left the Anvil pinned at the floor of it, taking
+42.5% at low skill. And holding speed inside the band slowed the whole roster
+a sixth, which raised the price of turning: refitting on that run prices
+rotation at -0.26 win points a hundred units at low skill, +6.76 at mid and
++11.78 at high. Energy and recharge explained 94% of the spread before the
+rescale and 72% after. Rotation is what takes it back to 94%, and it is why
+the Chord ran to 56.5% at high.
+
+The first correction took the Anvil off the recharge floor, the Chord off the
+rotation ceiling and some refill off the Cipher. Seventeen of twenty-one, and
+a lesson: the regression priced recharge at one to three win points a hundred
+and the roster answered at about four, so the Anvil's +160 bought seven points
+and the Cipher's -150 cost five and a half. A fit of seven bodies against
+three predictors is a direction and not a magnitude.
+
+The second sized itself off that measured response instead, 74 and 75 units
+rather than another 150, and landed the Chord within 1.5 points of prediction
+and the Cipher within 0.9. Nineteen of twenty-one, which is where the roster
+was before any of this:
+
+| body | rescale | first pass | second |
+|---|---|---|---|
+| Apex | 49.0 / 49.1 / 49.1 | 49.1 / 47.7 / 48.1 | 48.8 / 47.2 / 49.5 |
+| Wedge | 48.1 / 49.3 / 48.6 | 49.1 / 51.1 / 49.0 | 48.1 / 51.5 / 49.0 |
+| Chord | 50.7 / **54.1** / **56.5** | 49.9 / 52.1 / **54.0** | 48.9 / 50.9 / 51.9 |
+| Anvil | **42.5** / **45.3** / **46.3** | 49.7 / 52.3 / 52.5 | 49.3 / 52.5 / 51.3 |
+| Cipher | **56.9** / 51.7 / 48.9 | 50.8 / **46.2** / **46.4** | **53.5** / 49.0 / 48.5 |
+| Facet | **53.3** / 51.4 / 51.0 | **53.6** / 51.7 / 50.3 | **53.1** / 50.3 / 50.3 |
+| Lattice | 49.5 / 49.0 / 49.7 | 48.0 / 48.9 / 49.5 | 48.5 / 48.6 / 49.4 |
+
+Low, mid and high in each cell. The Chord ends better than it began: it missed
+at high skill on the roster this replaced and certifies at every skill now. The
+high stratum is the tightest band in the roster at 48.5 to 51.9, where the
+broken rescale had it 46.3 to 56.5. The two cells left out are the Cipher and
+the Facet at low skill, both at p just under the line, and neither is worth a
+correction that has twice landed larger than it was sized for.
+
+Two smaller things fell out of it. The Chord's thrust buys nothing measurable:
+energy, recharge and rotation explain 97% of the high-skill spread on their own
+and its residual is half a point, which retires the idea that the hull at the
+top of the thrust column is strong because of it. And the roster's
+anti-correlation is monotonic across all seven for the first time, the Chord
+having been the one hull with more energy than an Apex and a faster refill
+besides.
+
+The duel arm is unchanged at eleven cells, Chord 35.5% and Cipher 60.1% at mid
+against the 36.7 and 62.6 recorded above. Everything in the paragraph before
+this section still holds, and the reason it holds is now measured twice: a
+correction solved on the team arm arrives in the pit at roughly double
+strength, so the Anvil's team fix reads 61.3% there. Balancing both rooms is
+still not reachable from these columns.
+
 ## Open questions
 
 Whether seven distinct ships is more roster than we can keep balanced. The
