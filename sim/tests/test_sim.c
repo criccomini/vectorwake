@@ -261,14 +261,14 @@ static int bombed(const sim_settings *c, int cls, int off, int prox) {
  * a fresh value. The Makefile caps every test function's frame as a backstop. */
 enum { APEX = 0, ANVIL = 3 };
 
-/* Strip every hull's profile, in place.
+/* Strip the build every hull arrives on, in place.
  *
  * Most of this file is about physics: what a round does to a wall, how a fuse
  * arms, where a blast reaches. Those tests want one plain round leaving one
- * hull, and the roster deliberately no longer has a hull like that: an Apex
- * throws a pair, a Facet throws five, and a Lattice's rounds come off walls.
- * Stripping the profiles asks the question the test is actually about instead
- * of picking whichever ship is closest to bare this week. */
+ * hull, and the row a pilot arrives on is a whole ship: a second rung on both
+ * weapons, a gun that bounces, a fuse and shrapnel on the bomb. `main` strips
+ * it once so that every test below flies a bare hull and the ones that are
+ * actually about a build deal themselves one. */
 static void bare_kits(sim_settings *cfg) {
     for (int i = 0; i < SIM_MAX_CLASSES; i++)
         memset(cfg->classes[i].kit, 0, sizeof cfg->classes[i].kit);
@@ -365,14 +365,17 @@ static void test_flight_and_damage(const sim_settings *base) {
         CHECK(s.weapon_count == 2, "cooldown expires and the next shot fires");
     }
 
-    /* A pull throws the hull's own number of rounds, which is the profile
-     * speaking: a dart throws two abreast and a brawler five. */
+    /* A pull throws what the build says and the hull has no opinion: the same
+     * spray on two different hulls throws the same rounds. */
     {
         static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
-        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
-        CHECK(s.weapon_count == 2, "the dart throws a pair");
+        sim_spawn(&s, ANVIL, 1, 8192, 12000, 0, &cfg);
+        for (int i = 0; i < 2; i++)
+            s.ships[i].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
+        step_n(&s, &cfg, SIM_BTN_FIRE, SIM_BTN_FIRE, 1);
+        CHECK(s.weapon_count == 4, "one rung of spray is a pair, on either hull");
     }
 
     /* A bullet travels away from its firer and expires on its own. */
@@ -1944,18 +1947,22 @@ static void test_lifecycle(sim_map *m, const sim_settings *base) {
     /* Changing hull is a respawn, not a costume change, and it leaves the
      * rest of the arena exactly where it was.
      *
-     * The profile does not cross, because the profile is the ship: you climb
-     * out of one and into another. What does cross is the ammunition you have
-     * already spent, clamped to what the new hull carries, so a hull change
-     * is not a reload and not a way to smuggle a deeper rack across. */
+     * The build crosses, because the build is the pilot's: what you spent is
+     * yours and the hull is what you are sitting in. So does the ammunition
+     * you have already spent, so a hull change is not a reload. */
     {
         static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         sim_spawn(&s, APEX, 1, 8500, 8192, 0, &cfg);
+        uint8_t spray[SIM_SLOT_COUNT];
+        memset(spray, 0, sizeof spray);
+        spray[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] = 1;
+        spray[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 2;
+        CHECK(sim_set_ship_kit(&s, &cfg, 0, spray) == 0, "a build is dealt");
         step_n(&s, &cfg, SIM_BTN_THRUST, SIM_BTN_THRUST, 30);
         CHECK(sim_mod_get(s.ships[0].mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
-              "the dart throws a pair");
+              "the pilot bought a pair");
         /* One spent, so the reload this is not can be seen. */
         s.ships[0].charge[SIM_CHARGE_REPEL] = 1;
         int32_t foe_y = s.ships[1].y;
@@ -1964,10 +1971,10 @@ static void test_lifecycle(sim_map *m, const sim_settings *base) {
         CHECK(s.ships[0].cls == ANVIL, "into the one asked for");
         CHECK(s.ships[0].y == s.ships[0].spawn_y, "back at the start");
         CHECK(s.ships[0].vx == 0 && s.ships[0].vy == 0, "and at rest");
-        CHECK(sim_mod_get(s.ships[0].mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 0,
-              "wearing the new hull's profile rather than the old one's");
+        CHECK(sim_mod_get(s.ships[0].mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
+              "still wearing the build it climbed out with");
         CHECK(s.ships[0].charge[SIM_CHARGE_REPEL] == 1,
-              "and what it spent stays spent, even into a deeper rack");
+              "and what it spent stays spent");
         CHECK(s.ships[0].energy ==
               sim_eff_max_energy(&cfg.classes[ANVIL], &s.ships[0]),
               "with a full bar of the new ship");
@@ -2599,7 +2606,7 @@ static void test_tech_tree(const sim_settings *base) {
      * ladder a pilot's credits can climb, and that no profile asks for
      * something its hull cannot carry. */
     {
-        const int WEDGE = 1, CHORD = 2, CIPHER = 4, LATTICE = 6;
+        const int CHORD = 2, CIPHER = 4, LATTICE = 6;
 
         /* Flight is per hull and the step is zero, so what a hull flies at is
          * its floor and its ceiling at once. A nonzero step here would mean a
@@ -2637,18 +2644,17 @@ static void test_tech_tree(const sim_settings *base) {
                                  != cfg.classes[k].max_energy,
                       "no two hulls fly the same way");
 
-        /* Every hull has a gun. One has no rack, which is the case the core
-         * has always handled and nothing until now used. */
+        /* Every hull has both triggers and they are the same two weapons.
+         * A hull is a flight row and a footprint; nothing about what leaves
+         * it is written on it, so the raider throws the heavy's bomb. */
         for (int i = 0; i < cfg.class_count; i++)
-            CHECK(cfg.classes[i].trigger[SIM_TRIG_GUN][0] != SIM_NO_PATTERN,
-                  "every hull has a gun");
-        CHECK(cfg.classes[CIPHER].trigger[SIM_TRIG_BOMB][0] == SIM_NO_PATTERN,
-              "the raider has no rack at all");
-        for (int i = 0; i < cfg.class_count; i++)
-            if (i != CIPHER)
-                CHECK(cfg.classes[i].trigger[SIM_TRIG_BOMB][0]
-                          != SIM_NO_PATTERN,
-                      "and everybody else does");
+            for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+                CHECK(cfg.classes[i].trigger[t][0] != SIM_NO_PATTERN,
+                      "every hull has both triggers");
+                CHECK(cfg.classes[i].trigger[t][0]
+                          == cfg.classes[0].trigger[t][0],
+                      "and the same weapon on each as everybody else");
+            }
 
         /* And every one of those is a ladder rather than a single weapon,
          * because a ladder of one is a slot a pilot cannot spend on.
@@ -2706,50 +2712,47 @@ static void test_tech_tree(const sim_settings *base) {
             }
         }
 
-        /* What the profiles say, which is the roster's other half. */
-        /* The claim rather than the count. What makes the Lattice the Lattice
-         * is that nobody out-racks it in either kind, and how deep that is is
-         * a tuning number `calibrate hulls` moves. Pinning the number made a
-         * balance pass fail this test rather than the balance. */
-        for (int i = 0; i < cfg.class_count; i++) {
-            CHECK(cfg.classes[i].kit[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)]
-                      <= cfg.classes[6].kit[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)]
-                  && cfg.classes[i].kit[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)]
-                         <= cfg.classes[6]
-                                .kit[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)],
-                  "the support hull carries the deepest rack of both kinds");
-        }
-        CHECK(cfg.classes[5].kit[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)]
-                  == 4,
-              "the brawler throws five rounds at a pull");
-        CHECK(cfg.classes[WEDGE].kit[SIM_SLOT_MOD(SIM_TRIG_BOMB,
-                                                  SIM_MOD_SHRAPNEL)] == 2,
-              "and the bomber's rack breaks up");
+        /* The row a pilot arrives on, which the suite strips everywhere else.
+         * One row, the same in every hull, spending every credit there is:
+         * that is what "the build is the pilot's" means where a pilot has not
+         * said anything yet. */
+        static sim_settings fresh;
+        memset(&fresh, 0, sizeof fresh);
+        sim_settings_baseline(&fresh, cfg.map);
+        for (int i = 0; i < fresh.class_count; i++)
+            CHECK(memcmp(fresh.classes[i].kit, fresh.classes[0].kit,
+                         SIM_SLOT_COUNT) == 0,
+                  "every hull arrives on the same build");
+        CHECK(sim_kit_cost(fresh.classes[0].kit) == SIM_KIT_CREDITS,
+              "and it spends every credit a pilot has");
 
-        /* Two kinds of charge and no more, on every hull. A third would bind
-         * to no key, per SIM_KIT_CHARGE_SLOTS. */
-        for (int i = 0; i < cfg.class_count; i++) {
+        /* Two kinds of charge and no more. A third would bind to no key, per
+         * SIM_KIT_CHARGE_SLOTS. */
+        {
             int kinds = 0;
             for (int k = 0; k < SIM_MAX_CHARGES; k++)
-                if (cfg.classes[i].kit[SIM_SLOT_CHARGE(k)]) kinds++;
+                if (fresh.classes[0].kit[SIM_SLOT_CHARGE(k)]) kinds++;
             CHECK(kinds <= SIM_KIT_CHARGE_SLOTS,
-                  "no profile carries a third charge kind");
+                  "the arrival build carries no third charge kind");
         }
 
-        /* A profile never asks for more than its slot can physically hold,
-         * so dealing it lands exactly what it names. */
-        for (int i = 0; i < cfg.class_count; i++) {
+        /* It never asks for more than a slot can physically hold, so dealing
+         * it lands exactly what it names, in whichever hull. */
+        for (int i = 0; i < fresh.class_count; i++) {
             static sim_state probe;
             sim_init(&probe, 7);
-            int seat = sim_spawn(&probe, (uint8_t)i, 0, 8192, 8192, 0, &cfg);
+            int seat = sim_spawn(&probe, (uint8_t)i, 0, 8192, 8192, 0, &fresh);
             CHECK(seat >= 0, "the hull seats");
             const sim_ship *sh = &probe.ships[seat];
-            const uint8_t *kit = cfg.classes[i].kit;
-            for (int t = 0; t < SIM_TRIG_COUNT; t++)
+            const uint8_t *kit = fresh.classes[i].kit;
+            for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+                CHECK(sh->level[t] == kit[SIM_SLOT_LEVEL(t)],
+                      "the rung it names is the rung it flies");
                 for (int m = 0; m < SIM_MOD_COUNT; m++)
                     CHECK(sim_mod_get(sh->mods[t], m)
                               == kit[SIM_SLOT_MOD(t, m)],
-                          "every add-on the profile names is worn");
+                          "every add-on it names is worn");
+            }
             for (int k = 0; k < SIM_MAX_CHARGES; k++)
                 CHECK(sh->charge[k] == kit[SIM_SLOT_CHARGE(k)],
                       "and every charge it names is racked");
@@ -2874,14 +2877,14 @@ static void test_tech_tree(const sim_settings *base) {
         CHECK((s.weapons[0].vx < 0) != (s.weapons[1].vx < 0),
               "one either side of where it is pointing");
 
-        /* And the count is the hull's own. A Facet throws five at a pull
-         * because it is a Facet, which is the two barrels it has always been
-         * drawn with finally being true. */
+        /* And the count is the build's, all the way up the ladder: four rungs
+         * of spray is five rounds, off whichever hull bought them. */
         static sim_state f;
         sim_init(&f, 1);
         sim_spawn(&f, (uint8_t)FACET, 0, 8192, 8192, 0, &cfg);
+        f.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 4);
         step_n(&f, &cfg, SIM_BTN_FIRE, 0, 1);
-        CHECK(f.weapon_count == 5, "the brawler throws five at a pull");
+        CHECK(f.weapon_count == 5, "four rungs of spray is five at a pull");
 
         /* Fanned and not scattered, which is a real distinction here: spacing
          * of zero on a pattern of many is the shrapnel encoding, and it rolls
@@ -2970,15 +2973,10 @@ static void test_tech_tree(const sim_settings *base) {
     }
 
     {
-        /* Climbing a rung swaps which pattern the trigger fires.
-         *
-         * The shipped roster names one rung per hull, so the ladder above it
-         * is written here: what is under test is the mechanism a zone uses,
-         * not something anybody in this game climbs. */
+        /* Climbing a rung swaps which pattern the trigger fires, off the
+         * ladder the baseline ships: three rungs, and a credit apiece. */
         sim_settings w = cfg;
         bare_kits(&w);
-        w.classes[APEX].trigger[SIM_TRIG_GUN][1] =
-            cfg.classes[ANVIL].trigger[SIM_TRIG_GUN][0];
         static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
@@ -2992,9 +2990,8 @@ static void test_tech_tree(const sim_settings *base) {
         CHECK(w.specs[s.weapons[0].spec].damage == l2,
               "and what left the ship is the rung it is on");
 
-        /* And it costs what its own pattern says. The rungs used to be one
-         * weapon at multiples of a base energy; a rung is a weapon a zone
-         * writes now, so the price is the weapon's rather than a formula. */
+        /* And it costs what its own pattern says: BulletFireEnergy times the
+         * level, so the rung above is dearer to pull. */
         CHECK(gun_cost(&w, (uint8_t)APEX, 1, 0, NULL)
                   > gun_cost(&w, (uint8_t)APEX, 0, 0, NULL),
               "and the heavier round costs more to throw");
@@ -3333,8 +3330,6 @@ static void test_tech_tree(const sim_settings *base) {
          * is already in the air reads it. */
         sim_settings w = cfg;
         bare_kits(&w);
-        w.classes[APEX].trigger[SIM_TRIG_GUN][1] =
-            cfg.classes[ANVIL].trigger[SIM_TRIG_GUN][0];
         static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
@@ -3505,15 +3500,20 @@ static void test_tech_tree(const sim_settings *base) {
 
     {
         /* A death costs the run and whatever ammunition was already spent.
-         * The frame comes back at the respawn, dealt from the hull's own
-         * profile, because the profile is what the ship is rather than
-         * something the pilot survived with. */
+         * The frame comes back at the respawn, dealt from the build the pilot
+         * bought, because a build is what they own rather than something they
+         * survived with. */
         sim_settings dk = cfg;
         dk.respawn_delay = 4;
         static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &dk);
         sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 32768, &dk);
+        uint8_t bought[SIM_SLOT_COUNT];
+        memset(bought, 0, sizeof bought);
+        bought[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] = 1;
+        bought[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = 1;
+        CHECK(sim_set_ship_kit(&s, &dk, 0, bought) == 0, "the build is dealt");
         s.ships[0].streak = 5;
         s.ships[0].charge[SIM_CHARGE_BURST] = 0;   /* the one it had, spent */
         s.ships[0].energy = 1;
@@ -3522,7 +3522,7 @@ static void test_tech_tree(const sim_settings *base) {
         CHECK(s.ships[0].streak == 0, "and the run it was on is over");
         CHECK(s.ships[0].alive, "and comes back inside the run");
         CHECK(sim_mod_get(s.ships[0].mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
-              "with the profile re-dealt");
+              "with the build re-dealt");
         CHECK(s.ships[0].charge[SIM_CHARGE_BURST] == 0,
               "but not the burst it had already spent");
     }
@@ -3711,11 +3711,15 @@ static void test_scoring(const sim_settings *base) {
         }
 
         /* A kind the zone leaves empty is a kind nothing is dealt, however
-         * loudly a profile asks for it. */
+         * loudly a build asks for it. */
         const int LATTICE = 6;
         static sim_settings none;
         none = cfg;
         none.charge[SIM_CHARGE_REPEL] = SIM_NO_PATTERN;
+        for (int i = 0; i < none.class_count; i++) {
+            none.classes[i].kit[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 2;
+            none.classes[i].kit[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = 1;
+        }
         static sim_state s;
         sim_init(&s, 1);
         int seat = sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &none);
@@ -4983,15 +4987,17 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
 static void test_kits_and_matches(const sim_settings *base) {
     sim_settings cfg = *base;
 
-    /* --- the profile -----------------------------------------------------
+    /* --- the arrival build -----------------------------------------------
      *
-     * A ship is dealt its hull's profile at the seat and dealt it again at
-     * every respawn, minus the ammunition, which is the whole of what a death
-     * takes besides the run. Greens used to reach the same counts by rolling
-     * for them and a hangar by spending thirty points on them; the counts are
-     * what survived both. */
+     * A ship is dealt a build at the seat and dealt it again at every
+     * respawn, minus the ammunition, which is the whole of what a death takes
+     * besides the run. Nobody has said anything here, so what lands is the
+     * row the baseline ships, which is why this one settings copy is the
+     * shipped one rather than the suite's stripped cfg. */
     {
-        sim_settings kc = cfg;
+        static sim_settings kc;
+        memset(&kc, 0, sizeof kc);
+        sim_settings_baseline(&kc, cfg.map);
         static sim_state s;
         sim_init(&s, 3);
         const int FACET = 5;
@@ -5001,9 +5007,9 @@ static void test_kits_and_matches(const sim_settings *base) {
 
         for (int k = 0; k < SIM_SLOT_COUNT; k++)
             CHECK(held_of(sh, (uint8_t)k) == kit[k],
-                  "every slot holds exactly what the profile names");
-        CHECK(sim_mod_get(sh->mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 4,
-              "which for the brawler is five rounds at a pull");
+                  "every slot holds exactly what the build names");
+        CHECK(sh->level[SIM_TRIG_GUN] == 1 && sh->charge[SIM_CHARGE_REPEL] == 1,
+              "which is the second rung and a repel to get out with");
 
         /* A slot that would overflow the bits it is packed into is clamped
          * rather than wrapping, whatever a zone writes into a profile. Held
@@ -5049,11 +5055,15 @@ static void test_kits_and_matches(const sim_settings *base) {
                   == sim_slot_cap(&tall, FACET, SIM_SLOT_LEVEL(SIM_TRIG_GUN)),
               "the hull stops at the top of the ladder it has");
 
-        /* And a trigger with no ladder at all has no rung to buy: the Cipher
-         * carries no rack, so the credit is refused rather than spent on a
-         * bomb it cannot throw. */
+        /* And a trigger with no ladder at all has no rung to buy. Every hull
+         * this game ships carries both, so the rack is taken away here: a
+         * zone may still write a weapon nobody has, and the credit is refused
+         * rather than spent on a bomb that cannot be thrown. */
         const int CIPHER = 4;
-        sim_settings bare = kc;
+        static sim_settings bare;
+        bare = kc;
+        for (int r = 0; r < SIM_MAX_RUNGS; r++)
+            bare.classes[CIPHER].trigger[SIM_TRIG_BOMB][r] = SIM_NO_PATTERN;
         memset(bare.classes[CIPHER].kit, 0, SIM_SLOT_COUNT);
         bare.classes[CIPHER].kit[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] = 1;
         static sim_state b;
@@ -5071,8 +5081,8 @@ static void test_kits_and_matches(const sim_settings *base) {
         sh->respawn_at = 1;
         step_n(&s, &kc, 0, 0, 2);
         CHECK(sh->alive, "the pilot comes back");
-        CHECK(sim_mod_get(sh->mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 4,
-              "with the profile re-dealt, add-ons and all");
+        CHECK(sim_mod_get(sh->mods[SIM_TRIG_BOMB], SIM_MOD_PROX) == 1,
+              "with the build re-dealt, add-ons and all");
         CHECK(sh->charge[SIM_CHARGE_REPEL] == 1,
               "and exactly the ammunition they had left");
     }
@@ -5082,7 +5092,9 @@ static void test_kits_and_matches(const sim_settings *base) {
      * on the class: a respawn happens inside the step, where there is nobody
      * to ask what this pilot chose. */
     {
-        sim_settings kc = *base;
+        static sim_settings kc;
+        memset(&kc, 0, sizeof kc);
+        sim_settings_baseline(&kc, base->map);
         static sim_state s;
         sim_init(&s, 3);
         const int APEX_ = 0;
@@ -5091,11 +5103,11 @@ static void test_kits_and_matches(const sim_settings *base) {
 
         uint8_t mine[SIM_SLOT_COUNT];
         sim_kit_default(&kc, APEX_, mine);
-        CHECK(sim_kit_cost(mine) == 4,
-              "the Apex arrives on the four credits its profile spends");
+        CHECK(sim_kit_cost(mine) == SIM_KIT_CREDITS,
+              "a pilot arrives on every credit they have");
 
-        /* Three of the four moved off the rack and onto the gun: an Apex
-         * that fires four rounds and carries one repel. */
+        /* Spent another way: four rounds at a pull and one repel, which is a
+         * different ship in the same hull. */
         memset(mine, 0, sizeof mine);
         mine[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] = 3;
         mine[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 1;
@@ -5254,9 +5266,9 @@ static void test_kits_and_matches(const sim_settings *base) {
             CHECK(sh->kills == 0 && sh->deaths == 0,
                   "the tally is the match's own and starts again");
             CHECK(sh->streak == 0, "and so does the run");
-            CHECK(sim_mod_get(sh->mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
-                  "the profile is dealt");
-            CHECK(sh->charge[SIM_CHARGE_REPEL] == 2,
+            CHECK(sim_mod_get(sh->mods[SIM_TRIG_BOMB], SIM_MOD_PROX) == 1,
+                  "the build is dealt");
+            CHECK(sh->charge[SIM_CHARGE_REPEL] == 1,
                   "with the ammunition, which is what a whistle gives back");
             CHECK(sh->x == sh->spawn_x && sh->y == sh->spawn_y,
                   "on a start rather than wherever the last match left them");
@@ -5304,6 +5316,9 @@ int main(void) {
     sim_settings cfg;
     memset(&cfg, 0, sizeof cfg);
     sim_settings_baseline(&cfg, m);
+    /* Bare, for the whole suite. What a hull carries is a build now, not a
+     * property of the hull, so a test that wants one says so. */
+    bare_kits(&cfg);
 
     test_flight_and_damage(&cfg);
     test_maps(&cfg);

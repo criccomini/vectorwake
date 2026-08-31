@@ -102,14 +102,14 @@ pub struct ArenaConfig {
     /// does not reach.
     pub wormhole_pull: Option<i32>,
     pub wormhole_range: Option<i32>,
-    /// Per class: a flight row, a weapon ladder and a profile. Anything left
-    /// out keeps the baseline's, which is the shipped roster.
+    /// Per class: a flight row, which is the whole of what a hull is.
+    /// Anything left out keeps the baseline's, which is the shipped roster.
     pub ships: Vec<ShipConfig>,
-    /// Weapons, by name. A name the baseline already built (`apex-gun`,
-    /// `anvil-bomb`, `anvil-bomb-2` for the rung above it, `charge-1` for the
-    /// repel, `shrapnel-2` for what a second rung of shrapnel breaks into)
-    /// tunes that weapon; any other name creates one, which a hull can then
-    /// carry or another weapon can splinter into.
+    /// Weapons, by name. A name the baseline already built (`gun`, `bomb`,
+    /// `bomb-2` for the rung above it, `charge-1` for the repel, `shrapnel-2`
+    /// for what a second rung of shrapnel breaks into) tunes that weapon for
+    /// the room; any other name creates one, which another weapon can
+    /// splinter into or a charge slot can hold.
     pub weapons: Vec<WeaponConfig>,
     /// What one rung of each add-on is worth, by add-on name. Units are the
     /// field each moves: barrels, walls, px of fuse, ticks of stall, px/s/10
@@ -183,25 +183,22 @@ impl Default for LagConfig {
     }
 }
 
-/// One hull's zone-selectable weapon ladders.
+/// One hull's flight row, which is the whole of what a hull is.
 ///
-/// Footprint is deliberately absent. Every hull spends the same 625 square
-/// pixels of target area, and the client drawing is fitted to that baseline
-/// rectangle. A zone-only override would break both contracts. Flight and kit
-/// depth are shared for the same reason: thirty points buys the same ship
-/// whichever silhouette carries it. See docs/design/ships.md.
+/// No weapon and no build. Both used to be here, a ladder and a profile per
+/// hull, and a hull that decides what a pilot carries is a hull deciding what
+/// they fly: the loadout is the pilot's now and the weapons are the arena's.
+/// A zone tunes a weapon by name under `[[arena.weapons]]` and everybody in
+/// the room gets it.
+///
+/// Footprint is deliberately absent too. Every hull spends the same 625
+/// square pixels of target area, and the client drawing is fitted to that
+/// baseline rectangle, so a zone-only override would break both contracts.
+/// See docs/design/ships.md.
 #[derive(Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct ShipConfig {
     pub name: String,
-    /// What the two triggers fire: the ladder, by weapon name, first rung
-    /// first. One name is a hull that never levels and `bomb = []` takes the
-    /// rack out. A hull keeps its own ladder unless the file says otherwise.
-    ///
-    /// Which rung this hull fires is `gun_rung` below, and the shipped roster
-    /// leaves every hull on rung zero.
-    pub gun: Option<Vec<String>>,
-    pub bomb: Option<Vec<String>>,
 
     /// This hull's flight, in the settings file's own units: px/s/10, tenths
     /// of the documented thrust unit, 400 to a full turn a second, energy,
@@ -212,26 +209,6 @@ pub struct ShipConfig {
     pub rotation: Option<i32>,
     pub energy: Option<i32>,
     pub recharge: Option<i32>,
-
-    /// The profile: what this hull carries, over the flat slot space.
-    ///
-    /// `gun_mods = { multi = 4, bounce = 1 }` is the brawler's five rounds
-    /// coming off a wall. A block that names any add-on for a trigger names
-    /// all of them, so what it leaves out is an add-on this hull does not
-    /// carry; leaving the table out entirely keeps the baseline's.
-    ///
-    /// This was one section for the whole arena, describing a shelf. There is
-    /// no shelf: a hull is a whole ship and this is where that ship is said.
-    pub gun_mods: Option<HashMap<String, u8>>,
-    pub bomb_mods: Option<HashMap<String, u8>>,
-    /// The rack, by slot: `charges = [2, 1]` is two repels and one burst. At
-    /// most two kinds, since a third would bind to no key.
-    pub charges: Option<Vec<u8>>,
-    /// Which rung of each ladder this hull fires. Zero, and the shipped
-    /// roster leaves it there: a rung is machinery a zone may use, not
-    /// something anybody climbs.
-    pub gun_rung: Option<u8>,
-    pub bomb_rung: Option<u8>,
 }
 
 /// One weapon: what a trigger makes, and what one projectile of it is. The
@@ -391,10 +368,8 @@ bounce = 12
 
 [[arena.ships]]
 name = "Apex"
-bomb = []
 speed = 3700
-gun_mods = { multi = 2 }
-charges = [3, 1]
+rotation = 260
 "#;
 
     #[test]
@@ -403,13 +378,8 @@ charges = [3, 1]
         assert_eq!(c.name, "test zone");
         assert_eq!(c.arena.flags, 3);
         assert_eq!(c.arena.bounce, Some(12));
-        assert_eq!(c.arena.ships[0].bomb, Some(Vec::new()));
         assert_eq!(c.arena.ships[0].speed, Some(3700));
-        assert_eq!(
-            c.arena.ships[0].gun_mods.as_ref().unwrap().get("multi"),
-            Some(&2)
-        );
-        assert_eq!(c.arena.ships[0].charges, Some(vec![3, 1]));
+        assert_eq!(c.arena.ships[0].rotation, Some(260));
     }
 
     #[test]

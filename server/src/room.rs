@@ -820,34 +820,34 @@ impl Room {
             world.cfg.wormhole_range = v * 256;
         }
 
-        // Weapons are named here and numbered in the core. Rung zero of each
-        // hull's gun and rack gets the name an operator would guess,
-        // `apex-gun` or `anvil-bomb`, and anything else in the file is a
-        // weapon that did not exist before. A trigger is a ladder, so the
-        // rungs above that one are `apex-gun-2` and up, which reads as the
-        // level it is.
+        // Weapons are named here and numbered in the core. There is one gun
+        // and one bomb in this game, whoever is flying, so rung zero of each
+        // gets the name an operator would guess, `gun` or `bomb`, and
+        // anything else in the file is a weapon that did not exist before. A
+        // trigger is a ladder, so the rungs above that one are `gun-2` and
+        // up, which reads as the level it is.
+        //
+        // These were per hull, `apex-gun` and `anvil-bomb`, back when a hull
+        // owned its weapons. Tuning one now tunes it for the room.
         let mut named: Vec<(String, u8)> = Vec::new();
-        for (i, hull) in ai::CLASS_NAMES.iter().enumerate() {
-            let hull: &str = hull;
-            let cls = world.cfg.classes[i];
-            for (t, trig) in ["gun", "bomb"].iter().enumerate() {
-                for (rung, &pat) in cls.trigger[t].iter().enumerate() {
-                    if pat == sim::NO_PATTERN {
-                        break;
-                    }
-                    let n = if rung == 0 {
-                        format!("{}-{trig}", hull.to_lowercase())
-                    } else {
-                        format!("{}-{trig}-{}", hull.to_lowercase(), rung + 1)
-                    };
-                    named.push((n, pat));
+        let cls = world.cfg.classes[0];
+        for (t, trig) in ["gun", "bomb"].iter().enumerate() {
+            for (rung, &pat) in cls.trigger[t].iter().enumerate() {
+                if pat == sim::NO_PATTERN {
+                    break;
                 }
+                let n = if rung == 0 {
+                    (*trig).to_string()
+                } else {
+                    format!("{trig}-{}", rung + 1)
+                };
+                named.push((n, pat));
             }
         }
         // And the weapons that belong to a slot in the settings rather than to
-        // a hull: the four charges, and what each rung of shrapnel breaks
+        // a trigger: the four charges, and what each rung of shrapnel breaks
         // into. Without names those were the only weapons in the zone an
-        // operator could not touch -- the repel's own radius was ours and
+        // operator could not touch: the repel's own radius was ours and
         // nobody else's.
         for (name, pat) in Room::slots(world) {
             if pat != sim::NO_PATTERN {
@@ -932,42 +932,6 @@ impl Room {
                 warn.push(format!("no hull called \"{}\"", s.name));
                 continue;
             };
-            for (t, (field, want)) in [("gun", &s.gun), ("bomb", &s.bomb)].into_iter().enumerate() {
-                let Some(want) = want else { continue };
-                if want.len() > sim::MAX_RUNGS {
-                    warn.push(format!(
-                        "{}'s {field} ladder is {} rungs and {} is the ceiling",
-                        s.name,
-                        want.len(),
-                        sim::MAX_RUNGS
-                    ));
-                    continue;
-                }
-                // The whole ladder, first rung first, and an empty list takes
-                // the trigger away -- which is how a hull loses its bomb rack
-                // rather than being handed a free one. A name that resolves to
-                // nothing leaves the hull's own ladder alone: half-applying it
-                // would silently shorten the ladder, and a shortened ladder is
-                // a hull that stops levelling for no reason a log would show.
-                let mut ladder = [sim::NO_PATTERN; sim::MAX_RUNGS];
-                let mut ok = true;
-                for (rung, n) in want.iter().enumerate() {
-                    match named.iter().find(|(nm, _)| nm == n) {
-                        Some(&(_, p)) => ladder[rung] = p,
-                        None => {
-                            warn.push(format!(
-                                "{} has no weapon called \"{n}\" to put on its {field}",
-                                s.name
-                            ));
-                            ok = false;
-                        }
-                    }
-                }
-                if ok {
-                    world.cfg.classes[idx].trigger[t] = ladder;
-                }
-            }
-
             // This hull's flight. Flat, because nobody upgrades one: the
             // floor, the step and the ceiling all move together, so a zone
             // writes one number a stat and gets exactly that.
@@ -1016,76 +980,6 @@ impl Room {
                         *step = 0;
                         *cap = v;
                     }
-                }
-            }
-
-            // And this hull's profile: what it actually carries.
-            for (t, mods) in [("gun", &s.gun_mods), ("bomb", &s.bomb_mods)]
-                .into_iter()
-                .enumerate()
-            {
-                let Some(mods) = mods.1 else { continue };
-                // A block that names any add-on names all of them: what it
-                // leaves out is an add-on this hull does not carry. Merging
-                // into the baseline instead would make "no shrapnel on this
-                // one" unsayable.
-                for m in 0..sim::MOD_COUNT {
-                    world.cfg.classes[idx].kit[sim::slot_mod(t, m) as usize] = 0;
-                }
-                for (name, rungs) in mods {
-                    match Room::mod_index(name) {
-                        // Clamped to what the slot can physically hold. Spray
-                        // is a count of rounds and climbs to five where
-                        // everything else stops at three, which `mod_max`
-                        // exists to say.
-                        Some(m) => {
-                            world.cfg.classes[idx].kit[sim::slot_mod(t, m) as usize] =
-                                (*rungs).min(sim::mod_max(m));
-                        }
-                        None => warn.push(format!("\"{name}\" is not an add-on")),
-                    }
-                }
-            }
-            if let Some(charges) = &s.charges {
-                if charges.len() > sim::MAX_CHARGES {
-                    warn.push(format!(
-                        "{} names {} charge slots and there are {}",
-                        s.name,
-                        charges.len(),
-                        sim::MAX_CHARGES
-                    ));
-                }
-                for k in 0..sim::MAX_CHARGES {
-                    world.cfg.classes[idx].kit[sim::slot_charge(k) as usize] = 0;
-                }
-                for (k, &n) in charges.iter().take(sim::MAX_CHARGES).enumerate() {
-                    world.cfg.classes[idx].kit[sim::slot_charge(k) as usize] =
-                        n.min(sim::CHARGE_MAX);
-                }
-                // Two kinds and no more, whatever the file asks for: a third
-                // would bind to no key. Kept in kind order, so which two is
-                // the zone's decision and which key is the pilot's.
-                let mut kinds = 0;
-                for k in 0..sim::MAX_CHARGES {
-                    let slot = sim::slot_charge(k) as usize;
-                    if world.cfg.classes[idx].kit[slot] == 0 {
-                        continue;
-                    }
-                    kinds += 1;
-                    if kinds > sim::KIT_CHARGE_SLOTS {
-                        world.cfg.classes[idx].kit[slot] = 0;
-                        warn.push(format!(
-                            "{} names more than {} kinds of charge",
-                            s.name,
-                            sim::KIT_CHARGE_SLOTS
-                        ));
-                    }
-                }
-            }
-            for (t, rung) in [s.gun_rung, s.bomb_rung].into_iter().enumerate() {
-                if let Some(rung) = rung {
-                    world.cfg.classes[idx].kit[sim::slot_level(t) as usize] =
-                        rung.min(sim::MAX_RUNGS as u8 - 1);
                 }
             }
         }

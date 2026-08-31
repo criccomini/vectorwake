@@ -1,14 +1,14 @@
 # Weapons
 
 > **Two parts of this changed.** [match-game.md](match-game.md) removed greens
-> entirely, keeping the upgrade space below as the coordinate system a ship's
-> profile is written in. What the pickup, its weights and rust were is in
-> `docs/research/` with the rest of the original's tables. Mines are gone as
-> well; decision 62 says why, and the original's own tables for them stay in
-> `docs/research/`.
+> entirely, keeping the upgrade space below as the coordinate system a build is
+> written in. What the pickup, its weights and rust were is in `docs/research/`
+> with the rest of the original's tables. Mines are gone as well; decision 62
+> says why, and the original's own tables for them stay in `docs/research/`.
 >
-> Nothing in that space is bought or spent now. A hull carries a fixed row of
-> it and a pilot picks the hull; see [ships.md](ships.md).
+> Nothing in that space is rolled for now. A pilot spends seven credits over
+> it, in whichever hull they are sitting in, and the hull has no say in any of
+> it; see [ships.md](ships.md).
 
 Everything that leaves a ship is the same thing.
 
@@ -186,35 +186,38 @@ bar still has to count as a hit, which is what made the first attempt land
 silently.
 
 **Levels.** Not a field. A level is another spec with a bigger `damage`, and a
-slot in the profile that swaps which pattern the trigger points at. See the
-tech tree below.
+slot in the build that swaps which pattern the trigger points at. See the tech
+tree below.
 
 ## Writing one
 
-A zone file names weapons; the core numbers them. The baseline builds a gun
-and a bomb for every hull and they get the names an operator would guess, so
-tuning one is two lines and does not touch the rest of it:
+A zone file names weapons; the core numbers them. The baseline builds one gun
+and one bomb for the whole room and they get the names an operator would
+guess, so tuning one is two lines and does not touch the rest of it:
 
 ```toml
 [[arena.weapons]]
-name = "anvil-bomb"
+name = "bomb"
 on_wall = "bounce"
 bounces = 3
 ```
 
-The weapons that belong to a settings slot rather than to a hull are named for
-what they are where the baseline fills them, `repel` and `burst`, and for the
-slot where it does not: `charge-3` and `charge-4`, and `shrapnel-1` up, one per
-rung of the add-on. Naming a charge slot the baseline leaves empty makes
+That reaches every pilot in the room, because there is one bomb: a hull is a
+flight row and the weapons are the arena's.
+
+The weapons that belong to a settings slot rather than to a trigger are named
+for what they are where the baseline fills them, `repel` and `burst`, and for
+the slot where it does not: `charge-3` and `charge-4`, and `shrapnel-1` up, one
+per rung of the add-on. Naming a charge slot the baseline leaves empty makes
 the weapon and fills the slot in one block.
 
-Any *other* name makes a weapon that did not exist, which a hull can carry or
-another weapon can splinter into. Order in the file does not matter -- names
-are all collected before any of them are resolved:
+Any *other* name makes a weapon that did not exist, which another weapon can
+splinter into or an empty charge slot can hold. Order in the file does not
+matter, since names are all collected before any of them are resolved:
 
 ```toml
 [[arena.weapons]]
-name = "anvil-bomb"
+name = "bomb"
 splinter = "shrapnel"
 
 [[arena.weapons]]
@@ -224,10 +227,6 @@ life = 40
 damage = 50
 count = 8
 spread = 45          # a full turn over eight, so a rosette
-
-[[arena.ships]]
-name = "Chord"
-bomb = ["repel"]     # the ladder, first rung first; [] takes a rack away
 ```
 
 One block is a pattern *and* its spec, because every weapon anybody has wanted
@@ -246,8 +245,8 @@ stops a weapon block appending another row every time the file is touched.
 A weapon has a **level** and a set of **add-ons**, and they are different
 things.
 
-A level is *the same weapon, harder*: a rung on a ladder of patterns the hull
-carries, and climbing it swaps which one the trigger fires. An add-on changes
+A level is *the same weapon, harder*: a rung on a ladder of patterns the arena
+holds, and climbing it swaps which one the trigger fires. An add-on changes
 the weapon's *character* -- it bounces now, it breaks up, it freezes a bar.
 
 The reason to keep them apart is arithmetic. As rungs, three levels against six
@@ -320,10 +319,11 @@ Their numbers bought two extra rounds, so half of each is what one round costs,
 and a spray of three therefore lands exactly where SVS put it. Every rung above
 that climbs at the same rate, linear like every other add-on here.
 
-The base gun energy is also multiplied by its gun level, as SVS does. Before
-any spray, a level-one shot costs 20, level two costs 40, and level three costs
-60. The harder bullet therefore asks for more of the same bar it is trying to
-take from its target.
+The base gun energy is multiplied by its gun level, as SVS does. Before any
+spray, a level-one shot costs 20, level two costs 40, and level three costs 60.
+The harder bullet therefore asks for more of the same bar it is trying to take
+from its target. That is `BulletFireEnergy` times the level, and the damage
+climbs beside it: `BulletDamageLevel` 200 with 100 a level, so 200, 300, 400.
 
 The damage number is a ceiling. SVS left exact damage off for bullets, burst
 rounds, and shrapnel. Vectorwake keeps that curve's mean without its variance:
@@ -349,7 +349,8 @@ multiplying them, so the ladder reads as a count: three rungs is four rounds,
 not eight. That was the Terrier's real behavior, and here it falls out of the
 model instead of being written down for one hull.
 
-Every hull uses the baseline's 25-tick gun delay.
+The rate never moves. `BulletFireDelay` is 25 whatever the level and whatever
+the hull, so a rung buys the size of one arriving hit and never a second gun.
 
 ### A shot is what it was when it left
 
@@ -377,29 +378,26 @@ shrapnel-loaded bomb still gets the bomb they threw.
 
 What the space can hold, which is what the core's own maxima allow rather than
 a row any zone writes: a weapon climbs to `SIM_MAX_RUNGS`, an add-on to
-`SIM_MOD_MAX`, and spray to `SIM_MOD_MULTI_MAX`. A hull's profile is clamped to
-those where it is dealt, so a zone that writes a hull past them gets the
-ceiling rather than a refusal.
+`SIM_MOD_MAX`, and spray to `SIM_MOD_MULTI_MAX`. A build is clamped to those
+where it is dealt, so a client asking past them gets the ceiling rather than a
+refusal.
 
-There was a settings row here, `sim_settings::kit_ceiling`, saying how far each
-weapon climbed and how deep each add-on went for every hull in the room. It
-existed to bound a budget a pilot was spending. With nothing to spend, a zone
-that wants a shallower hull writes a shallower hull.
-
-**Availability follows the original; ceilings are ours.** `MultiFire`,
+**Availability follows the original, and so do the ceilings now.** `MultiFire`,
 `BouncingBullets`, `Proximity` and `Shrapnel` appear nowhere in the original's
-per-ship config: they are `[PrizeWeight]` entries any ship can be handed. Its
-per-ship differentiation is a short list of flags and counts, and the ones that
-bear on this are `MaxBombs` (3 on the Leviathan, 2 elsewhere), `ShrapnelMax` (8
-everywhere, 31 on the Shark), `BombBounceCount` (1 on the Lancaster alone) and
-`DoubleBarrel` (the Terrier alone).
+per-ship config: they are `[PrizeWeight]` entries any ship can be handed, and
+its per-ship section is a flight row. Ours is one row of ceilings for the whole
+arena and seven credits to spend inside it, which is the same claim: what you
+carry is what you found, or here what you bought, and never what you are
+sitting in.
 
-Those four were a row per hull here too, and they are again. For a while they
-were not: a trait on one hull was a trait a shop could never sell, so the
-deepest of each became the arena's ceiling and everything below it a purchase.
-There is no shop, so the argument is spent, and a bomber is once more the hull
-that carries the shrapnel. Which hull carries what is in
-[ships.md](ships.md#the-profile).
+The per-ship counts it does keep are `MaxBombs` (3 on the Leviathan, 2
+elsewhere), `ShrapnelMax` (8 everywhere, 31 on the Shark), `BombBounceCount` (1
+on the Lancaster alone) and `DoubleBarrel` (the Terrier alone). Those four were
+a row per hull here too, twice: once as the roster's own traits and once as an
+arena ceiling with everything below it for sale. Neither survives. A hull is
+how it flies, the ceilings are the room's, and the shrapnel belongs to whoever
+spent a credit on it. What a pilot arrives on is in
+[ships.md](ships.md#the-build).
 
 The barrel is on the matrix now, inside spray. `DoubleBarrel` was the one
 weapon setting with no home in this space, being neither a ladder nor an
@@ -416,14 +414,14 @@ whether the group reads as a pair or as a fan.
 | **bomb** | 2 | prox, shrapnel ×3, bounce ×2, freeze |
 
 That is the space, and it is what the core can express rather than what any
-hull holds. The shipped roster names rung zero for every weapon and spends the
-add-ons per hull.
+build holds. The arena's own ceilings sit inside it: spray to five, shrapnel to
+three, one wall of bounce on either trigger, and no fuse on a gun.
 
 **Freeze and push are the exception**, and the only part of this table that is
 ours: the original has no such upgrade, so there is nothing to copy. Freeze
 hangs off both triggers, because stalling a recharge is a thing a hit does and
 the core reads it off whichever trigger's add-ons carried it. Push is unused
-until the shove has had a look of its own, so no hull carries it.
+until the shove has had a look of its own, so its ceiling is zero.
 
 The names a player reads are not these. `multi` is **spray** on the ship page;
 the words in this table are the core's, and the core's are what a zone file
@@ -444,17 +442,17 @@ fact about a shipped ship rather than a rule held in reserve.
 **Charges are not on this matrix**, and that is the original's rule rather than
 an omission -- see below.
 
-A rung is 40% more damage and costs the same to fire. The shipped roster names
-rung zero on every hull and separates the guns by their base damage instead, so
-the ladder is machinery a zone may use rather than something a pilot climbs.
+A rung is 40% more damage and costs the same to fire. The shipped ladder is
+the original's instead: 200 damage and 20 energy at the first rung, 100 and a
+whole `BulletFireEnergy` more at each one above it.
 
-### A profile is a row of these
+### A build is a row of these
 
-Nothing rolls and nothing is spent. Each hull carries a fixed row over the
-space above, and the ship is dealt it whole at every spawn: rungs, add-ons and
-charge counts. That row is why the space survived the pickup being deleted:
-it is still how the core writes down what a ship has. [ships.md](ships.md) has
-the roster and [match-game.md](match-game.md) has why nobody spends anything.
+Nothing rolls. A pilot spends seven credits over the space above and the ship
+is dealt that row whole at every spawn: rungs, add-ons and charge counts. That
+row is why the space survived the pickup being deleted: it is still how the
+core writes down what a ship has. [ships.md](ships.md) has what a pilot arrives
+on and [match-game.md](match-game.md) has why nobody hunts for it.
 
 Two properties the pickup used to provide are structural rather than tuned. A
 ship cannot hold what the arena has no ladder for, because the row is clamped
@@ -485,12 +483,12 @@ them ship filled; a zone is free to write the others.
 none of them. Charges are not a roster trait there; they are loot, and the
 hull does not gate them.
 
-How many of which kinds is the hull's, and two kinds is the ceiling:
+How many of which kinds is the pilot's, and two kinds is the ceiling:
 
 - **Two, because a keyboard has two keys for them.** The rack holds four kinds
-  in the core, so a zone may write a hull that carries a third; the shipped
-  roster does not, and the arena refuses one. See
-  [ships.md](ships.md#the-profile).
+  in the core, so a zone may fill a third slot; the shipped arena does not, and
+  it refuses a build that carries three. See
+  [ships.md](ships.md#the-build).
 - **A mixed inventory is the whole point of the cycle key.** An earlier roster
   gave each hull exactly one kind, which meant nobody could ever hold two,
   which meant the key that cycles them and the pad that draws them could never
@@ -557,7 +555,8 @@ nothing looks like one.
 
 ### A loaded opening is a choice, and it flattens skill
 
-Every ship spawns carrying its profile, which is a loud opening on purpose.
+Every ship spawns carrying its pilot's whole build, which is a loud opening on
+purpose.
 That is the strongest single lever in the tuning. Running the bot calibration
 ladder over a 48-round round-robin, same hull, three pilots at skill 0.15, 0.50
 and 0.95, the kills came out:
@@ -572,11 +571,11 @@ With everyone carrying spray from the first second, time to kill collapses and
 the fight is over before flying it decides anything.
 
 That was measured when a ship was dealt thirty random greens, and it did not
-move when the thirty became a chosen kit, and it does not move now that they
-are a hull's fixed row: the flattening comes from how loaded a ship is at the
+move when the thirty became a chosen kit, and it does not move now that seven
+credits are the pilot's: the flattening comes from how loaded a ship is at the
 whistle, not from where the load came from. It is a choice for a game that
 wants its openings loud. The offline calibration in `server/src/calibrate.rs`
-strips the profiles for exactly this reason, because a ladder has to be able to
+strips the build for exactly this reason, because a ladder has to be able to
 rank pilots.
 
 ### Writing a tree
@@ -586,7 +585,7 @@ way it tunes anything else, and the ceilings are one section:
 
 ```toml
 [[arena.weapons]]
-name = "anvil-bomb-3"     # the third bomb rung, which every hull climbs to
+name = "bomb-3"           # the third bomb rung, which anybody may climb to
 blast = 96
 
 [arena.mod_step]          # what one rung of each add-on is worth
@@ -625,19 +624,18 @@ number, and none of the seven originals needs one.
 
 ## The shipped tuning
 
-Two rows per hull, built from the roster in `sim/src/baseline.c`: a bolt and a
-gun pattern, and for the six hulls with a rack, a shell and a bomb pattern.
+Two ladders for the whole room, built in `sim/src/baseline.c`: three bolts and
+three gun patterns, three shells and three bomb patterns, and every hull is
+handed the same six indices.
 
 No *base* weapon bounces, splinters, stalls or pushes. Every one of those
-arrives as an add-on out of the hull's profile and composes onto whichever rung
-the trigger is on, so an Anvil fires a plain bolt and a Facet fires a bouncing
-one.
+arrives as an add-on out of the pilot's build and composes onto whichever rung
+the trigger is on, so two pilots in the same hull can fire a plain bolt and a
+bouncing one.
 
-The bolt and the shell do carry a `bounces` of 255 while their `on_wall` is
-still `end`, which is not an exception to that: a budget is spent only once
-something is bouncing, so the number is inert until the add-on flips the field
-beside it. It is there to say how far the add-on goes when it does arrive, and
-255 is this table's way of writing "until the round runs out".
+Both start at a `bounces` of 0, so a rung of the add-on buys exactly one wall
+on either. The bolt carried 255 for a while, which is more than its life can
+spend and made that one credit a corridor where every miss kept hunting.
 
 And the table is the zone's, not the client's. A zone sends its whole weapon
 table to every player as it joins, so a client predicts and draws the weapons
@@ -645,11 +643,11 @@ that zone actually has rather than the ones its own build compiled. That is
 what makes a new weapon content: a spec is an index, and a client guessing at
 its own table would not even agree on what an index means.
 
-Firing costs are a fraction of the hull's own energy, taken from the original's
-numbers -- it gave every ship 1700 energy and charged 20 for a bullet and 300
-for a bomb. Pricing a shot off its damage instead, which is what this did
-first, made a bullet cost 35% of a full bar and a bomb 63%, so the bomb key did
-nothing at all unless you had been left alone to recharge, and silently.
+Firing costs are the original's outright: 20 for a bullet and 300 for a bomb,
+against the 1700 energy it gave every ship. Pricing a shot off its damage
+instead, which is what this did first, made a bullet cost 35% of a full bar and
+a bomb 63%, so the bomb key did nothing at all unless you had been left alone
+to recharge, and silently.
 
 One number to revisit at the first playtest: a bolt travels 200 px/s and a hull
 tops out at 490. Bullets slower than the ships they chase is a strange place to

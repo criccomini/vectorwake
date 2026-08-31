@@ -105,29 +105,22 @@ mod_spread = 5
 # What one more round costs, as a percentage of the shot's own energy and
 # cooldown.
 #
-# Fifty, which is the baseline's, and it was a hundred until spray stopped
-# being something a pilot bought.
-#
-# The hundred was right for what it was written against. Spray was a rung on a
-# shelf, and at twenty-five the two costs cancelled: a pull at spray three
-# charged 1.75 times the energy over 1.75 times the cooldown, so the drain per
-# second never moved and the rounds per second went up by 2.3. That is not a
-# trade, it is a free upgrade nobody can decline, and the room played like it.
-# A hundred made a rung buy the volley and never the rate: four rounds arriving
-# together instead of spread over a second, at the same rounds a minute a bare
-# barrel throws. Measured over forty matches on drydock it took the rounds in
-# the air from 88 to 63, the deaths from 2.0 a pilot-minute to 1.3, and the
+# A hundred stood here for a while, and it was right for what it was written
+# against. Spray was a rung on a shelf then, and at twenty-five the two costs
+# cancelled: a pull at spray three charged 1.75 times the energy over 1.75
+# times the cooldown, so the drain per second never moved and the rounds per
+# second went up by 2.3. That is not a trade, it is a free upgrade nobody can
+# decline, and the room played like it. A hundred made a rung buy the volley
+# and never the rate. Measured over forty matches on drydock it took the rounds
+# in the air from 88 to 63, the deaths from 2.0 a pilot-minute to 1.3, and the
 # roster's accuracy from the low thirties into the high forties.
 #
-# Nobody buys spray now. It is a number on a hull, so there is no rung to
-# decline and no purchase to make dominant, and a hundred stopped being a price
-# and became a tax on the three ships that have barrels. `calibrate hulls`
-# under this tuning put every one of them in the bottom three and every
-# single-round hull in the top three, in that order, on both rooms: the Facet
-# fires a fifth as often for five rounds, which is the same rounds a minute as
-# the Lattice spread into a fan that mostly misses, on a smaller pool, for
-# nothing. Fifty is a trade again: five rounds is three times the wait and
-# 2.25 times the energy for 1.67 times the rounds a minute.
+# Twenty-five and fifty are the original's, read per round. It charged 20
+# energy a bullet against 30 for multifire and 25 ticks against 50, which is
+# three rounds for half again the energy and twice the wait, so half of each is
+# what one round costs: a spray of three lands exactly where MultiFireEnergy
+# and MultiFireDelay put it, and the ladder above climbs at the same rate.
+# Five rounds is twice the energy for three times the wait.
 multi_energy = 25
 multi_delay = 50
 
@@ -154,18 +147,16 @@ multi = 1
 bounce = 1
 prox = 48
 
-# The damage of one of the twenty-four rounds a burst throws. Lower than the
-# baseline's 700, so a burst is survivable at a range that one is not.
-[[arena.weapons]]
-name = "burst"
-damage = 515
-
+# The weapons are the baseline's, which is BurstDamageLevel 700 and the rest of
+# the original's table. A burst throwing 515 stood here for a while, to make one
+# survivable at a range where 700 is not; it went with the rest of this zone's
+# deviations from that table.
+#
 # The ships.
 #
-# There is no ships section, and the roster is the baseline's: seven hulls,
-# each with its own flight row, its own gun and bomb, and its own profile. See
-# docs/design/ships.md for what each one is and `sim/src/baseline.c` for the
-# four tables it is written in.
+# There is no ships section, and the roster is the baseline's: seven hulls, each
+# with its own flight row. See docs/design/ships.md for what each one is and
+# `sim/src/baseline.c` for the table it is written in.
 #
 # It is not repeated here on purpose. A zone that wrote the roster out would be
 # a second copy of it to keep in step, and this zone plays the game as shipped.
@@ -174,11 +165,8 @@ damage = 515
 #   [[arena.ships]]
 #   name = "Facet"
 #   speed = 3050
-#   gun_mods = { multi = 4, bounce = 1 }
-#   charges = [2, 0]
 #
-# Two blocks that used to live under this heading are gone with the shop. One
-# was a flight row per hull, removed when a kit was thirty points and thirty
-# points had to buy the same ship whatever you were sitting in; the other was
-# `[arena.kit]`, which said what that kit could hold here. There is no kit, so
-# the hulls have their engines back and there is no shelf left to describe.
+# Nothing about a weapon is in that block. A hull is how it flies; the gun, the
+# bomb and the two charges belong to the arena, and a pilot's seven credits say
+# what they carry. A zone tunes a weapon by name under `[[arena.weapons]]` and
+# the whole room gets it.

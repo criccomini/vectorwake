@@ -409,6 +409,10 @@ int ClassFlight(lua_State* L) {
     return 5;
 }
 
+// The build a seat is dealt when its pilot has sent none, which is the same
+// row in every hull: nothing about a loadout is a property of a body. The ship
+// page reads it as the ship everybody starts in, so the arrival build is
+// written once, in `sim/src/baseline.c`, and travels with the settings.
 int ClassKit(lua_State* L) {
     int cls = (int)luaL_checkinteger(L, 1);
     if (cls < 0 || cls >= g_cfg.class_count) { lua_pushnil(L); return 1; }

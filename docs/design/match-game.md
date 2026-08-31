@@ -374,17 +374,17 @@ it is not enough of one. A player who has picked a silhouette has not picked a
 ship, and the thirty sliders they picked afterwards were the same thirty
 sliders in every cockpit.
 
-So the budget goes, and with it the constraint. Each hull now carries its own
-flight row, its own gun, its own bomb, and its own profile over the same flat
-slot space the kit used to spend points on. The Anvil is slow and hits for 500
-a round; the Cipher outruns everything and has no bomb rack at all; the Facet
-throws five bouncing rounds; the Lattice cannot kill you and carries six
-charges to move you with. The whole roster is four tables in
-`sim/src/baseline.c` and it is documented in [ships.md](ships.md).
+So the budget goes, and with it the constraint. Each hull carries its own
+flight row: the Anvil is slow with the deepest bar in the game, the Cipher
+outruns everything on the smallest, the Chord turns inside both and catches
+nobody. That is the whole of what a hull is, and it is two tables in
+`sim/src/baseline.c`, documented in [ships.md](ships.md).
 
-Nothing is added to the ship to make this work. The core already held a profile
-as counts over that flat space, the snapshot already carried them, and the only
-change is which record they hang off: the class rather than the ship.
+What leaves the ship never followed it there. Seven credits over the same flat
+slot space buy the rungs, the add-ons and the rack, they are the pilot's in
+every hull, and there is one gun and one bomb in the room for them to hang off.
+A body that decided the loadout would be the silhouette choosing the ship all
+over again.
 
 **Everyone flies the same seven.** No account owns anything another does not,
 because there is nothing to own. A new pilot's Apex is a veteran's Apex, which
@@ -394,8 +394,8 @@ that pilot is by definition the one who most needs the fight to be fair.
 
 **Death re-deals the frame, never the ammunition.** Flight, weapons and add-ons
 come back at every spawn, because they are what your ship is. Charge counts do
-not: you start a match with the charges your hull carries, and when they are
-gone they are gone until the next match.
+not: you start a match with the charges you bought, and when they are gone they
+are gone until the next match.
 
 That rule earns its place twice. It closes an exploit, since a refill on death
 means a pilot out of repels can suicide into the nearest enemy to reload, and
@@ -512,10 +512,11 @@ you read the name. The wake already works that way and costs nothing.
 
 ## Charges
 
-Two kinds, four in the core (`SIM_MAX_CHARGES`), and which two a hull carries
-is the hull's. A repel and a burst ship today. The depth is the hull's too: one
-of each on the Cipher's terms, three of each on the Lattice's. See
-[ships.md](ships.md#the-profile).
+Two kinds, four in the core (`SIM_MAX_CHARGES`), and which two the arena fills
+is the zone's. A repel and a burst ship today, three of each at the ceiling,
+which is `RepelMax` and `BurstMax` in the original. How many a pilot actually
+carries is a credit apiece out of their seven. See
+[ships.md](ships.md#the-build).
 
 ## Friends
 

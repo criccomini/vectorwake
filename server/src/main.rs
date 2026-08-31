@@ -6012,7 +6012,7 @@ mod tests {
         let (w, warn) = tuned(
             r#"
             [[arena.weapons]]
-            name = "anvil-bomb"
+            name = "bomb"
             on_wall = "bounce"
             bounces = 3
         "#,
@@ -6023,32 +6023,41 @@ mod tests {
         let sp = w.cfg.specs[p.spec as usize];
         assert_eq!((sp.on_wall, sp.bounces), (1, 3), "the bomb bounces now");
         assert!(sp.blast > 0, "and is otherwise still the bomb");
-        // Nobody else's weapon moved: a ladder is still named per hull.
+        // For everybody, because there is one bomb in the room: a weapon
+        // belongs to the arena now rather than to a hull.
+        for c in 0..sim::MAX_CLASSES {
+            assert_eq!(
+                w.cfg.classes[c].trigger[1][0], w.cfg.classes[anvil].trigger[1][0],
+                "every hull throws the bomb the zone tuned"
+            );
+        }
+        // And the other trigger did not move.
         let (_, apex) = gun(&w, ai::class_index("Apex").unwrap());
         assert_eq!(apex.on_wall, 0);
     }
 
     #[test]
-    fn an_unknown_name_is_a_new_weapon_a_hull_can_carry() {
+    fn an_unknown_name_is_a_new_weapon_the_arena_can_carry() {
+        // A name the baseline never built makes a weapon, and naming an empty
+        // charge slot fills that slot with it at once, which is how a zone
+        // adds a third thing to throw. There is no hull to hang it on: what
+        // leaves a ship is the arena's and the build's.
         let (w, warn) = tuned(
             r#"
             [[arena.weapons]]
-            name = "burst"
+            name = "charge-3"
             speed = 1500
             life = 60
             damage = 40
             count = 16
             spread = 22
             energy = 300
-
-            [[arena.ships]]
-            name = "Cipher"
-            bomb = ["burst"]
         "#,
         );
         assert!(warn.is_empty(), "{warn:?}");
-        let spire = ai::class_index("Cipher").unwrap();
-        let p = w.cfg.patterns[w.cfg.classes[spire].trigger[1][0] as usize];
+        let pat = w.cfg.charge[2];
+        assert_ne!(pat, sim::NO_PATTERN, "the third slot is filled");
+        let p = w.cfg.patterns[pat as usize];
         let sp = w.cfg.specs[p.spec as usize];
         assert_eq!(p.count, 16);
         assert_eq!(sp.life, 60);
@@ -6059,14 +6068,11 @@ mod tests {
         );
         // Degrees, because nobody thinks in sixty-five thousandths of a turn.
         assert_eq!(p.spacing, (22 * 65536 / 360) as u16);
-        // The raider is the one hull the baseline gives no rack at all, so
-        // what this proves is that a named weapon can hand one to a hull that
-        // had none rather than only tune a rack it already had.
         let fresh = sim::World::new(1);
         assert_eq!(
-            fresh.cfg.classes[spire].trigger[1][0],
+            fresh.cfg.charge[2],
             sim::NO_PATTERN,
-            "the raider ships without a rack"
+            "and the baseline leaves that slot empty"
         );
     }
 
@@ -6075,7 +6081,7 @@ mod tests {
         let (w, warn) = tuned(
             r#"
             [[arena.weapons]]
-            name = "anvil-bomb"
+            name = "bomb"
             splinter = "shrapnel"
 
             [[arena.weapons]]
@@ -6099,22 +6105,6 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_name_takes_the_rack_away() {
-        let (w, warn) = tuned(
-            r#"
-            [[arena.ships]]
-            name = "Anvil"
-            bomb = []
-        "#,
-        );
-        assert!(warn.is_empty(), "{warn:?}");
-        assert_eq!(
-            w.cfg.classes[ai::class_index("Anvil").unwrap()].trigger[1][0],
-            sim::NO_PATTERN
-        );
-    }
-
-    #[test]
     fn what_the_file_cannot_have_is_reported_rather_than_guessed() {
         let (_, warn) = tuned(
             r#"
@@ -6125,46 +6115,24 @@ mod tests {
 
             [[arena.ships]]
             name = "Trapezoid"
-
-            [[arena.ships]]
-            name = "Apex"
-            gun = ["also-not-a-weapon"]
         "#,
         );
-        assert_eq!(warn.len(), 4, "{warn:?}");
+        assert_eq!(warn.len(), 3, "{warn:?}");
         assert!(warn.iter().any(|w| w.contains("sideways")));
         assert!(warn.iter().any(|w| w.contains("nothing-called-this")));
         assert!(warn.iter().any(|w| w.contains("Trapezoid")));
-        assert!(warn.iter().any(|w| w.contains("also-not-a-weapon")));
     }
 
-    /// A rung above the first is named for its level, and a zone that writes
-    /// one gets a ladder its hulls can climb.
-    ///
-    /// The baseline builds three rungs a weapon, so a zone naming its own has
-    /// to replace the ladder rather than extend it, and this is what proves it
-    /// does: three rungs written by name, the profile pointed at the third,
-    /// and the hull firing what the third one says rather than the roster's.
+    /// A rung above the first is named for its level, so a zone tunes one
+    /// step of a ladder without touching the steps either side of it.
     #[test]
     fn a_rung_above_the_first_is_named_for_its_level() {
         let (w, warn) = tuned(
             r#"
             [[arena.weapons]]
-            name = "anvil-bomb-2"
-            damage = 750
-            blast = 200
-            energy = 500
-
-            [[arena.weapons]]
-            name = "anvil-bomb-3"
-            damage = 750
+            name = "bomb-3"
             blast = 96
             energy = 600
-
-            [[arena.ships]]
-            name = "Anvil"
-            bomb = ["anvil-bomb", "anvil-bomb-2", "anvil-bomb-3"]
-            bomb_rung = 2
         "#,
         );
         assert!(warn.is_empty(), "{warn:?}");
@@ -6173,44 +6141,10 @@ mod tests {
         let top = w.cfg.specs[w.cfg.patterns[rungs[2] as usize].spec as usize];
         let base = w.cfg.specs[w.cfg.patterns[rungs[0] as usize].spec as usize];
         assert_eq!(top.blast, 96 * 256, "the third rung got the blast it named");
-        assert_eq!(base.blast, 160 * 256, "and the first kept the roster's");
+        assert_eq!(base.blast, 80 * 256, "and the first kept BombExplodePixels");
         let top_p = w.cfg.patterns[rungs[2] as usize];
         let base_p = w.cfg.patterns[rungs[0] as usize];
         assert!(top_p.energy > base_p.energy, "and it costs more to let go");
-        assert_eq!(
-            w.cfg.classes[anvil].kit[sim::slot_level(sim::TRIG_BOMB) as usize],
-            2,
-            "and the profile says which rung this hull fires"
-        );
-    }
-
-    #[test]
-    fn naming_one_weapon_replaces_the_whole_ladder() {
-        let (w, warn) = tuned(
-            r#"
-            [[arena.weapons]]
-            name = "repel"
-            speed = 0
-            life = 1
-            on_wall = "pass"
-            expire_ends = true
-            blast = 300
-            push = 3000
-
-            [[arena.ships]]
-            name = "Anvil"
-            bomb = ["repel"]
-        "#,
-        );
-        assert!(warn.is_empty(), "{warn:?}");
-        let anvil = ai::class_index("Anvil").unwrap();
-        let rungs = w.cfg.classes[anvil].trigger[1];
-        assert_ne!(rungs[0], sim::NO_PATTERN, "the repel is on the trigger");
-        assert_eq!(
-            rungs[1],
-            sim::NO_PATTERN,
-            "and there is nothing to level into"
-        );
     }
 
     #[test]
@@ -6460,53 +6394,30 @@ mod tests {
         let shell = w.cfg.patterns[w.cfg.mod_splinter[2] as usize];
         assert_eq!(shell.count, 12, "a second rung of shrapnel is twelve now");
         assert_eq!(
-            w.cfg.patterns[w.cfg.mod_splinter[1] as usize].count, 4,
-            "and the rung below it is untouched"
+            w.cfg.patterns[w.cfg.mod_splinter[1] as usize].count, 2,
+            "and the rung below it is untouched, at ShrapnelRate"
         );
     }
 
+    /// The ladder is the arena's, so tuning a rung reaches every hull and
+    /// there is no per-hull ladder left to write.
     #[test]
-    fn a_zone_builds_a_ladder_rather_than_a_single_weapon() {
+    fn a_ladder_is_the_arenas_rather_than_a_hulls() {
         let (w, warn) = tuned(
             r#"
             [[arena.weapons]]
-            name = "spike"
-            damage = 300
-
-            [[arena.weapons]]
-            name = "spike-2"
+            name = "gun-2"
             damage = 400
-
-            [[arena.weapons]]
-            name = "spike-3"
-            damage = 500
-
-            [[arena.ships]]
-            name = "Cipher"
-            gun = ["spike", "spike-2", "spike-3"]
         "#,
         );
         assert!(warn.is_empty(), "{warn:?}");
-        let spire = ai::class_index("Cipher").unwrap();
-        let rungs = w.cfg.classes[spire].trigger[0];
-        assert_ne!(rungs[2], sim::NO_PATTERN, "three rungs to climb");
-        assert_eq!(rungs[3], sim::NO_PATTERN, "and the ladder ends there");
-        let first = w.cfg.specs[w.cfg.patterns[rungs[0] as usize].spec as usize];
-        assert_eq!(first.damage, unsafe { sim::sim_units_energy(300) });
-
-        // A rung that names nothing leaves the hull alone rather than
-        // half-applying: a ladder silently shortened is a hull that stops
-        // levelling for a reason no log would show.
-        let (w, warn) = tuned(
-            r#"
-            [[arena.ships]]
-            name = "Cipher"
-            gun = ["cipher-gun", "not-a-weapon"]
-        "#,
-        );
-        assert!(warn.iter().any(|x| x.contains("not-a-weapon")), "{warn:?}");
-        let rungs = w.cfg.classes[spire].trigger[0];
-        assert_ne!(rungs[0], sim::NO_PATTERN, "the hull kept its own ladder");
+        for c in 0..sim::MAX_CLASSES {
+            let rungs = w.cfg.classes[c].trigger[0];
+            assert_ne!(rungs[2], sim::NO_PATTERN, "three rungs to climb");
+            assert_eq!(rungs[3], sim::NO_PATTERN, "and the ladder ends there");
+            let second = w.cfg.specs[w.cfg.patterns[rungs[1] as usize].spec as usize];
+            assert_eq!(second.damage, unsafe { sim::sim_units_energy(400) });
+        }
     }
 
     /// A zone may replace a hull's weapon ladder, but not its footprint. The
@@ -6572,7 +6483,7 @@ mod tests {
             count = 8
 
             [[arena.weapons]]
-            name = "anvil-bomb"
+            name = "bomb"
             splinter = "shrapnel"
         "#;
         let mut w = sim::World::new(1);

@@ -6281,3 +6281,68 @@ bomb section back as "level 2, fused, 4 fragments" with the core's own
 shrapnel ladder stubbed, since that reading is the one number on the panel
 that is not its own count. Photographed on the Linux build: an empty tray over
 five rows, and the bomb section reading its four fragments.
+
+## 121. The loadout is nobody's ship
+
+**Status:** accepted, superseding the per-hull weapon rows and profiles
+
+**Decision:** a hull is a flight row and a footprint. There is one gun in this
+game and one bomb, the same two whichever body is carrying them, and both are
+ladders of three that any pilot may climb with their seven credits. The
+per-hull `gun_row`, `bomb_row` and `profile` tables are gone from
+`sim/src/baseline.c`, and so are `gun`, `bomb`, `gun_mods`, `bomb_mods`,
+`charges`, `gun_rung` and `bomb_rung` from a zone's `[[arena.ships]]` block,
+which now carries flight and nothing else. Weapons are named `gun`, `gun-2`,
+`bomb`, `bomb-3` rather than `apex-gun` and `anvil-bomb-2`, and tuning one
+tunes it for the room.
+
+The ladder is the original's, every step of it:
+
+| | first rung | a level adds |
+|---|---|---|
+| `BulletDamageLevel` | 200 | 100 |
+| `BulletFireEnergy` | 20 | times the level, so 20, 40, 60 |
+| `BulletFireDelay` | 25 | nothing |
+| `BombDamageLevel` | 750 | nothing |
+| `BombExplodePixels` | 80 | times the level, so 80, 160, 240 |
+| `BombFireEnergy` | 300 | 50 |
+| `BombFireDelay` | 150 | nothing |
+
+With three more of its numbers put back beside them: `ShrapnelRate` is 2, so
+the shrapnel rungs are 2, 4 and 8 fragments rather than 4, 6 and 8;
+`BurstDamageLevel` is 700 everywhere, so the melee zone's 515 override is
+deleted; and `BurstMax` is 3, which the burst rack now reaches. A fragment was
+already the bullet of the thrower's gun rung and stays that way, which under
+this ladder means an L2 gun breaks a bomb into L2 rounds exactly.
+
+**Why:** Chris asked for it, and the reason is the one the roster kept running
+into. A Cipher that could not be handed a bomb rack is a silhouette choosing a
+loadout: a player who picks a body has picked a gun, a rack and a fuse without
+being asked about any of them, and the one thing they were actually choosing,
+how the ship flies, arrives bundled with six decisions they did not make.
+
+It is also what the original does. All eight of its ships carry identical
+weapon numbers and its per-ship section is a flight row; `MultiFire`,
+`BouncingBullets`, `Proximity` and `Shrapnel` are `[PrizeWeight]` entries any
+ship can be handed. Decision 117 had already moved the build off the hull and
+onto the pilot. This finishes the move: the weapons went with it.
+
+**Cost:** the roster is thinner. Seven hulls that differ by a fifth of a bar
+and a tenth of a turn is less to choose between than seven that also differed
+by a cannon, an empty rack and five barrels, and the hull tournament now
+measures flight alone. The balance table in `ships.md` was measured against
+the old roster and is marked as a record rather than a reading. A zone can no
+longer take the rack away from one hull, or give one a weapon of its own,
+because there is no per-hull ladder left to write; a zone that wants a
+different weapon retunes the room's.
+
+`calibrate builds` gets more interesting and `calibrate hulls` gets less: with
+every hull on the same weapons, a slot that is too strong is too strong for
+everybody at once, which is a cleaner question and a duller tournament.
+
+**Verified:** `make -C sim check`, with the suite's settings stripped bare once
+in `main` so a physics test flies a plain hull and the tests that are about a
+build deal themselves one; the roster test now asserts that every hull names
+the same two patterns and arrives on the same seven credits. `cargo test`,
+`cargo clippy` and the client's Lua suite pass. The state hashes moved, so
+`make -C sim golden` was rerun.

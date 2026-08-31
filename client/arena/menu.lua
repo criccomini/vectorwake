@@ -472,10 +472,10 @@ end
 
 -- --- the roster ------------------------------------------------------------
 --
--- A hull owns its flight row, its gun and its bomb; a pilot owns what those
--- carry, bought with seven credits at one credit a step. So the page is both
--- a picker and an editor, and the two are the same page because the thing
--- being edited is the ship being picked.
+-- A hull owns its flight row and nothing else; the gun, the bomb and
+-- everything bolted to them are the pilot's, bought with seven credits at one
+-- credit a step. So the page is both a picker and an editor, and the two are
+-- the same page because the thing being edited is the ship being picked.
 --
 -- What stood here before this was thirty points against an arena ceiling and
 -- an account's entitlements, a shelf to buy rungs from, a wallet to buy them
@@ -516,62 +516,33 @@ end
 -- It was one build a hull, defaulting to that hull's own profile off
 -- `baseline.c`, which put the roster's add-ons on the hull rather than on the
 -- pilot: a Wedge came with its own fragments and an Apex with its own repels,
--- and picking a body picked a kit with it. The hull still owns everything
--- that cannot be bought, which is the flight row and the two ladders its gun
--- and bomb climb; what hangs off those is the pilot's. See decision 117.
+-- and picking a body picked a kit with it. Nothing about a weapon is a hull's
+-- any more. The flight row is, and the two ladders belong to the arena, so
+-- every pilot picks a body and then says what it carries.
 --
 -- Kept on this device beside the wake and the key bindings rather than in an
 -- account. A build is seven ones over a dozen slots: worth remembering so a
 -- pilot does not spend it twice, and not worth a table, a route, a migration
 -- and a login to carry between machines.
 
--- What a pilot arrives with before they have spent anything of their own.
+-- What a pilot arrives with before they have spent anything of their own,
+-- as a sparse map of slot to count.
 --
--- Chris's, and it is a whole ship rather than a bare one: the second rung of
--- both weapons, a gun that comes off walls, a fuse so a near miss counts,
--- four fragments off the blast, and one of each charge to get out with. All
--- seven credits, so a pilot who wants something else trades for it rather
--- than finding a spare.
+-- The core's row rather than a list here, because it is the same row the
+-- arena deals to anybody who sends no build at all, and two copies of a
+-- seven-credit ship is one copy too many. `sim/src/baseline.c` writes it and
+-- the settings carry it, so a zone that changes what a pilot starts in
+-- changes this with it.
 --
--- Written as slot names rather than indices, because the indices are macros
--- in another language and a table of numbers here would be a second copy of
--- them to keep in step.
-local DEFAULT_KIT = {
-    {"level", 0, 1},        -- the gun's second rung
-    {"level", 1, 1},        -- and the bomb's
-    {"mod", 0, "bounce", 1},
-    {"mod", 1, "prox", 1},
-    -- One rung of shrapnel, which the core throws as four fragments. Its
-    -- number is the only one on the panel that is not its own count, so this
-    -- line reads one and the row it fills reads four.
-    {"mod", 1, "shrapnel", 1},
-    {"charge", 0, 1},       -- one repel
-    {"charge", 1, 1},       -- and one burst
-}
-
--- Which slot one of those lines names, or nil where this core has no such
--- slot. Asked of the core rather than computed here, so a zone that moves the
--- slot space moves this with it.
-local function named_slot(it)
-    local kind = it[1]
-    if kind == "level" then return simn("SLOT_LEVEL0", 5) + it[2] end
-    if kind == "charge" then return simn("SLOT_CHARGE0", 19) + it[2] end
-    local mods = simn("MOD_COUNT", 6)
-    for m = 0, mods - 1 do
-        local mod = pal.MODS[m + 1]
-        if mod and mod.name == it[3] then
-            return simn("SLOT_MOD0", 7) + it[2] * mods + m
-        end
-    end
-    return nil
-end
-
--- The default, as a sparse map of slot to count.
+-- Empty before the core has settings, which reads as a bare hull: nothing is
+-- drawn as bought and the first arrow a pilot presses spends a credit.
 local function default_kit()
     local out = {}
-    for _, it in ipairs(DEFAULT_KIT) do
-        local slot = named_slot(it)
-        if slot then out[slot] = it[#it] end
+    local kit = class_kit(0)
+    if not kit then return out end
+    for slot = 0, simn("SLOT_COUNT", 23) - 1 do
+        local n = kit[slot + 1] or 0
+        if n > 0 then out[slot] = n end
     end
     return out
 end
@@ -600,9 +571,9 @@ function M.build_of(cls)
     return out
 end
 
--- What that build costs this hull, which is the sum of what this hull can
--- actually carry. A Cipher has no bomb, so a fuse bought for one costs a
--- Cipher nothing and buys it nothing.
+-- What that build costs, which is the sum of what a hull can actually carry.
+-- Every hull carries the same slots, so this is the build's own cost until a
+-- zone writes a hull with a shallower ceiling.
 function M.build_cost(cls)
     local total = 0
     for _, n in pairs(M.build_of(cls)) do total = total + n end
@@ -709,8 +680,8 @@ local SLOT_NOTES = {
     speed = "How fast this hull will run.",
     thrust = "How hard it accelerates.",
     rotation = "How quickly it comes round.",
-    gun_level = "Which gun off this hull's own ladder it fires.",
-    bomb_level = "Which bomb off this hull's own ladder it throws.",
+    gun_level = "Which rung of the gun ladder it fires.",
+    bomb_level = "Which rung of the bomb ladder it throws.",
 }
 
 local UP_NAMES = {"energy", "recharge", "speed", "thrust", "rotation"}
@@ -815,8 +786,8 @@ local function slot_row(cls, mine, it)
     }
 end
 
--- The slots one trigger owns: which weapon off the hull's own ladder, then
--- what that weapon carries.
+-- The slots one trigger owns: which rung of its ladder is fired, then what
+-- that weapon carries.
 --
 -- The level first, and counted from one, because the bottom of a ladder is
 -- still a rung of it. The row says Level rather than Rung: rung was this
@@ -1122,15 +1093,20 @@ end
 -- really part of.
 M.charge_flip = false
 
--- The kinds this hull carries, in the order the keys spend them.
+-- The kinds this pilot carries, in the order the keys spend them.
+--
+-- Read off the build rather than off the hull, because that is where a rack
+-- lives: a pilot who traded their burst away for a second repel has one kind
+-- aboard and nothing to decide, whatever anybody else in the same body is
+-- carrying.
 local function charge_order()
     local up = simn("UP_COUNT", 5)
     local trig = simn("TRIG_COUNT", 2)
     local first = simn("SLOT_CHARGE0", up + trig + trig * simn("MOD_COUNT", 6))
-    local kit = class_kit(M.class or 0) or {}
+    local kit = M.build_of(M.class or 0)
     local out = {}
     for k = 0, simn("MAX_CHARGES", 4) - 1 do
-        if (kit[first + k + 1] or 0) > 0 then out[#out + 1] = first + k end
+        if (kit[first + k] or 0) > 0 then out[#out + 1] = first + k end
     end
     if M.charge_flip and #out > 1 then out[1], out[2] = out[2], out[1] end
     return out

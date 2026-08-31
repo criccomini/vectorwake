@@ -593,10 +593,10 @@ menu.flair_step(flair_at("wake"), -1)
 check("as does an arrow, the other way", menu.wake == 0,
       tostring(menu.wake))
 
--- A hull that carries two kinds of charge leaves one thing for the pilot to
--- decide: which of the two keys spends which. The core numbers the kinds and
--- the profile carries counts by kind, so without a preference the first key
--- always throws the lower-numbered one, whatever the pilot would rather have.
+-- A build that carries two kinds of charge leaves one thing for the pilot to
+-- decide: which of the two keys spends which. The core numbers the kinds and a
+-- build carries counts by kind, so without a preference the first key always
+-- throws the lower-numbered one, whatever the pilot would rather have.
 do
     local kept_core = _G.sim
     local two = {}
@@ -609,8 +609,9 @@ do
     _G.sim = {
         UP_COUNT = 5, TRIG_COUNT = 2, MOD_COUNT = 6, MAX_CHARGES = 4,
         MOD_MULTI = 0, SLOT_COUNT = 23, SLOT_LEVEL0 = 5, SLOT_MOD0 = 7,
-        SLOT_CHARGE0 = 19,
+        SLOT_CHARGE0 = 19, KIT_CREDITS = 7,
         class_kit = function() return carried end,
+        slot_cap = function(_, slot) return slot >= 19 and 3 or 5 end,
     }
     menu.charge_flip = false
     menu.class = 0
@@ -1423,20 +1424,23 @@ do
         class_kit = function()
             local out = {}
             for i = 1, 23 do out[i] = 0 end
-            -- A spray and a repel, which is a hull that has spent three of
-            -- its seven credits.
-            out[8] = 1
-            out[20] = 2
+            -- The row a pilot arrives on, which is the core's and the same in
+            -- every hull: both weapons a rung up, a bouncing gun, a fused
+            -- bomb throwing fragments, and one of each charge. Seven credits.
+            out[6], out[7] = 1, 1        -- the two levels
+            out[9] = 1                   -- gun bounce
+            out[16], out[17] = 1, 1      -- bomb prox and shrapnel
+            out[20], out[21] = 1, 1      -- one repel, one burst
             return out
         end,
         -- Flight steps nothing, as the shipped roster does not, so no stat row
         -- is offered; the mods and the rack are what a pilot can reach.
         class_up_step = function() return {0, 0, 0, 0, 0} end,
-        -- The shipped ladder: a rung of shrapnel is four fragments and the
-        -- rungs above it climb by two. Stubbed because the reading is the
-        -- one number on the panel that is not its own count, so a stub that
-        -- left it out would test the fallback rather than the ship.
-        splinter_count = function(n) return ({[0] = 0, 4, 6, 8})[n] or 0 end,
+        -- The shipped ladder: ShrapnelRate is two fragments and every rung
+        -- above it doubles. Stubbed because the reading is the one number on
+        -- the panel that is not its own count, so a stub that left it out
+        -- would test the fallback rather than the ship.
+        splinter_count = function(n) return ({[0] = 0, 2, 4, 8})[n] or 0 end,
         slot_cap = function(cls, slot)
             local _ = cls
             if slot < 5 then return 8 end          -- a stat
@@ -1734,7 +1738,7 @@ do
     menu.kit = nil
     check("a weapon says the rung it fires and what is bolted to it",
           menu.sect_reading(0, "bombs")
-              == "level 2 " .. SEP .. " fused " .. SEP .. " 4 fragments",
+              == "level 2 " .. SEP .. " fused " .. SEP .. " 2 fragments",
           "'" .. menu.sect_reading(0, "bombs") .. "'")
     -- And nothing at all where there is nothing to say. A pilot who has taken
     -- the bomb back down to its own bottom rung and stripped it has a bomb

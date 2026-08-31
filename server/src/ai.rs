@@ -3482,7 +3482,7 @@ mod tests {
     /// with the natural death that production accepts; an unopposed run must
     /// fly somewhere quiet and stop. Failures name the salt because the pilot
     /// arrangement is the reproduction.
-    fn a_departure(salt: u32, pilot_count: usize) -> bool {
+    fn a_departure(salt: u32, pilot_count: usize, window: u32) -> bool {
         let bytes = std::fs::read("../catalog/zones/melee/drydock.vwmap")
             .expect("a shipped map lives in this repository");
         let mut w = sim::World::from_packed(salt, &bytes).expect("a map");
@@ -3544,7 +3544,7 @@ mod tests {
         let mut going_ticks = 0u32;
         let mut done_at = None;
         let mut died = false;
-        for t in 0..4_000u32 {
+        for t in 0..window {
             {
                 let mut watch = |b: &Bot, buttons: u16| {
                     if b.ship == leaver && matches!(b.exit, Exit::Leaving | Exit::Parked) {
@@ -3571,11 +3571,11 @@ mod tests {
         let done_at = done_at.unwrap_or_else(|| {
             panic!("salt {salt:#x}: a pilot told to leave never finished leaving")
         });
-        // 40 seconds is the bot server's ceiling. Reaching it is the backstop
-        // firing, not the ordinary way out, so this asserts the ordinary way
-        // out actually happens.
+        // The window is the point: reaching the end of it is the caller's
+        // backstop firing rather than the ordinary way out, so this asserts
+        // the ordinary way out actually happens.
         assert!(
-            done_at < 4_000,
+            done_at < window,
             "salt {salt:#x}: left after {done_at} ticks"
         );
         assert_eq!(
@@ -3629,15 +3629,19 @@ mod tests {
     /// seen from the roster, because both ends look identical either way: what
     /// differs is where the pilot was and what it was doing on the way out.
     ///
-    /// Eight crowded salts exercise breaking off or dying naturally. The last,
-    /// unopposed run guarantees that the clear flight path is exercised too.
+    /// Eight crowded salts exercise breaking off or dying naturally, over
+    /// twice the bot server's own 40-second ceiling: on a 192-tile map with
+    /// eight pilots on it, a corner more than 960 px from every one of them
+    /// is a matter of where the fight happens to be, and a departure that
+    /// waits out two of those is still a departure. The unopposed run keeps
+    /// the ceiling, since nothing there has any reason to be slow.
     #[test]
     fn a_pilot_told_to_leave_flies_away_before_it_goes() {
         for salt in [0x5eed, 1, 2, 3, 4, 5, 6, 7] {
-            a_departure(salt, 8);
+            a_departure(salt, 8, 8_000);
         }
         assert!(
-            a_departure(0xc1ea, 1),
+            a_departure(0xc1ea, 1, 4_000),
             "an unopposed departure must exercise the clear flight path"
         );
     }

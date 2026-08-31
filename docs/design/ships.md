@@ -1,16 +1,15 @@
 # Ships
 
-Seven hulls, and a hull is a whole ship. Its shape, its speed, its thrust, its
-turn, its energy and its recharge; the gun it fires and the bomb it throws;
-what those weapons carry and what it has in the rack. All of it belongs to the
-hull, and a pilot picks one.
+Seven hulls, and a hull is how you fly: its shape, its speed, its thrust, its
+turn, its energy and its recharge. That is the whole of it.
 
-What the hull owns is the shape and the flight. What it carries is a pilot's:
-seven build credits over the core's flat slot space, at one credit a step, and
-each hull's profile below is its default spend. Nothing is bought and nothing
-is owned, so there is no shelf, no wallet and no ceiling but the slot's own;
-what a pilot changes is which weapons and which rack their seven credits sit
-on. See [decision 100](../architecture/decisions.md).
+What leaves the ship is not the hull's. There is one gun in this game and one
+bomb, the same two whichever body is carrying them, and what is bolted to them
+is the pilot's: seven build credits over the core's flat slot space, at one
+credit a step. Every pilot arrives on the same spend and moves it wherever
+they like, in any hull. Nothing is bought and nothing is owned, so there is no
+shelf, no wallet and no ceiling but the slot's own. See
+[decision 100](../architecture/decisions.md).
 
 There is no ship page anywhere but the landing. Its ship stop is the roster and
 the editor at once: one hull at a time, paged left and right, with its flight
@@ -33,13 +32,13 @@ at radar scale, which is where most ship names actually get used.
 
 | Class | Reads as | For |
 |---|---|---|
-| **Apex** | A swept dart, wings back far enough to clear its own engines | The fighter. Fast, paired heavy rounds, a way out. |
-| **Wedge** | A wide delta with a lit bomb bay down the spine | The bomber. A fuse, a wide blast, and fragments. |
-| **Chord** | A shallow bow with a sensor housing at the middle | Turns inside everything. Light rounds that freeze. |
-| **Anvil** | A blunt slab with two tubes on a flat bow face | The heavy. Wins any fight it is allowed to have. |
-| **Cipher** | A knife, and the only hull that draws dim | The fastest, thinnest thing in the game, with no rack. |
-| **Facet** | A squat pentagon with two barrels out past the nose | Five rounds abreast, bouncing. A room at short range. |
-| **Lattice** | A trussed cross with dispensers at the arm tips | Does not kill you, moves you. The deepest rack. |
+| **Apex** | A swept dart, wings back far enough to clear its own engines | The fighter. Second fastest, and nothing about it is a weakness. |
+| **Wedge** | A wide delta with a lit bomb bay down the spine | Deep pool, poor turn, and the broadest face coming at you. |
+| **Chord** | A shallow bow with a sensor housing at the middle | Turns inside everything and outruns nothing. |
+| **Anvil** | A blunt slab with two tubes on a flat bow face | The heavy. Slowest here, and the deepest bar in the game. |
+| **Cipher** | A knife, and the only hull that draws dim | The fastest, thinnest thing in the game, on the smallest pool. |
+| **Facet** | A squat pentagon with two barrels out past the nose | Quick and handy, with nothing at the top of any row. |
+| **Lattice** | A trussed cross with dispensers at the arm tips | Steady and roomy: a bar to spend and the turn to use it. |
 
 ## Flight
 
@@ -63,7 +62,7 @@ in [simulation-core.md](../architecture/simulation-core.md) and lives in
 `sim_units_*` and nowhere else.
 
 Nothing on this row climbs. Every hull's floor is its ceiling and its step is
-zero, so a stat slot in the profile below would buy nothing. The slots stay in
+zero, so a stat slot in the build below would buy nothing. The slots stay in
 the space because a zone is free to write a hull that climbs; the shipped
 roster does not.
 
@@ -75,106 +74,96 @@ It does not survive the kit, which is exactly the condition
 
 ## Weapons
 
-Each hull fires its own gun and throws its own bomb, and each of those is a
-ladder of three. The row below is rung zero, the weapon a hull arrives with,
-and a pilot's credits buy the two rungs above it: one credit a rung, out of
-the same seven that pay for everything else. That is the original's own shape,
-where a gun and a bomb each have three levels, and it is what the Rung row at
-the top of each weapon section in the hangar spends on. `SIM_MAX_RUNGS` is
-four, so the fourth stays free for a zone that wants a hull climbing further
-than this roster does.
+One gun and one bomb, and every hull fires both. A hull is a flight row and a
+footprint; nothing about what leaves it is written on it, so a Cipher throws
+the bomb an Anvil throws and what separates them is how fast it arrives.
+
+That is the original's arrangement too. All eight of its ships carry identical
+weapon numbers, and what its per-ship section actually says is how a ship
+flies: a Warbird's bullet is a Javelin's bullet. So the numbers below are its
+numbers, and so is every step of the ladder.
+
+Each weapon is a ladder of three. Rung one is what a pilot arrives on and the
+two above it cost a credit each, out of the same seven that pay for everything
+else. `SIM_MAX_RUNGS` is four, so the fourth stays free for a zone that wants a
+weapon climbing further than this one does.
+
+| Rung | Gun damage | Gun energy | Gun delay | Bomb damage | Blast | Bomb energy | Bomb delay |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 200 | 20 | 25 | 750 | 80 | 300 | 150 |
+| 2 | 300 | 40 | 25 | 750 | 160 | 350 | 150 |
+| 3 | 400 | 60 | 25 | 750 | 240 | 400 | 150 |
+
+Read across: `BulletDamageLevel` is 200 and a level adds 100. `BulletFireEnergy`
+is 20 times the level, so a harder bullet asks for more of the same bar it is
+trying to take from its target. `BulletFireDelay` is 25 whatever the level, so
+a rung is a heavier round and never a second gun. `BombDamageLevel` is 750 at
+every level, which is why what a bomb rung sells is reach:
+`BombExplodePixels` is 80, doubled at level two and tripled at level three.
+`BombFireEnergy` is 300 and a level adds 50. `BombFireDelay` is 150 throughout.
+
+The gun row is one round. What a pull actually throws is that times the
+pilot's spray, and the extra rounds cost energy and cooldown on top, at the
+original's own rate: a spray of three costs half again the energy and twice the
+wait, which is `MultiFireEnergy` 30 against 20 and `MultiFireDelay` 50 against
+25, read per round so the ladder above three keeps climbing at the same rate.
+
+The tripled blast at the top is wide enough that the thrower is inside it. A
+blast damages the pilot who threw it at full strength and everybody else at
+half, which is the rule that makes a bomb a thrown weapon rather than a bigger
+bullet, so a level-three bomb is a decision about where you are standing.
 
 The row counts from one where the slot counts from zero, and the two are
 saying different things. A slot counts credits spent, so nothing spent is a
 nought, which is right for every other row on the page: no shrapnel, no
-bounce, no repel. A rung is a place on a ladder the hull is already standing
+bounce, no repel. A rung is a place on a ladder the pilot is already standing
 on, and a gun nobody has paid for still fires. The row read 0 for a while and
-said the hull was unarmed.
+said the ship was unarmed.
 
-| Class | Gun damage | Energy | Delay | Bomb damage | Blast | Energy | Delay |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Apex | 320 | 40 | 25 | 750 | 80 | 300 | 150 |
-| Wedge | 208 | 20 | 25 | 750 | 128 | 310 | 120 |
-| Chord | 200 | 30 | 25 | 750 | 80 | 300 | 150 |
-| Anvil | 465 | 90 | 45 | 750 | 160 | 400 | 200 |
-| Cipher | 400 | 58 | 28 | none | | | |
-| Facet | 300 | 40 | 25 | 750 | 80 | 300 | 150 |
-| Lattice | 200 | 26 | 25 | 750 | 80 | 300 | 150 |
+## The build
 
-The gun row is one round. What a pull actually throws is that times the hull's
-spray, and the extra rounds cost energy and cooldown on top, so the Facet's
-five are dearer and slower than the Apex's two rather than free.
+Seven credits over the flat slot space, one credit a step, and the same
+ceilings for everybody. What a pilot arrives on:
 
-The damage numbers started as the original's ladder read as fixed points
-rather than as rungs: it begins at 200 and adds 100 a level, so the roster was
-laid out on 200, 300, 400 and 500. Balance has moved four of them off those
-marks by a few percent, which is what a ladder read as fixed points is for.
-The bomb is 750 at every level in the original, which is why every rack here
-does the same damage and the blast radius is what separates them.
+| Slot | Count | What it is |
+|---|---:|---|
+| Gun level | 2 | the second rung |
+| Bomb level | 2 | and the bomb's |
+| Gun bounce | 1 | rounds that come off a wall |
+| Bomb proximity | 1 | a fuse, so a near miss counts |
+| Bomb shrapnel | 1 | two fragments off the blast |
+| Repel | 1 | one, to get out with |
+| Burst | 1 | and one to answer a corner |
 
-What a rung is worth follows from those two facts. A gun rung is half the
-row's round again, on the damage and on the energy a pull costs alike, so the
-three rungs are the row, half again, and double; the rate does not move, since
-BulletFireDelay is one number in the original whatever the level and a rung
-that fired faster as well as harder would be the gun bought twice. What that
-sells is the size of one arriving hit rather than a discount, and it is why a
-level is a trade and not a slot every hull dumps into.
+Seven, which is all of them, so a pilot who wants something else trades for it
+rather than finding a spare. It is one row and every hull deals it, which is
+what "the loadout is separate from the body" means where a pilot has not said
+anything yet. `sim/src/baseline.c` writes it, the settings carry it, and
+`client/arena/menu.lua` reads it back off the core rather than keeping a copy.
 
-A bomb rung adds forty pixels of blast, two and a half tiles, and half the
-row's energy again. Added rather than multiplied, because this roster's own
-racks already sit up the original's ladder: doubling and tripling would put
-the Wedge's bay at twenty-four tiles and the Anvil's at thirty, with the
-thrower inside their own blast the whole way. Forty a rung lands a plain rack
-on 80, 120 and 160 and the Anvil's on 240, which is the original's L3 for a
-bomb that starts where a bomb starts.
-
-The Cipher has no rack at all. It is the only one, the core has always been
-able to express it, and nothing until now used it.
-
-## The profile
-
-What each hull carries, over the flat slot space, and what its seven credits
-are spent on before a pilot moves any of them. The rightmost column is the
-sum, which is what a pilot has to re-spend.
-
-| Class | Gun | Bomb | Charges | Credits |
-|---|---|---|---|---:|
-| Apex | spray 2 | plain | repel 2, burst 1 | 4 |
-| Wedge | plain | prox, shrapnel 2 | repel 1, burst 1 | 5 |
-| Chord | spray 3, freeze | prox | repel 2 | 6 |
-| Anvil | plain | plain | repel 2, burst 1 | 3 |
-| Cipher | plain | no rack | repel 1, burst 2 | 3 |
-| Facet | spray 5, bounce | plain | repel 2 | 7 |
-| Lattice | plain | bounce, freeze | repel 3, burst 2 | 7 |
-
-Every one of them fits inside seven, which is where the budget came from: the
-roster arrived on this number rather than being moved onto it, and
-`the shipped roster spends no more than a pilot has` in
-`sim/tests/test_sim.c` holds it there. The Anvil and the Cipher ship with four
-credits in hand, so a pilot flying either starts by spending rather than by
-trading something away.
-
-A credit moves anywhere the hull can reach. An Anvil is three credits of ship
-and four credits of whatever its pilot wants, and a Facet is spent to the last
-one, so re-spending it means giving something up. That asymmetry is the roster
-speaking rather than a rule: a hull that ships light is a hull with room in
-it.
+The ceilings are the arena's, in `fill_slot_caps`, and they are the whole of
+the balance lever: every step costs the same, so a slot that turns out too
+strong cannot be made dearer and has to be made shallower. Spray climbs to
+five rounds abreast, shrapnel to three rungs, both racks to three. A fuse and
+shrapnel are the bomb's; spray is the gun's. A proximity fuse on a gun does not
+need to hit and a bouncing round fills a room, which is what `calibrate builds`
+found and why neither is offered.
 
 Spray is a count of rounds, so "spray 2" is two rounds abreast and everything
 else is a depth. Two rounds sit two and a quarter degrees apart, tight enough
 to land together out to three hundred pixels; three and up open to the zone's
-fifteen. What each add-on does is in [weapons.md](weapons.md).
+fan. What each add-on does is in [weapons.md](weapons.md).
 
 Two kinds of charge is the ceiling and nothing carries three, because two is
 what a keyboard has room for. Which key throws which is the pilot's, and it is
-the one thing left on the ship page that a pilot decides; it is a preference
-about a keyboard rather than a fact about a ship, so it sits with the wake.
-`profiles_carry_two_kinds` holds the roster to the ceiling.
+a preference about a keyboard rather than a fact about a ship, so it sits with
+the wake.
 
-The whole thing is four tables in `sim/src/baseline.c`: flight, gun, bomb, and
-the profile. A zone overrides any of them per hull in its own `zone.toml`. The
-melee zone deliberately overrides none: a hull that means one thing in one game
-and something else in another is a hull nobody can learn.
+The whole thing is three tables in `sim/src/baseline.c`: flight, the footprint,
+and the two ladders. A zone overrides flight per hull in its own `zone.toml`
+and tunes a weapon by name for the whole room. The melee zone deliberately
+overrides neither: a game that means one thing in one room and something else
+in another is a game nobody can learn.
 
 ## Size and shape
 
@@ -228,67 +217,44 @@ drift apart again, and the sim's own tests hold the diagonal ceiling.
 
 ## What each ship is for
 
-> These paragraphs describe the ships as they were when a hull came with a
-> kit. It does not any more: what a ship carries is the pilot's, and every
-> pilot starts on the same build, which spends all seven credits (decisions
-> 117 and 119). So a Wedge's six fragments, a Facet's five bouncing rounds and
-> a Lattice's three repels are builds somebody chose rather than ships the
-> roster deals, and what is left to a hull is its flight row, its gun and its
-> bomb. Read what follows as what each hull is *for* rather than what it
-> arrives with.
-
+A hull is a flight row, so these are claims about flight. What any of them
+throws is whatever its pilot bought, and the same seven credits are available
+in all of them.
 
 **Apex** is the fighter, and the ship most players should be flying while they
-work out what they like. Second fastest, a pair of heavy rounds off one pull,
-an ordinary bomb, and two repels to leave a fight it is losing. Nothing about
-it is the best in the roster and nothing about it is a weakness.
+work out what they like. Second fastest, a middling bar, and a turn that keeps
+up with everything except the Chord. Nothing about it is the best in the roster
+and nothing about it is a weakness.
 
-**Wedge** is the bomber. It is slow and it turns badly, and what it has is the
-widest rack anybody would want to be in front of: a fuse so a near miss counts,
-an eight-tile blast, and two rungs of shrapnel, which is six fragments out of
-every detonation carrying its own gun's damage. Its gun is chip while the rack
-reloads. It is also the broadest face in the roster coming at you, which is the
-argument against charging with it.
+**Wedge** is slow, turns badly, and carries the second deepest bar in the game.
+What it is for is arriving somewhere and staying there. It is also the broadest
+face in the roster coming at you, which is the argument against charging with
+it and the reason its pool has to be what it is.
 
-**Chord** turns inside everything and outruns nothing. Slowest hull, best
-rotation by a wide margin, three light rounds that freeze what they hit, and a
-fuse on the bomb so it need not be exact. Freezing a recharge is what makes it
-dangerous: the Chord does not kill people, it stops them recharging while
-somebody else does.
+**Chord** turns inside everything and outruns nothing. Slowest hull in the
+game, best rotation by a wide margin, and the fastest recharge. It wins the
+fight it can keep in a circle and loses any fight that can leave.
 
-**Anvil** wins any fight it is allowed to have. One 465-damage round every 45
-ticks, which is half again the hardest thing anybody else throws, the widest
-bomb in the game at ten tiles, and the deepest energy pool. It is also the
-slowest thing here with the worst turn, so the whole question is whether it
-gets to have the fight.
+**Anvil** wins any fight it is allowed to have: the deepest bar in the roster
+by a fifth and a recharge to match. It is also the slowest thing here with the
+worst turn, so the whole question is whether it gets to have the fight.
 
-**Cipher** is the fastest and thinnest ship in the game and the only one with
-no bomb rack. Nose-on it is 16 pixels of target; broadside it is the largest
-in the roster. Its gun is the whole of what it has and its pool is the
-smallest, so it cannot afford a fight it did not choose. Two bursts are its
-answer to being cornered.
+**Cipher** is the fastest and thinnest ship in the game. Nose-on it is 16
+pixels of target; broadside it is the largest in the roster. Its pool is the
+smallest, so it cannot afford a fight it did not choose, and the thing it is
+best at is choosing.
 
-Its pool and its gun's price are the tightest coupling in the roster and the
-one the tournament found first: at 1300 energy and 60 a pull it drew dry in
-twenty-one rounds and recharged slower than its own trigger, which on a map
-with nowhere to run left it beating nothing at all.
+The pool is the tightest coupling in the roster and the one the tournament
+found first: at 1300 energy it drew dry in twenty-one rounds and recharged
+slower than its own trigger, which on a map with nowhere to run left it beating
+nothing at all. It flies on 1400 now.
 
-**Facet** fires five rounds off two barrels, fanned fifteen degrees apart,
-and they bounce. It is a shotgun. Point blank most of the fan lands on one
-hull, and 1500 damage kills four of the seven outright; at any real distance
-the rounds are a hull's width apart and one arrives. The bounce is what makes
-it a room-clearer rather than a duelist: five bouncing rounds fill a corridor,
-and it is the hull that wins one it cannot see down.
+**Facet** is quick, handy, and at the top of no row at all. It is the hull with
+no excuse: whatever it loses to, it did not lose to the ship.
 
-**Lattice** does not kill you, it moves you. The weakest gun in the roster, a
-bomb that bounces once and freezes, and the deepest rack in the game: three
-repels and two bursts. It is the hull that decides where a fight happens, and
-it needs somebody else there to finish it.
-
-It arrived with bouncing rounds on top of all that and won every single bout
-of its first tournament. A bouncing gun on the hull that fires the most rounds
-in the roster is a room where every miss keeps hunting, which is not area
-denial, it is the best gun in the game wearing the worst gun's numbers.
+**Lattice** has a bar to spend and the turn to use it, on a frame that is
+neither fast nor slow. It is the hull that can afford to be somewhere
+uncomfortable for a while.
 
 ## Design rules that hold across the roster
 
@@ -308,15 +274,16 @@ actually leaves the ship. Panel lines say a ship is built out of parts.
 Anything that is decoration alone belongs on a hull that needs one of those
 three things instead.
 
-A hardpoint is a claim about what the ship carries, and it has to be true. The
-Facet is drawn with two barrels out past the nose and fires five rounds. The
-Wedge has a lit bay down the spine and throws the second-widest bomb in the
-game. The Cipher has no bay drawn on it and has no rack.
+A hardpoint is a claim about the game rather than about one ship. Every hull
+fires the same gun and throws the same bomb, so every hull is drawn with
+somewhere for both to leave from: the Facet's two barrels are where its rounds
+appear, the Wedge's lit bay is where its bombs do. What a drawing may not do is
+promise a weapon this game does not have.
 
-Exclusivity is allowed, and it is most of what a roster is. The Cipher's empty
-rack, the Anvil's cannon, the Lattice's six charges: no other hull has these
-and no pilot can buy them, because there is nothing to buy them with. What is
-not allowed is a hull that is another hull with a number moved.
+Exclusivity is allowed, and it lives in the flight row: the Cipher's speed, the
+Anvil's bar, the Chord's turn. No pilot can buy any of them, because a body is
+picked rather than bought. What is not allowed is a hull that is another hull
+with a number moved.
 
 Ship performance comes from settings, never from code. If a class needs a
 mechanic the settings cannot express, either the settings are missing something
@@ -325,9 +292,10 @@ or the class is wrong.
 ## Balance
 
 `cargo run --manifest-path server/Cargo.toml -- calibrate hulls` flies the
-roster against itself on its own profiles and reports the matrix. That is one
-of the two balance questions, and with a pilot's credits back it is no longer
-the only one: a roster balanced hull against hull can still have one slot
+roster against itself on the arrival build and reports the matrix, which with
+the weapons off the hulls is a measurement of flight alone. That is one of the
+two balance questions: a roster balanced hull against hull can still have one
+slot
 everybody dumps into.
 
 ### The ceilings
@@ -346,32 +314,31 @@ down and the only balance lever a flat price list leaves.
 | push | 0 | 0 |
 
 The rung ceiling is not a number anybody set: `sim_slot_cap` floors the level
-slot at the length of the hull's own ladder, so three rungs answers two and a
-hull with no rack answers zero without the Cipher being named anywhere. That
-is also how the row went missing for a while. Every line that drew it was
-right, and the roster underneath named one rung a weapon, so the ceiling came
-back zero on every hull and the panel correctly drew nothing.
+slot at the length of the ladder itself, so three rungs answers two and a
+trigger a zone leaves empty answers zero without any hull being named. That is
+also how the row went missing for a while. Every line that drew it was right,
+and the roster underneath named one rung a weapon, so the ceiling came back
+zero and the panel correctly drew nothing.
 
-The rack: three repels, two bursts, which keeps the Lattice the deepest rack
-in the game. Flight keeps its full ladder, since its step is zero across the
-shipped roster and a stat slot buys nothing anyway.
+The rack: three of each, which is `RepelMax` and `BurstMax` on all eight of the
+original's ships. Flight keeps its full ladder, since its step is zero across
+the shipped roster and a stat slot buys nothing anyway.
 
-Two of those zeroes were measured rather than assumed. Seven of one charge
-beat every hull's own row on every hull, because a rack answered to the budget
-and nothing else; and an add-on that belongs on a bomb wins outright on a gun,
+Two of those zeroes were measured rather than assumed. Seven of one charge beat
+everything else on every hull, because a rack answered to the budget and
+nothing else; and an add-on that belongs on a bomb wins outright on a gun,
 since rounds with a proximity fuse do not have to hit and rounds that bounce
-fill a room the way the Lattice's did before its gun stopped bouncing. A step
-cannot be made dearer, so the answer to both is a shallower slot.
+fill a room. A step cannot be made dearer, so the answer to both is a shallower
+slot.
 
 Where a ceiling is zero the slot is not a slot: no row is drawn for it and a
-profile naming it is fitted down. A zone that wants one raises it, and the
+build naming it is fitted down. A zone that wants one raises it, and the
 ceiling travels with the settings, so a client never draws a key the arena
 would refuse.
 
 `calibrate builds` asks the second. It flies every runaway shape, every credit
-in one slot and the hull's own row with one credit moved, against the hull it
-was spent on, in a mirror so the only difference in the room is how the
-credits went. A build that beats its own hull's row well past even is one the
+in one slot and the arrival build with one credit moved, in a mirror so the
+only difference in the room is how the credits went. A build that beats its own hull's row well past even is one the
 roster would converge on, and since a step cannot be made expensive the answer
 is a lower ceiling or a weaker step. `sim_slot_cap` is where a ceiling lives.
 
@@ -470,6 +437,11 @@ though Gantry still draws 71% of a mirror and a draw carries no information.
 Everything a build sweep says is worth less than its draw count suggests.
 Read the draw count before believing a flat table.
 
+Where the shipped roster stood, mean of the two rooms at 24 bouts a pair.
+Measured while each hull carried its own gun, bomb and profile, so the numbers
+are a record rather than a reading: the roster they rank no longer exists, and
+what a tournament measures now is flight. Rerun it before quoting any of this.
+
 Where the shipped roster stands, mean of the two rooms at 24 bouts a pair:
 
 | hull | win% | pit | arena |
@@ -498,18 +470,22 @@ harder problem than seven silhouettes on one flight row, and the bet is that a
 game where the ships are actually different is worth the work. The tournament
 harness exists so the answer is measured rather than argued.
 
-Whether the Facet's five rounds are worth what they cost it. The sweep says
-its own row loses to re-spending its own credits more often than any other
-hull's, and every build that beats it drops the spray to three and puts the
-two credits somewhere else. The hull tournament had already put it second from
-bottom. So the measurement is not that a slot is broken, it is that this
-particular seven credits are badly spent, and the question is a design one:
-five rounds abreast is what a Facet is, and a Facet that fires three is a
-Chord that does not turn. Worth answering before the roster is called
-balanced, and not worth answering by quietly editing the profile.
+Whether five rounds abreast is worth what it costs. The sweep found the spray
+ladder's top the most re-spent thing on the shelf: every build that beat a
+five-round one dropped it to three and put the two credits somewhere else.
+That was measured while spray was a hull's trait and the Facet was the hull
+wearing it; as a slot every pilot can reach it is one more question for
+`calibrate builds` rather than an argument about a ship.
 
-Whether the Lattice is a ship or a job. Three repels and three bursts on a hull
-that cannot kill anybody is a support role wearing a fighter's chassis, which
+Whether a hull with no weapon of its own is still seven ships. Flight is a
+real difference and the tournament measures it, but a roster whose members
+differ by a fifth of a bar and a tenth of a turn is a thinner roster than one
+where the Anvil had its own cannon. If it turns out nobody can tell the seven
+apart in a fight, the answer is a wider flight spread rather than putting the
+weapons back on the hulls.
+
+Whether the Lattice is a ship or a job. A deep bar and a good turn on a hull
+that is fast at nothing is a support role wearing a fighter's chassis, which
 is the thing the Spire was cut for being. If it turns out nobody wants to fly
 it, the answer is to give it a way to finish what it starts, not to hand its
 charges to somebody else.

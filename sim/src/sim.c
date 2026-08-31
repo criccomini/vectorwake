@@ -1415,10 +1415,11 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
     if (sh->energy < sim_eff_max_energy(&cfg->classes[sh->cls], sh)) return -1;
     drop_flags(s, cfg, i, 0);
     sh->cls = cls;
-    /* And the build for the new hull with it. A build belongs to a hull, so
-     * this is the caller's row for the ship being climbed into rather than
-     * the row being climbed out of; without one, the hull's own profile,
-     * because an Anvil flies an Anvil's gun whoever climbed into it.
+    /* And the build with it, which is the pilot's rather than the hull's: a
+     * caller with a row hands it over, and one without keeps what this pilot
+     * was already carrying. Nothing about a weapon lives on a hull, so there
+     * is no row here to take instead, and refitting rather than copying is
+     * what holds a build to a zone that gives some hull a shallower ceiling.
      *
      * The rack is the exception, and it is the same exception a death makes.
      * Charges are dealt once a match and spent from there, so a hull change
@@ -1430,12 +1431,8 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
      * That leaves the honest case: a pilot who has spent nothing and switches
      * to a deeper rack does not get the difference. The rack you fly the
      * match with is the one you were dealt at the whistle. */
-    if (kit) {
-        memcpy(sh->kit, kit, SIM_SLOT_COUNT);
-        sim_kit_fit(cfg, cls, sh->kit);
-    } else {
-        sim_kit_default(cfg, cls, sh->kit);
-    }
+    if (kit) memcpy(sh->kit, kit, SIM_SLOT_COUNT);
+    sim_kit_fit(cfg, cls, sh->kit);
     sim_deal_kit(sh, cfg, 0);
     for (int k = 0; k < SIM_MAX_CHARGES; k++) {
         uint8_t theirs = sh->kit[SIM_SLOT_CHARGE(k)];

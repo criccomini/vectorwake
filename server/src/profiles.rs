@@ -1,11 +1,11 @@
 //! The roster, as the pages that draw it need to see it.
 //!
-//! A ship is preconstructed: its flight row, its gun and bomb, and the profile
-//! it wears all belong to the class and are set by the zone. Nobody spends
-//! points on one and nobody buys a rung, so there is nothing here to validate
-//! and nothing to price. What is here is a name beside a profile, read out of
-//! whichever zone the player selected, for the ship page and for the harness
-//! that balances the seven against each other.
+//! A hull is a flight row and a footprint. What it carries is the pilot's,
+//! bought with seven credits, and every hull arrives on the same row of it, so
+//! there is nothing per hull here to validate and nothing to price. What is
+//! here is a name beside that row, read out of whichever zone the player
+//! selected, for the ship page and for the harness that balances the seven
+//! against each other.
 //!
 //! This file used to hold three named thirty-point loadouts and the ten
 //! matched contrasts that certified single stat pips. Both went with the kit:
@@ -69,19 +69,34 @@ mod tests {
         }
     }
 
-    /// No two hulls are the same ship. A roster where two rows match is a
-    /// roster with a name nobody has a reason to pick.
+    /// No two hulls fly the same way. A hull is its flight row, so a roster
+    /// where two rows match is a roster with a name nobody has a reason to
+    /// pick.
     #[test]
-    fn every_hull_is_a_different_ship() {
-        let profiles = sim::World::baseline_profiles();
-        for (i, a) in profiles.iter().enumerate() {
-            for (k, b) in profiles.iter().enumerate().skip(i + 1) {
-                assert_ne!(
-                    a, b,
-                    "{} and {} fly the same profile",
-                    CLASS_NAMES[i], CLASS_NAMES[k]
-                );
+    fn every_hull_flies_differently() {
+        let world = sim::World::with_map(1, sim::build_arena);
+        let row = |c: usize| {
+            let h = &world.cfg.classes[c];
+            (h.max_speed, h.thrust, h.rot, h.max_energy, h.recharge)
+        };
+        for (i, a) in CLASS_NAMES.iter().enumerate() {
+            for (k, b) in CLASS_NAMES.iter().enumerate().skip(i + 1) {
+                assert_ne!(row(i), row(k), "{a} and {b} fly the same way");
             }
+        }
+    }
+
+    /// And every one of them arrives on the same build, which is the other
+    /// half of it: a hull decides how you fly and never what you carry.
+    #[test]
+    fn every_hull_arrives_on_the_same_build() {
+        let profiles = sim::World::baseline_profiles();
+        for (i, kit) in profiles.iter().enumerate() {
+            assert_eq!(
+                kit, &profiles[0],
+                "{} arrives on a row of its own",
+                CLASS_NAMES[i]
+            );
         }
     }
 }

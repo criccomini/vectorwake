@@ -63,8 +63,7 @@ respawn_delay = 400   # ticks, so four seconds
 # ships than the map has points puts several of them on the same one with
 # nothing between them. Size the radius by the crowd it has to spread, measured
 # as seconds of bullet flight to the nearest enemy rather than in tiles. Alpha
-# runs 60 for a bit over three seconds at the 51 ships one of its rooms holds;
-# the numbers behind that are written out in catalog/zones/alpha/zone.toml.
+# runs 60 for a bit over three seconds at the 51 ships one of its rooms holds.
 #
 # A map that names no spawn points has nothing to aim at, and there a radius
 # scatters about the center of the map, which is what the original did before it
@@ -121,13 +120,14 @@ input_sample_ticks = 50
 combat_idle_ticks = 500
 spectate_silence_ticks = 500
 
-# Per hull: a flight row, a weapon ladder, and a profile. Anything left out
-# keeps the shipped roster's.
+# Per hull: a flight row, which is the whole of what a hull is. Anything left
+# out keeps the shipped roster's.
 #
-# A hull used to carry flight this way, then stopped: a kit was thirty points
-# and thirty points had to buy the same ship whatever you were sitting in, so
-# every hull flew the shared row and a hull was only a shape. There is no kit
-# now, so the hulls have their engines back and this is where they live.
+# There is no weapon here and no build. Both used to be, a ladder and a profile
+# a hull, and a hull that decides what a pilot carries is a hull deciding what
+# they fly: a Cipher that could not be given a bomb rack was a body choosing a
+# loadout. The weapons belong to the arena now, tuned by name below, and what a
+# pilot carries is theirs, bought with seven credits.
 #
 # What a zone cannot override is the footprint. Every collision rectangle
 # occupies exactly 625 square pixels and the client art is fitted around it.
@@ -136,22 +136,13 @@ spectate_silence_ticks = 500
 # unit, 400 to a full turn a second, energy, and energy a second times ten.
 # Flat, because nobody upgrades one.
 #
-# The profile is what the hull carries. A block that names any add-on for a
-# trigger names all of them, so what it leaves out is an add-on this hull does
-# not carry. `charges` is the rack by slot, at most two kinds, since a third
-# would bind to no key.
-#
 # [[arena.ships]]
 # name = "Facet"
-# gun = ["facet-gun"]
 # speed = 3050
 # thrust = 175
 # rotation = 265
 # energy = 1400
 # recharge = 1100
-# gun_mods = { multi = 4, bounce = 1 }
-# bomb_mods = { }
-# charges = [2, 0]
 
 # Weapons, by name.
 #
@@ -159,13 +150,14 @@ spectate_silence_ticks = 500
 # of it is -- and everything that leaves a ship is a row in each. A block here
 # is one of each, under a name.
 #
-# The baseline builds a gun and a bomb for every hull, named for it:
-# apex-gun, apex-bomb, wedge-gun, ... A block whose name is one of those tunes
-# that weapon and leaves the rest of it alone. Any other name makes a new
-# weapon, which a hull can carry or another weapon can splinter into.
+# The baseline builds one gun and one bomb for the whole room, named `gun` and
+# `bomb`. A block whose name is one of those tunes that weapon and leaves the
+# rest of it alone, for everybody: there is no per-hull weapon to tune, since a
+# hull is how it flies. Any other name makes a new weapon, which another weapon
+# can splinter into or a charge slot can hold.
 #
-# The weapons that belong to a slot in the settings rather than to a hull are
-# named for what they are: `repel` and `burst` for the two charges the
+# The weapons that belong to a slot in the settings rather than to a trigger
+# are named for what they are: `repel` and `burst` for the two charges the
 # baseline fills, `charge-3` and `charge-4` for the slots it leaves empty, and
 # shrapnel-1 up, one per rung of the add-on. So the repel's own radius is
 # `repel`'s blast, and what a second rung of shrapnel breaks into is
@@ -182,20 +174,18 @@ spectate_silence_ticks = 500
 # Three examples, all off. Uncomment one and save; the zone re-reads it and
 # every client in the room gets the new table without reconnecting.
 #
-# A hull's ladder is named by rung: anvil-bomb is the first, anvil-bomb-2 and
-# anvil-bomb-3 the ones a kit's bomb rungs climb to. A ship block can write
-# that ladder out (`gun = ["spike", "spike-2"]`) and `bomb = []` takes a rack
-# away.
+# A ladder is named by rung: `bomb` is the first, `bomb-2` and `bomb-3` the two
+# a pilot's credits climb to, and tuning one leaves the others alone.
 #
 # Bombs that bounce three times, at every level:
 #   [[arena.weapons]]
-#   name = "anvil-bomb"
+#   name = "bomb"
 #   on_wall = "bounce"
 #   bounces = 3
 #
 # A bomb that breaks into eight fragments where it goes off:
 #   [[arena.weapons]]
-#   name = "anvil-bomb"
+#   name = "bomb"
 #   splinter = "shrapnel"
 #
 #   [[arena.weapons]]
@@ -207,8 +197,8 @@ spectate_silence_ticks = 500
 #   spread = 45
 #
 # A repel: no damage at all, a wide shove, and gone on the tick it appears.
-# Give it to a hull with `bomb = ["repel"]` under [[arena.ships]]; `bomb = []`
-# takes a rack away again.
+# This is the charge in the first slot, so tuning it retunes what every Q press
+# in the room throws.
 #   [[arena.weapons]]
 #   name = "repel"
 #   speed = 0
@@ -231,11 +221,12 @@ spectate_silence_ticks = 500
 #   blast = 300
 #   push_time = 100
 #
-# A fourth charge, in the slot the baseline leaves empty. Naming it makes the
-# weapon and fills the slot; give it a count under each hull that may carry
-# it, which is what lets a kit slot one.
+# A third charge, in a slot the baseline leaves empty. Naming it makes the
+# weapon and fills the slot at once, and every pilot in the room may then spend
+# a credit on it. Two kinds is what a keyboard has room for, so a third fills
+# no key until one of the two above it is emptied.
 #   [[arena.weapons]]
-#   name = "charge-4"
+#   name = "charge-3"
 #   speed = 0
 #   life = 1
 #   on_wall = "pass"
@@ -243,32 +234,17 @@ spectate_silence_ticks = 500
 #   blast = 400
 #   damage = 900
 #   delay = 200
-#
-#   [[arena.ships]]
-#   name = "Anvil"
-#   charges = [3, 3, 3, 2]
-#
-# An empty charge slot is a charge kind waiting to be written. Name it, give
-# it a shape, and say how many of it a hull may slot.
-#   [[arena.weapons]]
-#   name = "charge-3"
-#   life = 3000
-#   blast = 120
-#
-#   [[arena.ships]]
-#   name = "Anvil"
-#   charges = [3, 3, 8]
 
-# The kit space.
+# The build space.
 #
-# A kit is thirty upgrades a pilot chooses and owns, dealt to the hull at every
-# spawn, and every slot in it costs exactly one. A slot is a stat step, a rung
-# of a trigger's ladder, an add-on on a trigger, or a charge carried. Levels
-# climb the ladders above; add-ons are transforms applied to whatever rung the
-# trigger is on (multi, bounce, prox, shrapnel, freeze, push) and each hull's
-# row says which it may ever hold and how many rungs of each. That is what
-# keeps the roster a roster: shrapnel belongs to bombers, and nothing a pilot
-# can buy changes it. See docs/design/match-game.md.
+# A build is seven upgrades a pilot chooses, dealt to whatever hull they are
+# sitting in at every spawn, and every slot in it costs exactly one. A slot is
+# a stat step, a rung of a trigger's ladder, an add-on on a trigger, or a
+# charge carried. Levels climb the ladders above; add-ons are transforms
+# applied to whatever rung the trigger is on (multi, bounce, prox, shrapnel,
+# freeze, push). What a build may hold is one row of ceilings for the whole
+# arena, in `fill_slot_caps`: a ceiling a hull would be the hull choosing the
+# loadout again.
 #
 # What one rung of each add-on is worth. Units are the field it moves:
 # barrels, walls, px of fuse, ticks of stall, px/s/10 of shove.
@@ -279,14 +255,11 @@ spectate_silence_ticks = 500
 #   freeze = 100
 #   push = 1200
 #
-# A rung of bouncing adds a wall to whatever the weapon already had, and what
-# it already had is where bullets and bombs part company. A bullet starts at
-# 255, more than its life can spend, so one rung means "until the round runs
-# out"; a bomb starts at zero, so one rung means one wall. That is the
-# original: BombBounceCount is a per-ship setting and no bullet equivalent
-# exists, because a bouncing bullet is a weapon type there and not a budget.
-# Raising this number lengthens bomb ricochets and does nothing to bullets,
-# which are already saturated.
+# A rung of bouncing adds a wall to whatever the weapon already had, and both
+# the gun and the bomb start at zero, so one rung is one wall on either. A
+# bullet used to start at 255, more than its life can spend, which made that
+# one credit a corridor where every miss kept hunting. Raising this number
+# lengthens every ricochet in the room.
 #
 # What a rung of multifire adds to the cost of pulling the trigger, as a
 # percentage of the shot's own energy and cooldown, and the degrees it fans to
@@ -321,21 +294,13 @@ spectate_silence_ticks = 500
 #   count = 12
 #   damage = 250
 #
-# And who may hold what, under a ship:
-#   [[arena.ships]]
-#   name = "Anvil"
-#   bomb_mods = { shrapnel = 3, prox = 1 }
-#   gun_mods = { multi = 1 }
+# A charge is a weapon you carry a count of and spend, and the count is a build
+# slot: one key per charge, so a zone can fill an empty slot without asking for
+# a key. The baseline fills two of the four, a repel and a burst.
 #
-# A charge is a weapon you carry a count of and spend, and the count is a kit
-# slot: one key per charge, so a zone can fill an empty slot without asking
-# for a key. The baseline fills two of the four, a repel and a burst, and what
-# each hull may slot is the `charges` row under it.
-#
-# Nothing here decides what a pilot ends up flying. That is theirs: a kit is
-# chosen in the hangar out of what their account owns, inside the ceilings
-# every hull's row above sets, and thirty points is thirty points for a new
-# account and a veteran alike.
+# Nothing here decides what a pilot ends up flying. That is theirs: a build is
+# chosen in the hangar inside the arena's ceilings, and seven credits is seven
+# credits for a new account and a veteran alike.
 
 # Staff and their capabilities are not here. Authority is still a set of named
 # powers rather than a rank, the way ASSS did it, but it belongs to the
