@@ -30,6 +30,22 @@
  * the fastest and the thinnest, Anvil the slowest and the deepest, and
  * nothing is at the top of two rows at once.
  *
+ * The pair that pays for the bar is energy against recharge. A deep bar
+ * refills slowly and a shallow one refills fast, so the Anvil wins the long
+ * fight and is slow to be ready for the next, and the Cipher loses any fight
+ * it stays in and is full again in nine seconds if it can break away. That is
+ * also the one thing in this table that makes speed worth anything: a fast
+ * refill only pays to a hull that can leave.
+ *
+ * Those two columns ran the same way round for a while, which is what
+ * `calibrate bodies` found. The Anvil held the deepest bar and nearly the
+ * fastest refill at once and took 60% of its seats in a team match and 69% in
+ * a duel; the Cipher, thin and no better at recovering, took 42%. Fitting win
+ * rate against the two columns over 99,600 seats explains 94% of the roster's
+ * spread, which is what these numbers were then solved off: the three bodies
+ * already inside the margin are untouched, and the three outside it sit on the
+ * line the fit draws through even. See docs/design/ships.md.
+ *
  * The triplet stays because a zone may still want a hull whose stat climbs,
  * and `eff` reads it the same way whether the step is zero or not. */
 static const sim_class_units flight[SIM_MAX_CLASSES] = {
@@ -37,9 +53,9 @@ static const sim_class_units flight[SIM_MAX_CLASSES] = {
     /* Apex    */ {3600,0,3600, 205,0,205, 250,0,250, 1500,0,1500, 1150,0,1150},
     /* Wedge   */ {2900,0,2900, 155,0,155, 205,0,205, 1900,0,1900, 1020,0,1020},
     /* Chord   */ {2800,0,2800, 215,0,215, 310,0,310, 1550,0,1550, 1200,0,1200},
-    /* Anvil   */ {2650,0,2650, 145,0,145, 195,0,195, 2100,0,2100, 1250,0,1250},
-    /* Cipher  */ {3900,0,3900, 200,0,200, 235,0,235, 1400,0,1400, 1100,0,1100},
-    /* Facet   */ {3050,0,3050, 175,0,175, 265,0,265, 1400,0,1400, 1100,0,1100},
+    /* Anvil   */ {2650,0,2650, 145,0,145, 195,0,195, 2100,0,2100,  875,0, 875},
+    /* Cipher  */ {3900,0,3900, 200,0,200, 235,0,235, 1300,0,1300, 1450,0,1450},
+    /* Facet   */ {3050,0,3050, 175,0,175, 265,0,265, 1450,0,1450, 1225,0,1225},
     /* Lattice */ {3100,0,3100, 165,0,165, 240,0,240, 1750,0,1750, 1050,0,1050},
 };
 
