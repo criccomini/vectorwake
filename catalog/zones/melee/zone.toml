@@ -63,10 +63,12 @@ max_bots_per_team = 4
 match_seconds = 180
 intermission_seconds = 15
 
-# Misc:BounceFactor: sixteen sixteenths, so a wall gives back everything that
-# hit it, which is what the original's does. The speed along the face is a term
-# the original has no setting for and this zone keeps at twelve.
-bounce = 16
+# Misc:BounceFactor: twelve sixteenths, so a wall keeps a quarter of the speed
+# that hit it. Sixteen is the template's, and lossless; Alpha Zone's own file
+# runs 22. Twelve is where this zone sat before decision 122 took it to the
+# template's number. The speed along the face is a term the original has no
+# setting for and this zone keeps at twelve as well.
+bounce = 12
 friction = 12
 
 # Two seconds dead. The open arena waited four, and four was fine there because
@@ -87,7 +89,13 @@ spawn_radius = 0
 # Neither map draws a safe zone, and neither should: a safe pocket is where a
 # leading side goes to stall out a clock. The limit is set anyway, because a
 # zone that later wants one should not also have to remember this line.
-safe_limit = 3000
+#
+# Alpha Zone's SafetyLimit is 90000 ticks, which is fifteen minutes. This is
+# 65535 because `safe_limit` is a uint16_t in the core, so ten minutes and
+# fifty-five seconds is the longest sit the game can express. Against a
+# three-minute match neither number is ever reached, so the ceiling costs
+# this zone nothing.
+safe_limit = 65535
 
 # Three kills without dying is a streak: the room is told, the hull goes gold,
 # and somebody comes to end it. Left at the baseline's threshold.
@@ -143,16 +151,48 @@ shrap_inactive_ticks = 25
 [arena.mod_step]
 # One rung of spray is one more round, and proximity is measured in pixels. A
 # rung of bouncing is one more wall on top of what the weapon already had,
-# which is one wall for a bomb and nothing worth counting for a bullet.
+# which is one wall for a bomb. A bullet is the exception and it is set on the
+# gun rather than here: see the ricochet blocks below.
 multi = 1
 bounce = 1
 prox = 48
 
-# The weapons are the baseline's, which is BurstDamageLevel 700 and the rest of
-# the original's table. A burst throwing 515 stood here for a while, to make one
-# survivable at a range where 700 is not; it went with the rest of this zone's
-# deviations from that table.
+# Bullets ricochet without limit, which is what the original's BouncingBullets
+# prize buys and what Alpha Zone ran. It is written as the gun's own count
+# rather than as a rung under `mod_step` for two reasons. The step is shared
+# with the bomb, and a bomb that bounces 255 times over a sixty-second life
+# would still be rattling around a melee map when the next match starts. And
+# the count is only read once `on_wall` says bounce, which is what the add-on
+# sets: until a pilot spends the credit these rounds still end on the first
+# wall they touch.
 #
+# 255 is the widest a wall count goes, and a bullet cannot spend it. One lives
+# 550 ticks and covers 69 tiles, so 255 walls would need one every four pixels.
+# Unlimited in the only sense a five-second round can mean it.
+#
+# A rung apiece, because a ladder is tuned by rung and a pilot who climbs the
+# gun should not lose the ricochet they bought.
+[[arena.weapons]]
+name = "gun"
+bounces = 255
+
+[[arena.weapons]]
+name = "gun-2"
+bounces = 255
+
+[[arena.weapons]]
+name = "gun-3"
+bounces = 255
+
+# BurstDamageLevel 515, which is Alpha Zone's. The template says 700 and this
+# zone ran 515 for a while on the argument that a burst should be survivable at
+# a range where 700 is not; that was dropped as a deviation of ours when the
+# weapons went back to the template. It was not a deviation. A zone that ran
+# for years shipped the same number.
+[[arena.weapons]]
+name = "burst"
+damage = 515
+
 # The ships.
 #
 # There is no ships section, and the roster is the baseline's: seven hulls, each

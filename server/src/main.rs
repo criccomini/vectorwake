@@ -6680,6 +6680,50 @@ mod tests {
         }
     }
 
+    /// Team Battle's four departures from the shipped weapons, read off the
+    /// applied world rather than off the file.
+    ///
+    /// A warning is not the failure mode these have. Three of them are weapon
+    /// blocks addressed by rung name, and a name nothing answers to is not an
+    /// error: the first pass builds a brand new weapon under it, wires it to
+    /// no trigger and no slot, and reports nothing. So renaming a rung would
+    /// leave this zone parsing cleanly with bullets that stop at the first
+    /// wall. The assertions below are what notices.
+    #[test]
+    fn team_battle_tunes_the_wall_the_gun_and_the_burst() {
+        crate::catalog::set_placeholder_identity();
+        let cat = crate::catalog::load("../catalog").expect("the shipped catalog loads");
+        let mut w = sim::World::new(1);
+        let warn = Room::apply_config(&mut w, &cat.zones["melee"].arena);
+        assert!(warn.is_empty(), "melee applies with warnings: {warn:?}");
+
+        // A wall keeps a quarter of what hits it, and a sit is capped at the
+        // widest a uint16_t goes.
+        assert_eq!(w.cfg.bounce, 12);
+        assert_eq!(w.cfg.safe_limit, 65535);
+
+        // Every rung of the gun carries a wall count no bullet can spend. The
+        // rounds still end on walls until a pilot buys the add-on, which is
+        // what leaves `on_wall` alone here.
+        for rung in 0..3 {
+            let pat = w.cfg.classes[0].trigger[sim::TRIG_GUN][rung];
+            assert_ne!(pat, sim::NO_PATTERN, "the gun has a rung {rung}");
+            let spec = w.cfg.specs[w.cfg.patterns[pat as usize].spec as usize];
+            assert_eq!(spec.bounces, 255, "gun rung {rung} ricochets");
+            assert_eq!(spec.on_wall, 0, "gun rung {rung} is bought, not given");
+        }
+
+        // Alpha Zone's BurstDamageLevel.
+        let burst = w.cfg.charge[sim::CHARGE_BURST];
+        assert_ne!(
+            burst,
+            sim::NO_PATTERN,
+            "the burst is a charge this zone fills"
+        );
+        let spec = w.cfg.specs[w.cfg.patterns[burst as usize].spec as usize];
+        assert_eq!(spec.damage, sim::units_energy(515));
+    }
+
     /// The whole commit path over the shipped catalog, exactly as the decide
     /// loop runs it: wire form, packed map bytes, zone text and all. The
     /// apply test above reads the files; this one proves an arena handed them
