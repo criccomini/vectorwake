@@ -48,15 +48,15 @@ One row a hull, in the settings file's own units.
 |---|---:|---:|---:|---:|---:|
 | Apex | 3332 | 205 | 248 | 1175 | 759 |
 | Wedge | 2358 | 155 | 209 | 1525 | 589 |
-| Chord | 2219 | 215 | 300 | 1219 | 824 |
-| Anvil | 2010 | 145 | 200 | 1700 | 400 |
-| Cipher | 3750 | 200 | 235 | 1000 | 1150 |
+| Chord | 2219 | 215 | 265 | 1219 | 824 |
+| Anvil | 2010 | 145 | 200 | 1700 | 560 |
+| Cipher | 3750 | 200 | 235 | 1000 | 1000 |
 | Facet | 2567 | 175 | 261 | 1131 | 857 |
 | Lattice | 2636 | 165 | 239 | 1394 | 628 |
 
 Speed is tenths of a pixel a second, so the Cipher runs at 375 and the Anvil
 at 201. Thrust is tenths of the settings unit. Rotation counts 400 to a full
-turn a second, so the Chord comes round in a little over a second and a third
+turn a second, so the Chord comes round in a little over a second and a half
 and the Anvil takes two. Recharge is energy a second times ten.
 
 Four of those five columns are bounded, and the bounds are the original's own.
@@ -70,14 +70,18 @@ unbounded: the original runs 15 to 19 across every ship and every upgrade,
 which is narrower than this roster wants.
 
 The rows above were carried onto those bands by a straight linear rescale, so
-each column keeps its order and its spacing and only its scale changed. That
-is not a neutral operation on the last two columns, and the Balance section
-below is where it gets measured: the energy spread narrows an eighth while the
-recharge spread widens a third, which moves weight onto the refill.
+each column keeps its order and its spacing and only its scale changed, and
+then three of them were corrected for what that cost. The rescale is not a
+neutral operation: it narrows the energy spread an eighth and widens the
+recharge spread a third, which moves weight onto the refill, and holding speed
+inside the original's band slows the whole roster by a sixth, which raises the
+price of turning. Both showed up in the measurement. See Balance below for
+what they cost and what came off the Anvil, the Chord and the Cipher to pay
+for it.
 
 The last two columns run against each other, and that is the roster's own
 trade. A deep bar refills slowly and a shallow one refills fast: the Anvil
-takes forty-two seconds to fill and the Cipher nine, so the heavy wins the
+takes thirty seconds to fill and the Cipher ten, so the heavy wins the
 long fight and is slow to be ready for the next, and the knife loses any fight
 it stays in and is whole again almost at once. It is also the one thing here
 that makes speed worth having, since a fast refill only pays to a hull that

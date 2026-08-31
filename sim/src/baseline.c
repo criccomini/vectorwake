@@ -54,18 +54,36 @@
  * straight linear rescale, so each column keeps its order and its relative
  * spacing and only its scale changed. Thrust is untouched, having no bound.
  *
- * What the rescale does to the pair that pays for the bar is worth stating,
- * because it is not neutral: the energy spread narrows an eighth and the
- * recharge spread widens a third. Both columns pay to win, and they run
- * opposite ways round on purpose, so widening one and narrowing the other
- * moves weight onto the refill. A deep bar is a longer wait than it was. */
+ * Three of those rows were then corrected, because the rescale was not
+ * neutral and `calibrate bodies` measured what it cost: fourteen of
+ * twenty-one cells certified, against nineteen before. Two things had gone
+ * wrong and they are the same thing seen from opposite ends.
+ *
+ * The rescale narrowed the energy spread an eighth and widened the recharge
+ * spread a third. Both columns pay to win and they run opposite ways round on
+ * purpose, so that moved weight onto the refill and left the Anvil pinned at
+ * the floor of it: 42.5% at low skill, where a refit prices recharge at 1.71
+ * win points per hundred and it is the most valuable thing on the table.
+ *
+ * And holding speed inside the original's band slowed the roster by a sixth,
+ * which raised the price of turning. Rotation is worth -0.26 points a hundred
+ * at low skill, +6.76 at mid and +11.78 at high, so the hull at the top of
+ * that column runs away exactly where it gets expensive. Energy and recharge
+ * explained 94% of the roster's spread before this and 72% after; rotation is
+ * what takes it back to 94%.
+ *
+ * So the Anvil comes off the recharge floor, the Chord comes off the rotation
+ * ceiling, and the Cipher gives back some of the refill lead the widened
+ * spread handed it. Each hull keeps its rank in the column it was moved in:
+ * the Anvil still has the slowest refill in the game and the Chord still has
+ * the best turn, by nine points over the Facet rather than by thirty-nine. */
 static const sim_class_units flight[SIM_MAX_CLASSES] = {
     /*        speed        thrust        rotation       energy      recharge */
     /* Apex    */ {3332,0,3332, 205,0,205, 248,0,248, 1175,0,1175,  759,0, 759},
     /* Wedge   */ {2358,0,2358, 155,0,155, 209,0,209, 1525,0,1525,  589,0, 589},
-    /* Chord   */ {2219,0,2219, 215,0,215, 300,0,300, 1219,0,1219,  824,0, 824},
-    /* Anvil   */ {2010,0,2010, 145,0,145, 200,0,200, 1700,0,1700,  400,0, 400},
-    /* Cipher  */ {3750,0,3750, 200,0,200, 235,0,235, 1000,0,1000, 1150,0,1150},
+    /* Chord   */ {2219,0,2219, 215,0,215, 265,0,265, 1219,0,1219,  824,0, 824},
+    /* Anvil   */ {2010,0,2010, 145,0,145, 200,0,200, 1700,0,1700,  560,0, 560},
+    /* Cipher  */ {3750,0,3750, 200,0,200, 235,0,235, 1000,0,1000, 1000,0,1000},
     /* Facet   */ {2567,0,2567, 175,0,175, 261,0,261, 1131,0,1131,  857,0, 857},
     /* Lattice */ {2636,0,2636, 165,0,165, 239,0,239, 1394,0,1394,  628,0, 628},
 };
