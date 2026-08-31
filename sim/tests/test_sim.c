@@ -2734,6 +2734,51 @@ static void test_tech_tree(const sim_settings *base) {
                       "and no profile spends a stat step it cannot use");
         }
 
+        /* Every hull inside the roster's bounds, which are the original's:
+         * the span between what an Alpha Zone ship arrives with and what a
+         * greened one reaches. */
+        for (int i = 0; i < cfg.class_count; i++) {
+            const sim_ship_class *h = &cfg.classes[i];
+            CHECK(h->max_speed >= sim_units_speed(SIM_SPEED_MIN)
+                      && h->max_speed <= sim_units_speed(SIM_SPEED_MAX),
+                  "a hull flies inside the speed band");
+            CHECK(h->rot >= sim_units_rotation(SIM_ROTATION_MIN)
+                      && h->rot <= sim_units_rotation(SIM_ROTATION_MAX),
+                  "and inside the rotation band");
+            CHECK(h->max_energy >= sim_units_energy(SIM_ENERGY_MIN)
+                      && h->max_energy <= sim_units_energy(SIM_ENERGY_MAX),
+                  "and carries a bar inside the energy band");
+            CHECK(h->recharge >= sim_units_recharge(SIM_RECHARGE_MIN)
+                      && h->recharge <= sim_units_recharge(SIM_RECHARGE_MAX),
+                  "and refills it inside the recharge band");
+        }
+
+        /* Both ends of the band are held, and a row is pulled back to the
+         * edge rather than refused. Thrust is the one column with no bound,
+         * so a row that asks for an absurd one keeps it. */
+        {
+            sim_class_units wild = {9000, 0, 9000, 900,  0, 900, 900, 0, 900,
+                                    9000, 0, 9000, 9000, 0, 9000};
+            sim_ship_class hot;
+            sim_class_from_units(&hot, &wild);
+            CHECK(hot.max_speed == sim_units_speed(SIM_SPEED_MAX)
+                      && hot.rot == sim_units_rotation(SIM_ROTATION_MAX)
+                      && hot.max_energy == sim_units_energy(SIM_ENERGY_MAX)
+                      && hot.recharge == sim_units_recharge(SIM_RECHARGE_MAX),
+                  "a row over the top is held at the ceiling");
+            CHECK(hot.thrust == sim_units_thrust(900),
+                  "but thrust is not bounded and keeps what it asked for");
+
+            sim_class_units meek = {1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1};
+            sim_ship_class cold;
+            sim_class_from_units(&cold, &meek);
+            CHECK(cold.init_speed == sim_units_speed(SIM_SPEED_MIN)
+                      && cold.init_rot == sim_units_rotation(SIM_ROTATION_MIN)
+                      && cold.init_energy == sim_units_energy(SIM_ENERGY_MIN)
+                      && cold.init_recharge == sim_units_recharge(SIM_RECHARGE_MIN),
+                  "and one under the bottom is held at the floor");
+        }
+
         /* The spread, which is the roster. Speed and energy run opposite
          * ways down it, so nothing is at the top of two rows at once. */
         CHECK(cfg.classes[CIPHER].max_speed > cfg.classes[ANVIL].max_speed,

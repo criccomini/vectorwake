@@ -988,6 +988,28 @@ impl Room {
                     }
                 }
             }
+            // The row above was written straight into the class, so the
+            // core's bounds have not been applied to it yet. Clamping here is
+            // what makes them a rule about the game rather than a property of
+            // the shipped roster, and a number that moves is reported: a zone
+            // asking for a 5000 speed and getting 3750 should hear about it
+            // from the file rather than from a stopwatch.
+            for (label, want, band) in [
+                ("speed", s.speed, sim::SPEED_BAND),
+                ("rotation", s.rotation, sim::ROTATION_BAND),
+                ("energy", s.energy, sim::ENERGY_BAND),
+                ("recharge", s.recharge, sim::RECHARGE_BAND),
+            ] {
+                if let Some(v) = want {
+                    if v < band.0 || v > band.1 {
+                        warn.push(format!(
+                            "{}: {label} {v} is outside {} to {}, held at the edge",
+                            s.name, band.0, band.1
+                        ));
+                    }
+                }
+            }
+            unsafe { sim::sim_class_clamp(&mut world.cfg.classes[idx]) };
         }
 
         warn

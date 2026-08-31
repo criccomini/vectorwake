@@ -159,6 +159,30 @@ int32_t sim_units_recharge(int32_t r) {
     return (int32_t)(((int64_t)r * 1024) / 1000);
 }
 
+static int32_t clamp32(int32_t v, int32_t lo, int32_t hi) {
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
+void sim_class_clamp(sim_ship_class *c) {
+    const int32_t slo = sim_units_speed(SIM_SPEED_MIN);
+    const int32_t shi = sim_units_speed(SIM_SPEED_MAX);
+    const int32_t rlo = sim_units_rotation(SIM_ROTATION_MIN);
+    const int32_t rhi = sim_units_rotation(SIM_ROTATION_MAX);
+    const int32_t elo = sim_units_energy(SIM_ENERGY_MIN);
+    const int32_t ehi = sim_units_energy(SIM_ENERGY_MAX);
+    const int32_t clo = sim_units_recharge(SIM_RECHARGE_MIN);
+    const int32_t chi = sim_units_recharge(SIM_RECHARGE_MAX);
+    c->init_speed = clamp32(c->init_speed, slo, shi);
+    c->max_speed = clamp32(c->max_speed, slo, shi);
+    c->init_rot = clamp32(c->init_rot, rlo, rhi);
+    c->rot = clamp32(c->rot, rlo, rhi);
+    c->init_energy = clamp32(c->init_energy, elo, ehi);
+    c->max_energy = clamp32(c->max_energy, elo, ehi);
+    c->init_recharge = clamp32(c->init_recharge, clo, chi);
+    c->recharge = clamp32(c->recharge, clo, chi);
+    /* Thrust is deliberately unbounded; see the note beside the bounds. */
+}
+
 void sim_class_from_units(sim_ship_class *c, const sim_class_units *u) {
     memset(c, 0, sizeof *c);
     c->max_speed = sim_units_speed(u->max_speed);
@@ -180,6 +204,7 @@ void sim_class_from_units(sim_ship_class *c, const sim_class_units *u) {
     c->up_energy = sim_units_energy(u->up_energy);
     c->init_recharge = sim_units_recharge(u->init_recharge);
     c->up_recharge = sim_units_recharge(u->up_recharge);
+    sim_class_clamp(c);
     /* No weapons until something gives it some, and no add-ons it may hold.
      * What a hull fires is a ladder of patterns in the settings, and the
      * settings are what a zone tunes. */

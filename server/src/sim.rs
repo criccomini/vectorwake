@@ -673,7 +673,17 @@ extern "C" {
     pub fn sim_units_thrust(v: i32) -> i32;
     pub fn sim_units_rotation(v: i32) -> i32;
     pub fn sim_units_recharge(v: i32) -> i32;
+    /// Hold a flight row inside the roster's bounds. See `sim_class_clamp` in
+    /// sim.h: a zone may write any number it likes and gets the band back.
+    pub fn sim_class_clamp(c: *mut sim_ship_class);
 }
+
+/// The bounds a flight row is held inside, in the zone file's own units.
+/// Mirrors the `SIM_*_MIN` and `SIM_*_MAX` macros in sim.h.
+pub const SPEED_BAND: (i32, i32) = (2010, 3750);
+pub const ROTATION_BAND: (i32, i32) = (200, 300);
+pub const ENERGY_BAND: (i32, i32) = (1000, 1700);
+pub const RECHARGE_BAND: (i32, i32) = (400, 1150);
 
 /// The zone file's units, converted the way the core converts them. A zone
 /// writes 3600 for a speed and 190 for a thrust, exactly as `baseline.c` does.

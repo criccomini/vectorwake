@@ -48,15 +48,26 @@
  *
  * The triplet stays because a zone may still want a hull whose stat climbs,
  * and `eff` reads it the same way whether the step is zero or not. */
+/* The roster sits inside the bounds in sim.h, which are the original's own:
+ * the span between what an Alpha Zone ship arrives with and what a fully
+ * greened one reaches. Every row here was carried onto those bands by a
+ * straight linear rescale, so each column keeps its order and its relative
+ * spacing and only its scale changed. Thrust is untouched, having no bound.
+ *
+ * What the rescale does to the pair that pays for the bar is worth stating,
+ * because it is not neutral: the energy spread narrows an eighth and the
+ * recharge spread widens a third. Both columns pay to win, and they run
+ * opposite ways round on purpose, so widening one and narrowing the other
+ * moves weight onto the refill. A deep bar is a longer wait than it was. */
 static const sim_class_units flight[SIM_MAX_CLASSES] = {
     /*        speed        thrust        rotation       energy      recharge */
-    /* Apex    */ {3600,0,3600, 205,0,205, 250,0,250, 1500,0,1500, 1150,0,1150},
-    /* Wedge   */ {2900,0,2900, 155,0,155, 205,0,205, 1900,0,1900, 1020,0,1020},
-    /* Chord   */ {2800,0,2800, 215,0,215, 310,0,310, 1550,0,1550, 1200,0,1200},
-    /* Anvil   */ {2650,0,2650, 145,0,145, 195,0,195, 2100,0,2100,  875,0, 875},
-    /* Cipher  */ {3900,0,3900, 200,0,200, 235,0,235, 1300,0,1300, 1450,0,1450},
-    /* Facet   */ {3050,0,3050, 175,0,175, 265,0,265, 1450,0,1450, 1225,0,1225},
-    /* Lattice */ {3100,0,3100, 165,0,165, 240,0,240, 1750,0,1750, 1050,0,1050},
+    /* Apex    */ {3332,0,3332, 205,0,205, 248,0,248, 1175,0,1175,  759,0, 759},
+    /* Wedge   */ {2358,0,2358, 155,0,155, 209,0,209, 1525,0,1525,  589,0, 589},
+    /* Chord   */ {2219,0,2219, 215,0,215, 300,0,300, 1219,0,1219,  824,0, 824},
+    /* Anvil   */ {2010,0,2010, 145,0,145, 200,0,200, 1700,0,1700,  400,0, 400},
+    /* Cipher  */ {3750,0,3750, 200,0,200, 235,0,235, 1000,0,1000, 1150,0,1150},
+    /* Facet   */ {2567,0,2567, 175,0,175, 261,0,261, 1131,0,1131,  857,0, 857},
+    /* Lattice */ {2636,0,2636, 165,0,165, 239,0,239, 1394,0,1394,  628,0, 628},
 };
 
 /* The weapons, and they belong to nobody.

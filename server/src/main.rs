@@ -1411,6 +1411,70 @@ mod tests {
         (w, warn)
     }
 
+    /// A zone may write any flight number it likes and gets the roster's
+    /// bounds back, with a line saying so.
+    ///
+    /// Silence would be the bad outcome here. The apply path writes the row
+    /// straight into the class, so without the clamp a zone could put a hull
+    /// outside the band the whole roster was balanced inside, and without the
+    /// warning it would be held there with nothing to read but a stopwatch.
+    #[test]
+    fn a_zone_cannot_fly_a_hull_outside_the_roster_bands() {
+        let (w, warn) = tuned(
+            "[arena]\n\
+             [[arena.ships]]\n\
+             name = \"Facet\"\n\
+             speed = 9000\n\
+             rotation = 900\n\
+             energy = 100\n\
+             recharge = 50\n",
+        );
+        let facet = w.cfg.classes[5];
+        unsafe {
+            assert_eq!(facet.max_speed, sim::sim_units_speed(sim::SPEED_BAND.1));
+            assert_eq!(facet.rot, sim::sim_units_rotation(sim::ROTATION_BAND.1));
+            assert_eq!(facet.max_energy, sim::sim_units_energy(sim::ENERGY_BAND.0));
+            assert_eq!(
+                facet.recharge,
+                sim::sim_units_recharge(sim::RECHARGE_BAND.0)
+            );
+            // The floor of each ladder is held too, or a hull could start
+            // outside the band and only be inside it at the top.
+            assert_eq!(facet.init_speed, sim::sim_units_speed(sim::SPEED_BAND.1));
+            assert_eq!(facet.init_energy, sim::sim_units_energy(sim::ENERGY_BAND.0));
+        }
+        assert_eq!(
+            warn.len(),
+            4,
+            "every number that moved is reported: {warn:?}"
+        );
+        assert!(warn.iter().all(|w| w.starts_with("Facet: ")), "{warn:?}");
+
+        // Thrust has no band, so an absurd one is the operator's business.
+        let (hot, warn) = tuned(
+            "[arena]\n\
+             [[arena.ships]]\n\
+             name = \"Facet\"\n\
+             thrust = 900\n",
+        );
+        assert!(warn.is_empty(), "{warn:?}");
+        unsafe {
+            assert_eq!(hot.cfg.classes[5].thrust, sim::sim_units_thrust(900));
+        }
+
+        // And a number inside the band passes through untouched and unremarked.
+        let (fine, warn) = tuned(
+            "[arena]\n\
+             [[arena.ships]]\n\
+             name = \"Facet\"\n\
+             speed = 3000\n",
+        );
+        assert!(warn.is_empty(), "{warn:?}");
+        unsafe {
+            assert_eq!(fine.cfg.classes[5].max_speed, sim::sim_units_speed(3000));
+        }
+    }
+
     /// The wormhole keys a zone can reach, read back off the core in the
     /// units the core keeps them in.
     ///

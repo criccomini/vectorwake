@@ -46,22 +46,38 @@ One row a hull, in the settings file's own units.
 
 | Class | Speed | Thrust | Rotation | Energy | Recharge |
 |---|---:|---:|---:|---:|---:|
-| Apex | 3600 | 205 | 250 | 1500 | 1150 |
-| Wedge | 2900 | 155 | 205 | 1900 | 1020 |
-| Chord | 2800 | 215 | 310 | 1550 | 1200 |
-| Anvil | 2650 | 145 | 195 | 2100 | 875 |
-| Cipher | 3900 | 200 | 235 | 1300 | 1450 |
-| Facet | 3050 | 175 | 265 | 1450 | 1225 |
-| Lattice | 3100 | 165 | 240 | 1750 | 1050 |
+| Apex | 3332 | 205 | 248 | 1175 | 759 |
+| Wedge | 2358 | 155 | 209 | 1525 | 589 |
+| Chord | 2219 | 215 | 300 | 1219 | 824 |
+| Anvil | 2010 | 145 | 200 | 1700 | 400 |
+| Cipher | 3750 | 200 | 235 | 1000 | 1150 |
+| Facet | 2567 | 175 | 261 | 1131 | 857 |
+| Lattice | 2636 | 165 | 239 | 1394 | 628 |
 
-Speed is tenths of a pixel a second, so the Cipher runs at 390 and the Anvil
-at 265. Thrust is tenths of the settings unit. Rotation counts 400 to a full
-turn a second, so the Chord comes round in a little over a second and a quarter
+Speed is tenths of a pixel a second, so the Cipher runs at 375 and the Anvil
+at 201. Thrust is tenths of the settings unit. Rotation counts 400 to a full
+turn a second, so the Chord comes round in a little over a second and a third
 and the Anvil takes two. Recharge is energy a second times ten.
+
+Four of those five columns are bounded, and the bounds are the original's own.
+The Alpha Zone settings are eight ships climbing one ladder, so the span
+between what a ship arrives with and what a fully greened one reaches is the
+whole of what anybody ever flew there: speed 2010 to 3750, rotation 200 to
+300, energy 1000 to 1700, recharge 400 to 1150. Ours are seven hulls that do
+not climb, so those become the edges of the roster instead, held by
+`sim_class_clamp` wherever a row is written, a zone file included. Thrust is
+unbounded: the original runs 15 to 19 across every ship and every upgrade,
+which is narrower than this roster wants.
+
+The rows above were carried onto those bands by a straight linear rescale, so
+each column keeps its order and its spacing and only its scale changed. That
+is not a neutral operation on the last two columns, and the Balance section
+below is where it gets measured: the energy spread narrows an eighth while the
+recharge spread widens a third, which moves weight onto the refill.
 
 The last two columns run against each other, and that is the roster's own
 trade. A deep bar refills slowly and a shallow one refills fast: the Anvil
-takes twenty-four seconds to fill and the Cipher nine, so the heavy wins the
+takes forty-two seconds to fill and the Cipher nine, so the heavy wins the
 long fight and is slow to be ready for the next, and the knife loses any fight
 it stays in and is whole again almost at once. It is also the one thing here
 that makes speed worth having, since a fast refill only pays to a hull that

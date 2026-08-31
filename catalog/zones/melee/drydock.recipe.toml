@@ -8,7 +8,20 @@ symmetry = "half_turn"
 routes = 3
 min_opening_tiles = 7
 contact_seconds_min = 6.0
-contact_seconds_max = 11.6
+# Carried onto the new roster by the same ratio the ships were.
+#
+# This gate times the shortest home-to-home route against the median hull's
+# speed, so it is a statement about geometry expressed in seconds and it moves
+# whenever the roster does. Holding the flight table inside the original's
+# speed band took that median from 3050 to 2567, which is 18.8% longer across
+# every map ever measured; this room went from about 9.8 seconds to 11.66 and
+# fell out of an 11.6 ceiling it had comfortably cleared. 13.8 is 11.6 through
+# the same ratio, so the number describes the room it always described.
+#
+# The other recipes still read 11.6 because they had the headroom to absorb
+# the same 18.8%, which means their ceilings now allow less geometry than they
+# were written to allow. Worth a sweep if these gates are ever tightened.
+contact_seconds_max = 13.8
 allow_doors = false
 allow_wormholes = false
 expected_hash = "5524450d"

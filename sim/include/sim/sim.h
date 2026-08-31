@@ -1248,6 +1248,43 @@ typedef struct {
  * left empty: what a hull fires is a ladder of patterns a zone tunes. */
 void sim_class_from_units(sim_ship_class *c, const sim_class_units *u);
 
+/* What a hull may fly at, whoever writes the row.
+ *
+ * These are the original's own bounds, read off the Alpha Zone settings as
+ * the span between what a ship arrives with and what a fully upgraded one
+ * reaches: speed 2010 to 3750, rotation 200 to 300, energy 1000 to 1700 and
+ * recharge 400 to 1150. That file is eight ships climbing one ladder, so its
+ * initial and maximum rows are the two ends of everything anybody ever flew
+ * there. Ours is seven hulls that do not climb, so the same two numbers
+ * become the edges of the roster instead.
+ *
+ * Thrust has no bound. The original's spread there is 15 to 19 across every
+ * ship and every upgrade, which is narrower than the roster wants and is the
+ * one column these bounds would flatten rather than shape.
+ *
+ * In settings-file units, because that is where a bound means something to
+ * whoever is choosing a number. */
+#define SIM_SPEED_MIN 2010
+#define SIM_SPEED_MAX 3750
+#define SIM_ROTATION_MIN 200
+#define SIM_ROTATION_MAX 300
+#define SIM_ENERGY_MIN 1000
+#define SIM_ENERGY_MAX 1700
+#define SIM_RECHARGE_MIN 400
+#define SIM_RECHARGE_MAX 1150
+
+/* Hold a flight row inside those bounds.
+ *
+ * Both ends of each ladder are clamped, the floor and the ceiling, which is
+ * what bounds a hull however many steps it climbs: `eff` is the floor plus a
+ * step and never past the ceiling, so a row whose two ends are in the band
+ * cannot leave it. The step itself is left alone, being an increment rather
+ * than a value.
+ *
+ * Called wherever a row is written, which is `sim_class_from_units` and the
+ * zone-apply path in the server. A bound nothing enforces is a comment. */
+void sim_class_clamp(sim_ship_class *c);
+
 /* Effective stats used outside the core by the client HUD and AI. */
 int32_t sim_eff_speed(const sim_ship_class *c, const sim_ship *s);
 int32_t sim_eff_thrust(const sim_ship_class *c, const sim_ship *s);
