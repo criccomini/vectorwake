@@ -1003,6 +1003,21 @@ static void k_ui_go(voice *v) {
     v_drive(v, 1.4);
 }
 
+// The answer to a press that cannot land: a credit that is not there, or a
+// slot already at its ceiling.
+//
+// `ui_go` turned over, which is what makes it the same interface speaking
+// rather than an error arriving from somewhere else. The same octave that one
+// climbs, fallen instead, from lower down and with nothing over it. Quieter
+// too, which is set in ui_deny.sound where every gain in the kit is set: a
+// pilot who keeps pressing an empty purse should hear an answer rather than a
+// scolding.
+static void k_ui_deny(voice *v) {
+    v_sine(v, 330, 165, 0.34, 1.1);
+    v_square(v, 165, 82, 0.12, 0.3, 1.1);
+    v_drive(v, 1.2);
+}
+
 // The last five seconds of an intermission, one a second.
 //
 // A flat pip rather than a rising one: it is said five times in five seconds
@@ -1600,6 +1615,7 @@ static const entry KIT[] = {
     {"thrust",  0.5,   1, k_thrust},
     {"ui_move", 0.035, 0, k_ui_move},
     {"ui_go",   0.16,  0, k_ui_go},
+    {"ui_deny", 0.14,  0, k_ui_deny},
     {"count",   0.10,  0, k_count},
     {"start",   0.40,  0, k_start},
     {"streak",  0.85,  0, k_streak},
@@ -1619,7 +1635,7 @@ const char *const sfx_names[] = {
     "bomb0", "bomb1", "bomb2", "bomb3",
     "blast0", "blast1", "blast2", "blast3",
     "death", "hit", "bounce", "spawn", "prize",
-    "rust", "charge", "flag", "thrust", "ui_move", "ui_go",
+    "rust", "charge", "flag", "thrust", "ui_move", "ui_go", "ui_deny",
     "count", "start", "streak",
     "music_a", "music_b", NULL,
 };

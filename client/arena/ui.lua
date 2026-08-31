@@ -4281,17 +4281,22 @@ end
 -- stop here that keeps its promise by doing something instead should not be
 -- making it.
 local function land_stop(x, y, w, h, label, value, action, lit, stacked, o)
+    o = o or {}
     -- Where a press would land, at the weight every row of the menu is lit
     -- at. Under the outline rather than over it: the edge is the brighter
     -- half of the same signal, and a wash laid over it would mute it.
-    local hot = M.col_sel == action
+    --
+    -- What the box publishes and not the action alone. The landing names its
+    -- three stops apart, so the action was enough out there; the column's
+    -- three all publish `menu_stop` and tell themselves apart by the value,
+    -- and a cursor on any one of them lit all three at once.
+    local hot = M.col_sel == action and M.col_sel_value == o.value
     frost(x, y, w, h)
     rect(x, y, w, h, pal.a(pal.BTN_BG, 0.6))
     if hot then rect(x, y, w, h, pal.a(pal.FRIEND, LIT.CURSOR)) end
     key_box(x, y, w, h, nil,
             (lit or hot) and pal.a(pal.FRIEND, 0.8)
                 or pal.a(pal.RADAR_TILE, 0.75))
-    o = o or {}
     local raw = o.raw
     -- The measure every panel in the game insets its names by. A stop was on
     -- twelve, which is the exact number decision 104 unified away on the
@@ -4900,7 +4905,14 @@ local function land_row(kx, kw, y, h, r)
         -- since turning is what chooses. There is no other for a mark to tell
         -- it from, so the field the roster used to light on "this is the one"
         -- is gone with the press that made one of them the one.
-        local on = M.col_sel == "land_pick_ship" and M.col_sel_value == r.value
+        --
+        -- Standing on the carousel, which is one control however many hulls
+        -- it turns through. It answered for the hull it was showing, and the
+        -- hull is what the arrows change: every step of them moved the row
+        -- out from under the cursor, so scrubbing the roster put the row out
+        -- and the arrows left the walk. What a hand stands on here is the
+        -- carousel, not the Chord.
+        local on = M.col_sel == "land_pick_ship"
         LIT.state(kx, y, kw, h, on, false)
         local col = pal.FRIEND
         local a = 1
@@ -4955,7 +4967,7 @@ local function land_row(kx, kw, y, h, r)
         -- turn, which is the same job `land_kit_row` does for the arrows
         -- either side of a count.
         hit(kx + 56 * F.scale, y, kw - 112 * F.scale, h, "land_pick_ship",
-            r.value, nil, 0)
+            nil, nil, 0)
         return
     end
     if r.kind == "sect" then
@@ -5031,7 +5043,7 @@ end
 local function land_row_at(r)
     if r.kind == "sect" then return "land_sect", r.sect end
     if r.kind == "slot" then return "land_kit_row", r.slot end
-    if r.kind == "art" then return "land_pick_ship", r.value end
+    if r.kind == "art" then return "land_pick_ship", nil end
     if r.kind == "flair" then return "land_flair", r.index end
     if r.kind == "reset" then return "land_kit_reset", nil end
     return nil, nil
@@ -6092,8 +6104,13 @@ function menu_row(x, y, w, h, r, hot)
         rect(lit and (sx + sw - k - 2 * F.scale) or (sx + 2 * F.scale),
              sy + 2 * F.scale, k, k,
              pal.a(lit and pal.FRIEND or pal.DIM, lit and 0.95 or 0.6))
+        -- The switch takes a press whether or not it can be thrown. A switch
+        -- that is off and cannot be afforded is still drawn, and a control
+        -- drawn where a press does nothing at all is a control that looks
+        -- broken: the press goes through and the arena answers it. See
+        -- `spend`.
         local s = r.step
-        if s and (lit or s.can_up) then
+        if s then
             hit(sx - 8 * F.scale, y, sw + 16 * F.scale, h, s.action,
                 {slot = s.slot, dir = lit and -1 or 1}, nil, 1)
         end
@@ -6118,6 +6135,12 @@ function menu_row(x, y, w, h, r, hot)
         txt(tostring(s.reads or (s.value + (s.base or 0))),
             vx - 24 * F.scale, mid, TYPE.BODY * F.scale,
             s.value > 0 and pal.FRIEND or pal.a(pal.DIM, 0.9), "center")
+        -- Both arrows take a press, and a dim one is answered rather than
+        -- ignored. A dim arrow published no box at all, so a pilot pressing
+        -- the up arrow on an empty purse pressed the glass behind it: the
+        -- panel swallowed the press and the interface said nothing, which
+        -- reads as a control that has stopped working rather than as a purse
+        -- that is empty. The arena makes the refusal audible. See `spend`.
         for _, d in ipairs({{-1, vx - 54 * F.scale, s.can_down},
                             {1, vx, s.can_up}}) do
             local dir, ax, live = d[1], d[2], d[3]
@@ -6125,10 +6148,8 @@ function menu_row(x, y, w, h, r, hot)
                         ax - dir * 4 * F.scale, ry(mid - 5.5 * F.scale),
                         ax - dir * 4 * F.scale, ry(mid + 5.5 * F.scale),
                         pal.a(pal.FRIEND, live and 0.9 or 0.25))
-            if live then
-                hit(ax - 14 * F.scale, y, 28 * F.scale, h, s.action,
-                    {slot = s.slot, dir = dir}, nil, 1)
-            end
+            hit(ax - 14 * F.scale, y, 28 * F.scale, h, s.action,
+                {slot = s.slot, dir = dir}, nil, 1)
         end
         return
     end

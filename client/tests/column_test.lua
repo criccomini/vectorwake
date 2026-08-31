@@ -93,6 +93,7 @@ package.loaded["arena.world"] = {
 }
 
 local ui = require("arena.ui")
+local pal = require("arena.palette")
 local state = package.loaded["arena.state"]
 
 -- --- the harness -----------------------------------------------------------
@@ -146,9 +147,15 @@ local function view(o)
     return v
 end
 
+-- How tall the last frame was. Rects are filed in the layer's space, counting
+-- up from the bottom, and hit boxes count down from the top: turning one into
+-- the other is the whole of what this is for.
+local WIN_H = 0
+
 -- One frame in a seat: the HUD, and the column over it when one is up.
 local function frame(w, h, o)
     o = o or {}
+    WIN_H = h
     boxes, rects, segs = {}, {}, {}
     state.n = 0
     ui.details = false
@@ -703,6 +710,178 @@ do
     check("and then the column comes home", hit_of("menu_go") ~= nil
           and hit_of("menu_stop", "leave") ~= nil)
     ui.panel_shut()
+end
+
+-- --- where a page opens standing --------------------------------------------
+--
+-- A stop sends the column out through the bottom edge and brings its page up
+-- through it, so the stop that was pressed is not on the screen any more. The
+-- cursor was left on it: the page opened with nothing lit, and an arrow had to
+-- be pressed to find the top of a page already being read. It opens on its own
+-- head now, which is the row that says which level this is and the way back
+-- off it. The landing does the same, one file over.
+do
+    -- Every rect of this color laid over the box, which is what a lit field
+    -- is: the ground goes down first and the wash over it.
+    local function lit(b)
+        if not b then return false end
+        local col = pal.a(pal.FRIEND, ui.LIT.CURSOR)
+        for _, r in ipairs(rects) do
+            local same = r.col and math.abs(r.col[1] - col[1]) < 0.01
+                and math.abs(r.col[2] - col[2]) < 0.01
+                and math.abs(r.col[3] - col[3]) < 0.01
+                and math.abs(r.col[4] - col[4]) < 0.005
+            if same and math.abs(r.x - b.x) < 1
+               and math.abs((WIN_H - r.y - r.h) - b.y) < 1
+               and math.abs(r.w - b.w) < 1 and math.abs(r.h - b.h) < 1 then
+                return true
+            end
+        end
+        return false
+    end
+
+    -- The three stops all publish `menu_stop` and tell themselves apart by the
+    -- value on the box. Lighting on the action alone lit all three at once,
+    -- which the landing never showed because it names its own three apart.
+    frame(1440, 810, {open = true, sel = "menu_stop", sel_value = "settings"})
+    check("the stop under the cursor lights",
+          lit(hit_of("menu_stop", "settings")))
+    check("and its neighbors do not",
+          not lit(hit_of("menu_stop", "leave"))
+          and not lit(hit_of("menu_stop", "side")))
+
+    -- Walked rather than placed, which is how the fault was found: up off
+    -- RESUME lit every stop at once because they publish one action between
+    -- them, and the arrow that lands on one of them is the ordinary way to
+    -- get there.
+    frame(1440, 810, {open = true, sel = nil})
+    ui.col_sel, ui.col_sel_value = "menu_go", nil
+    ui.col_step(-1)
+    frame(1440, 810, {open = true, keep = true})
+    check("up off RESUME lands on the stop over it",
+          ui.col_sel == "menu_stop" and ui.col_sel_value == "side",
+          tostring(ui.col_sel) .. " " .. tostring(ui.col_sel_value))
+    local n = 0
+    for _, stop in ipairs({"leave", "settings", "side"}) do
+        if lit(hit_of("menu_stop", stop)) then n = n + 1 end
+    end
+    check("and lights that one alone", n == 1, n .. " stops lit")
+
+    -- And the head of the page a stop opens, which is where the cursor lands.
+    for _, at in ipairs({"settings", "side"}) do
+        frame(1440, 810, {open = true, at = at, sel = "menu_back"})
+        check("the " .. at .. " page lights its way back",
+              lit(hit_of("menu_back")))
+    end
+end
+
+-- --- and the arena is what puts it there ------------------------------------
+--
+-- `arena.script` is a Defold script and cannot be loaded here, so this pulls
+-- the branches out and runs them, which is what landing_test does with the
+-- same file for the same reason: a comment is not a check.
+do
+    local f = assert(io.open("client/arena/arena.script"))
+    local src = f:read("*a")
+    f:close()
+
+    local cursor = src:match("local function menu_cursor%(stop%)(.-)\nend\n")
+    check("the arena has a menu_cursor to run", cursor ~= nil)
+    if cursor then
+        local ui_stub, menu_stub = {}, {stack = {}}
+        local env = {ui = ui_stub, menu = menu_stub,
+                     sfx = {ui = function() end},
+                     apply_menu = function() end}
+        local chunk = loadstring("return function(stop)" .. cursor .. "\nend",
+                                 "cursor")
+        setfenv(chunk, env)
+        env.menu_cursor = chunk()
+
+        local function branch(pattern)
+            local body = src:match(pattern)
+            if not body then return nil end
+            local c = loadstring(
+                "return function(self, action, value)" .. body .. "\nend",
+                "branch")
+            if not c then return nil end
+            setfenv(c, env)
+            return c()
+        end
+
+        -- A stop, opening its page. The menu it drives is the real one's
+        -- shape: a stack that a press pushes a level onto.
+        local stop = branch('(\n    if action == "menu_stop" then.-\n    end\n)')
+        check("the arena has a branch for the column's stops", stop ~= nil)
+        if stop then
+            menu_stub.press_stop = function(name)
+                menu_stub.stack = {name}
+                return nil, true
+            end
+            ui_stub.col_sel, ui_stub.col_sel_value = "menu_stop", "settings"
+            stop(nil, "menu_stop", "settings")
+            check("a stop opens its page on the way back",
+                  ui_stub.col_sel == "menu_back"
+                  and ui_stub.col_sel_value == nil,
+                  tostring(ui_stub.col_sel))
+            -- And the stop already open shuts instead, which puts the cursor
+            -- back on the stop: that is what took the page's place.
+            menu_stub.press_stop = function()
+                menu_stub.stack = {}
+                return nil, true
+            end
+            stop(nil, "menu_stop", "settings")
+            check("while shutting it stands on the stop again",
+                  ui_stub.col_sel == "menu_stop"
+                  and ui_stub.col_sel_value == "settings",
+                  tostring(ui_stub.col_sel) .. " "
+                  .. tostring(ui_stub.col_sel_value))
+        end
+
+        -- A row of the settings page. One that opens a page of its own is a
+        -- stop a level in; one that only sets something leaves the cursor
+        -- where the hand left it, or every press would jump to the head.
+        local row = branch('(\n    if action == "menu_row" then.-\n    end\n)')
+        check("the arena has a branch for a settings row", row ~= nil)
+        if row then
+            menu_stub.stack = {"settings"}
+            menu_stub.press_row = function()
+                menu_stub.stack = {"settings", "controls"}
+                return nil, true
+            end
+            ui_stub.col_sel, ui_stub.col_sel_value = "menu_row", 5
+            row(nil, "menu_row", 5)
+            check("a row that opens a page opens it on the way back",
+                  ui_stub.col_sel == "menu_back", tostring(ui_stub.col_sel))
+            menu_stub.press_row = function() return nil, true end
+            ui_stub.col_sel, ui_stub.col_sel_value = "menu_row", 1
+            row(nil, "menu_row", 1)
+            check("while a row that only sets something keeps the cursor",
+                  ui_stub.col_sel == "menu_row" and ui_stub.col_sel_value == 1,
+                  tostring(ui_stub.col_sel))
+        end
+
+        -- And the way back off a page's head: onto the head under it where
+        -- there is one, and onto the stop itself once the last page is off.
+        local back = branch('(\n    if action == "menu_back" then.-\n    end\n)')
+        check("the arena has a branch for the way back", back ~= nil)
+        if back then
+            menu_stub.page_back = function()
+                table.remove(menu_stub.stack)
+                return true
+            end
+            menu_stub.stack = {"settings", "controls"}
+            ui_stub.col_sel, ui_stub.col_sel_value = "menu_back", nil
+            back(nil, "menu_back", nil)
+            check("out of a page stands on the head under it",
+                  ui_stub.col_sel == "menu_back", tostring(ui_stub.col_sel))
+            back(nil, "menu_back", nil)
+            check("and out of the last one stands on its stop",
+                  ui_stub.col_sel == "menu_stop"
+                  and ui_stub.col_sel_value == "settings",
+                  tostring(ui_stub.col_sel) .. " "
+                  .. tostring(ui_stub.col_sel_value))
+        end
+    end
 end
 
 if fails == 0 then

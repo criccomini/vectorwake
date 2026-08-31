@@ -548,6 +548,51 @@ local function land_shut()
     ui.col_open, ui.col_sect, ui.col_hull = nil, nil, nil
 end
 
+-- And the other way: a panel that has just opened stands on its own head.
+--
+-- Nothing stood on it at all. The stop a panel climbs off goes out through the
+-- bottom edge with the column, so the cursor was left on a control that is no
+-- longer drawn: the panel opened with none of its rows lit, a hand on the
+-- arrows had to press one to find the top of a page it was already looking at,
+-- and a hand on a pointer had nothing saying which level of the stack it was
+-- reading. `menu_cursor` is the same rule for the column in a match.
+local function land_open()
+    ui.col_sel, ui.col_sel_value = "land_back", nil
+end
+
+-- A credit spent, or a refusal.
+--
+-- The two answers a step of the ship menu has, said out loud. Nothing was said
+-- for the second one: a pilot with an empty purse pressed the up arrow on a
+-- charge and the client did nothing at all, which reads as a control that has
+-- stopped working rather than as a purse with nothing in it. The interface
+-- makes a noise for everything else it is asked, so silence here is the odd
+-- one out.
+--
+-- One sound for every way a step can be refused, because they are one thing
+-- to a hand: the credit is not there, the slot is already at its ceiling, or
+-- the hull cannot reach it at all.
+local function spend(moved)
+    sfx.ui(moved and "ui_go" or "ui_deny")
+end
+
+-- Where the cursor stands after the in-match column has changed level: on the
+-- head of whatever page is open, and on the stop itself once the last page has
+-- come off it. The landing splits the same rule between `land_open` and
+-- `land_shut`; the column keeps it in one function because its levels are a
+-- stack rather than a panel with another over it.
+--
+-- `stop` is the stop that level hangs off, which only matters where there is
+-- no page left to stand on: the stack has already been popped by then and
+-- cannot say which stop it was.
+local function menu_cursor(stop)
+    if #menu.stack > 0 then
+        ui.col_sel, ui.col_sel_value = "menu_back", nil
+    else
+        ui.col_sel, ui.col_sel_value = "menu_stop", stop
+    end
+end
+
 local function toggle_menu()
     if menu.toggle() then shut_panels() end
 end
@@ -620,8 +665,10 @@ TUNE.PANEL_HANDLERS = {
         -- what it does not do any more is close a page and the panel around it
         -- in the same press.
         if menu.open then
+            local stop = menu.stack[1]
             if menu.page_back() then
                 ui.page_scroll = 0
+                menu_cursor(stop)
                 sfx.ui("ui_move")
             else
                 menu.close()
@@ -736,18 +783,76 @@ local LAND_HOT = {
     menu_go = true, menu_stop = true, menu_pick = true, menu_row = true,
     menu_back = true,
 }
-local land_over, land_over_value = nil, nil
+
+-- The arrows either side of a value, and the row each pair belongs to.
+--
+-- An arrow is not a control of its own: it steps the row it stands on, and
+-- left and right on that row do the same thing without it. So a hand resting
+-- on one stands on the row, which is what the drawing already assumes. It did
+-- not: an arrow publishes its own box at a higher priority than the row's, and
+-- none of these actions is in `LAND_HOT`, so a pointer moving onto one took
+-- the cursor off the row it was about to spend on and left the panel with
+-- nothing lit. Scrubbing the body carousel was the loud case, since the whole
+-- of choosing a hull is those two arrows.
+--
+-- The second field is where the row's own value sits in the table an arrow
+-- carries, or nothing where the row has no value to tell it apart by.
+local LAND_ARROW = {
+    land_page_ship = {"land_pick_ship"},
+    land_kit_step = {"land_kit_row", "slot"},
+    land_flair_step = {"land_flair", "index"},
+    menu_step = {"menu_row", "index"},
+}
+
+-- What the pointer last answered, and where it was standing when it answered.
+-- One table rather than four locals beside each other: this file is a chunk of
+-- module handles and session state with a frame function reaching most of them,
+-- and a table is one upvalue however many fields it holds. See
+-- `upvalues_test.lua`.
+local land_over = {}
 local function land_hover(x, y, vh)
+    -- A hand lying still moves nothing. That has to hold when the screen moves
+    -- under the hand as well as when it does not, and it did not: the boxes
+    -- were read again on every frame, so a stop opening a panel handed the
+    -- cursor to whatever that panel had drawn under a pointer nobody was
+    -- touching, and the head a panel opens on lost it the frame after it
+    -- landed there. Ask the pointer where it is once it has gone somewhere.
+    if not land_over.stale and x == land_over.x and y == land_over.y
+       and vh == land_over.h and touch.used == land_over.touched
+    then
+        return false
+    end
+    land_over.stale = nil
+    land_over.x, land_over.y = x, y
+    land_over.h, land_over.touched = vh, touch.used
     local act, val = nil, nil
     if x and not touch.used then
         local r = ui.pick(x, vh - y, false)
-        if r and LAND_HOT[r.action] then act, val = r.action, r.value end
+        local arrow = r and LAND_ARROW[r.action]
+        if arrow then
+            act = arrow[1]
+            if arrow[2] and type(r.value) == "table" then
+                val = r.value[arrow[2]]
+            end
+        elseif r and LAND_HOT[r.action] then
+            act, val = r.action, r.value
+        end
     end
-    if act == land_over and val == land_over_value then return false end
-    land_over, land_over_value = act, val
+    if act == land_over.action and val == land_over.value then return false end
+    land_over.action, land_over.value = act, val
     -- The pointer takes the cursor on arrival and gives it up on the way out.
     ui.col_sel, ui.col_sel_value = act, val
     return act ~= nil
+end
+
+-- Ask it again anyway, once, with the hand where it is.
+--
+-- The wheel is the one thing that puts a different control under a still hand
+-- without being a press this file has already answered: the rows slide and the
+-- pointer does not, so a hand resting on the settings page would otherwise go
+-- on lighting the row it started over until it moved.
+local function land_slid()
+    land_over.stale = true
 end
 
 -- The terrain and the starfield never move, so they are built once per map
@@ -2964,6 +3069,11 @@ function land_act(self, action, value)
         -- A stop that opened a page opens it at the top of its rows rather
         -- than wherever the last one was read to.
         ui.page_scroll = 0
+        -- And standing on the page's own head, the way the landing's stops
+        -- open. Pressing the stop that is already open shuts it instead, and
+        -- then the cursor belongs on the stop, which is what took the page's
+        -- place on the screen.
+        menu_cursor(value)
         if moved then sfx.ui(act and "ui_go" or "ui_move") end
         if act then apply_menu(self, act) end
         return true
@@ -2979,8 +3089,13 @@ function land_act(self, action, value)
     -- A row of the settings panel. Enter presses it; left and right step it
     -- where it holds a range, which is `menu_step` below.
     if action == "menu_row" then
+        local depth = #menu.stack
         local act, moved = menu.press_row(value)
         ui.page_scroll = 0
+        -- A row that opened a page of its own is a stop one level in, so the
+        -- page it opened stands on its head like any other. A row that only
+        -- set something keeps the cursor where the hand left it.
+        if #menu.stack > depth then menu_cursor() end
         if moved then sfx.ui(act and "ui_go" or "ui_move") end
         if act then apply_menu(self, act) end
         return true
@@ -2995,8 +3110,10 @@ function land_act(self, action, value)
     -- Out of the page a stop opened, one level. At the first level that is
     -- the stop shutting, which leaves the bare column standing.
     if action == "menu_back" then
+        local stop = menu.stack[1]
         if menu.page_back() then
             ui.page_scroll = 0
+            menu_cursor(stop)
             sfx.ui("ui_move")
         end
         return true
@@ -3028,15 +3145,14 @@ function land_act(self, action, value)
             land_shut()
         else
             ui.col_open = which
-            -- A stop opens where the pilot is, not where they last read to:
-            -- the ship panel starts on the ship being flown and at the top
-            -- of its rows.
             -- A stop opens where the pilot is rather than where they last
             -- read to: the ship stop opens on its own menu, at the top of it.
             if which == "ship" then
                 ui.col_sect, ui.col_hull = nil, nil
                 ui.col_scroll = 0
             end
+            -- And standing on the panel's own head. See `land_open`.
+            land_open()
         end
         sfx.ui("ui_move")
         return true
@@ -3051,8 +3167,11 @@ function land_act(self, action, value)
         -- onto the landing. The backdrop behind the glass means the same
         -- thing, so a press on the margin walks the stack down too.
         if ui.col_open == "ship" and ui.col_sect then
+            -- Onto the part it was opened from, which is the rule `land_shut`
+            -- follows one level further out: what took the panel's place on
+            -- the screen is what the cursor is left standing on.
+            ui.col_sel, ui.col_sel_value = "land_sect", ui.col_sect
             ui.col_sect, ui.col_hull = nil, nil
-            ui.col_sel, ui.col_sel_value = nil, nil
             ui.col_scroll = 0
         else
             land_shut()
@@ -3087,7 +3206,7 @@ function land_act(self, action, value)
         -- Body opens on the ship being flown rather than wherever it was last
         -- turned to: a section opens where the pilot is.
         ui.col_hull = value == "body" and menu.panel_home() or nil
-        ui.col_sel, ui.col_sel_value = nil, nil
+        land_open()
         ui.col_scroll = 0
         sfx.ui("ui_go")
         return true
@@ -3144,22 +3263,20 @@ function land_act(self, action, value)
         local at = menu.class or 0
         for _, r in ipairs(menu.sect_rows(at, ui.col_sect) or {}) do
             if r.kind == "slot" and r.slot == value and r.toggle then
-                if menu.build_step(at, value, r.value > 0 and -1 or 1) then
-                    sfx.ui("ui_go")
-                end
+                spend(menu.build_step(at, value, r.value > 0 and -1 or 1))
                 break
             end
         end
         return true
     end
     -- Spending a credit, or handing one back. The menu holds the build and
-    -- tells the arena about it; a step that cannot happen was drawn dim and
-    -- has no hit box, so this does not have to check.
+    -- tells the arena about it, and answers whether the step happened: an
+    -- empty purse and a slot already at its ceiling both come back false, and
+    -- both are a thing the pilot tried to do. See `spend`.
     if action == "land_kit_step" then
         local at = menu.class or 0
-        if type(value) == "table" and menu.build_step(at, value.slot,
-                                                      value.dir) then
-            sfx.ui("ui_go")
+        if type(value) == "table" then
+            spend(menu.build_step(at, value.slot, value.dir))
         end
         return true
     end
@@ -3624,6 +3741,7 @@ function on_input(self, action_id, action)
                 -- than one, because a menu page is read by the screenful and
                 -- a list is read by the row.
                 ui.page_scroll = ui.page_scroll + d * ui.row_pitch() * 2.5
+                land_slid()
             elseif ui.rooms_open then
                 ui.room_scroll = ui.room_scroll + d
             elseif ui.details then
