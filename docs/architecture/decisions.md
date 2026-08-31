@@ -6386,3 +6386,71 @@ anything, so it fails at 16 if the bounce loses speed and fails below 16 if it
 does not. The grinding check still holds: a ship leaning on a wall under
 thrust settles rather than buzzing, which was the other half of what the lossy
 number was doing. State hashes moved, so `make -C sim golden` was rerun.
+
+## 123. Recharge runs against the bar, not with it
+
+**Status:** accepted, superseding a flight table where the two rose together
+
+**Decision:** the last two columns of the flight table are anti-correlated. A
+deep bar refills slowly and a shallow one refills fast: the Anvil fills in
+twenty-four seconds and the Cipher in nine. Three rows moved and the energy
+spread did not: Anvil recharge 1250 to 875, Cipher 1400/1100 to 1300/1450,
+Facet 1400/1100 to 1450/1225. The four bodies already inside the margin were
+left alone.
+
+**Why:** decision 121 took the weapons off the hulls, which left a hull as its
+flight row and nothing else, and `calibrate bodies` was built to ask what that
+row is worth. The first run said the roster was not close: over 99,600 seats
+the Anvil took 60% of its seats in a team match and 69% in a duel, the Cipher
+42%, and only eleven of twenty-one body-by-skill cells sat inside a five-point
+band.
+
+The cause was one relationship rather than seven numbers. Fitting win rate
+against energy and recharge explained 94% of the spread, at 1.7 win points a
+hundred energy and 2.7 a hundred recharge, and the two columns ran the same
+way round: the Anvil held the deepest bar in the game and nearly the fastest
+refill at once. Nothing paid for the bar. What was supposed to pay for it, being
+slow, pays nothing at all, since speed correlates *negatively* with winning
+here at -0.75.
+
+The obvious repair was to compress the energy spread until the fast hulls
+caught up, and it is the wrong one: with speed worth nothing, that ends at
+seven ships with the same bar and different top speeds, which is balance by
+erasure. Turning recharge around instead leaves the spread alone, puts every
+body on the fit's line, and buys an axis rather than spending one. The heavy
+wins the long fight and is slow to be ready for the next; the knife loses any
+fight it stays in and is whole again almost at once. It is also the only thing
+in this table that makes speed worth having, because a fast refill pays a hull
+that can break contact and nobody else.
+
+The rerun says it worked: nineteen of twenty-one cells, the Anvil within half
+a point of even at every skill, and at mid skill a roster sitting between 48.9
+and 52.6 whose k/d spread has closed from 0.80-to-1.54 down to 0.93-to-1.09.
+The Cipher gaining nine points on a *smaller* bar is the other half of the
+answer to the open question decision 121 left: the bots were not ignoring
+speed, nothing was paying them for it.
+
+**Cost:** two cells still miss, both at high skill, and they are left alone.
+The Cipher reads 52.7, 50.4, 45.2 across the strata and the Chord 47.7, 49.8,
+55.1, so both slope against skill while these two columns are flat across it;
+buying five points at the top would spend two certified cells to gain one.
+What is left belongs to speed and rotation, or to the bots.
+
+The duel arm is the other cost, and it was accepted rather than discovered.
+It improved from six certified cells to eleven, but the Cipher overshoots to
+62.6% at mid there and the Chord sits at 36.7%, untouched. The pit's fitted
+coefficients are nearly twice the team arm's, because a room nobody can leave
+turns a fast refill into flat extra life where a room they can leave makes it
+conditional. The correction was solved on the team arm because melee is the
+mode that ships, and a table balancing both rooms is probably not reachable
+from two columns.
+
+**Reconsider if:** the bots learn to disengage, which would change what speed
+is worth and move every coefficient here; or a duel mode returns, at which
+point the pit stops being a diagnostic and its numbers start counting.
+
+**Verified:** `calibrate bodies 4 1200 melee` and `calibrate bodies 1 3500
+melee`, before and after, at three skill strata: 99,600 seats an arm, sides
+swapped inside every pair, equivalence tested at five points with the family
+Holm-adjusted across the seven. `make -C sim check` with the hashes
+regenerated, 457 server tests, clippy and fmt.
