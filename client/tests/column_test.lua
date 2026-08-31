@@ -750,6 +750,23 @@ do
           not lit(hit_of("menu_stop", "leave"))
           and not lit(hit_of("menu_stop", "side")))
 
+    -- Walked rather than placed, which is how the fault was found: up off
+    -- RESUME lit every stop at once because they publish one action between
+    -- them, and the arrow that lands on one of them is the ordinary way to
+    -- get there.
+    frame(1440, 810, {open = true, sel = nil})
+    ui.col_sel, ui.col_sel_value = "menu_go", nil
+    ui.col_step(-1)
+    frame(1440, 810, {open = true, keep = true})
+    check("up off RESUME lands on the stop over it",
+          ui.col_sel == "menu_stop" and ui.col_sel_value == "side",
+          tostring(ui.col_sel) .. " " .. tostring(ui.col_sel_value))
+    local n = 0
+    for _, stop in ipairs({"leave", "settings", "side"}) do
+        if lit(hit_of("menu_stop", stop)) then n = n + 1 end
+    end
+    check("and lights that one alone", n == 1, n .. " stops lit")
+
     -- And the head of the page a stop opens, which is where the cursor lands.
     for _, at in ipairs({"settings", "side"}) do
         frame(1440, 810, {open = true, at = at, sel = "menu_back"})

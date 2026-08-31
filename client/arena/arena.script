@@ -560,6 +560,22 @@ local function land_open()
     ui.col_sel, ui.col_sel_value = "land_back", nil
 end
 
+-- A credit spent, or a refusal.
+--
+-- The two answers a step of the ship menu has, said out loud. Nothing was said
+-- for the second one: a pilot with an empty purse pressed the up arrow on a
+-- charge and the client did nothing at all, which reads as a control that has
+-- stopped working rather than as a purse with nothing in it. The interface
+-- makes a noise for everything else it is asked, so silence here is the odd
+-- one out.
+--
+-- One sound for every way a step can be refused, because they are one thing
+-- to a hand: the credit is not there, the slot is already at its ceiling, or
+-- the hull cannot reach it at all.
+local function spend(moved)
+    sfx.ui(moved and "ui_go" or "ui_deny")
+end
+
 -- Where the cursor stands after the in-match column has changed level: on the
 -- head of whatever page is open, and on the stop itself once the last page has
 -- come off it. The landing splits the same rule between `land_open` and
@@ -767,6 +783,27 @@ local LAND_HOT = {
     menu_go = true, menu_stop = true, menu_pick = true, menu_row = true,
     menu_back = true,
 }
+
+-- The arrows either side of a value, and the row each pair belongs to.
+--
+-- An arrow is not a control of its own: it steps the row it stands on, and
+-- left and right on that row do the same thing without it. So a hand resting
+-- on one stands on the row, which is what the drawing already assumes. It did
+-- not: an arrow publishes its own box at a higher priority than the row's, and
+-- none of these actions is in `LAND_HOT`, so a pointer moving onto one took
+-- the cursor off the row it was about to spend on and left the panel with
+-- nothing lit. Scrubbing the body carousel was the loud case, since the whole
+-- of choosing a hull is those two arrows.
+--
+-- The second field is where the row's own value sits in the table an arrow
+-- carries, or nothing where the row has no value to tell it apart by.
+local LAND_ARROW = {
+    land_page_ship = {"land_pick_ship"},
+    land_kit_step = {"land_kit_row", "slot"},
+    land_flair_step = {"land_flair", "index"},
+    menu_step = {"menu_row", "index"},
+}
+
 -- What the pointer last answered, and where it was standing when it answered.
 -- One table rather than four locals beside each other: this file is a chunk of
 -- module handles and session state with a frame function reaching most of them,
@@ -791,7 +828,15 @@ local function land_hover(x, y, vh)
     local act, val = nil, nil
     if x and not touch.used then
         local r = ui.pick(x, vh - y, false)
-        if r and LAND_HOT[r.action] then act, val = r.action, r.value end
+        local arrow = r and LAND_ARROW[r.action]
+        if arrow then
+            act = arrow[1]
+            if arrow[2] and type(r.value) == "table" then
+                val = r.value[arrow[2]]
+            end
+        elseif r and LAND_HOT[r.action] then
+            act, val = r.action, r.value
+        end
     end
     if act == land_over.action and val == land_over.value then return false end
     land_over.action, land_over.value = act, val
@@ -3218,22 +3263,20 @@ function land_act(self, action, value)
         local at = menu.class or 0
         for _, r in ipairs(menu.sect_rows(at, ui.col_sect) or {}) do
             if r.kind == "slot" and r.slot == value and r.toggle then
-                if menu.build_step(at, value, r.value > 0 and -1 or 1) then
-                    sfx.ui("ui_go")
-                end
+                spend(menu.build_step(at, value, r.value > 0 and -1 or 1))
                 break
             end
         end
         return true
     end
     -- Spending a credit, or handing one back. The menu holds the build and
-    -- tells the arena about it; a step that cannot happen was drawn dim and
-    -- has no hit box, so this does not have to check.
+    -- tells the arena about it, and answers whether the step happened: an
+    -- empty purse and a slot already at its ceiling both come back false, and
+    -- both are a thing the pilot tried to do. See `spend`.
     if action == "land_kit_step" then
         local at = menu.class or 0
-        if type(value) == "table" and menu.build_step(at, value.slot,
-                                                      value.dir) then
-            sfx.ui("ui_go")
+        if type(value) == "table" then
+            spend(menu.build_step(at, value.slot, value.dir))
         end
         return true
     end

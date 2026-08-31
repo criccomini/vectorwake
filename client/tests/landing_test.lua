@@ -760,8 +760,20 @@ do
         end
     end
     check("and a credit can be spent on a row", step ~= nil)
-    -- A step that cannot happen has no press behind it, so an arrow drawn
-    -- dim is one nothing lands on.
+    -- And a step that cannot happen still takes the press. The arrow is drawn
+    -- either way, so leaving it out of the hit boxes made an empty purse look
+    -- like a control that had stopped working: the press went through the
+    -- glass and nothing at all happened. It is answered now. See `spend`.
+    local dim
+    for _, r in ipairs(ui.hits) do
+        if r.action == "land_kit_step" and type(r.value) == "table"
+           and r.value.slot == 5 and r.value.dir == -1 then
+            dim = r
+        end
+    end
+    check("and an arrow drawn dim is one a press still lands on", dim ~= nil)
+    -- A switch is the one that does not, because it holds one of two answers
+    -- and its box always means the other one.
     local down_off
     for _, r in ipairs(ui.hits) do
         if r.action == "land_kit_step" and type(r.value) == "table"
@@ -782,8 +794,11 @@ do
         if r.action == "land_pick_ship" then fly = r end
         if r.action == "land_page_ship" then turns[r.value] = r end
     end
+    -- The anchor carries no hull on it. The carousel is one control whatever
+    -- it is turned to, and a box that answered for the hull it was showing
+    -- moved out from under the cursor on every step of the arrows.
     check("body turns one ship, an arrow either side of it",
-          fly ~= nil and fly.value == 1 and turns[-1] and turns[1],
+          fly ~= nil and fly.value == nil and turns[-1] and turns[1],
           tostring(fly and fly.value))
     -- And the arrow's press actually lands on it. `M.pick` keeps the first
     -- box of the highest priority, and the glass publishes `panel_hold`
@@ -1275,6 +1290,52 @@ do
           lit(box("land_zone"), CURSOR),
           "walked to " .. tostring(ui.col_sel))
 
+    -- --- and the carousel stays lit as it turns ---------------------------
+    --
+    -- The arrows either side of the ship are the whole of choosing a hull, so
+    -- a hand scrubbing them is a hand that has not moved off the row. The row
+    -- answered for the hull it was showing, and the hull is exactly what the
+    -- arrows change: every step put the row out from under the cursor.
+    local turned = {label = "body", class = 1, free = 2, credits = 7, rows = {}}
+    for i, r in ipairs(BODY.rows) do
+        if r.kind == "art" then
+            local t = {}
+            for k, v in pairs(r) do t[k] = v end
+            t.value, t.cls, t.at, t.label = 3, 3, 3, "Chord"
+            turned.rows[i] = t
+        else
+            turned.rows[i] = r
+        end
+    end
+    -- The field is laid at the row's own span rather than at the box inside
+    -- it, so what is counted is fields of the cursor's weight on the panel.
+    local function fields()
+        local n = 0
+        for _, r in ipairs(rects) do
+            if r.col and math.abs(r.col[1] - CURSOR[1]) < 0.01
+               and math.abs(r.col[2] - CURSOR[2]) < 0.01
+               and math.abs(r.col[3] - CURSOR[3]) < 0.01
+               and math.abs(r.col[4] - CURSOR[4]) < 0.005 then
+                n = n + 1
+            end
+        end
+        return n
+    end
+    frame(1440, 810, {land = land_in(BODY), col_open = "ship"})
+    check("nothing on the body panel is lit with the cursor off it",
+          fields() == 0, fields() .. " fields")
+    -- Walked onto rather than placed, so the cursor carries whatever the box
+    -- published, which is the half that was wrong.
+    ui.col_sel, ui.col_sel_value = "land_back", nil
+    ui.col_step(1)
+    frame(1440, 810, {land = land_in(BODY), col_open = "ship", keep = true})
+    check("a walk off the head lands on the carousel",
+          ui.col_sel == "land_pick_ship", tostring(ui.col_sel))
+    check("and lights it", fields() == 1, fields() .. " fields")
+    frame(1440, 810, {land = land_in(turned), col_open = "ship", keep = true})
+    check("and it stays lit when the arrows turn it to another hull",
+          fields() == 1, fields() .. " fields")
+
     -- --- and a panel opens standing on its own head -----------------------
     --
     -- The head is a row like the rows under it, so it lights like one, and it
@@ -1618,13 +1679,24 @@ do
     -- panel opened on went dark on the frame after it lit.
     local hover = src:match("local function land_hover%(x, y, vh%)(.-)\nend\n")
     check("the arena has a land_hover to run", hover ~= nil)
-    if hover then
-        local under = "land_account"
-        local ui_stub = {pick = function() return {action = under} end}
+    -- The arrows either side of a value belong to the row they step, which
+    -- this reads out of the file rather than restating.
+    local arrows = src:match("local LAND_ARROW = {(.-)\n}\n")
+    check("the arena has a table of arrows to run", arrows ~= nil)
+    if hover and arrows then
+        local under, under_value = "land_account", nil
+        local ui_stub = {pick = function()
+            return {action = under, value = under_value}
+        end}
         local env = {
             ui = ui_stub, touch = {used = false}, land_over = {},
             LAND_HOT = {land_account = true, land_back = true,
-                        land_pick_account = true},
+                        land_pick_account = true, land_kit_row = true},
+            LAND_ARROW = assert(loadstring(
+                "return {" .. arrows .. "\n}", "arrows"))(),
+            -- The branch reads what an arrow carries, so the stub needs the
+            -- one standard function it uses to do that.
+            type = type,
         }
         local chunk = assert(loadstring(
             "return function(x, y, vh)" .. hover .. "\nend", "hover"))
@@ -1663,6 +1735,61 @@ do
                   and ui_stub.col_sel == "land_back",
                   tostring(ui_stub.col_sel))
         end
+
+        -- An arrow is not a control of its own. It steps the row it stands
+        -- beside, and a hand resting on one used to take the cursor off that
+        -- row: the arrows publish their own boxes over the row's, and none of
+        -- those actions lights anything. Scrubbing a slot or the body
+        -- carousel left the panel with nothing lit on it.
+        under, under_value = "land_kit_step", {slot = 7, dir = 1}
+        check("a hand on a slot's arrow stands on the slot",
+              handler(140, 200, 810) == true
+              and ui_stub.col_sel == "land_kit_row"
+              and ui_stub.col_sel_value == 7,
+              tostring(ui_stub.col_sel) .. " "
+              .. tostring(ui_stub.col_sel_value))
+        under, under_value = "land_page_ship", 1
+        check("and one on the carousel's stands on the carousel",
+              handler(141, 200, 810) == true
+              and ui_stub.col_sel == "land_pick_ship"
+              and ui_stub.col_sel_value == nil,
+              tostring(ui_stub.col_sel) .. " "
+              .. tostring(ui_stub.col_sel_value))
+    end
+
+    -- And what a step of the ship menu says. Spending a credit has always
+    -- made the noise a press makes; a step that cannot happen made none at
+    -- all, so an empty purse and a broken control sounded the same.
+    local spend = src:match("local function spend%(moved%)(.-)\nend\n")
+    check("the arena has a spend to run", spend ~= nil)
+    local step_branch = src:match(
+        '(\n    if action == "land_kit_step" then.-\n    end\n)')
+    check("the arena has a branch for spending a credit", step_branch ~= nil)
+    if spend and step_branch then
+        local said, allow = {}, true
+        local env = {
+            type = type,
+            sfx = {ui = function(name) said[#said + 1] = name end},
+            menu = {class = 1,
+                    build_step = function() return allow end},
+        }
+        local sp = assert(loadstring("return function(moved)" .. spend
+                                     .. "\nend", "spend"))
+        setfenv(sp, env)
+        env.spend = sp()
+        local chunk = assert(loadstring(
+            "return function(self, action, value)" .. step_branch .. "\nend",
+            "step"))
+        setfenv(chunk, env)
+        local handler2 = chunk()
+
+        handler2(nil, "land_kit_step", {slot = 7, dir = 1})
+        check("a credit spent makes the noise a press makes",
+              said[1] == "ui_go", tostring(said[1]))
+        allow = false
+        handler2(nil, "land_kit_step", {slot = 7, dir = 1})
+        check("and one that cannot be spent says no",
+              said[2] == "ui_deny", tostring(said[2]))
     end
 end
 
@@ -1706,21 +1833,16 @@ do
 
     -- Walking the panel scrolls it, which is the half a scrollbar cannot do
     -- on its own: a row lit under the fold is a row nobody can see
-    -- themselves spending on. The last row is the one to ask for, since a
-    -- short window is exactly where it will not already be drawn.
-    local last = nil
-    for _, r in ipairs(BODY.rows) do
-        if r.kind == "art" then last = r.value end
-    end
-    ui.col_scroll = 0
-    ui.col_sel, ui.col_sel_value = "land_pick_ship", last
+    -- themselves spending on. Body on a short window is where to ask, since
+    -- the carousel is taller than the glass and can be scrolled clean off it.
+    ui.col_sel, ui.col_sel_value = nil, nil
     frame(844, 390, {land = land_in(BODY), col_open = "ship", keep = true})
-    local lit
-    for _, r in ipairs(ui.hits) do
-        if r.action == "land_pick_ship" and r.value == last then lit = r end
-    end
-    check("walking to a row under the fold brings it into the panel",
-          lit ~= nil, "row " .. tostring(last) .. " stayed off the panel")
+    ui.col_scroll = 400
+    ui.col_sel, ui.col_sel_value = "land_pick_ship", nil
+    frame(844, 390, {land = land_in(BODY), col_open = "ship", keep = true})
+    check("walking to a row off the panel brings it back",
+          box("land_pick_ship") ~= nil and ui.col_scroll == 0,
+          "scrolled to " .. tostring(ui.col_scroll))
     ui.col_sel, ui.col_sel_value = nil, nil
     ui.col_scroll = 0
 end
