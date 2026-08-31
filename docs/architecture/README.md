@@ -33,6 +33,7 @@ decision.
 | [networking.md](networking.md) | Transports, packet model, snapshots and inputs, lag response, anti-cheat |
 | [ai-runtime.md](ai-runtime.md) | Where bots run, how they perceive and fly, and why they cannot cheat |
 | [bot-calibration.md](bot-calibration.md) | Paired bot experiments, power, simultaneous intervals, multiplicity, equivalence, anchored strength, and reproducible holdouts |
+| [playtest-harness.md](playtest-harness.md) | A driver that plays the shipped client like a person: the probe, real input on four device profiles, journeys, the monkey, the player, and the oracles. A design, not yet built |
 | [content-pipeline.md](content-pipeline.md) | Settings, maps, assets, and how a zone author works |
 | [decisions.md](decisions.md) | Numbered decision records with status and the argument for each |
 | [roadmap.md](roadmap.md) | Milestones, in the order that retires the most risk |
