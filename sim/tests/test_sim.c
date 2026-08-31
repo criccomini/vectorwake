@@ -1073,12 +1073,12 @@ static void test_maps(const sim_settings *base) {
          * strength, so the rim is exactly where the setting says. */
         {
             int32_t rim = wc.wormhole_range / (SIM_TILE_PX * 256);
-            CHECK(rim == 76, "the baseline reaches 76 tiles");
+            CHECK(rim == 38, "the baseline reaches 38 tiles");
             static sim_state in, out;
             sim_init(&in, 1);
             sim_init(&out, 1);
-            int i2 = sim_spawn(&in, APEX, 0, 512 * 16, (512 + 74) * 16, 0, &wc);
-            int o2 = sim_spawn(&out, APEX, 0, 512 * 16, (512 + 78) * 16, 0, &wc);
+            int i2 = sim_spawn(&in, APEX, 0, 512 * 16, (512 + 36) * 16, 0, &wc);
+            int o2 = sim_spawn(&out, APEX, 0, 512 * 16, (512 + 40) * 16, 0, &wc);
             step_n(&in, &wc, 0, 0, 30);
             step_n(&out, &wc, 0, 0, 30);
             CHECK(in.ships[i2].vy < 0, "just inside the rim it still pulls");
@@ -1103,8 +1103,16 @@ static void test_maps(const sim_settings *base) {
             const int32_t cx = 512 * 16 + 8, cy = 512 * 16 + 8;
             int l = sim_spawn(&lifted, APEX, 0, cx, cy + 12 * 16, 0, &wc);
             int h = sim_spawn(&held, APEX, 0, cx, cy + 12 * 16, 0, &flat);
+            /* Long enough for the fall itself, which is what decides the
+             * number of ticks here rather than any round figure: from twelve
+             * tiles the pull needs about 134 of them to bring a hull onto the
+             * mouth. The loop stops at the warp because a hull that has been
+             * thrown is somewhere else and may be falling into something
+             * again, and a second fall is not what this measures. */
             int32_t lmax = 0, hmax = 0;
-            for (int t = 0; t < 80; t++) {
+            for (int t = 0; t < 400; t++) {
+                if (lifted.ships[l].vy == 0 && held.ships[h].vy == 0 && t > 0)
+                    break;
                 step_n(&lifted, &wc, 0, 0, 1);
                 step_n(&held, &flat, 0, 0, 1);
                 int32_t lv = -lifted.ships[l].vy, hv = -held.ships[h].vy;

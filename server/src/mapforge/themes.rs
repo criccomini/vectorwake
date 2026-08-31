@@ -121,7 +121,7 @@ impl Theme {
         match self {
             Self::SpiralNebula => {
                 0.6 * part(m.rocks, 260.0)
-                    + 0.2 * part(m.wormholes, 4.0)
+                    + 0.2 * part(m.wormholes, 2.0)
                     + 0.2 * part(m.scenery, 120.0)
             }
             Self::StationYard => {
@@ -345,10 +345,16 @@ fn stamp(c: &mut Canvas, theme: Theme, rng: &mut Rng) {
 /// the mouths keep the wormhole somewhere a pilot chooses to go.
 fn spiral_nebula(c: &mut Canvas, rng: &mut Rng) {
     let (cx, cy) = (c.w / 2, c.h / 2);
-    // Four wormhole tiles in the middle, drawn as two pairs so the core is a
-    // square rather than a diagonal domino.
+    // Two wormhole tiles in the middle, which is one call: `wormhole` lays a
+    // tile and its half-turn twin, so a single call at the center leaves a
+    // diagonal domino. A second at cx - 1 squares that off into a 2x2 and is
+    // the shape this wanted, but coincident tiles sum and four of them pull
+    // four times as hard. That put the point of no return at 33 to 38 tiles
+    // of a 38-tile field, so on this map alone, reaching the field was the
+    // whole decision and three of the seven hulls could not thrust out of it
+    // from anywhere inside. Two tiles is a core the spiral can be drawn
+    // around at a strength the field can still be flown through.
     c.wormhole(cx, cy);
-    c.wormhole(cx - 1, cy);
     // The collar: an annulus scanned by squared radius rather than sampled
     // around a circle, because a ring of sampled headings at this radius
     // lands its tiles two apart and reads as a dotted line a ship flies

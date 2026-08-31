@@ -444,9 +444,14 @@ impl Canvas {
         true
     }
 
-    /// A wormhole mouth and its half-turn twin. The pull reaches fourteen
-    /// tiles, so the caller keeps spawns well outside that; the reservation
-    /// here only keeps later stamps from crowding the mouth.
+    /// A wormhole mouth and its half-turn twin. The pull reaches
+    /// `wormhole_range`, 38 tiles at the baseline, so the caller keeps spawns
+    /// well outside that; the reservation here only keeps later stamps from
+    /// crowding the mouth.
+    ///
+    /// Two calls at the same place make one well twice as strong rather than
+    /// two wells, because the core sums every wormhole tile in range. A theme
+    /// wanting a wider mouth is asking for a harder pull as well.
     pub fn wormhole(&mut self, x: i32, y: i32) {
         self.pair(x, y, tile(WORMHOLE, 0));
         self.reserve_disk(x, y, 5);

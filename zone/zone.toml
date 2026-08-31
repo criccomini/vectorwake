@@ -105,11 +105,11 @@ door_open = 400
 # `wormhole_range` is a hard edge and is set here rather than derived from the
 # strength. The original ties the two together, so it cannot have a well that
 # is strong and small; 76 tiles is where its field ends at that Gravity, and
-# it is the default here because it is the original's reach and not because a
-# room has to use it. Worth sizing against the map: 76 tiles was drawn for a
-# 1024-tile map, and a 160-tile room is mostly inside one well at that reach.
+# that reach was drawn for a 1024-tile map. A 160-tile room sits almost
+# entirely inside one well at that width, so this is half of it: 38 tiles,
+# 608 px, close enough to the mouth to be a landmark rather than the weather.
 wormhole_pull = 5859
-wormhole_range = 1216
+wormhole_range = 608
 
 # What a well adds to a hull's ceiling while it has hold of it, in px/s/10.
 #

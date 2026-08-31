@@ -1489,7 +1489,7 @@ mod tests {
             base.cfg.gravity_bombs, 1,
             "bombs bend unless a zone says not"
         );
-        assert_eq!(base.cfg.wormhole_range, 76 * 16 * 256, "76 tiles of reach");
+        assert_eq!(base.cfg.wormhole_range, 38 * 16 * 256, "38 tiles of reach");
         assert!(
             base.cfg.wormhole_top_speed > 0,
             "the ceiling lifts by default"

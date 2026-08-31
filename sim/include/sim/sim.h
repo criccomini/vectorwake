@@ -755,9 +755,9 @@ typedef struct {
      * `wormhole_range` is a hard edge and is set on its own rather than
      * derived from the strength. The original derives it: its field ends
      * where its own arithmetic falls to one, which at the Gravity every ship
-     * in Alpha Zone carries is about 76 tiles. Ours is that reach as a number
-     * a zone can move, because a well sized for a 1024-tile map is most of a
-     * 160-tile one.
+     * in Alpha Zone carries is about 76 tiles. Ours is a number a zone can
+     * move, and the baseline sets it at half of that, because a well sized
+     * for a 1024-tile map is most of a 160-tile one.
      *
      * `wormhole_top_speed` is what the field adds to a hull's ceiling while
      * it is inside one, which is the whole of what makes a well throw a ship
