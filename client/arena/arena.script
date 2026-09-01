@@ -76,6 +76,21 @@ local owner = {}
 -- controls page, which knows a chord is finished when the first of its keys
 -- is let go.
 local lifted = {}
+-- What the emulated pointer already pressed this frame, so the touch behind it
+-- does not press the same control a second time.
+--
+-- Defold raises a mouse action for every touch as well as the touch itself,
+-- and `touch.used` is what keeps that echo out of the interface. It cannot
+-- keep out the first one. Both halves of a tap arrive in the same frame, the
+-- mouse half is handed over first, and on the first tap of a session nothing
+-- has reported a touch yet: the echo goes through the hit boxes, and the touch
+-- behind it presses the same control again. On a stop that is a panel opened
+-- and shut inside one frame, so the button lights and nothing opens, and the
+-- tap after it works because `touch.used` is set by then. Once a session, on
+-- the first thing anybody presses.
+--
+-- Cleared beside `tapped`: it is a fact about one frame.
+local pointer_took = nil
 local me = 0
 -- Watching rather than flying. While this is set, `me` is 255 and must never
 -- reach a `sim.*` accessor: the extension refuses an index that wide, loudly,
@@ -1776,6 +1791,7 @@ function update(self, dt)
 
     tapped = {}
     lifted = {}
+    pointer_took = nil
 
     if self.replay then
         me = 255
@@ -3558,6 +3574,12 @@ function on_input(self, action_id, action)
                 if t.released then touch.release(t.id) end
             end
         end
+        -- The press the mouse action this touch raised has already made, if it
+        -- got in first. Taken off `pointer_took` here because this action is
+        -- the touch it belongs to, whichever finger turns out to be carrying
+        -- it.
+        local echo = pointer_took
+        pointer_took = nil
 
         -- Whichever list is up, dragged. It could only ever be scrolled by a
         -- wheel, and a phone has no wheel, so on glass the list simply stopped
@@ -3704,10 +3726,21 @@ function on_input(self, action_id, action)
         local claimed = dragged and {[dragged] = true} or nil
         if action.touch then
             for _, t in ipairs(action.touch) do
-                if t.pressed and not (claimed and claimed[t.id])
-                   and hit(t.screen_x or t.x, t.screen_y or t.y, true) then
-                    claimed = claimed or {}
-                    claimed[t.id] = true
+                if t.pressed and not (claimed and claimed[t.id]) then
+                    local tx, ty = t.screen_x or t.x, t.screen_y or t.y
+                    -- One tap is one press. Where the echo has already
+                    -- pressed the control under this finger there is nothing
+                    -- left for the finger to do but say it was taken, so the
+                    -- stick and the pads leave it alone. One finger's worth
+                    -- of it: a second going down in the same frame is a press
+                    -- of its own.
+                    local took = echo
+                        and echo == ui.pick(tx, (self.vh or 0) - ty, true)
+                    if took then echo = nil end
+                    if took or hit(tx, ty, true) then
+                        claimed = claimed or {}
+                        claimed[t.id] = true
+                    end
                 end
             end
         end
@@ -3722,7 +3755,14 @@ function on_input(self, action_id, action)
     -- on the latch at the end of this function: it is the same fact for the
     -- mouse as for the keyboard, and it is the engine's doing rather than ours.
     if action_id == hash("pointer") and action.pressed and not touch.used then
-        if hit(action.screen_x or action.x, action.screen_y or action.y) then
+        local px = action.screen_x or action.x
+        local py = action.screen_y or action.y
+        -- Which control the press is on, asked before it is made: a touch may
+        -- have raised this mouse action, and that touch is handed over next.
+        -- See `pointer_took`.
+        local on = ui.pick(px, (self.vh or 0) - py, false)
+        if hit(px, py) then
+            pointer_took = on
             return
         end
     end
