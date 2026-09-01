@@ -13,7 +13,7 @@ Five games, in one catalog, on one engine.
 Team Battle is [match-game.md](match-game.md)'s and came first. The other four
 were built together, and this document is what they are and why each one is
 shaped the way it is. The engineering decisions behind them are records
-[128 to 131](../architecture/decisions.md).
+[129 to 132](../architecture/decisions.md).
 
 ## Where a zone's rules live
 

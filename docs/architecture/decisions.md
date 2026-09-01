@@ -6192,7 +6192,8 @@ than back at the start.
 
 ## 119. A hull's line reads the five bars under it
 
-**Status:** accepted
+**Status:** superseded by [decision
+128](#128-the-ship-is-a-row-and-says-nothing)
 
 **Decision:** the sentence under a hull's name on the body carousel says where
 that hull stands in speed, thrust, turn, energy and recharge, and says nothing
@@ -6621,9 +6622,70 @@ seats, plus a constant_drift guard holding `CLIENT_PROTOCOL` and the two reason
 codes against their Rust originals: perturbing either side fails it. luacheck
 clean.
 
+## 128. The ship is a row, and says nothing
+
+**Status:** accepted, superseding [decision
+119](#119-a-hulls-line-reads-the-five-bars-under-it)
+
+**Decision:** the hull on the body carousel is drawn in one ordinary row of
+the panel, with its name under it at a row's own weight and an arrow either
+side level with the middle of the two. The sentence that ran under the name
+is gone, and the roster in `menu.lua` is seven names.
+
+**Why:** Chris said the drawing was too tall, twice. It was 168 points of
+picture over five bars that take 130 between them, and taking sixteen points
+off the radius did not change what it was: a drawing with a size of its own,
+written down beside it and answering to nothing on the page around it. Every
+other row on that panel is 44 points because 44 is the floor a platform puts
+under a fingertip, and the carousel is the one row that had opted out. It is
+a row now, and the radius is whatever that leaves.
+
+The sentence went with the height, and for its own reason. Decision 119 had
+already narrowed it twice: it was the silhouette, then the weapons, then where
+the hull stands in speed, thrust, turn, energy and recharge. That last one is
+what the five bars directly beneath it draw. So the page was agreeing with
+itself out loud, in adjectives above and in lengths below, and spending two
+wrapped lines a hull to do it. The bars are the better half of the pair, since
+they answer "faster than what" against the rest of the roster where a sentence
+can only assert.
+
+**Cost:** the ship is small. The Wedge was drawn 83 by 103 points and is now
+27 by 33, measured off the strokes it puts on the layer. It comes out smaller
+than the row even so, because `reach` is a radius over the whole polygon
+rather than along the length, so a hull as wide as it is long sits well inside
+its own circle. What the drawing has to do at that size is tell seven
+silhouettes apart, and it does, because the identity was built around a front
+visibly not a back rather than around detail. It is no longer a portrait.
+
+The seven lines are gone from the tree. They were good sentences and nothing
+reads them now; `docs/design/ships.md` is where the roster is described at
+length, and that is the right place for prose about a hull.
+
+Two things followed the height down. The name was set at `TYPE.LEAD`, the
+largest type the interface has, which left the biggest thing on the page
+announcing the smallest; it is `TYPE.ROW` now, the weight every other label on
+this panel is set at, and its band is 26 rather than 30, the same as one of
+the flight rows under it. And the arrows moved off the drawing's middle onto
+the row's. They stood beside the ship because the ship is what they turn, but
+the name turns with it: beside the upper half of the pair they sat in the top
+third of the row with its centre line empty between them.
+
+**Verified:** `landing_test` measures the drawing off the strokes it puts on
+the layer and holds it inside one row, which fails at 103 points against the
+code this replaces. `menu_test` holds every page of the carousel to a name
+with no sentence on it. The arrow marks are read off the layer rather than off
+the boxes they publish, since a box centred on its own mark says nothing about
+where either sits, and held to the middle of the row: level with the ship it
+misses by thirteen points and fails. Their boxes were a fixed 52 points and
+hung over the edge of a row this short, so each takes the whole row instead.
+A second check opens the section at a phone's measure and finds all five
+flight rows drawn; it passes against the old height too, so it is a guard on
+what the room is spent on rather than evidence of a fix. luacheck clean, the
+client's whole suite green, and the section photographed at both measures.
+
 ---
 
-## 128. A flag stands where the map says
+## 129. A flag stands where the map says
 
 **Status:** accepted
 
@@ -6669,7 +6731,7 @@ of them is refused rather than quietly given one more than it asked for.
 
 ---
 
-## 129. Turf is paid, War is a match
+## 130. Turf is paid, War is a match
 
 **Status:** accepted
 
@@ -6716,7 +6778,7 @@ end at 36 and the six between them at 216, and none of that has been played.
 
 ---
 
-## 130. A duel is a two-seat zone and nothing else
+## 131. A duel is a two-seat zone and nothing else
 
 **Status:** accepted
 
@@ -6754,7 +6816,7 @@ people to arrive are the fight, whoever they are.
 
 ---
 
-## 131. A green raises what you fly, not what you own
+## 132. A green raises what you fly, not what you own
 
 **Status:** accepted
 
@@ -6809,7 +6871,7 @@ argument that growth should feel like a slope rather than a series of unlocks.
 
 ---
 
-## 132. Carrying the flag puts you on the map
+## 133. Carrying the flag puts you on the map
 
 **Status:** accepted; the client's side of it and the green filter are not
 built yet, and this record gains a Verified section when they are.

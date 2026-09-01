@@ -269,7 +269,7 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
      * placement means those two dozen are near the people reading them.
      *
      * Filtered like the ships and the rounds, unlike the flags, and decision
-     * 132 is the argument: a flag's state is the scoreboard, while a green is
+     * 133 is the argument: a flag's state is the scoreboard, while a green is
      * put out six to twenty-eight tiles from a live ship, so an unfiltered
      * field is a beacon on every pilot in the room, the ones far outside
      * lawful sight included. An out-of-radius green is written inert rather

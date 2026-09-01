@@ -5216,7 +5216,7 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
         }
 
         /* A green is filtered like a ship and unlike a flag, per decision
-         * 132: one is put out near a live pilot, so an unfiltered field is a
+         * 133: one is put out near a live pilot, so an unfiltered field is a
          * beacon on everybody in the room, lawful sight or not. Out of
          * radius it arrives as eleven bytes of nothing, so the count and the
          * indices hold and the format does not move. */
