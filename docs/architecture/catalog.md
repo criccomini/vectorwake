@@ -165,7 +165,7 @@ than a differently tuned one:
 | Field | Meaning |
 |---|---|
 | `flags` | How many of the map's flag stands this zone plays for. Absent is all of them. Flags come down but never up: where a stand is belongs to the map, which draws them with `SIM_TILE_TURF`, and a map that draws none is not a flag game. |
-| `flag_carry` | Whether taking a flag picks it up. True is War, where a flag rides its taker and drops where they die; false is Turf, where a stand changes hands where it stands. |
+| `flag_carry` | Whether taking a flag picks it up. True is Capture the Flag, where a flag rides its taker and drops where they die; false is Turf, where a stand changes hands where it stands. |
 | `flag_carry_seconds` | How long one pilot may hold a flag before it drops on its own, keeping their side. Absent or zero is no limit. |
 | `turf_seconds` | Seconds between two turf payouts, each paying a side one point per stand it holds. Turf only. |
 | `greens` | Greens the room keeps on the field. Absent or zero is a zone with none, which is every match game. |

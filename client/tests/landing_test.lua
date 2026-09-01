@@ -605,6 +605,20 @@ for _, s in ipairs(SHAPES) do
     check(shape .. " says what you arrive as", word("Gunner") ~= nil,
           "no build name as written")
     check(shape .. " does not shout a build's name", word("GUNNER") == nil)
+
+    -- And it says the whole of it. The names in these cells are the
+    -- catalog's, so the one that does not fit is the next zone somebody adds:
+    -- Capture the Flag came out cut at the F on a landscape phone, where the
+    -- rail gives a cell 120 points and eleven point type wanted 106 of the
+    -- 104 inside it. The answer takes the size that fits now, so the check is
+    -- that the name arrives whole rather than that it arrives at eleven.
+    local LONG = "Capture the Flag"
+    local was = LAND.zone
+    LAND.zone = LONG
+    frame(w, h)
+    check(shape .. " says a long game's name without cutting it",
+          word(LONG) ~= nil, "no whole name in the cell")
+    LAND.zone = was
 end
 
 -- --- the rest of the HUD is the rest of the screen --------------------------
@@ -1046,13 +1060,13 @@ end
 -- --- a game with no arena is still being looked for --------------------------
 --
 -- A zone the fleet is not serving is a row, not a gap: a player is better off
--- seeing that War exists and is down than wondering whether they misread the
--- list. Two things are true of that row and it says both. It cannot be
--- pressed, which is what dims it and what keeps a box off it. And something
--- is still looking for it, which is the dial at the right end: the directory
--- is asked again every three seconds and an arena can come back at any of
--- them, so a row that simply sat there dim would be the client saying it had
--- given up when it has not.
+-- seeing that Capture the Flag exists and is down than wondering whether they
+-- misread the list. Two things are true of that row and it says both. It
+-- cannot be pressed, which is what dims it and what keeps a box off it. And
+-- something is still looking for it, which is the dial at the right end: the
+-- directory is asked again every three seconds and an arena can come back at
+-- any of them, so a row that simply sat there dim would be the client saying
+-- it had given up when it has not.
 --
 -- What the row reads is read either way. The format of a game is what the
 -- game is, and it is true whether or not anybody is running one.
@@ -1065,12 +1079,13 @@ do
     DOWN.zones = {
         {label = "Team Battle", named = true, note = "4v4 \194\183 3:00",
          mark = true, index = 1},
-        {label = "War", named = true, note = "4v4", dim = true,
+        {label = "Capture the Flag", named = true, note = "4v4", dim = true,
          waiting = true, index = 2},
     }
 
     frame(1440, 810, {land = DOWN, col_open = "zone"})
-    check("a game nobody is serving is still on the list", word("War") ~= nil)
+    check("a game nobody is serving is still on the list",
+          word("Capture the Flag") ~= nil)
     local pressable = {}
     for _, r in ipairs(ui.hits) do
         if r.action == "menu_pick" then pressable[r.value] = true end

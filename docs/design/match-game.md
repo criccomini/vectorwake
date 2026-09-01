@@ -595,10 +595,11 @@ surfaces now rather than one:
   row of the game you were flying; with the list gone, leaving is a stop again.
 
 Settings holds everything that is about the machine rather than about a
-match, in one column: audio, video, the control bindings, and about. Help
-folds into it rather than standing beside it, because the controls board and
-the rebinding screen were always the same list read two ways, and `about` is
-three lines that never deserved a destination.
+match, in one column and one run of rows: sound, music, frames, fullscreen,
+the control bindings where there is a keyboard to bind, and about. Help folds
+into it rather than standing beside it, because the controls board and the
+rebinding screen were always the same list read two ways, and `about` is three
+lines that never deserved a destination.
 
 Pilot is the one tab about you rather than about a match: your call sign and
 its reroll, whether the account is claimed, and your career. It carried a

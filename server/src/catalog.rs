@@ -953,8 +953,10 @@ mod tests {
             ("4 v 4".into(), "3:00".into(), "turf".into())
         );
         // A war zone runs rounds inside its match, so what it says it scores
-        // in is flags, and the clock beside it is the match's.
-        assert_eq!(read("war").label("war"), "War");
+        // in is flags, and the clock beside it is the match's. Its key is the
+        // mode it was named after and its label is the game everybody else
+        // calls it, which is the widest the two have ever been apart.
+        assert_eq!(read("war").label("war"), "Capture the Flag");
         assert_eq!(
             read("war").format(),
             ("4 v 4".into(), String::new(), "flags".into())

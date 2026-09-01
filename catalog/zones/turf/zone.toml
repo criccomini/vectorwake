@@ -41,7 +41,8 @@ max_bots_per_team = 4
 match_seconds = 180
 intermission_seconds = 15
 
-# The rule that makes this turf rather than War: a stand cannot be picked up.
+# The rule that makes this turf rather than Capture the Flag: a stand cannot
+# be picked up.
 flag_carry = false
 
 # Five seconds a payout. Over a three minute match that is thirty-six of them,

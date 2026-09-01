@@ -1,10 +1,10 @@
-# War: four a side over four flags, and a round belongs to whoever holds all
-# of them at once.
+# Capture the Flag: four a side over four flags, and a round belongs to whoever
+# holds all of them at once.
 #
-# The flag game the original's War Zone was named for. A flag can only be
-# taken from a side that is not yours, it rides whoever took it, and it drops
-# where they die. Hold the whole set for ten seconds and the round is yours;
-# the flags then go neutral and back on their stands, and the next one starts.
+# A flag can only be taken from a side that is not yours, it rides whoever took
+# it, and it drops where they die. Hold the whole set for ten seconds and the
+# round is yours; the flags then go neutral and back on their stands, and the
+# next one starts.
 #
 # What is ours is the match around the rounds. A room that ran rounds forever
 # had no score to show, no clock beside the deploy key and no reason to change
@@ -12,7 +12,10 @@
 # the outside. Four minutes of rounds, a podium, next map: the same shape Team
 # Battle and Turf play, scored in rounds instead of kills or stands.
 
-label = "War"
+# The key stays `war`, which is what a join, a rating and a room are filed
+# under and what every rating already written is filed under. The label is the
+# whole of what a player reads, and what they read is the game they know.
+label = "Capture the Flag"
 
 mode = "warzone"
 

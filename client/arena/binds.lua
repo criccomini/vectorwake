@@ -240,8 +240,7 @@ function M.rows()
     for i, c in ipairs(controls) do
         local chord = M.chord_of[c.id]
         out[i] = {id = c.id, name = c.name, what = c.what, cat = c.cat,
-                  pad = c.pad, pad_name = c.pad_name, fixed = c.fixed,
-                  keys = chord, show = keys.chord(chord)}
+                  fixed = c.fixed, keys = chord, show = keys.chord(chord)}
     end
     return out
 end

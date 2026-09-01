@@ -1372,11 +1372,12 @@ local NODES = {
     -- deliberately and then comes back wondering about.
     settings = {rows = function()
         local rows = {
-            -- Grouped, the way the mocks group a list of settings: a small
-            -- label and a ticked rule over each run of rows. What a group
-            -- says is what the rows under it are about, which is the one
-            -- thing a page of eight settings cannot say in its title.
-            {label = "sound", sect = "audio",
+            -- One run of rows, in the order a hand reaches for them. They
+            -- came in bands once, a small label and a ticked rule over each
+            -- run: audio, video, the machine. Six settings do not need
+            -- chapters. The headings said what the rows under them already
+            -- said, and three of them spent a fifth of the panel saying it.
+            {label = "sound",
              help = "Effects, warnings, and weapon audio.",
              detail = function() return VOLUMES[M.volume][2] end,
              choice = function() return M.volume - 1, #VOLUMES - 1 end,
@@ -1385,7 +1386,7 @@ local NODES = {
              detail = function() return MUSICS[M.music][2] end,
              choice = function() return M.music - 1, #MUSICS - 1 end,
              act = "music"},
-            {label = "frames", sect = "video",
+            {label = "frames",
              help = "Limit rendering to reduce heat and battery use.",
              detail = function()
                 if not M.can_cap then return "as the display asks" end
@@ -1416,13 +1417,18 @@ local NODES = {
                                detail = "how to", act = "install",
                                help = "Launch the game without the browser around it."}
         end
-        -- The two pages that used to be tabs of their own. Both are about the
-        -- machine rather than about a match, which is what this page is for:
-        -- the controls board is where the keys are set, and `about` is three
-        -- lines that never deserved a destination.
-        rows[#rows + 1] = {label = "controls", sect = "the machine",
-                           detail = "keys and pads", go = "controls",
-                           help = "Review or change every input."}
+        -- Where the keys are set, and nowhere on a phone. A touchscreen has no
+        -- key to bind, so the page it opened was a list of the pads already
+        -- drawn around the ship, describing controls a thumb is holding while
+        -- it reads about them. The board is a keyboard's page and it is
+        -- offered where there is a keyboard.
+        if not M.touching then
+            rows[#rows + 1] = {label = "controls",
+                               detail = "keys", go = "controls",
+                               help = "Review or change every input."}
+        end
+        -- And `about`, three lines that never deserved a destination of their
+        -- own.
         rows[#rows + 1] = {label = "about", detail = "this build",
                            go = "about",
                            help = "Build, connection, and device details."}
@@ -1442,8 +1448,12 @@ local NODES = {
     -- Built from arena/controls.lua rather than written out here, which is
     -- what these rows used to be. Two hand-kept lists of the same facts drift,
     -- and these did: they were describing a game with no map on the dial and
-    -- nobody riding anybody, months after both landed. A row with no `pad` is
-    -- a control a thumb cannot work and is left out rather than named.
+    -- nobody riding anybody, months after both landed.
+    --
+    -- Keyboards only. The page had a second half that named thumb gestures
+    -- instead of keys, and it is gone with the row that opened it: what it
+    -- described is drawn on the glass already, under the thumbs, while the
+    -- page was being read.
     --
     -- The page used to draw a picture of a keyboard on any window wide enough
     -- for one, with every control a chip under it three across. The menu is
@@ -1453,26 +1463,14 @@ local NODES = {
     controls = {rows = function()
         local rows = {}
         for i, c in ipairs(binds.rows()) do
-            if M.touching then
-                -- No board and no key column on glass, so the page falls back
-                -- to what a thumb does. A control with no `pad` cannot be
-                -- worked by one at all and is left out rather than named.
-                if c.pad then
-                    rows[#rows + 1] = {label = c.pad_name or c.name,
-                                       detail = c.pad}
-                end
-            else
-                rows[i] = {label = c.name, detail = c.show,
-                           control = c.id, fixed = c.fixed,
-                           arming = M.arming == c.id,
-                           act = "bind", pick = true}
-            end
+            rows[i] = {label = c.name, detail = c.show,
+                       control = c.id, fixed = c.fixed,
+                       arming = M.arming == c.id,
+                       act = "bind", pick = true}
         end
-        if not M.touching then
-            -- Last, and after every control, because it is about all of them.
-            rows[#rows + 1] = {label = "reset to defaults", act = "defaults",
-                               pick = true, reset = true}
-        end
+        -- Last, and after every control, because it is about all of them.
+        rows[#rows + 1] = {label = "reset to defaults", act = "defaults",
+                           pick = true, reset = true}
         return rows
     end},
 
@@ -1726,7 +1724,8 @@ function M.stops()
     out[#out + 1] = {stop = "ship", label = "ship", value = M.landing_ship(),
                      named = true, panel = true}
     -- Everything about the machine rather than about a match, in one page:
-    -- audio, video, the bindings, and about.
+    -- sound, music, frames, fullscreen, the bindings where there is a
+    -- keyboard to bind, and about.
     --
     -- No answer beside the name, because what it opens is a page rather than
     -- a value. It wore a gauge in that slot, drawn by the tab rail's own mark
@@ -1780,10 +1779,6 @@ local function view_row(r, i)
         hull = r.hull, figure = r.figure, role = r.role,
         extent = type(r.extent) == "function" and r.extent() or r.extent,
         choice = ci, choices = cn, bar = r.bar, ship = r.ship,
-        -- The label a group of rows sits under, on the first row of it,
-        -- with the count beside it and the sentence under it where the
-        -- section has one.
-        sect = r.sect, sect_note = r.sect_note, sect_line = r.sect_line,
         who = r.value, state = r.state, dim = r.dim, waiting = r.waiting,
         group = r.group, short = r.short, tint_col = r.tint_col,
         -- What a ship row carries beyond the hull to draw: where it stands on

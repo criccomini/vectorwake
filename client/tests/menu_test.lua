@@ -395,11 +395,11 @@ check("escape answers the question instead of shutting the menu",
 -- client saying it had given up when it has not.
 do
     local dir = package.loaded["arena.directory"]
-    dir.rows[#dir.rows + 1] = {zone = "war", name = "War", teams = "4v4",
-                               count = "", players = 0, bots = 0,
-                               live = false}
+    dir.rows[#dir.rows + 1] = {zone = "war", name = "Capture the Flag",
+                               teams = "4v4", count = "", players = 0,
+                               bots = 0, live = false}
     open("zone")
-    local up, down = row_named("Chaos"), row_named("War")
+    local up, down = row_named("Chaos"), row_named("Capture the Flag")
     check("a game with no arena behind it is still a row on the list",
           down ~= nil, labels())
     if up and down then
@@ -427,12 +427,15 @@ end
 
 open("settings")
 
--- A section is a band with a run of rows under it, so a `sect` opens one and
--- the rows after it belong to it. The first row of the page has to open one,
--- since a run with no band over it is a run of rows nothing names.
-check("the settings page opens with a section",
-      rows()[1] and rows()[1].sect ~= nil,
-      tostring(rows()[1] and rows()[1].label))
+-- One run of rows and nothing over them. The page grouped its rows under small
+-- labels once, and six settings are not enough of a page to want chapters.
+check("the settings page is one run of rows",
+      (function()
+          for _, r in ipairs(rows()) do
+              if r.sect then return false end
+          end
+          return true
+      end)())
 
 menu.volume, menu.music = 3, 3
 menu.apply_settings()
@@ -784,25 +787,20 @@ do
           map_row ~= nil and map_row.detail == "Shift+Tab",
           map_row and tostring(map_row.detail) or "no map row")
 
-    -- On glass there is no board to draw and no key column to fill in, so the
-    -- same list comes out as gestures. A control a thumb cannot work at all is
-    -- left out rather than named.
-    menu.touching = true
-    local pads = rows()
-    local keyed = false
-    for _, r in ipairs(pads) do
-        if r.control or r.reset then keyed = true end
+    -- And the way in is a keyboard's. There is no key to bind on glass, and
+    -- the page a phone used to get was a list of the pads it was already
+    -- holding: the pads say what they are by being drawn, and the stick
+    -- writes its own gesture around its rim.
+    local function offers_controls()
+        open("settings")
+        return row_at("controls") ~= nil
     end
-    check("a thumb gets the gestures rather than the keys",
-          #pads > 0 and not keyed, #pads .. " rows")
-    check("and every one of them says what the thumb does",
-          (function()
-              for _, r in ipairs(pads) do
-                  if not r.detail or r.detail == "" then return false end
-              end
-              return true
-          end)())
+    check("the settings page offers the board where there are keys",
+          offers_controls(), labels())
+    menu.touching = true
+    check("and not on glass", not offers_controls(), labels())
     menu.touching = false
+    open("settings", "controls")
     binds.reset()
     menu.foot, menu.note = nil, nil
 end

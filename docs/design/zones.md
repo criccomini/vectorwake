@@ -6,7 +6,7 @@ Five games, in one catalog, on one engine.
 |---|---|---|---|
 | Team Battle | Three minute 4v4 melee | 8 seats, 5 maps | kills |
 | Turf | Six stands that pay whoever holds them | 8 seats, 3 maps | turf |
-| War | Four flags, a round to whoever holds the set | 8 seats, 3 maps | flags |
+| Capture the Flag | Four flags, a round to whoever holds the set | 8 seats, 3 maps | flags |
 | Duel | One against one on small ground | 2 seats, 3 maps | rounds |
 | Free Roam | A thousand tiles, no clock, greens | 64 seats, 1 map | nothing |
 
@@ -60,7 +60,7 @@ Worth stating plainly, because it is the argument against generalizing early.
 Four games, and the whole of what the core had to grow:
 
 - `flag_carry`, one byte, deciding whether taking a flag picks it up. That is
-  the entire difference between War and Turf.
+  the entire difference between Capture the Flag and Turf.
 - `flag_carry_ticks`, so a carried flag comes down on its own.
 - `sim_green`, six fields, and the five settings that place them.
 - One event, `SIM_EV_GREEN`.
@@ -89,10 +89,10 @@ Six stands and four a side is deliberate. Two more stands than either team has
 pilots means nobody can cover the map, which is the pressure the whole game
 runs on.
 
-## War
+## Capture the Flag
 
-The classic flag game, named for the original's War Zone. A flag can only be
-taken from a side that is not yours, it rides whoever took it, and it drops
+The classic flag game, which the original ran as its War Zone. A flag can only
+be taken from a side that is not yours, it rides whoever took it, and it drops
 where they die. Hold all four for ten seconds and the round is yours; the flags
 go neutral and back on their stands, and the next round starts.
 
@@ -191,8 +191,9 @@ authoring system and a sandbox.
 
 **A mode-aware client.** The client reads the catalog's format strip, draws
 pennants and greens off the wire, and gets the match clock from `match_state`.
-Turf and War needed no client change at all beyond the strip; greens needed one
-accessor, one drawing function and a sound that was already in the kit.
+Turf and Capture the Flag needed no client change at all beyond the strip;
+greens needed one accessor, one drawing function and a sound that was already
+in the kit.
 
 **Rating-banded matchmaking.** See Duel above.
 
@@ -215,10 +216,11 @@ Each row in the catalog brings more than a mode:
 - **A bot population that plays the objective.** At our population a zone
   without one is a dead room.
 - **A balance surface.** Every mode is a new answer to "which hull wins here".
-  Turf, War, Duel and Free Roam are all flying the roster Team Battle was tuned
-  for, and none has been measured. They fly it because the tuning is the
-  core's: a zone file says what makes it that zone and nothing else, so a room
-  that wants a different ship has to say so and be seen saying it.
+  Turf, Capture the Flag, Duel and Free Roam are all flying the roster Team
+  Battle was tuned for, and none has been measured. They fly it because the
+  tuning is the core's: a zone file says what makes it that zone and nothing
+  else, so a room that wants a different ship has to say so and be seen saying
+  it.
 - **An arena process.** One per declared zone, which is now five, with the
   services, routes and firewall ports that go with them.
 
@@ -230,7 +232,8 @@ only game; five zones divide the population and the tuning attention five ways.
 In rough order of what would move the needle:
 
 1. **Measure them.** `calibrate` and the melee probe are built for one format.
-   Turf and War have new answers to which hull wins, and nobody has asked.
+   Turf and Capture the Flag have new answers to which hull wins, and nobody
+   has asked yet.
 2. **Bots that hold a point.** `Mode::Travel` arrives at a flag and then
    re-decides, so a bot that reaches a stand has no reason to stay on it.
    The design for this and the rest of objective play is now in

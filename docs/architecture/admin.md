@@ -59,9 +59,9 @@ keeps serving the zone it chose. Nothing stops. An assignment scheduler going
 down stops joins; a config author going down stops config changes, which is the
 correct blast radius for the feature.
 
-Backing the catalog with git gives version history, diffs, and an audit trail for
-no work, and makes "who changed War's bomb damage on Tuesday" a question with an
-answer.
+Backing the catalog with git gives version history, diffs, and an audit trail
+for no work, and makes "who changed Capture the Flag's bomb damage on Tuesday"
+a question with an answer.
 
 ## Control, part two: actions
 
