@@ -3,8 +3,10 @@
 Chris's ask: come up with a ship design for spectate on the menu, a few
 ideas, mocked up.
 
-Ten boards, drawn against the client rather than around it. Not shipped:
-this is a set to pick from.
+Ten boards, drawn against the client rather than around it. Wings shipped,
+with the banded cut of its feathers, as [decision
+128](../../docs/architecture/decisions.md); the other five are the record of
+what it was picked against.
 
 Chris then asked whether the human icon, the ship with feathers, could be the
 spectate drawing as well. Two more boards for that, and it changed which one
@@ -122,21 +124,23 @@ the badge at a glance and stops shouting over the line art around it.
 Both hold still. A badge turning about its own vertical axis is a decal
 spinning, and there is nothing behind one to come into view.
 
-## What I would ship
+## What shipped
 
-Wings, built. The badge is the only mark in this game whose subject is the
-pilot rather than the ship, and this is the only stop on the carousel whose
-subject is the pilot rather than the ship. Everything else here had to invent
-a meaning; this one is already carrying it, and `ui.lua` says so in its own
+Wings, in the flat cut rather than the outlined one, with the feathers
+banded. The badge is the only mark in this game whose subject is the pilot
+rather than the ship, and this is the only stop on the carousel whose subject
+is the pilot rather than the ship. Everything else here had to invent a
+meaning; this one is already carrying it, and `ui.lua` says so in its own
 comment: a badge is what a seat is issued rather than what sits in it.
 `spectating.md` opens on the same sentence from the other side, that a
 watcher is a connection with a seat in the roster and no ship in the
 simulation. The seat is the thing both of them are about.
 
-The built one over the plain one, because the plain one is fourteen points of
-solid stroke on a page of hairlines, and the badge survives being drawn in
-outline. If it turns out not to, the plain one is the fallback and costs one
-line.
+The objection to the plain one was that fourteen points of solid stroke sits
+badly on a page of hairlines, which is what Wings, built was drawn to answer.
+The recut feathers answer it instead: a tapered band with two clean edges is
+not the same object as a round-capped bar, and the badge holds its weight
+against the line art without being hollowed out.
 
 Lens is what I would ship if the answer is that spectate should be a thing
 rather than an emblem. It is the better drawing on its own: its meaning is in
@@ -187,8 +191,8 @@ closed shapes rather than strokes, which is how the hull in the middle of the
 badge is already drawn, so the corners are sharp for free and no new drawing
 primitive is involved: `F.layer:quad` is in `pilot_mark` twice already.
 
-Eight cuts are on the Feathers board, including the two that were tried and
-lost. Quill comes to a point, which reads as a knife rather than a feather.
+Banded is the cut, and it is what ships. Eight are on the Feathers board,
+including the two that were tried and lost. Quill comes to a point, which reads as a knife rather than a feather.
 Swept grows everything under a straight top edge, which is what a real
 feather does and what makes three of them merge into one wing at this size.
 

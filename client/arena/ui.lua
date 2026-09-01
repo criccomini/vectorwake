@@ -578,22 +578,148 @@ M.TYPE = TYPE
 -- three feathers instead of one wing.
 local MARK_K = 11
 
+-- The wing the badge wears, as a band swept back off the hull and cut into
+-- three.
+--
+-- One table because this file is at the two hundred locals a Lua chunk may
+-- hold, and because the numbers only mean anything together. See
+-- client/tests/upvalues_test.lua.
+--
+-- The feathers were three strokes with a round cap, cut for the eleven points
+-- the scoreboard draws this at, where a feather is a point across and a cap
+-- is a rounding error. The menu now draws the same mark at a hundred and
+-- thirty, and there the three are fourteen points across with a half circle
+-- on each end, which is three sausages. What was wrong with them is the pen
+-- rather than the arrangement, so the arrangement barely moved:
+--
+-- **They are parallel.** They sat at 32.1, 28.3 and 30.8 degrees, close
+-- enough to look like a mistake and far enough to lose the even gap the roots
+-- were cut for. All three are 30 now, and each runs out to `rake`, the line
+-- the old tips already lay on: the bottom feather lands within a thousandth
+-- of where it was and the middle one within two hundredths.
+--
+-- **Both ends are cut on a line.** The tips on `rake` and the roots on
+-- `root_line`, which is the hull's own leading edge and the thing the roots
+-- were placed against in the first place. So the wing is one band with a
+-- clean edge either side of it, and the gap behind every feather is the same
+-- gap.
+--
+-- **And they taper.** `w0` at the root to `w1` at the tip, in half widths, so
+-- a feather has a direction in it and the eye finds the gaps. Drawn as closed
+-- shapes rather than strokes, which is what the hull in the middle of the
+-- badge is already drawn with, so the corners come out sharp for nothing.
+--
+-- The floor is `pen`'s own, and it is what keeps this honest at the sizes
+-- three of the four callers draw at: nothing is cut thinner than nine tenths
+-- of a point, so at ten and eleven the mark comes out where it always did and
+-- the taper only says anything from about twenty up.
+local WING = {
+    -- Where each feather leaves the hull, on the leading edge's own line.
+    roots = {{0.118, -0.06}, {0.166, 0.06}, {0.238, 0.18}},
+    -- The two lines the ends are cut against, each as two points.
+    rake = {{0.500, -0.30}, {0.389, 0.09}},
+    root_line = {{0.118, -0.06}, {0.238, 0.18}},
+    deg = 30,
+    w0 = 0.020,
+    w1 = 0.039,
+    -- The circle that holds the whole mark, so a caller drawing it where a
+    -- ship would go can ask for a radius and get a badge that fills it.
+    reach = 0,
+    -- The six shapes, in the mark's own units, and the width they were cut
+    -- for. Rebuilt when a caller asks for a different one, which in a frame
+    -- is at most twice: the nameplates draw at ten and everything else at
+    -- eleven.
+    cut = nil,
+    cut_k = nil,
+}
+
+-- How far along `u` from `pt` a line sits, so a corner can be run out to it.
+local function wing_hit(pt, u, line)
+    local ax, ay = line[1][1], line[1][2]
+    local bx, by = line[2][1], line[2][2]
+    local nx, ny = -(by - ay), bx - ax
+    return (nx * (ax - pt[1]) + ny * (ay - pt[2])) / (nx * u[1] + ny * u[2])
+end
+
+-- The six feathers at one mark width, as flat runs of four corners.
+--
+-- The spread comes out exactly the mark's width whatever the floor did to the
+-- widths: the set is squeezed in x until the widest corner is a half, which
+-- moves a root by thousandths and keeps the three parallel, since scaling one
+-- axis does. Every caller lays this mark out against `k` and one of them sets
+-- it beside a call sign, so a tip corner at 0.51 is a wing that touches a
+-- name.
+local function wing_cut(k)
+    if WING.cut and WING.cut_k == k then return WING.cut end
+    local a = WING.deg * math.pi / 180
+    local u = {math.cos(a), -math.sin(a)}
+    local n = {-u[2], u[1]}
+    local floor = 0.45 / math.max(1, k)
+    local w0 = math.max(WING.w0, floor)
+    local w1 = math.max(WING.w1, floor)
+    local out, far = {}, 0
+    for _, root in ipairs(WING.roots) do
+        local s = wing_hit(root, u, WING.rake)
+        local q = {}
+        for i, side in ipairs({{w0, WING.root_line, 0},
+                               {w1, WING.rake, s},
+                               {-w1, WING.rake, s},
+                               {-w0, WING.root_line, 0}}) do
+            local w, cut, along = side[1], side[2], side[3]
+            local pt = {root[1] + u[1] * along + n[1] * w,
+                        root[2] + u[2] * along + n[2] * w}
+            local t = wing_hit(pt, u, cut)
+            q[i] = {pt[1] + u[1] * t, pt[2] + u[2] * t}
+        end
+        out[#out + 1] = q
+        for _, pt in ipairs(q) do far = math.max(far, math.abs(pt[1])) end
+    end
+    local squeeze = 0.5 / far
+    local both = {}
+    for _, q in ipairs(out) do
+        local l, r = {}, {}
+        for i, pt in ipairs(q) do
+            r[i] = {pt[1] * squeeze, pt[2]}
+            l[i] = {-pt[1] * squeeze, pt[2]}
+        end
+        both[#both + 1] = r
+        both[#both + 1] = l
+    end
+    WING.cut, WING.cut_k = both, k
+    return both
+end
+
+-- Measured once, off every corner the mark draws, the way world.lua measures
+-- a hull when it loads. The feather tips reach further than the nose does.
+do
+    for _, q in ipairs(wing_cut(MARK_K)) do
+        for _, pt in ipairs(q) do
+            WING.reach = math.max(WING.reach,
+                                  math.sqrt(pt[1] * pt[1] + pt[2] * pt[2]))
+        end
+    end
+    for _, pt in ipairs({{0, -0.325}, {0.220, 0.275}, {0.170, 0.325}}) do
+        WING.reach = math.max(WING.reach,
+                              math.sqrt(pt[1] * pt[1] + pt[2] * pt[2]))
+    end
+    WING.cut, WING.cut_k = nil, nil
+end
+
 -- Pilot's wings: a boss with three feathers off each side.
 --
 -- `cx` is the middle of the mark and `cy` the middle of the line it sits on,
 -- so a caller can hand it a row's center without knowing the height.
 --
 -- Feathers rather than a filled spread, because the gaps are what make this
--- wings at all: solid at eleven points it is a moustache. They are struck a
--- shade under the mark's own pen for the same reason, since a heavy pen
--- closes the gaps it is drawn between, and the gaps are the mark.
+-- wings at all: solid at eleven points it is a moustache. They are cut a
+-- shade under the mark's own pen for the same reason, since a heavy feather
+-- closes the gap beside it, and the gaps are the mark.
 --
 -- Cut so the spread is exactly the mark's width. Every caller lays this out
 -- against `k` and one of them sets it beside a name, so wings that reached
 -- past what they reported would be wings that touch a call sign.
-local function pilot_mark(cx, cy, col, k, line)
+local function pilot_mark(cx, cy, col, k)
     k = k or MARK_K * F.scale
-    line = (line or pen(k, 0.11)) * 0.85
     local function px(t) return cx + t * k end
     local function py(t) return ry(cy + t * k) end
     -- The ship the badge is issued for, which is what a pilot's wings have
@@ -632,34 +758,23 @@ local function pilot_mark(cx, cy, col, k, line)
         F.layer:quad(px(f * 0.052), py(-0.005), px(f * 0.220), py(0.275),
                      px(f * 0.170), py(0.325), px(f * 0.070), py(0.225), col)
     end
-    -- Swept back and fanned, longest on top. A rank of parallel strokes is a
-    -- chevron; what makes a wing is that the three of them disagree about
-    -- where they are going.
+    -- Swept back and cut into three, off the hull's own leading edge. The
+    -- band and the two lines its ends are cut on are `WING`, above, which is
+    -- also where the reasons live.
     --
-    -- Each one starts off the hull's own edge rather than at a shared
-    -- distance from the middle. They all began at one x, which is a straight
-    -- line down a shape that has no straight line in it: the hull is a hair
-    -- wide under the nose and four times that by the wingtip, so a root set
-    -- clear of it at the bottom left the top two hanging in space.
-    --
-    -- The roots are the leading edge's x at each height plus the same small
-    -- clearance, so the gap behind a feather is the same gap whichever
-    -- feather you look at. Drawn touching first, and touching is worse: the
-    -- three run into the hull and the badge reads as one blob with spines.
-    -- What it wants is to sit just off, near enough to belong to the ship
-    -- and far enough that the eye finds the edge.
+    -- The roots are the leading edge's own line rather than a shared distance
+    -- from the middle. They all began at one x, which is a straight line down
+    -- a shape that has no straight line in it: the hull is a hair wide under
+    -- the nose and four times that by the wingtip, so a root set clear of it
+    -- at the bottom left the top two hanging in space.
     --
     -- Which makes these numbers the hull's, and they have to move when it
     -- does. Set wrong they do not fall off the mark or cross anything, they
     -- just reopen the gap unevenly, which is the kind of fault that lasts
     -- because nothing about it looks broken.
-    for _, w in ipairs({1, -1}) do
-        F.layer:seg(px(w * 0.118), py(-0.06), px(w * 0.500), py(-0.30),
-                    line, col, true)
-        F.layer:seg(px(w * 0.166), py(0.06), px(w * 0.463), py(-0.10),
-                    line, col, true)
-        F.layer:seg(px(w * 0.238), py(0.18), px(w * 0.389), py(0.09),
-                    line, col, true)
+    for _, q in ipairs(wing_cut(k)) do
+        F.layer:quad(px(q[1][1]), py(q[1][2]), px(q[2][1]), py(q[2][2]),
+                     px(q[3][1]), py(q[3][2]), px(q[4][1]), py(q[4][2]), col)
     end
     return k
 end
@@ -4916,6 +5031,25 @@ local function land_row(kx, kw, y, h, r)
         LIT.state(kx, y, kw, h, on, false)
         local col = pal.FRIEND
         local a = 1
+        -- Sitting out is the one stop here that is not a hull, and what
+        -- stands in a hull's place is the badge a seat wears when a person is
+        -- in it. It is the only mark in this game whose subject is the pilot
+        -- rather than the ship, and this is the only stop on the carousel
+        -- whose subject is the pilot rather than the ship: `pilot_mark`'s own
+        -- comment says a badge is what a seat is issued rather than what sits
+        -- in it, and docs/design/spectating.md opens by calling a watcher a
+        -- seat in the roster with no ship in the simulation. See decision 128.
+        --
+        -- In the instrument gray rather than in your color, because the ship
+        -- you turn to is the ship you fly and a watcher flies nothing. The
+        -- word under it stays blue: the stop is still the one you are
+        -- standing on.
+        --
+        -- And it holds still while every hull on this carousel turns, which
+        -- comes for free by not being a hull. A badge is flat, so turning one
+        -- about its vertical axis is a decal spinning with nothing behind it
+        -- to come into view.
+        local watching = r.value == "spectate"
         -- The name and the hull's own line under the drawing, and the
         -- drawing over what is left. The line wraps to the glass rather than
         -- running off it: at a phone's measure the longest of them is wider
@@ -4924,10 +5058,12 @@ local function land_row(kx, kw, y, h, r)
         local nameh = 30 * F.scale
         local noteh = #lines * pages.NOTE_LINE * F.scale
         local mid = y + (h - nameh - noteh) / 2
+        local art_r = math.min((h - nameh - noteh) / 2 - 6 * F.scale,
+                               HULL_ART_R * F.scale)
         if r.cls then
-            hull_art(kx + kw / 2, mid, r.cls,
-                     math.min((h - nameh - noteh) / 2 - 6 * F.scale,
-                              HULL_ART_R * F.scale), col, a)
+            hull_art(kx + kw / 2, mid, r.cls, art_r, col, a)
+        elseif watching then
+            pilot_mark(kx + kw / 2, mid, pal.READ, art_r / WING.reach)
         end
         txt(r.label, kx + kw / 2, y + h - noteh - nameh / 2,
             TYPE.LEAD * F.scale, pal.a(col, a), "center", MENU_FONT,

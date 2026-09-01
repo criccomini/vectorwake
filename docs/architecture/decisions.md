@@ -6620,3 +6620,87 @@ watch_test arm walking a socket through both benchings and both voluntary
 seats, plus a constant_drift guard holding `CLIENT_PROTOCOL` and the two reason
 codes against their Rust originals: perturbing either side fails it. luacheck
 clean.
+
+## 128. Sitting out wears the badge
+
+**Status:** accepted
+
+**What:** the ship stop's body carousel draws the pilot's badge on its last
+page, where seven hulls turn through the six before it. `pilot_mark` gets a
+fourth caller, at a hundred and thirty-four points rather than eleven, in the
+instrument gray rather than in the pilot's color, and it holds still while
+every hull on the same carousel turns.
+
+The badge's feathers are recut for that size, everywhere it is drawn. They
+were three struck lines a side, at 32.1, 28.3 and 30.8 degrees, capped round.
+They are six closed shapes now, all six at 30 degrees, cut against two lines
+and tapered from 0.020 of the mark at the root to 0.039 at the tip.
+
+**Why:** the carousel had a hole in it. `sect_rows` sets a row's `cls` only
+where the roster's value is a number, `land_row` draws a ship only where `cls`
+is set, and `land_row_h` gives the row 198 points plus a line of sentence
+whatever is in it. So sitting out was a word at the bottom of 168 empty points
+with two arrows floating in the middle of them, and it read as a panel that
+failed to load rather than as a choice. Nothing else on this menu has a hole
+in it.
+
+Four drawings were made for that hole and mocked over the real menu in
+`.design/spectate-body`: the roster's own shape with the canopy outlined and
+empty, a camera whose bright cell is a pupil where a hull carries a canopy, a
+relay with a dish, and a viewfinder that is not a craft at all. Chris asked
+whether the badge could do the job instead, and it is the better answer for a
+reason none of the four can match: it is the only mark in this game whose
+subject is the pilot rather than the ship, and this is the only stop on the
+carousel whose subject is the pilot rather than the ship. `pilot_mark`'s own
+comment had already said a badge is what a seat is issued rather than what
+sits in it, and [spectating.md](../design/spectating.md) opens by calling a
+watcher a connection with a seat in the roster and no ship in the simulation.
+Both sentences are about the seat.
+
+The gray is the same argument in paint. A hull on this carousel is drawn in
+`pal.FRIEND` because the ship you turn to is the ship you fly; a watcher flies
+nothing and holds no side, so the badge is drawn in the ink the interface uses
+for everything that describes rather than belongs to you. The word under it
+stays blue, because the stop is still the one you are standing on.
+
+The recut is the size. A feather cut for eleven points is a stroke a point
+across where a round cap is a rounding error; the same stroke at a hundred and
+thirty-four is fourteen points across with a half circle on each end, which is
+three sausages. Parallel turned out to cost nothing: run each feather out to
+the line the old tips already lay on and the bottom one lands within a
+thousandth of where it was, the middle one within two hundredths. Both ends
+are cut on a line now, the tips on that rake and the roots on the hull's own
+leading edge, which is what the roots were placed against in the first place,
+so the wing is one band with a clean edge either side and the same gap behind
+every feather. The taper is what gives a feather a direction at a size where a
+constant width is a bar.
+
+**Cost:** the recut changes the mark everywhere, and three of its four callers
+draw it at ten or eleven points where none of this is visible. That is the
+right trade only because it costs them nothing: the widths carry the floor
+`pen` already puts under a stroke, nine tenths of a point, so at ten and
+eleven both ends are the floor and the mark comes out where it always did.
+The taper says nothing until about twenty.
+
+Six drawings rather than six strokes is six `quad` calls where there were six
+`seg` calls, in a function that was already drawing its hull with `quad`
+twice. The shapes are rebuilt when a caller asks for a width the last one did
+not, which in a frame is at most twice, since the nameplates draw at ten and
+everything else at eleven.
+
+An eighth entry in `world.HULLS` would have been the other way to fill the
+hole, and it is a crash rather than a ship: `TAIL` walks that list and reads
+`.jets` off every entry, and a badge has no engines.
+
+**Verified:** the client's suite, with `marks_test` rewritten around the new
+grammar and `landing_test` grown three arms on the spectate page. The wings
+finder now identifies the mark by six shapes lying along one angle rather than
+by six round-capped strokes, which is the property the recut was for, and it
+asks that the six agree within a degree, that each widens on its way out, and
+that the three a side still arrive apart. The landing asks that the page draws
+nine shapes where a hull would go, at a hull's own width, and that its span
+does not move between two points of the turn. Both were made to fail by
+perturbing the angle and by handing the row a turn. The shipped cut was read
+back out of the client and checked against the board Chris picked from: the
+angle, both end widths and all three lengths agree to a thousandth of a mark
+unit. luacheck clean over 108 files.

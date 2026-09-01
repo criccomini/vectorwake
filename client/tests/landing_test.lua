@@ -31,11 +31,22 @@ end
 
 local layer = {n = 0}
 local function noop(self) self.n = self.n + 1 end
-for _, name in ipairs({"arc", "flush", "quad", "reset",
+for _, name in ipairs({"arc", "flush", "reset",
                        "ring", "seg_fade", "seg_flat", "skirt", "tri",
                        "tri_fade", "fan", "seg_glow", "glow_band", "halo",
                        "ring_fade"}) do
     layer[name] = noop
+end
+
+-- Closed runs, corners kept. The other drawing on the carousel is made of
+-- nothing else: sitting out draws the badge a seat wears when a person is in
+-- it, which is three shapes of hull and six of feather. See decision 128.
+local quads = {}
+layer.quad = function(self, x1, y1, x2, y2, x3, y3, x4, y4)
+    self.n = self.n + 1
+    quads[#quads + 1] = {pts = {{x1, y1}, {x2, y2}, {x3, y3}, {x4, y4}},
+                         cx = (x1 + x2 + x3 + x4) / 4,
+                         cy = (y1 + y2 + y3 + y4) / 4}
 end
 
 -- Segments are kept as well, because one drawing out here is made of nothing
@@ -261,6 +272,7 @@ local function frame(w, h, o)
     o = o or {}
     H = h
     boxes, rects, discs = {}, {}, {}
+    quads = {}
     frosted = {}
     state.n = 0
     -- The scoreboard is off unless a check asks for it, the way it is off
@@ -923,13 +935,69 @@ do
           shouted == nil, tostring(shouted))
     frame(1440, 810, {land = land_in(BODY), col_open = "ship"})
 
-    -- Sitting out is the page past the roster: no ship to draw, and the
-    -- sentence about it standing where one would have been.
+    -- Sitting out is the page past the roster: no ship, the badge a seat
+    -- wears standing where one would have been, and the sentence under it.
     frame(1440, 810, {land = land_in(WATCHING), col_open = "ship"})
     check("sitting out is a page of the carousel",
           word("Spectate") ~= nil and box("land_pick_ship") ~= nil,
           table.concat({tostring(word("Spectate") ~= nil),
                         tostring(box("land_pick_ship") ~= nil)}, " "))
+
+    -- And it draws something, which for four decisions it did not: the row
+    -- kept its whole height with no hull to put in it, so the word sat at
+    -- the bottom of a hundred and sixty-eight empty points with two arrows
+    -- floating in the middle of them. What stands there now is the badge a
+    -- seat wears when a person is in it, which is nine closed shapes: three
+    -- of hull and three feathers a side. See decision 128.
+    -- The layer counts y up from the foot and a box counts it down from the
+    -- head, so one of the two has to be turned over before they can be
+    -- compared. The credit tray is seven closed shapes of its own a little
+    -- above this, which is what the window is keeping out.
+    local art = box("land_pick_ship")
+    local on_art = {}
+    for _, q in ipairs(quads) do
+        if art and q.cx > art.x and q.cx < art.x + art.w
+            and math.abs((H - q.cy) - (art.y + art.h / 2)) < art.h / 2 then
+            on_art[#on_art + 1] = q
+        end
+    end
+    check("and draws the badge where a hull would be", #on_art == 9,
+          #on_art .. " shapes on the drawing")
+
+    -- Cut to the circle a hull is drawn in, so the two stops read at one
+    -- size. The badge lies wider than it stands, which is the fact every
+    -- other caller lays it out against, so the width is what is asked here.
+    local bx0, bx1 = math.huge, -math.huge
+    for _, q in ipairs(on_art) do
+        for _, pt in ipairs(q.pts) do
+            bx0, bx1 = math.min(bx0, pt[1]), math.max(bx1, pt[1])
+        end
+    end
+    check("as wide as a hull on the same carousel is",
+          bx1 - bx0 > 120 and bx1 - bx0 < 170,
+          string.format("%.0f points across", bx1 - bx0))
+
+    -- And it holds still while every hull here turns. A badge is flat, so
+    -- turning one about the axis up the screen is a decal spinning with
+    -- nothing behind it to come into view. It holds still by not being a
+    -- hull, which is free, and free is exactly the version that breaks the
+    -- day somebody hands this row a turn.
+    local function watch_span(now)
+        frame(1440, 810, {land = land_in(WATCHING), col_open = "ship",
+                          now = now})
+        local x0, x1 = math.huge, -math.huge
+        for _, q in ipairs(quads) do
+            for _, pt in ipairs(q.pts) do
+                if math.abs(pt[1] - 720) < 200 then
+                    x0, x1 = math.min(x0, pt[1]), math.max(x1, pt[1])
+                end
+            end
+        end
+        return x1 - x0
+    end
+    check("and holds still where a hull turns",
+          math.abs(watch_span(0) - watch_span(11 / 4)) < 0.5,
+          string.format("%.1f then %.1f", watch_span(0), watch_span(11 / 4)))
 
     -- Flair is the two rows that cost nothing, and they take a press.
     frame(1440, 810, {land = land_in(FLAIR), col_open = "ship"})

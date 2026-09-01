@@ -235,7 +235,7 @@ def _mark_points(mirror=True):
 # degrees and run each one out to the line the current tips already sit on,
 # and the third lands within a thousandth of where it is now, the second
 # within two hundredths. The shape barely moves. It just stops wobbling.
-PICK = "blade"
+PICK = "banded"
 FEATHER_DEG = 30.0
 FEATHER_ROOTS = [(0.118, -0.06), (0.166, 0.06), (0.238, 0.18)]
 # The line the three tips are cut against, which is the one the current tips
@@ -358,7 +358,7 @@ def feather_shapes(style, k=None):
     return both
 
 
-def wings(cx, cy, r, squash, col=READ, style="blade"):
+def wings(cx, cy, r, squash, col=READ, style="banded"):
     """The badge at the size the carousel draws a ship: `pilot_mark`'s own
     three quads, filled, with the feathers cut whichever way `style` says.
 
@@ -434,7 +434,7 @@ def wings_built(cx, cy, r, squash, col=READ):
                          f'stroke-linecap="round"/>')
     # The same feathers the plain badge is cut with, outlined rather than
     # filled, so the two are the same drawing at two weights.
-    for shape in feather_shapes("blade", k) or []:
+    for shape in feather_shapes("banded", k) or []:
         parts.append(f'<path d="{path(put(shape), True)}" fill="{PANEL_INK}" '
                      f'fill-opacity=".06" stroke="{col}" stroke-width="1.4" '
                      f'stroke-opacity=".62" stroke-linejoin="miter"/>')
