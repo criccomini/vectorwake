@@ -1480,18 +1480,29 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
     if (i >= s->ship_count || cls >= cfg->class_count) return -1;
     sim_ship *sh = &s->ships[i];
     if (!sh->active) return -1;
-    /* The hull you are already in is not a change. Without this, picking the
-     * ship you are flying would cost you every upgrade you had collected for
-     * no reason at all. */
-    if (sh->cls == cls) return 0;
+    /* What is being asked for: the hull, and the build fitted to it. Fitted
+     * before it is read, because a caller hands over whatever it spent and
+     * the ceilings are this zone's; two rows that fit to the same thing are
+     * the same ship however they were spelled. */
+    uint8_t want[SIM_SLOT_COUNT];
+    memcpy(want, kit ? kit : sh->kit, SIM_SLOT_COUNT);
+    sim_kit_fit(cfg, cls, want);
+    /* The ship you are already flying is not a change, and asking for it must
+     * not cost you the upgrades and the position that a change costs.
+     *
+     * A ship is the hull and the build together, so both are compared. A
+     * pilot who trades a repel for a burst without leaving the hull has
+     * changed ship as surely as one who climbs out of it, and it is gated and
+     * paid for the same way: there is one act here, not two. */
+    if (sh->cls == cls && memcmp(sh->kit, want, SIM_SLOT_COUNT) == 0) return 0;
     /* Only from a full bar, and only alive.
      *
-     * A hull swap hands you a fresh ship, so without a gate it is a way to
-     * refill a bar mid-fight: take a beating, switch, come back whole. Full
-     * energy means you are not in one -- or you have already flown clear of
-     * it long enough to recover, which is the same thing. And a dead pilot is
-     * refused rather than being handed an early respawn: this sets `alive`,
-     * so allowing it while dead would skip the respawn delay entirely. */
+     * A new ship is a fresh one, so without a gate it is a way to refill a
+     * bar mid-fight: take a beating, switch, come back whole. Full energy
+     * means you are not in one, or you have already flown clear of it long
+     * enough to recover, which is the same thing. And a dead pilot is refused
+     * rather than being handed an early respawn: this sets `alive`, so
+     * allowing it while dead would skip the respawn delay entirely. */
     if (!sh->alive) return -1;
     if (sh->energy < sim_eff_max_energy(&cfg->classes[sh->cls], sh)) return -1;
     drop_flags(s, cfg, i, 0);
@@ -1499,8 +1510,8 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
     /* And the build with it, which is the pilot's rather than the hull's: a
      * caller with a row hands it over, and one without keeps what this pilot
      * was already carrying. Nothing about a weapon lives on a hull, so there
-     * is no row here to take instead, and refitting rather than copying is
-     * what holds a build to a zone that gives some hull a shallower ceiling.
+     * is no row here to take instead, and fitting rather than copying is what
+     * holds a build to a zone that gives some hull a shallower ceiling.
      *
      * The rack is the exception, and it is the same exception a death makes.
      * Charges are dealt once a match and spent from there, so a hull change
@@ -1512,8 +1523,7 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
      * That leaves the honest case: a pilot who has spent nothing and switches
      * to a deeper rack does not get the difference. The rack you fly the
      * match with is the one you were dealt at the whistle. */
-    if (kit) memcpy(sh->kit, kit, SIM_SLOT_COUNT);
-    sim_kit_fit(cfg, cls, sh->kit);
+    memcpy(sh->kit, want, SIM_SLOT_COUNT);
     sim_deal_kit(sh, cfg, 0);
     for (int k = 0; k < SIM_MAX_CHARGES; k++) {
         uint8_t theirs = sh->kit[SIM_SLOT_CHARGE(k)];

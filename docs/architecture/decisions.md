@@ -6620,3 +6620,69 @@ watch_test arm walking a socket through both benchings and both voluntary
 seats, plus a constant_drift guard holding `CLIENT_PROTOCOL` and the two reason
 codes against their Rust originals: perturbing either side fails it. luacheck
 clean.
+
+## 128. A ship is one thing, and changing it costs a respawn
+
+**Status:** accepted
+
+**What:** the ship menu the landing opens is the ship menu the in-match column
+opens. `SHIP` joins the column as a stop, and a pilot in a room reads the same
+five parts over the same purse they read on the front page. Editing it in a
+match is a draft: the carousel turns and credits move without a single message
+leaving the client, and the whole ship is settled once, when the panel closes.
+
+A ship is the hull and the build together, so both are gated the same way. The
+core's `sim_set_ship_class` compares the fitted row as well as the hull: asking
+for the ship you are flying still costs nothing, and anything else needs a full
+bar and pays a respawn, whether what moved is the body or a charge. The server
+routes a build from a pilot in the air through that gate and deals one to a
+benched seat in place, which is how a build still arrives with somebody who
+joined during a podium.
+
+`LEAVE SEAT` is gone, and so is `SPECTATE` at the end of the ship roster. They
+were the same act reached two ways, and what replaces the stop is the games
+list the landing already opens: leaving is choosing where to be instead, and
+picking the game you are in lands you in its stands, which is what the old
+answer did. The column is `ZONE`, `SHIP`, `SETTINGS`, `SIDE`.
+
+**Why:** the ship page was a front-page screen. A pilot who wanted a different
+hull three minutes into a match had to leave the game to get one, and a pilot
+who wanted a different build had to leave and come back. Everything needed to
+edit one mid-match was already on the glass; it was reachable from one screen
+only.
+
+Drafting rather than sending is the part worth defending. Every other panel in
+this menu applies as it is read, and this one cannot: turning the carousel from
+an Apex to a Lattice is six steps, and six ship changes is six respawns, one
+per arrow. So the panel edits a copy, its head says what closing it will do,
+and closing it is the one act. Nothing pauses while it is up, so a pilot can be
+shot for reading it and the close is refused; the refusal names itself in the
+feed rather than dropping the work in silence.
+
+Sitting yourself down was reachable from two places and worth neither. A
+watcher of the room you hold a seat in is a state with nothing to do in it and
+one key out of it, and the ship menu could reach it by turning one page too far
+off the end of the roster. The front page is the stands already, and the zone
+stop is how you pick which game you are watching.
+
+**Cost:** the wire is unmoved: `C2S_KIT` already carried a hull and a row, and
+it is now the whole of a ship change. Between matches everybody is benched at
+zero energy, so the gate refuses a change during a podium and the note says so;
+that was already true of a hull change and is now true of a build.
+
+A build dealt to a seat that is not in the air is dealt in place, which means a
+dead pilot can respec on the way back for the price of the death they have
+already paid. That is the same hole the ungated deal had and it is strictly
+smaller; closing it would take the between-matches case with it.
+
+**Verified:** `make -C sim check` with two new core cases, one holding that a
+build changed under the same hull is gated and respawns and one that handing
+back the row already on the ship is free. The golden is unmoved, since the
+determinism trace never changes a ship. 463 server tests including the in-air
+and benched arms of `Room::set_ship_kit`, clippy and fmt. The client's suite
+with the draft, the panel in the column, the walk through it, the way back out
+of a part of the ship, and every arm of `settle_ship`; luacheck clean. And the
+playtest harness plays it: a new `ship-change` journey boots the real client
+against a real fleet, opens the menu mid-match, turns the carousel, checks the
+room has not moved the pilot, closes the panel, and waits for the server to put
+them in the hull they built. It passes on all four device profiles.

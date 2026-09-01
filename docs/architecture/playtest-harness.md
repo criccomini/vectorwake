@@ -187,13 +187,24 @@ cover thermals or Safari, and pretending otherwise would be false comfort.
 Three drivers share the stage and the probe, in increasing looseness. The
 first is built.
 
-Journeys are scripted walks. `boot-to-match` is the one that exists: the
-client boots, finds the fleet, presses PLAY NOW with whichever hand the
-profile has, takes a seat, and flies, and it fails if the ship never gets a
-tile from where it started. The ones still to write are every landing stop
-opened and backed out of, settings changed and the change observed, hull
-changed mid-session, leave and rejoin. They are the smoke test, and they are
-quick: four profiles in under two minutes.
+Journeys are scripted walks, sharing an `arrive` prologue: boot, find the
+fleet, press PLAY NOW with whichever hand the profile has, take a seat.
+
+`boot-to-match` then flies, and fails if the ship never gets a tile from where
+it started. `ship-change` opens the menu mid-match, opens the ship stop, turns
+the body carousel, checks the room has *not* moved the pilot yet, closes the
+panel, and waits for the server to put them in the hull they built. That
+second assertion is the one worth having a browser for: the panel drafts, so
+nothing is supposed to reach the room until it closes, and no test on either
+side of the wire can see both halves of that. It asks again where the close is
+refused, because nothing pauses while that menu is up and a ship costs a full
+bar, so a stray round between the last press and the close is a refusal by
+design; what it does insist on is that the client names the reason rather than
+dropping the work in silence.
+
+The ones still to write are every landing stop opened and backed out of,
+settings changed and the change observed, leave and rejoin. They are the smoke
+test, and they are quick: four profiles in under two minutes.
 
 What a journey measures is worth one caution. `boot-to-match` watches how far
 the ship ever got from its spawn, not where it finished, because a pilot who
@@ -284,11 +295,11 @@ real players while doing it.
 
 ## What is left
 
-Done: the stage, the probe, the four profiles, `boot-to-match`, the oracles
-above, and the CI job.
+Done: the stage, the probe, the four profiles, `boot-to-match`,
+`ship-change`, the oracles above, and the CI job.
 
 1. The rest of the journeys: every landing stop opened and backed out of,
-   settings changed and observed, hull changed mid-session, leave and rejoin.
+   settings changed and observed, leave and rejoin.
 2. The monkey, nightly.
 3. The player, and with it the soak curves and the counter report.
 4. The spectating connection that `agreesWithServer` needs, which is the

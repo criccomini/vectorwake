@@ -1168,19 +1168,25 @@ int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
 void sim_spawn_point(sim_state *s, const sim_settings *cfg, uint8_t team,
                      uint8_t cls, uint32_t nth, int32_t *x, int32_t *y);
 
-/* Put a pilot in a different hull. A respawn, not a costume change: back to
+/* Put a pilot in a different ship. A respawn, not a costume change: back to
  * your start at rest, a full bar of the new ship, upgrades gone, anything you
- * were carrying dropped -- and the team, the arena, and everyone else in it
+ * were carrying dropped, and the team, the arena, and everyone else in it
  * untouched.
  *
+ * A ship is the hull and the build together, so this is the one act for both.
+ * Trading a repel for a burst without leaving the hull is as much a new ship
+ * as climbing into another one, and it is refused, gated and paid for the
+ * same way. Asking for the ship you are already flying does nothing and
+ * succeeds.
+ *
  * Only from a full bar and only alive, because a fresh ship is a full bar:
- * ungated, changing hull is a way out of a fight you are losing. Asking for
- * the hull you are already in does nothing and succeeds.
+ * ungated, this is a way out of a fight you are losing.
  *
  * `kit` is the build to arrive in, which a caller passes because a build
  * belongs to a hull: the row a pilot spent on an Anvil is not the row they
- * spent on a Cipher, and only the caller holds both. NULL asks for the new
- * hull's own profile, which is what a bot and a test want.
+ * spent on a Cipher, and only the caller holds both. NULL keeps the build
+ * this pilot is already carrying, fitted to the new hull, which is what a bot
+ * and a test want.
  *
  * Returns 0, or -1 for an unknown ship or class, a dead pilot, or one who is
  * not at full energy. */

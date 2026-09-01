@@ -1,5 +1,29 @@
 # Landing, and the menu
 
+> **The ship stop is in a room too, and LEAVE SEAT is gone.** The panel the
+> landing opens is the panel the in-match column opens: the same five parts
+> over the same purse, drawn by the same code off the same rows. A pilot who
+> wants a different hull three minutes into a match gets one where they would
+> look for it.
+>
+> What differs is what closing it means. On the front page every turn of the
+> carousel and every credit is saved and sent as it happens, because out there
+> it costs nothing. In a match the panel edits a draft and nothing leaves the
+> client until it closes: a ship is the hull and the build together, changing
+> it wants a full bar and pays a respawn, and walking the roster from an Apex
+> to a Lattice would otherwise be six ship changes and six respawns. The head
+> says what closing it will do while it is open, and a close the bar cannot pay
+> for says so in the feed.
+>
+> The column is `ZONE`, `SHIP`, `SETTINGS`, `SIDE`. `LEAVE` is gone from it:
+> its flying answer handed the seat back, which is a state with nothing to do
+> in it, and its benched answer left the room for the stands, which is what
+> picking a game off the zone stop does. The ship roster's last page was the
+> same act again and went with it. Every note below about a leave stop, about
+> sitting out being the page past the roster, or about the ship page being
+> between matches only describes something that no longer exists. See
+> [decision 128](../architecture/decisions.md).
+
 > **The ship stop is five parts of a ship.** Body, guns, bombs, specials and
 > flair, each a row that opens the part it names, with the build credits under
 > the back bar on the menu and on every section. The tray is chrome the panel
@@ -373,24 +397,31 @@ vectorwake
 └ settings    sound · music · frames · fullscreen · bindings · about
 
 in a room
-├ side        which side you are on, and the page that crosses to the other:
-│             one row a side, in the room's own words and colors, with the
-│             count of people and machines apart. Only where the room has
-│             named some. See teams.md
-├ ship        the same roster, and only between matches, where a hull is not
-│             locked. A benched pilot has it whenever they are benched
-├ leave       one step out of wherever you are standing. Flying, the seat
-│             goes back and you are watching the same room, so the panel
-│             stays up and the corner's TAKE SEAT is the way in again.
-│             Benched, the room goes and the stands are what is left, which
-│             costs the match and is the one that asks first
-└ settings    the same page, because sound and fullscreen are needed there
+├ zone        the games list, which is also the way out: picking one leaves
+│             this game for the stands of the one picked, and picking the
+│             game you are in is the plain leave. It costs the match either
+│             way, so it asks first
+├ ship        the same panel the landing's ship stop opens, over a full
+│             purse. Editing it in a match is a draft: nothing reaches the
+│             room until the panel closes, and closing it wants a full bar
+│             and pays a respawn. See
+│             [decision 128](../architecture/decisions.md)
+├ settings    the same page, because sound and fullscreen are needed there
+└ side        which side you are on, and the page that crosses to the other:
+              one row a side, in the room's own words and colors, with the
+              count of people and machines apart. Only where the room has
+              named some. See teams.md
 ```
 
-No games on either row. The landing's zone stop is the list of them, and there
-is no landing behind a room you are already in, so getting from a match to
-another game is leave, leave, and then pick one. See
-[decision 98](../architecture/decisions.md).
+The two rows are the same four questions where they both have an answer. There
+was no ship stop in a room and no games list either, so a pilot who wanted a
+different hull three minutes in had to leave the game to get one, and getting
+to another game was leave, leave, and then pick one. Both are one stop now.
+
+`LEAVE SEAT` stood where `ZONE` does and is gone with decision 128: watching a
+room you hold a seat in is a state with nothing to do in it, and it was
+reachable from the ship menu as well, whose roster carried the same act on its
+last page.
 
 Five inputs, which is exactly what a d-pad has, what a phone can draw as four
 arrows and a button, and what a keyboard already sends. It is two axes rather
@@ -622,8 +653,8 @@ rule between what you can do to the account you are and how to be a different
 one, and a dot on the stop for a guest with something to lose. Zone drops the
 games list in place; picking one re-dials the stands to it, so the fight behind
 the glass becomes the one the key would join, and PLAY NOW stays the press that
-commits. Ship drops the roster by name with SPECTATE as the last row; picking
-one arrives in that ship exactly as the ship page's own row does. A list opens upward
+commits. Ship drops the panel that is the whole of a ship: five parts over the credits
+they are bought with, with the body a carousel of the roster. A list opens upward
 from the stop it belongs to, and what it covers stands down, the wordmark
 included, the same way the clock band stands down under the drawer. Down the
 column that is the stops above the open one; along the rail nothing stands
@@ -633,8 +664,8 @@ The key breathes on the same slow swell the on-air tally uses, with its edge
 floored well above dark so the trough never reads as a key that stopped
 working. It is the one press this screen exists for. Enter is the same press,
 because a keyboard should not have to open a menu to start the game. It does
-what the ship stop says: a pilot who picked SPECTATE arrives watching, since
-the choice is written on the screen right over the key.
+what the ship stop says: the hull on that stop is the hull this press flies,
+since turning the carousel is the whole of choosing one.
 
 **The shape is a question about height,** which is decision 91. A column costs
 about 260 points whatever the window is: a third of a monitor, which is what it

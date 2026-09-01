@@ -93,6 +93,14 @@ polls the probe and fails with the client's last account of itself. A sleep
 long enough to be reliable on a slow machine is wasted on a fast one, and a
 sleep short enough to be quick is a flake.
 
+**A press waits for its control to stop moving.** Panels here arrive by
+sliding: a column rises out of the key that raised it and a page climbs up
+through the bottom edge, over about a fifth of a second. `pilot.tap` reads the
+box, then reads it again until two readings put it in the same place, because
+a press aimed at a box read mid-slide lands where that box used to be, which
+by then is a different control. Aimed at the second stop of the menu column it
+opened the fourth, and did it every time.
+
 ## What is not built yet
 
 The monkey and the player, per the build order in the design. And the oracle

@@ -2191,8 +2191,10 @@ static void test_lifecycle(sim_map *m, const sim_settings *base) {
         CHECK(s.ships[0].respawn_at == 200, "and still owes the full wait");
     }
 
-    /* The hull you are already in is not a change, and must not cost you the
-     * upgrades that picking it would otherwise throw away. */
+    /* The ship you are already flying is not a change, and must not cost you
+     * the upgrades that picking it would otherwise throw away. The row is
+     * compared as it fits, so a caller handing back the build already on the
+     * ship is asking for the ship it is in however it spelled the row. */
     {
         static sim_state s;
         sim_init(&s, 1);
@@ -2201,6 +2203,43 @@ static void test_lifecycle(sim_map *m, const sim_settings *base) {
         s.ships[0].energy = sim_eff_max_energy(&cfg.classes[APEX], &s.ships[0]);
         CHECK(sim_set_ship_class(&s, &cfg, 0, APEX, NULL) == 0, "asking for it succeeds");
         CHECK(s.ships[0].up[SIM_UP_ENERGY] == 4, "and costs nothing");
+        uint8_t same[SIM_SLOT_COUNT];
+        memcpy(same, s.ships[0].kit, sizeof same);
+        CHECK(sim_set_ship_class(&s, &cfg, 0, APEX, same) == 0,
+              "and so does handing back the build it is wearing");
+        CHECK(s.ships[0].up[SIM_UP_ENERGY] == 4, "which also costs nothing");
+    }
+
+    /* A build changed under the same hull is a new ship: the same gate, the
+     * same respawn, and the same refusal to hand ammunition back. Without
+     * this, the ship menu is two acts that cost differently. Climb into
+     * another hull and you pay a respawn; trade a charge for a rung and you
+     * pay nothing, which makes a refit the way out of a fight you are
+     * losing. */
+    {
+        static sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        uint8_t row[SIM_SLOT_COUNT];
+        memcpy(row, s.ships[0].kit, sizeof row);
+        row[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 2;
+        sim_kit_fit(&cfg, APEX, row);
+        CHECK(memcmp(row, s.ships[0].kit, sizeof row) != 0,
+              "the row asked for is not the row on the ship");
+        step_n(&s, &cfg, SIM_BTN_THRUST, 0, 30);
+        CHECK(s.ships[0].y != s.ships[0].spawn_y, "the pilot had flown off");
+        s.ships[0].energy -= 1;
+        CHECK(sim_set_ship_class(&s, &cfg, 0, APEX, row) == -1,
+              "a damaged pilot cannot change build either");
+        CHECK(memcmp(s.ships[0].kit, row, sizeof row) != 0,
+              "and is left flying the one they had");
+        step_n(&s, &cfg, 0, 0, 40);      /* recharge to the top */
+        CHECK(sim_set_ship_class(&s, &cfg, 0, APEX, row) == 0,
+              "and can once the bar is full again");
+        CHECK(memcmp(s.ships[0].kit, row, sizeof row) == 0, "in the new row");
+        CHECK(s.ships[0].cls == APEX, "on the hull they never left");
+        CHECK(s.ships[0].x == s.ships[0].spawn_x
+              && s.ships[0].y == s.ships[0].spawn_y, "back at the start");
     }
 
     /* A bomb detonating on a wall damages a nearby enemy through splash. */

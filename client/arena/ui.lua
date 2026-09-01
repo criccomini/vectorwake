@@ -4930,8 +4930,7 @@ local function land_row(kx, kw, y, h, r)
                               HULL_ART_R * F.scale), col, a)
         end
         txt(r.label, kx + kw / 2, y + h - noteh - nameh / 2,
-            TYPE.LEAD * F.scale, pal.a(col, a), "center", MENU_FONT,
-            r.value ~= "spectate")
+            TYPE.LEAD * F.scale, pal.a(col, a), "center", MENU_FONT, true)
         local ny = y + h - noteh + pages.NOTE_LINE * F.scale / 2
         for _, line in ipairs(lines) do
             -- Raw, because `note_lines` cased the sentence once before it
@@ -5142,9 +5141,13 @@ end
 -- The stops exist because the drawer went undiscovered: a first visit met
 -- PLAY NOW and a hamburger, deployed into whatever the stands were showing,
 -- and never learned there was another game or another ship to be. All three
--- open lists in place, and SPECTATE is the ship list's last row, exactly as
--- the ship page has it. Mocked in .design/start-flow, where the column won
+-- open lists in place. Mocked in .design/start-flow, where the column won
 -- over a rail along the foot and a line of pressable words.
+--
+-- The ship list carried SPECTATE as its last row until decision 128. The
+-- front page is the stands already, so a row asking to watch was asking for
+-- the screen it was drawn on, and the zone stop beside it is what says which
+-- game is being watched.
 --
 -- Account was the odd one until decision 99: a door that opened the drawer on
 -- a pilot page carrying the career over the account acts. The career went to
@@ -5275,7 +5278,7 @@ local function landing(land, covered)
                 {zone_box, "zone", land.zone, "land_zone", open == "zone",
                  {raw = true}},
                 {ship_box, "ship", land.ship, "land_ship", open == "ship",
-                 {raw = not land.watching}},
+                 {raw = true}},
             }) do
                 local box, label, value, action, lit, o =
                     s[1], s[2], s[3], s[4], s[5], s[6]
@@ -5365,6 +5368,13 @@ function M.col_walk()
             if r.action == "menu_stop" or r.action == "menu_pick"
                or r.action == "menu_row" or r.action == "menu_back"
                or r.action == "menu_go"
+               -- And the ship panel's own rows, which are the landing's: the
+               -- same five sections, carousel, slots and flair, published
+               -- under the same names because they are the same controls.
+               -- The way out of it is the head's `menu_back`, already above.
+               or r.action == "land_sect" or r.action == "land_pick_ship"
+               or r.action == "land_kit_row" or r.action == "land_flair"
+               or r.action == "land_kit_reset"
             then
                 out[#out + 1] = r
             end
@@ -5428,6 +5438,17 @@ function M.col_side(dir)
     if M.menu_column then
         if M.col_sel == "menu_row" then
             return "menu_step", {index = M.col_sel_value, dir = dir}
+        end
+        -- The ship panel answers here too, on the same rows and with the same
+        -- two keys: it is the landing's panel standing in the menu's column.
+        if M.col_sel == "land_kit_row" then
+            return "land_kit_step", {slot = M.col_sel_value, dir = dir}
+        end
+        if M.col_sel == "land_flair" then
+            return "land_flair_step", {index = M.col_sel_value, dir = dir}
+        end
+        if M.col_sel == "land_pick_ship" then
+            return "land_page_ship", dir
         end
         return nil
     end
@@ -6857,17 +6878,23 @@ function M.menu(v)
     if open then
         -- The sides, one row each. A row per side rather than a stepper: with
         -- three or more, arrows would walk a pilot through every team between
-        -- here and the one they want.
+        -- here and the one they want. The games are the same shape, and are
+        -- the same list the landing's zone stop opens.
         local list = nil
-        if open.stop == "side" then
+        if open.stop == "side" or open.stop == "zone" then
             list = {}
             for _, r in ipairs(v.rows) do
-                list[#list + 1] = {label = r.label, note = r.detail,
+                list[#list + 1] = {label = r.label, note = r.note or r.detail,
                                    raw = r.named, here = r.mark,
-                                   tint = r.tint,
+                                   tint = r.tint, dim = r.dim,
                                    action = "menu_pick", value = r.index}
             end
         end
+        -- And the ship, which is a panel rather than a list: the landing's
+        -- own, drawn by the same function off the same five sections. What
+        -- differs between the two places is what closing it means, and that
+        -- is settled in the arena. See `land_panel`.
+        local panel = open.stop == "ship" and v.panel or nil
         -- As tall as what it holds, eased between one page's worth and the
         -- next: walking from settings into the controls board slides the glass
         -- to the new page's height rather than swapping two rectangles.
@@ -6882,7 +6909,8 @@ function M.menu(v)
         -- looked. It did not look here, because this list is drawn from the
         -- column rather than from the landing.
         local prh = (M.compact and 40 or 44) * F.scale
-        local tall = list and pages.list_h(list, prh)
+        local tall = (panel and pages.ship_h(panel, prh))
+            or (list and pages.list_h(list, prh))
             or pages.page_h(v, prh, 24 * F.scale, noted)
         local px, py, pw, ph =
             panel_geom(panel_height(menu_h, math.min(tall, panel_room())))
@@ -6892,7 +6920,17 @@ function M.menu(v)
         py = py + (1 - at) * (F.h - py) + rise
         -- The rows are the panel's now, so that is the span they are lit at.
         column_x, column_w = px, pw
-        if list then
+        if panel then
+            -- Named by the section that is open rather than by the stop, the
+            -- way the landing names it: one level in the head says ship, two
+            -- levels in it says body, and back steps one of those at a time.
+            -- The tray rides the frame at both levels, so the purse is on
+            -- screen wherever a credit is spent.
+            local top, foot = panel_frame(px, py, pw, ph,
+                                          panel.label or open.label,
+                                          "menu_back", v.foot, nil, panel)
+            land_panel(px, pw, top, foot, panel, prh)
+        elseif list then
             local top = panel_frame(px, py, pw, ph, open.label, "menu_back")
             land_list(px, pw, top, list, prh)
         else

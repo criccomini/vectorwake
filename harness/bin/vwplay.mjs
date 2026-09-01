@@ -11,8 +11,12 @@
 
 import { runAll, RUNS } from '../src/run.mjs'
 import * as bootToMatch from '../src/journeys/boot-to-match.mjs'
+import * as shipChange from '../src/journeys/ship-change.mjs'
 
-const JOURNEYS = { 'boot-to-match': bootToMatch }
+const JOURNEYS = {
+  'boot-to-match': bootToMatch,
+  'ship-change': shipChange
+}
 
 function parse (argv) {
   const opts = { profiles: null, verbose: false, headed: false }

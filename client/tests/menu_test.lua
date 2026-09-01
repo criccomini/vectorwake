@@ -109,11 +109,15 @@ package.loaded["arena.directory"] = {
 }
 package.loaded["arena.sfx"] = {ui = function() end, master_gain = function() end,
                                music_gain = function() end}
+-- What the last save wrote, so a test can ask what reached the disk rather
+-- than what the module happens to be holding.
+local saved
 _G.sys = {get_config_string = function(_, d) return d end,
           get_config_int = function(_, d) return d end,
           get_engine_info = function() return {version = "test"} end,
           get_save_file = function() return "/tmp/vw-test-save" end,
-          load = function() return {} end, save = function() return true end,
+          load = function() return {} end,
+          save = function(_, d) saved = d return true end,
           get_sys_info = function() return {system_name = "Linux"} end}
 _G.sound = setmetatable({}, {__index = function() return function() end end})
 _G.html5 = nil
@@ -178,10 +182,16 @@ end
 
 -- --- the column's stops, and which of them a room offers -------------------
 --
--- The way out of the seat, the machine, and which side you are on, top down in
--- that order. LEAVE is farthest from the key that resumes on purpose: the
--- press that ends a match should not be the neighbor of the press that ends
--- the menu.
+-- Where you are, what you fly, the machine, and which side you are on, top
+-- down in that order. ZONE is farthest from the key that resumes on purpose:
+-- the press that can end a match should not be the neighbor of the press that
+-- ends the menu.
+--
+-- LEAVE stood where ZONE does and had two answers: benched it left the room
+-- for the stands, flying it handed the seat back and left you watching the
+-- room you were in. The second is gone with decision 128, and what replaces
+-- the stop is the games list the landing already opens: leaving is choosing
+-- where to be instead.
 --
 -- There is no rail and no tab row here to grow a stop and lose one. A stop a
 -- room cannot offer is not in the list, and the list is the whole of the
@@ -191,34 +201,33 @@ menu.open = true
 menu.home = false
 menu.watching = false
 menu.zone = "chaos"
+menu.class = 0
 menu.stack = {}
 net.teams = {}
 
-check("a pilot in a hull gets the way out and the machine",
-      stop_names() == "leave/settings", stop_names())
+check("a pilot in a hull gets where they are, what they fly and the machine",
+      stop_names() == "zone/ship/settings", stop_names())
 
--- Leaving goes one step, and which step is whichever one you are standing on.
--- Flying, it hands the seat back and leaves you watching the same room, so the
--- column stays up and the corner's TAKE SEAT is the way back in. Benched, the
--- seat is already gone and the step is out of the room, which costs the match.
---
--- The answer on the stop is the thing being left rather than a sentence about
--- leaving it, which is the grammar every stop in this column speaks and the
--- landing's speak too: the label asks and the answer is a name. "To the
--- stands" was a phrase in the slot a name goes in, set in the face the arena
--- reserves for data, and it read as one.
-local flying_leave = stop_of("leave")
-check("flying, the leave stop hands the seat back",
-      flying_leave.act == "leave_seat" and flying_leave.value == "seat",
-      tostring(flying_leave.act) .. "/" .. tostring(flying_leave.value))
+-- The answer on a stop is a name rather than a sentence about the stop, which
+-- is the grammar every stop in this column speaks and the landing's speak
+-- too: the label asks and the answer names. So the zone stop answers with the
+-- game you are in, in the words the games list has for it, and the ship stop
+-- with the hull you are flying.
+local zone_stop = stop_of("zone")
+check("the zone stop opens the games and says which one you are in",
+      zone_stop.go == "zone" and zone_stop.value == "Chaos"
+      and zone_stop.named == true,
+      tostring(zone_stop.go) .. "/" .. tostring(zone_stop.value))
+
+local ship_stop = stop_of("ship")
+check("the ship stop opens a panel and says what you fly",
+      ship_stop.panel == true and ship_stop.value == "Apex"
+      and ship_stop.go == nil,
+      tostring(ship_stop.value))
 
 menu.watching = true
-local benched_leave = stop_of("leave")
-check("benched, the same stop is the way out of the room",
-      benched_leave.act == "leave" and benched_leave.value == "game",
-      tostring(benched_leave.act) .. "/" .. tostring(benched_leave.value))
-check("and the column is the same three stops either way",
-      stop_names() == "leave/settings", stop_names())
+check("and the column is the same stops from the bench",
+      stop_names() == "zone/ship/settings", stop_names())
 
 -- Settings is a page rather than a value, so it is the one stop here with
 -- nothing to say in the slot the others put an answer in.
@@ -242,29 +251,29 @@ net.teams = {{team = 1, name = "Pylon", humans = 3, bots = 1},
              {team = 2, name = "Caisson", humans = 4, bots = 0}}
 net.my_team = 1
 net.my_team_name = function() return "Pylon" end
-check("and one that has puts it last, under the other two",
-      stop_names() == "leave/settings/side", stop_names())
+check("and one that has puts it last, under the other three",
+      stop_names() == "zone/ship/settings/side", stop_names())
 local side = stop_of("side")
 check("the side stop says which side you fly for, in its own name",
       side.value == "Pylon" and side.named == true and side.go == "side",
       tostring(side.value))
 
--- The view carries the same three, and says which one is holding a page open.
+-- The view carries the same four, and says which one is holding a page open.
 -- That is the whole of "where am I" now: a lit stop with its panel climbing
 -- off it. The drawer answered it five ways at once, with a rail, a stage, a
 -- topbar, a head and a preview, and those checks went with them.
 open()
 local v = menu.view()
 check("the view carries the stops the column is drawn from",
-      #v.stops == 3 and v.stops[1].stop == "leave"
-      and v.stops[3].stop == "side", #v.stops .. " stops")
+      #v.stops == 4 and v.stops[1].stop == "zone"
+      and v.stops[4].stop == "side", #v.stops .. " stops")
 check("and none of them is open over the bare column",
       not v.stops[1].open and not v.stops[2].open and not v.stops[3].open)
 open("settings")
 v = menu.view()
 check("the stop whose page is up is the lit one",
-      v.stops[2].open == true and v.stops[1].open == false,
-      tostring(v.stops[2].open))
+      v.stops[3].open == true and v.stops[1].open == false,
+      tostring(v.stops[3].open))
 check("and the view still names who is reading, for the pages that need it",
       v.pilot ~= nil and v.pilot.name == menu.name,
       tostring(v.pilot and v.pilot.name))
@@ -320,29 +329,31 @@ check("closing forgets the page, the question and the key it was waiting for",
 
 -- --- the way out of the room, and the card in front of it ------------------
 --
--- Handing a seat back costs nothing that cannot be taken again, so it happens
--- on the press. Leaving the room costs the match, so it asks. The card owns
--- the keys while it is up, the answer that changes nothing sits under the
--- cursor, and escape answers it with that one rather than shutting the panel.
+-- The way out is a game off the zone stop's list, including the one you are
+-- already in: leaving is choosing where to be instead. It costs the match
+-- either way, so it asks. The card owns the keys while it is up, the answer
+-- that changes nothing sits under the cursor, and escape answers it with that
+-- one rather than shutting the panel.
 
 open()
 menu.home, menu.watching = false, false
 menu.ask = nil
-local act, moved = menu.press_stop("leave")
-check("flying, the stop hands the seat back on the press",
-      act == "leave_seat" and moved and menu.ask == nil, tostring(act))
--- Nothing about where this client is has moved, so the panel stays where it
--- is: what changed is on the glass behind it.
-check("and leaves the panel standing", menu.open)
+local act, moved = menu.press_stop("zone")
+check("the zone stop opens the games rather than acting",
+      act == nil and moved and menu.ask == nil and menu.at() == "zone",
+      tostring(act))
+check("and the list is the games the fleet is running",
+      #rows() == 1 and rows()[1].label == "Chaos", labels())
+check("with a mark on the one you are in", rows()[1].mark == true)
 
-menu.watching = true
-act, moved = menu.press_stop("leave")
-check("benched, it asks before it costs the match",
+act, moved = menu.press_row(1)
+check("and a game asks before it costs the match",
       act == nil and moved and menu.ask ~= nil, tostring(act))
+check("naming the game it would leave for", menu.pending == "chaos")
 check("and the card names the game in the words the games list has for it",
       string.find(menu.ask.head, "Chaos", 1, true) ~= nil, menu.ask.head)
 check("the card offers leaving and staying, nothing else",
-      #menu.ask.keys == 2 and menu.ask.keys[1].act == "leave",
+      #menu.ask.keys == 2 and menu.ask.keys[1].act == "leave_for",
       #menu.ask.keys .. " answers, first is "
           .. tostring(menu.ask.keys[1].act))
 check("with the answer that changes nothing under the cursor",
@@ -363,12 +374,13 @@ check("and back the other way", menu.ask.sel == 2,
 menu.ask.sel = 1
 act, moved = menu.step({go = true})
 check("and the answer that leaves is a leave",
-      act == "leave" and moved and menu.ask == nil, tostring(act))
+      act == "leave_for" and moved and menu.ask == nil, tostring(act))
 
 -- Escape answers it rather than shutting the panel, and answers it with the
 -- one that changes nothing: the key that gets out of everything else in here
 -- has to get out of this without leaving the game by accident.
-menu.press_stop("leave")
+open("zone")
+menu.press_row(1)
 act, moved = menu.step({back = true})
 check("escape answers the question instead of shutting the menu",
       act == nil and moved and menu.ask == nil and menu.open,
@@ -615,7 +627,6 @@ do
     }
     menu.charge_flip = false
     menu.class = 0
-    menu.spectate = false
 
     local function keys_row()
         for _, r in ipairs(menu.sect_rows(menu.class or 0, "flair")) do
@@ -1455,10 +1466,7 @@ do
 
     menu.kit = nil
     menu.class = 0
-    -- Off the landing, `spectating` is `M.watching` rather than the saved
-    -- preference: this block is asking what the ship menu says about a pilot
-    -- with a seat.
-    menu.home, menu.spectate, menu.watching = true, false, false
+    menu.home, menu.watching = true, false
     local panel = menu.ship_panel(nil)
     local kinds, opens = {}, {}
     for _, r in ipairs(panel.rows) do
@@ -1561,15 +1569,16 @@ do
     check("and every one of them names two rows it can be checked against",
           blank == nil, tostring(blank))
 
-    -- Turning wraps at either end, and sitting out is the page past the
-    -- roster: no ship to draw, and a sentence where one would have been.
+    -- Turning wraps at either end, and every page of it is a hull. Sitting
+    -- out was the page past the roster until decision 128, so one more step
+    -- off the last ship handed a seat back.
     check("the carousel wraps at either end",
-          menu.hull_page(7, 1) == 0 and menu.hull_page(0, -1) == 7,
-          menu.hull_page(7, 1) .. "/" .. menu.hull_page(0, -1))
-    local out = menu.sect_rows(0, "body", 7)
-    check("and sitting out is its last page",
-          #out == 1 and out[1].value == "spectate" and out[1].cls == nil
-          and out[1].note ~= nil, #out .. " rows")
+          menu.hull_page(6, 1) == 0 and menu.hull_page(0, -1) == 6,
+          menu.hull_page(6, 1) .. "/" .. menu.hull_page(0, -1))
+    local out = menu.sect_rows(0, "body", 6)
+    check("and its last page is the last ship",
+          out[1] ~= nil and out[1].kind == "art" and out[1].value == 6
+          and out[1].cls == 6, #out .. " rows")
     -- A stat that steps nothing would take a credit and change nothing, so no
     -- slot is offered for one even here.
     local slots = 0
@@ -1780,23 +1789,87 @@ do
           menu.sect_reading(0, "guns"))
     menu.kit = nil
 
-    -- Sitting out is the roster's last row rather than a page past it, and
-    -- the menu reads it off body. Nothing else about the menu changes: a
-    -- pilot watching can still set up the ship they will arrive in.
-    menu.spectate = true
-    local watching = menu.ship_panel(nil)
-    check("sitting out is what body reads",
-          watching.rows[1].detail == "spectate",
-          tostring(watching.rows[1].detail))
+    -- The menu is the same five parts from the bench, and body reads the
+    -- hull a watcher would fly back in rather than the fact that they are
+    -- watching: sitting out is not something the ship menu can ask for any
+    -- more (decision 128), so it has nothing to say about it.
+    menu.watching = true
+    local benched = menu.ship_panel(nil)
+    check("body reads the hull a watcher would fly back in",
+          benched.rows[1].detail == "Apex",
+          tostring(benched.rows[1].detail))
     local still = 0
-    for _, r in ipairs(watching.rows) do
+    for _, r in ipairs(benched.rows) do
         if r.kind == "sect" then still = still + 1 end
     end
-    check("and the other four parts are still there", still == 5,
+    check("and all five parts are still there", still == 5,
           still .. " parts")
-    menu.spectate = false
+    menu.watching = false
 
+    -- --- the draft, which is what makes this panel an editor in a match ----
+    --
+    -- A ship is the hull and the build together and changing it costs a
+    -- respawn, so in a match it is settled once rather than as it is read.
+    -- Walking the carousel from an Apex to a Lattice and trading a charge on
+    -- the way is one ship change, not seven, and nothing about it leaves this
+    -- client until the arena says so.
     menu.kit = nil
+    menu.class = 0
+    net.kits = {}
+    net.set_kit = function(cls, kit)
+        net.kits[#net.kits + 1] = {cls = cls, kit = kit}
+        return true
+    end
+
+    menu.draft_open()
+    check("a draft stands as soon as the panel opens",
+          menu.drafting() and not menu.drafted())
+    check("and looking at the ship is not asking for one",
+          #net.kits == 0)
+
+    menu.pick_profile(3)
+    check("turning the carousel moves the hull the panel draws",
+          menu.class == 3 and menu.drafted())
+    -- Flair costs nothing and crosses no wire, so it takes effect and is
+    -- saved as it is pressed. What it must not save is the draft standing
+    -- over it: a pilot who backs out of a ship should not boot into it.
+    saved = nil
+    menu.save_identity()
+    check("a save while a draft stands writes the ship under it",
+          saved ~= nil and saved.class == 0, tostring(saved and saved.class))
+    menu.build_step(3, 19, -1)
+    check("and spending moves the build",
+          menu.build_of(3)[19] == 0 and menu.build_edited())
+    check("but nothing has been asked of the room yet",
+          #net.kits == 0, #net.kits .. " sent")
+
+    -- Backing out puts the ship back the way the draft found it, hull and
+    -- row together: a pilot who never got the ship they were building must
+    -- not be left with a menu describing one they are not in.
+    menu.draft_drop()
+    check("dropping a draft puts the ship back",
+          menu.class == 0 and menu.kit == nil and not menu.drafting()
+          and #net.kits == 0, tostring(menu.class))
+
+    -- And keeping one is the pilot's ship, saved. The arena sends it, since
+    -- only it knows whether there is a room to send it to.
+    menu.draft_open()
+    menu.pick_profile(2)
+    menu.build_step(2, 19, -1)
+    menu.draft_keep()
+    check("keeping a draft keeps the ship that was built",
+          menu.class == 2 and menu.build_of(2)[19] == 0
+          and not menu.drafting())
+    menu.send_build(menu.class)
+    check("and it goes out as one message carrying both",
+          #net.kits == 1 and net.kits[1].cls == 2
+          and (net.kits[1].kit[19] or 0) == 0,
+          #net.kits .. " sent, slot 19 at "
+              .. tostring(net.kits[1] and net.kits[1].kit[19]))
+
+    net.set_kit = nil
+    menu.kit = nil
+    menu.class = 0
     _G.sim = kept_core
 end
 

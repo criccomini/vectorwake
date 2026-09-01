@@ -575,8 +575,15 @@ pub(crate) async fn serve_client(
                 z.push_status();
             }
             C2S_KIT => {
-                // A build, for the hull it was spent on. Read as pairs: a
-                // count of spent slots, then a slot and a count for each.
+                // A ship: the hull it names and the build spent on it. Read
+                // as pairs, a count of spent slots then a slot and a count
+                // for each.
+                //
+                // This is the whole of a ship change now. From a pilot in the
+                // air the room applies it under the core's gate, a full bar
+                // and a respawn, whether what moved is the hull or the row;
+                // from a benched one it is dealt in place. See
+                // `Room::set_ship_kit`, which is where that choice is made.
                 //
                 // Nothing is validated here beyond the shape, and that is
                 // deliberate rather than lax. The core fits every build to
@@ -585,12 +592,13 @@ pub(crate) async fn serve_client(
                 // twenty-three slots gets a legal build back rather than an
                 // error, and the arena deals the fitted row. What a hostile
                 // client cannot do is spend more than a player, and what it
-                // cannot do in place is reload: a build dealt onto the hull
-                // a pilot is already in clamps the rack down and never up.
+                // cannot do is reload: a build dealt either way clamps the
+                // rack down and never up.
                 //
                 // Only from a pilot in a seat. A watcher asking to spend
                 // credits is asking about a ship they are not in, and the
-                // way back into one is `C2S_SHIP`.
+                // way back into one is `C2S_SHIP`, which their client sends
+                // first.
                 if data.len() >= 3 {
                     let cls = data[1];
                     let spent = data[2] as usize;

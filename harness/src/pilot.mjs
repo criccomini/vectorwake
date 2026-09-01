@@ -202,7 +202,7 @@ export class Pilot {
       s => pickBox(s, action, opts.value) || covered(s, action, opts.value),
       { timeout: opts.timeout || 10000 })
 
-    const box = pickBox(seen, action, opts.value)
+    let box = pickBox(seen, action, opts.value)
     if (!box) {
       const thief = covered(seen, action, opts.value)
       throw new Fault('covered',
@@ -210,6 +210,17 @@ export class Pilot {
         'The control is published under something that takes the press. ' +
         'Reach it with the cursor instead, or fix the priority.')
     }
+
+    // And where it will still be when the press lands.
+    //
+    // Panels in this client arrive by sliding: a column rises out of the key
+    // it was raised from and a page climbs up through the bottom edge, over
+    // about a fifth of a second. A press aimed at a box read mid-slide lands
+    // where that box used to be, which is a different control by then. That is
+    // not a flake to retry, it is a press on the wrong row: it opened the
+    // fourth stop of the menu column instead of the second, and did it every
+    // time.
+    box = await this.stillness(action, opts) || box
 
     if (this.profile.input === 'touch') {
       await this.touch(box.x, box.y)
@@ -223,6 +234,30 @@ export class Pilot {
       await this.page.mouse.up()
     }
     return box
+  }
+
+  /**
+   * The box `action` publishes, once it has stopped moving, or null if it
+   * never does.
+   *
+   * Two readings that agree is the whole test. Nothing on this screen moves
+   * except while something is opening or closing, so a box in the same place
+   * across a beat is a box at rest, and one still travelling is one this
+   * press has no business landing on yet.
+   */
+  async stillness (action, opts = {}, beat = 90, tries = 25) {
+    let last = null
+    for (let i = 0; i < tries; i++) {
+      const seen = await this.read()
+      const box = pickBox(seen, action, opts.value)
+      if (box && last &&
+          Math.abs(box.x - last.x) < 1 && Math.abs(box.y - last.y) < 1) {
+        return box
+      }
+      last = box
+      await this.page.waitForTimeout(beat)
+    }
+    return last
   }
 
   /** Touch a flight pad by name: guns, bombs, or a charge slot. */

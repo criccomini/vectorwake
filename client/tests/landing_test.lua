@@ -208,7 +208,7 @@ local GUNS = {
 local BODY = {
     label = "body", class = 1, free = 2, credits = 7,
     rows = {
-        {kind = "art", label = "Wedge", value = 1, cls = 1, at = 1, pages = 8,
+        {kind = "art", label = "Wedge", value = 1, cls = 1, at = 1, pages = 7,
          note = "A deep pool that fills slower than any, on a hull slow to "
              .. "turn"},
         {kind = "stat", label = "speed", share = 0.2},
@@ -216,16 +216,6 @@ local BODY = {
         {kind = "stat", label = "turn", share = 0.09},
         {kind = "stat", label = "energy", share = 0.71},
         {kind = "stat", label = "recharge", share = 0.0},
-    },
-}
-
--- Sitting out is the page past the roster, and carries no ship to draw and no
--- flight to read.
-local WATCHING = {
-    label = "body", class = 1, free = 2, credits = 7,
-    rows = {
-        {kind = "art", label = "spectate", value = "spectate", at = 7,
-         pages = 8, note = "watch the room from nobody's cockpit"},
     },
 }
 
@@ -923,14 +913,6 @@ do
           shouted == nil, tostring(shouted))
     frame(1440, 810, {land = land_in(BODY), col_open = "ship"})
 
-    -- Sitting out is the page past the roster: no ship to draw, and the
-    -- sentence about it standing where one would have been.
-    frame(1440, 810, {land = land_in(WATCHING), col_open = "ship"})
-    check("sitting out is a page of the carousel",
-          word("Spectate") ~= nil and box("land_pick_ship") ~= nil,
-          table.concat({tostring(word("Spectate") ~= nil),
-                        tostring(box("land_pick_ship") ~= nil)}, " "))
-
     -- Flair is the two rows that cost nothing, and they take a press.
     frame(1440, 810, {land = land_in(FLAIR), col_open = "ship"})
     local flair
@@ -940,15 +922,6 @@ do
     check("flair carries the wake and takes a press",
           word("Wake") ~= nil and flair ~= nil)
     frame(1440, 810, {col_open = "ship"})
-
-    -- Sitting out is the page past the roster, and carries no rows because
-    -- there is no ship to say anything about.
-    frame(1440, 810, {land = {name = LAND.name, zone = LAND.zone,
-                              ship = "spectate", watching = true,
-                              zones = LAND.zones,
-                              panel = WATCHING}})
-    check("the ship stop says sitting out in the interface's own case",
-          word("SPECTATE") ~= nil and word("spectate") == nil)
 end
 
 -- --- the account stop opens the same kind of list ---------------------------
@@ -1562,10 +1535,9 @@ do
             menu = {
                 hull_page = function(at, dir) return at + dir end,
                 panel_home = function() return 0 end,
-                hull_count = function() return 7 end,
                 pick_profile = function(at)
                     flew[#flew + 1] = at
-                    return at == "spectate" and "spectate" or "ship"
+                    return "ship"
                 end,
             },
             sfx = {ui = function() end},
@@ -1579,12 +1551,14 @@ do
         check("and one step right flies the ship it lands on",
               flew[1] == 1 and flew.applied == "ship" and ui_stub.col_hull == 1,
               tostring(flew[1]) .. ", " .. tostring(flew.applied))
-        -- And off the end of the roster, where the page past the last hull is
-        -- sitting out and is chosen by turning onto it like any other.
+        -- And every page of it is a hull. Sitting out was the page past the
+        -- last one until decision 128, so turning one more step off the end
+        -- of the roster handed a seat back; there is nothing on this carousel
+        -- now but ships.
         ui_stub.col_hull = 6
         handler(nil, "land_page_ship", 1)
-        check("and turning past the last one sits out",
-              flew[2] == "spectate" and flew.applied == "spectate",
+        check("and every page it turns to is a ship",
+              type(flew[2]) == "number" and flew.applied == "ship",
               tostring(flew[2]))
     end
 
@@ -1609,7 +1583,11 @@ do
     if head then
         local ui_stub = {}
         local env = {ui = ui_stub, sfx = {ui = function() end},
-                     menu = {panel_home = function() return 0 end},
+                     menu = {panel_home = function() return 0 end,
+                             -- Which column the section is opening in: the
+                             -- landing's, unless a test says otherwise.
+                             stop_open = function() return ui_stub.stop end},
+                     menu_cursor = function() ui_stub.col_sel = "menu_back" end,
                      land_shut = function() ui_stub.shut = true end}
         local on_head = loadstring("return function()" .. head .. "\nend",
                                    "head")
@@ -1651,6 +1629,17 @@ do
                   ui_stub.col_sect == "guns"
                   and ui_stub.col_sel == "land_back",
                   tostring(ui_stub.col_sel))
+            -- And the same section opened from the in-match column stands on
+            -- that column's own way back, which is named differently because
+            -- its levels are a stack rather than a panel over a panel.
+            ui_stub.stop = "ship"
+            ui_stub.col_sel, ui_stub.col_sel_value = "land_sect", "bombs"
+            sect(nil, "land_sect", "bombs")
+            check("and on the menu column's way back in a match",
+                  ui_stub.col_sect == "bombs"
+                  and ui_stub.col_sel == "menu_back",
+                  tostring(ui_stub.col_sel))
+            ui_stub.stop = nil
         end
 
         -- And out of one, which leaves the cursor on the part it was opened

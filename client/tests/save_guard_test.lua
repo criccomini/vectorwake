@@ -42,7 +42,7 @@ package.loaded["arena.callsign"] = {
 }
 package.loaded["arena.directory"] = {
     rows = {}, note = "", tick = function() end, aim = function() end,
-    pilot_name = "",
+    pilot_name = "", label_of = function(z) return z or "" end,
 }
 package.loaded["arena.sfx"] = {ui = function() end, master_gain = function() end,
                                music_gain = function() end}

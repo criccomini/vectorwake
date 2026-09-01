@@ -50,10 +50,6 @@ M.watching = false      -- sitting out, set by the arena each frame
 -- and a zone name this client remembers from last time. Set by the arena each
 -- frame, and declared here because it is read before the first one.
 M.scenery = false
--- What you will arrive as, which the ship page sets and a join carries. It is
--- remembered like the hull is, because it is the same choice: a player who
--- came to watch is still there to watch after a reload.
-M.spectate = false
 M.pending = nil         -- the hull a row just asked for
 M.chosen = nil          -- the game a row just asked for
 -- Which game a press asked to be in, and nothing while none is waiting.
@@ -158,14 +154,6 @@ M.can_cap = false       -- whether this engine can be asked to cap frames
 -- bring the offer back after it has been dismissed.
 M.help_prompt_seen = false
 
--- Whether the ship page's answer is currently "no hull". In a game that is
--- what the connection says you are; on the home screen it is what you have
--- asked to arrive as. One question, two places it can be answered from.
-function M.spectating()
-    if M.home then return M.spectate end
-    return M.watching
-end
-
 -- The three things this client can be while the menu is up, said in the two
 -- flags the arena sets every frame.
 --
@@ -260,9 +248,20 @@ M.wake = 0
 M.WAKES = {"standard", "long", "none"}
 
 function M.save_identity()
+    -- A draft is not this pilot's ship yet, so what a save writes while one
+    -- stands is the ship it was drafted from.
+    --
+    -- Most of what a draft touches is held back by `ship_changed`, which
+    -- neither saves nor sends while one is up. Flair is not: a wake and which
+    -- key throws which charge cost nothing and cross no wire, so they take
+    -- effect as they are pressed and are saved on the spot. Without this,
+    -- pressing one of those rows halfway through drafting a ship would write
+    -- a hull the pilot may yet back out of, and they would boot into it.
+    local class = M.draft and M.draft.class or M.class
+    local kit = M.draft and M.draft.kit or M.kit
     pcall(sys.save, SAVE, {
-        name = M.name, class = M.class, volume = M.volume, music = M.music,
-        cap = M.cap, zone = M.zone, spectate = M.spectate,
+        name = M.name, class = class, volume = M.volume, music = M.music,
+        cap = M.cap, zone = M.zone,
         help_prompt_seen = M.help_prompt_seen,
         -- The wake, with the rest of what this pilot looks like.
         wake = M.wake,
@@ -272,7 +271,7 @@ function M.save_identity()
         -- The pilot's build, written as slot and count pairs so a save that
         -- outlives a change to the slot space carries nothing it cannot read
         -- back. Absent while they are flying the one everybody starts in.
-        kit = M.kit,
+        kit = kit,
         -- Only the keys that have been moved, so a stock keyboard writes
         -- nothing here at all and a control this build stops carrying does
         -- not leave a line behind it. See arena/binds.lua.
@@ -301,9 +300,6 @@ function M.load_identity()
         -- The game you were in last, so coming back puts the cursor on it and
         -- a returning player is one press from flying.
         if type(d.zone) == "string" then M.zone = d.zone end
-        -- What you last chose to arrive as. Saved beside the hull because it
-        -- is an answer to the same question the hull answers.
-        M.spectate = d.spectate == true
         M.help_prompt_seen = d.help_prompt_seen == true
         M.charge_flip = d.charge_flip == true
         -- The build, read back a slot at a time and refused where a number
@@ -598,6 +594,68 @@ function M.build_edited()
     return false
 end
 
+-- A draft of the ship, or nothing while the pilot is editing the one they
+-- will fly next time they arrive.
+--
+-- A ship is the hull and the build together, and in a match changing it is
+-- one act: it wants a full bar and it costs a respawn. So the panel opened
+-- from the in-match column edits a copy, and the arena settles it once, when
+-- the panel closes. Without that, walking the carousel from an Apex to a
+-- Lattice would be six ship changes and six respawns, and every credit spent
+-- on the way another one. The front page has no draft: out there each turn is
+-- what you will arrive as, which costs nothing and is worth saving at once.
+--
+-- `edited` is whether anything was actually touched. A pilot who opens the
+-- panel to look at their own ship and closes it again has not asked for
+-- anything, and must not be respawned for reading.
+M.draft = nil           -- {class, kit, edited}
+
+-- Start drafting, from the ship this pilot is in.
+function M.draft_open()
+    local kit = nil
+    if M.kit then
+        kit = {}
+        for slot, n in pairs(M.kit) do kit[slot] = n end
+    end
+    M.draft = {class = M.class, kit = kit, edited = false}
+end
+
+-- Whether a draft is standing, and whether it has been touched.
+function M.drafting() return M.draft ~= nil end
+function M.drafted() return M.draft ~= nil and M.draft.edited end
+
+-- Put the ship back the way the draft found it. Nothing was saved and nothing
+-- was sent while it stood, so this is the whole of undoing one.
+function M.draft_drop()
+    if not M.draft then return false end
+    M.class, M.kit = M.draft.class, M.draft.kit
+    M.draft = nil
+    return true
+end
+
+-- Keep it: what was drafted is this pilot's ship now. The caller tells the
+-- room, since only it knows whether there is one to tell.
+function M.draft_keep()
+    if not M.draft then return false end
+    M.draft = nil
+    M.save_identity()
+    return true
+end
+
+-- What just happened to the ship: saved and sent, or held in the draft.
+--
+-- One place, because a draft that leaked a single message would put a pilot
+-- in a ship they were still deciding on, and one that leaked a save would
+-- leave a hull they backed out of on their next boot.
+local function ship_changed(cls)
+    if M.draft then
+        M.draft.edited = true
+        return
+    end
+    M.save_identity()
+    M.send_build(cls)
+end
+
 -- Step one slot, by one credit, in the direction asked.
 --
 -- Refused rather than clamped where it cannot happen: up with nothing left to
@@ -620,8 +678,7 @@ function M.build_step(cls, slot, dir)
         M.kit = default_kit()
     end
     M.kit[slot] = want > 0 and want or nil
-    M.save_identity()
-    M.send_build(cls)
+    ship_changed(cls)
     return true
 end
 
@@ -630,8 +687,7 @@ end
 function M.build_reset(cls)
     if not M.build_edited() then return false end
     M.kit = nil
-    M.save_identity()
-    M.send_build(cls)
+    ship_changed(cls)
     return true
 end
 
@@ -844,16 +900,10 @@ local function sect_slots(cls, sect)
     return {}
 end
 
--- How many hulls the roster holds, which is also the page sitting out is on.
-function M.hull_count()
-    return #HULLS
-end
-
--- Which page body opens on: the ship being flown, or sitting out where that
--- is what has been chosen. The one place that default is written down, so the
--- drawing and the walking agree about where a fresh carousel is.
+-- Which page body opens on: the ship being flown. The one place that default
+-- is written down, so the drawing and the walking agree about where a fresh
+-- carousel is.
 function M.panel_home()
-    if M.spectating() then return #HULLS end
     return M.class or 0
 end
 
@@ -861,8 +911,13 @@ end
 -- landed. Where it lands is what the pilot flies: the arena picks the page
 -- this answers as it turns, so a pilot looking at an Anvil is in one. This
 -- only says which page, and knows nothing about who is flying what.
+--
+-- Seven pages, and it used to be eight: sitting out was the page past the
+-- roster, so turning one more step off the last hull benched you. Handing a
+-- seat back is not something a ship menu should be able to do by accident,
+-- and there is nowhere left in the game that does it. See decision 128.
 function M.hull_page(at, dir)
-    local n = #HULLS
+    local n = #HULLS - 1
     local to = (at or 0) + dir
     if to < 0 then to = n end
     if to > n then to = 0 end
@@ -965,7 +1020,6 @@ end
 -- to say about it: `menu_row` draws no detail for one.
 function M.sect_reading(cls, sect)
     if sect == "body" then
-        if M.spectating() then return "spectate", false end
         local h = HULLS[(M.class or 0) + 1]
         -- Quoted, because it is the ship's name rather than a word of this
         -- interface's own.
@@ -1169,20 +1223,19 @@ function M.flair_rows()
     return rows
 end
 
--- What the landing's ship stop says you will arrive as: the hull you fly, or
--- that you are sitting out.
+-- What a ship stop says: the hull you fly, on the landing and in a match
+-- alike.
 --
 -- It named a build. A build was thirty points under a name of the pilot's
 -- own, and there are none any more: what you arrive as is a ship off the
--- roster.
+-- roster. It also answered "spectate", which was the roster's last row until
+-- decision 128 took handing a seat back off the ship menu.
 function M.landing_ship()
-    if M.spectating() then return "spectate" end
     local h = HULLS[(M.class or 0) + 1]
     return h and h[1] or "ship"
 end
 
--- The roster the body section opens: every ship in it, and sitting out as
--- the last answer.
+-- The roster the body section opens: every ship in it.
 --
 -- Each row carries where that hull stands on all five flight rows, so the
 -- seven can be read down a column. That is the whole argument for a list
@@ -1190,17 +1243,13 @@ end
 -- list's clothes, and it was right about a page that also held every slot
 -- the hull could spend on. This one holds nothing else, and seven read one
 -- at a time have to be remembered where seven read down a column compare.
--- Sitting out carries none, because there is no ship to say anything about.
 function M.landing_ships()
     local rows = {}
     for i, h in ipairs(HULLS) do
         rows[#rows + 1] = {label = h[1], value = i - 1,
-                           here = not M.spectating() and M.class == i - 1,
+                           here = M.class == i - 1,
                            bars = flight_bars(i - 1)}
     end
-    rows[#rows + 1] = {label = "spectate", value = "spectate",
-                       here = M.spectating(),
-                       note = "watch the room from nobody's cockpit"}
     return rows
 end
 
@@ -1251,17 +1300,20 @@ end
 
 -- A press on a ship in that list: arrive as it. The same path the roster's
 -- own row takes, so the choice reaches the arena through the "ship" act the
--- caller runs; picking a ship also means arriving in one, so a remembered
--- spectate comes off here rather than surviving to make the deploy invisible.
+-- caller runs.
+--
+-- Nothing to report while a draft is standing, which is the whole difference
+-- between turning this carousel on the front page and turning it in a match:
+-- out there each turn is what you will arrive as and costs nothing, in here
+-- the ship is settled once, when the panel closes. See `M.draft_open`.
 function M.pick_profile(at)
-    if at == "spectate" then
-        M.spectate = true
-        M.save_identity()
-        return "spectate"
-    end
     if type(at) ~= "number" or not HULLS[at + 1] then return nil end
-    M.spectate = false
     M.pending = at
+    if M.draft then
+        M.class = at
+        M.draft.edited = true
+        return nil
+    end
     M.save_identity()
     -- And what to fly it with, in the same breath. The arena reads a build
     -- naming a hull you are not in as the hull change carrying it, so this
@@ -1313,7 +1365,40 @@ local function team_rows()
     return rows
 end
 
+-- Every game the fleet is running, one to a row, which is the list the
+-- landing's zone stop opens and the same rows in the same order.
+--
+-- In a match this is also the way out: picking a game leaves the one you are
+-- in for the stands of the one you picked, and picking the one you are
+-- already in is the plain "leave" that used to have a stop of its own. That
+-- is why the answer beside the stop is where you are and why a row asks
+-- before it acts. See `M.stops`.
+--
+-- A game nobody is serving is drawn dim and takes no press, the way it does
+-- on the landing: the row is there because the zone exists, and pressing one
+-- that cannot be joined would leave a pilot out of a match and nowhere.
+local function zone_rows()
+    local rows = {}
+    for _, zr in ipairs(directory.rows) do
+        local fmt = zr.teams or ""
+        if zr.time and zr.time ~= "" then
+            fmt = fmt ~= "" and (fmt .. " \194\183 " .. zr.time) or zr.time
+        end
+        rows[#rows + 1] = {
+            label = zr.name, named = true,
+            note = fmt ~= "" and fmt or nil,
+            dim = not zr.live,
+            act = "zone", value = zr.zone,
+            mark = function() return zr.zone == M.zone end,
+        }
+    end
+    return rows
+end
+
 local NODES = {
+    -- The games, and the way out of this one.
+    zone = {rows = zone_rows},
+
     -- The sides, one row each, in the order the zone scores them.
     --
     -- A list rather than a value stepped left and right, which is what the
@@ -1643,45 +1728,46 @@ local function rows_of(nd)
     return r
 end
 
--- The column's three stops: the way out of the seat, the machine, and which
+-- The column's stops: where you are, what you fly, the machine, and which
 -- side you are on.
 --
 -- The whole of the in-game menu, and the only place settings is reachable at
 -- all. It reads as the landing's column reads because it is the same column:
--- the same stops at the same width over the same breathing key, with LEAVE
--- where the account stop stands and RESUME where PLAY NOW does. A pilot
--- learns one interface and presses it in both places.
+-- the same stops at the same width over the same breathing key, with ZONE and
+-- SHIP where the landing's own two stand and RESUME where PLAY NOW does. A
+-- pilot learns one interface and presses it in both places.
 --
--- Order is top down, the way they are drawn, and it is deliberate: LEAVE
--- farthest from the key that resumes, so the press that ends a match is the
--- one press furthest from the thumb resting on the one that ends the menu.
+-- Order is top down, the way they are drawn, and it is deliberate: the stop
+-- that can end a match is farthest from the key that resumes one, so the
+-- press that costs something is the one press furthest from the thumb resting
+-- on the press that costs nothing.
+--
+-- LEAVE stood where ZONE does, and it had two answers: benched it left the
+-- room for the stands, flying it handed the seat back and left you watching
+-- the room you were in. The second of those is gone (decision 128). Sitting
+-- in the stands of a game you are seated in is a state with nothing to do in
+-- it and one key out of it, and it was reachable from two places at once,
+-- since the ship menu's roster carried the same act as its last row. What
+-- replaces it is the games list the landing already opens: leaving is
+-- choosing where to be instead, and the answer beside the stop is where you
+-- are now.
 --
 -- Nothing here needs a room to be between matches. Nothing pauses while this
 -- stands: the column takes the controls and the ship goes on flying under it,
 -- so a pilot reading settings can be shot for reading them. That is the same
--- bargain the drawer struck and the reason this is three stops rather than a
+-- bargain the drawer struck and the reason this is four stops rather than a
 -- place to spend time in. See docs/design/match-game.md.
 function M.stops()
     local out = {}
-    -- Leaving goes one step, and which step is whichever one you are standing
-    -- on. Flying, it hands the seat back and leaves you watching the same
-    -- room, so the column stays up: nothing about where you are has changed,
-    -- and the corner's TAKE SEAT is the way back in. Benched, there is no seat
-    -- left to hand back and the step is out of the room to the stands, which
-    -- costs the match and is the one that asks first.
-    -- The answer is the thing being left rather than a sentence about
-    -- leaving it. That is the grammar every stop in this column speaks and the
-    -- landing's speak too: the label asks and the answer is a name. "To the
-    -- stands" was a phrase in the slot a name goes in, and it read as one:
-    -- three words of interface prose set in the face the arena reserves for
-    -- data.
-    if M.flying() then
-        out[#out + 1] = {stop = "leave", label = "leave",
-                         value = "seat", act = "leave_seat"}
-    else
-        out[#out + 1] = {stop = "leave", label = "leave",
-                         value = "game", act = "leave"}
-    end
+    out[#out + 1] = {stop = "zone", label = "zone",
+                     value = directory.label_of(M.zone), named = true,
+                     go = "zone"}
+    -- What you fly, on the panel the landing's own ship stop opens. One menu
+    -- for the ship, wherever it is read from: the same five sections over the
+    -- same purse, drawing the same carousel. What differs is what closing it
+    -- means, which is the arena's business rather than this list's.
+    out[#out + 1] = {stop = "ship", label = "ship", value = M.landing_ship(),
+                     named = true, panel = true}
     -- Everything about the machine rather than about a match, in one page:
     -- audio, video, the bindings, and about. It opens the way the landing's
     -- ship stop opens, as a panel climbing off its own row.
@@ -2382,14 +2468,6 @@ local function activate_row(r, by)
     if r.act == "swap_charges" then
         M.swap_charges()
         return nil
-    elseif r.act == "hull" then
-        -- A row on the roster. Enter asks for that ship; the arrows walk the
-        -- list, which the navigation above already does, so there is nothing
-        -- for a direction to mean here.
-        if by then return nil end
-        if r.value == nil then return "spectate" end
-        M.pending = r.value
-        return "ship"
     elseif r.act == "wake" then
         -- One step round the wakes, whichever way the press points; enter
         -- steps forward, so a hand on enter alone can still reach all of
@@ -2413,11 +2491,17 @@ local function activate_row(r, by)
         return "team"
     elseif r.act == "found" then
         return "found"
-    elseif r.act == "leave" then
-        local place = M.zone ~= "" and directory.label_of(M.zone)
-            or "this game"
-        M.confirm("leave " .. place .. "?",
-                  {{label = "leave", act = "leave"}, {label = "stay"}})
+    elseif r.act == "zone" then
+        -- A game off the list, which in a match is the way out of the one you
+        -- are in: the room is left and the stands come up on whichever was
+        -- picked, including this one. It costs the match either way, so it
+        -- asks first, which is what the leave stop did with its own answer.
+        if by then return nil end
+        M.pending = r.value
+        local place = directory.label_of(r.value)
+        if not place or place == "" then place = "another game" end
+        M.confirm("leave for " .. place .. "?",
+                  {{label = "leave", act = "leave_for"}, {label = "stay"}})
         return nil
     elseif r.act == "bind" then
         -- The row stops saying where its control is and starts asking where
@@ -2463,11 +2547,6 @@ local function activate_row(r, by)
     elseif r.act == "reroll" then
         ask_reroll()
         return nil
-    elseif r.act == "leave_seat" then
-        -- The seat handed back, the room kept. Nothing else about this
-        -- client moves, so the panel stays where it is: what changed is on
-        -- the glass behind it.
-        return "leave_seat"
     end
     return settle(r.act, nil, by)
 end
@@ -2517,6 +2596,14 @@ end
 function M.press_stop(name)
     for _, s in ipairs(M.stops()) do
         if s.stop == name then
+            -- A stop that opens a panel rather than a page of rows: the same
+            -- stack, with nothing in `NODES` under the name. What fills it is
+            -- the arena, which is where the landing's own ship panel is built
+            -- from too.
+            if s.panel then
+                M.open_stop(s.stop)
+                return nil, true
+            end
             if s.go then
                 M.open_stop(s.go)
                 return nil, true

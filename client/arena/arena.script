@@ -242,6 +242,12 @@ local static = {tx = nil, ty = nil}
 -- a menu action means.
 local apply_menu
 local go_home
+-- And the ship a pilot is drafting in a match, settled the moment the panel
+-- they were drafting it in stops being on screen, with the line that says on
+-- the panel's head what settling it will do. The frame loop is what notices
+-- and what draws, and it runs above the gate both of them read.
+local settle_ship
+local ship_foot
 -- And the landing's own presses, which both hands reach: the pointer path is
 -- written where every other press is, a long way below the frame loop that
 -- reads the keyboard.
@@ -390,7 +396,6 @@ function session.enter_deep_route(self)
         self.attract = false
         menu.home = false
         menu.zone = zone
-        menu.spectate = kind == "watch"
         menu.save_identity()
         menu.close()
         return session.enter(self, row.address, zone, row.wt, nil,
@@ -403,7 +408,6 @@ function session.enter_deep_route(self)
     self.attract = false
     menu.home = false
     menu.zone = zone
-    menu.spectate = kind == "watch"
     menu.save_identity()
     menu.close()
     return session.enter(self, at.address, zone, at.wt, room,
@@ -608,6 +612,24 @@ local function menu_cursor(stop)
     end
 end
 
+-- One level out of the ship panel, where that is where the way back leads.
+--
+-- The ship stop's levels are the panel's rather than the stack's: the menu
+-- and the part of the ship open over it are one entry on the stack between
+-- them, so stepping out of a part is a thing only this knows how to do.
+-- Both keys that mean "back" ask it first, or escape would leave the stop and
+-- the part in one press while the head's own arrow took two.
+--
+-- What the cursor is left standing on is the part it came out of, which is
+-- what took the panel's place on the screen.
+local function ship_sect_back()
+    if menu.stop_open() ~= "ship" or not ui.col_sect then return false end
+    ui.col_sel, ui.col_sel_value = "land_sect", ui.col_sect
+    ui.col_sect, ui.col_hull = nil, nil
+    ui.col_scroll = 0
+    return true
+end
+
 local function toggle_menu()
     if menu.toggle() then shut_panels() end
 end
@@ -681,6 +703,10 @@ TUNE.PANEL_HANDLERS = {
         -- in the same press.
         if menu.open then
             local stop = menu.stack[1]
+            if ship_sect_back() then
+                sfx.ui("ui_move")
+                return true
+            end
             if menu.page_back() then
                 ui.page_scroll = 0
                 menu_cursor(stop)
@@ -1942,7 +1968,14 @@ function update(self, dt)
         -- every frame rather than remembered: the server decides, and it can
         -- refuse a change the menu has already drawn as chosen. A watcher has
         -- no hull; the menu keeps showing the one they would fly back in.
-        if not watching then menu.class = sim.ship_class(me) end
+        --
+        -- Unless a ship is being drafted, which is the one time the menu's
+        -- hull is ahead of the ship rather than behind it: the panel is
+        -- showing what the pilot is building, and this would drag it back
+        -- onto what they are still flying on every frame.
+        if not watching and not menu.drafting() then
+            menu.class = sim.ship_class(me)
+        end
         -- The camera stands behind the eye: your hull, or the subject the
         -- snapshot named. An empty channel holds the middle of the map.
         local e = eye()
@@ -2353,10 +2386,6 @@ function update(self, dt)
             end
             land = {name = menu.name, zone = directory.label_of(at),
                     ship = menu.landing_ship(),
-                    -- Sitting out is the only answer the ship stop holds
-                    -- that is the interface's own word rather than a name,
-                    -- and a name is quoted rather than set. See `land_stop`.
-                    watching = menu.spectating(),
                     zones = zones,
                     -- What the ship stop opens: five parts of a ship over
                     -- the credits they are bought with, or whichever of the
@@ -2515,6 +2544,24 @@ function update(self, dt)
         end
         ui.waiting(why)
     end
+    -- The ship panel coming up and going away, which is where a draft starts
+    -- and where it is settled.
+    --
+    -- Watched here rather than hung off each press that can close it. There
+    -- are six of those: the way back on the head, the stop pressed again,
+    -- RESUME, escape, the glass beside the panel, and a socket that dropped.
+    -- A draft that outlived any one of them would be a menu holding a ship
+    -- the pilot had walked away from.
+    local ship_up = menu.open and not self.attract
+        and menu.stop_open() == "ship"
+    if ship_up ~= self.ship_panel_up then
+        self.ship_panel_up = ship_up
+        if ship_up then
+            menu.draft_open()
+        else
+            settle_ship(self)
+        end
+    end
     -- The panel, and the slide it leaves on.
     --
     -- The column is drawn for as long as it is on screen, which is past the
@@ -2523,7 +2570,18 @@ function update(self, dt)
     -- built rather than a fresh one, because a page has nothing to say about a
     -- menu that is shut and the picture sliding away should be the picture
     -- that was there.
-    if menu.open then self.menu_view = menu.view() end
+    if menu.open then
+        self.menu_view = menu.view()
+        -- The ship stop opens a panel rather than a page of rows, and it is
+        -- the landing's panel: the same five sections over the same purse,
+        -- built here for the same reason the landing's is, because the level
+        -- it is open at is the interface's state rather than the menu's. The
+        -- head carries the line that says what closing it will do.
+        if menu.stop_open() == "ship" then
+            self.menu_view.panel = menu.ship_panel(ui.col_sect, ui.col_hull)
+            self.menu_view.foot = ship_foot()
+        end
+    end
     if self.menu_view and (menu.open or ui.column_up()) then
         self.menu_view.open = menu.open
         ui.menu(self.menu_view)
@@ -2739,11 +2797,9 @@ function session.deploy(self)
             if row.zone == self.attract_zone then menu.chosen = row end
         end
     end
-    -- The key does what the ship stop above it says. It used to force a
-    -- remembered "arrive as a watcher" off, because that choice lived on a
-    -- page nobody could see from here and made the one key on the landing do
-    -- nothing anybody could notice; the stop now says SPECTATE out loud
-    -- right over the key, so the press means what the screen shows.
+    -- The key does what the ship stop above it says: the hull on that stop is
+    -- the hull this press flies, since turning the carousel is the whole of
+    -- choosing one.
     apply_menu(self, "join")
     sfx.ui("ui_go")
 end
@@ -2756,7 +2812,10 @@ end
 -- which differs between the things it gates. Sets the note and answers false
 -- when the answer is no.
 local function full_bar(what)
-    if sim.ship_alive(me) ~= 1 then
+    -- No seat at all is the same answer as a seat that is down, and it is
+    -- reachable: a join that has not landed yet leaves this client online
+    -- with the menu already up and no ship to ask about.
+    if not me or sim.ship_alive(me) ~= 1 then
         menu.note = "not while you are waiting to respawn"
         return false
     end
@@ -2767,44 +2826,91 @@ local function full_bar(what)
     return true
 end
 
+-- What leaving the ship panel will do, said on its head while the panel is
+-- still open.
+--
+-- A pilot has to know before they close it, not after. Nothing at all until
+-- something has actually been changed: a panel opened to look at your own
+-- ship is not an ask, and a line under one that says "you respawn in it" is a
+-- threat about nothing.
+function ship_foot()
+    if not menu.drafted() then return nil end
+    if watching then return "you take a seat in it" end
+    if not me or sim.ship_alive(me) ~= 1 then
+        return "not while you are waiting"
+    end
+    if sim.ship_energy(me) < sim.ship_max_energy(me) then
+        return "needs a full bar"
+    end
+    return "you respawn in it"
+end
+
+-- The ship that panel was drafting, settled, which happens the moment the
+-- panel stops being on screen however it went: the way back on its head, the
+-- stop pressed again, RESUME, escape, or a press on the glass beside it.
+--
+-- One act for the whole ship. A pilot walking the carousel from an Apex to a
+-- Lattice and trading a repel on the way has changed ship once, not seven
+-- times, and it costs them one respawn rather than seven. That is why the
+-- panel drafts at all: on the front page every turn is saved and sent as it
+-- happens, because out there it costs nothing.
+--
+-- The gate is the core's, mirrored here only so a refusal arrives with a
+-- sentence. A refusal drops the draft rather than holding it: what a pilot
+-- flies and what their ship menu says have to agree, and a draft kept behind
+-- a bar that may never fill is a menu describing a ship nobody is in.
+function settle_ship(self)
+    if not menu.drafting() then return end
+    -- Nothing was asked for, or there is nowhere to ask: put the ship back
+    -- and say nothing. A pilot who opened the panel to look at their own ship
+    -- has not asked for anything.
+    if not (menu.drafted() and self.online and not self.attract) then
+        menu.draft_drop()
+        return
+    end
+    if not watching and not full_bar("a new ship") then
+        -- Said in the feed, which is where a pilot mid-match reads things.
+        -- The head of the panel carried this warning for as long as the panel
+        -- was up, and the panel has just gone: a ship dropped in silence is a
+        -- menu that did nothing, which is how an interface teaches somebody
+        -- to stop trusting it.
+        notify({menu.note}, nil, true)
+        menu.draft_drop()
+        return
+    end
+    local cls = menu.class
+    menu.draft_keep()
+    -- From the stands a ship ask means the other thing it can mean: put me
+    -- back in, flying this. The seat is asked for first because a room takes
+    -- a build only from a pilot in one, and the two messages travel in order
+    -- on the same reliable wire. The caps answer: a room that filled while
+    -- you watched refuses, and the refusal is staying where you are.
+    if watching then net.set_class(cls) end
+    -- The build carries the hull, so this one message is the whole ask. The
+    -- server owns the roster and nothing here is predicted: a ship that
+    -- flickered back would be worse than one that arrives a frame late.
+    menu.send_build(cls)
+    -- And the menu goes, because what is behind it has just changed: a pilot
+    -- who has been put back at their start with a fresh bar should be looking
+    -- at the map rather than at a panel.
+    menu.close()
+end
+
 function apply_menu(self, act)
     if act == "ship" then
-        -- With no game on, this is simply the hull you will arrive in. The
-        -- landing's backdrop counts as no game: you are configuring, and
-        -- only deploy commits. Without the attract arm here, picking a hull
-        -- to admire it would fly you into the scenery.
+        -- The hull you will arrive in, chosen on the front page. The landing's
+        -- backdrop counts as no game: you are configuring, and only deploy
+        -- commits. Without the attract arm here, picking a hull to admire it
+        -- would fly you into the scenery.
+        --
+        -- Only the front page reaches this. In a match the ship panel drafts
+        -- and `settle_ship` is what asks the room, because in there a ship is
+        -- the hull and the build together and changing it is one act rather
+        -- than one per arrow.
         if not self.online or self.attract then
             menu.class = menu.pending
-            menu.spectate = false
             menu.save_identity()
-            return
         end
-
-        -- Watching, a hull ask means the other thing it can mean: put me back
-        -- in, flying this. The server's caps answer; a room that filled while
-        -- you sat out refuses, and the refusal is staying exactly where you
-        -- are, watching.
-        if watching then
-            net.set_class(menu.pending)
-            menu.spectate = false
-            menu.save_identity()
-            menu.close()
-            return
-        end
-
-        -- A hull change is a respawn, not a rebuild: the arena, the score and
-        -- everybody else in it carry on, which is the whole reason the menu
-        -- can be opened mid-fight at all. You keep your team and your seat;
-        -- your upgrades and your place on the map are gone, the same as
-        -- dying, because a fresh hull is a fresh bar and it has to cost what
-        -- a fresh bar costs.
-        if not full_bar("a hull change") then return end
-        -- The server owns the roster, so this asks and the next snapshot
-        -- answers. Nothing is predicted: a hull that flickered back would be
-        -- worse than one that arrives a frame late.
-        net.set_class(menu.pending)
-        menu.save_identity()
-        menu.close()
         return
     end
 
@@ -2885,13 +2991,13 @@ function apply_menu(self, act)
             self.attract = false
             self.attract_zone = nil
             menu.home = false
-            if not menu.spectate then net.set_class(menu.class) end
+            net.set_class(menu.class)
             menu.close()
             return
         end
         self.attract = false
         session.enter(self, r.address, r.zone, r.wt, menu.chosen_room,
-                      menu.spectate, r.instance)
+                      false, r.instance)
         -- Spent. A room is named by the press that named it and by nothing
         -- afterwards: a reconnect the client makes on its own belongs wherever
         -- the ladder puts it, not wherever somebody clicked ten minutes ago.
@@ -2899,58 +3005,20 @@ function apply_menu(self, act)
         return
     end
 
-    -- The leave button on the row of the game you are flying in. The hull
-    -- despawns and the same socket watches, landing on the room channel: you
-    -- are a watcher in the same arena, so the panel is left standing, because
-    -- nothing about where this client is has changed and putting the menu away
-    -- would be answering a question nobody asked. The corner's TAKE SEAT is
-    -- the way back in.
-    if act == "leave_seat" then
-        if self.online and not self.attract and not watching then
-            net.sit_out()
-        end
+    -- A game picked out of the in-match column's zone stop, once the question
+    -- over it has been answered: leave this one, and put the stands down on
+    -- whichever was picked. Picking the game you are in is the plain leave
+    -- that had a stop of its own until decision 128, and it lands in the same
+    -- place, since the front page is that game watched from the stands.
+    if act == "leave_for" then
+        local to = menu.pending
+        menu.note = nil
+        go_home(self)
+        if type(to) == "string" and to ~= "" then self.land_zone = to end
+        sfx.ui("ui_go")
         return
     end
 
-    -- The page past the roster on the landing's ship stop: sit out. The same
-    -- act as leaving a seat, asked from the panel about what you are flying
-    -- rather than from the column of the room you are flying it in.
-    if act == "spectate" then
-        -- Off the home screen this is what you will arrive as, exactly as
-        -- picking a hull there is: remembered, carried into the join, and the
-        -- page stays open so the wash moving is the answer.
-        menu.spectate = true
-        menu.save_identity()
-        -- The backdrop is already watching; this only changed how you will
-        -- arrive when you deploy.
-        if not self.online or self.attract then return end
-        if not watching then net.sit_out() end
-        menu.close()
-        return
-    end
-
-    -- Leaving, and giving up on a join that has not landed. Both are the same
-    -- act: there is no game, so put the menu back with nothing behind it.
-    if act == "leave" or act == "cancel" then
-        -- The backdrop is not a place you are, so escape at home has nothing
-        -- to leave: tearing it down here would blink the battle out and the
-        -- attract loop would dial it right back. What it can put away is a
-        -- stop's open list, which is the nearest thing to a panel up here.
-        if self.attract then
-            land_shut()
-            return
-        end
-        if self.online then
-            menu.note = nil
-            go_home(self)
-            -- Made here rather than by the caller. Escape at the root of the
-            -- home screen produces this same action and does nothing with it,
-            -- and a click for a keystroke that changed nothing is how an
-            -- interface teaches a player to stop trusting its noises.
-            sfx.ui("ui_go")
-        end
-        return
-    end
 end
 
 -- The render script reports the pixel space it projects the interface into.
@@ -3112,6 +3180,13 @@ function land_act(self, action, value)
         -- A stop that opened a page opens it at the top of its rows rather
         -- than wherever the last one was read to.
         ui.page_scroll = 0
+        -- And the ship stop opens on its own menu, at the ship being flown,
+        -- which is the rule the landing's ship stop follows: a stop opens
+        -- where the pilot is rather than where they last read to.
+        if value == "ship" then
+            ui.col_sect, ui.col_hull = nil, nil
+            ui.col_scroll = 0
+        end
         -- And standing on the page's own head, the way the landing's stops
         -- open. Pressing the stop that is already open shuts it instead, and
         -- then the cursor belongs on the stop, which is what took the page's
@@ -3154,6 +3229,12 @@ function land_act(self, action, value)
     -- the stop shutting, which leaves the bare column standing.
     if action == "menu_back" then
         local stop = menu.stack[1]
+        -- Out of a part of the ship onto the ship menu first, which is one
+        -- level like any other. See `ship_sect_back`.
+        if ship_sect_back() then
+            sfx.ui("ui_move")
+            return true
+        end
         if menu.page_back() then
             ui.page_scroll = 0
             menu_cursor(stop)
@@ -3249,7 +3330,14 @@ function land_act(self, action, value)
         -- Body opens on the ship being flown rather than wherever it was last
         -- turned to: a section opens where the pilot is.
         ui.col_hull = value == "body" and menu.panel_home() or nil
-        land_open()
+        -- Standing on the head of what it opened, whichever column it opened
+        -- in. The two name their way back differently, because the menu's
+        -- levels are a stack and the landing's are a panel over a panel.
+        if menu.stop_open() == "ship" then
+            menu_cursor()
+        else
+            land_open()
+        end
         ui.col_scroll = 0
         sfx.ui("ui_go")
         return true
@@ -3279,10 +3367,7 @@ function land_act(self, action, value)
     if action == "land_page_ship" then
         local at = menu.hull_page(ui.col_hull or menu.panel_home(), value or 1)
         ui.col_hull = at
-        -- Sitting out is the page past the roster and is chosen the same way,
-        -- by turning onto it.
-        local act = menu.pick_profile(
-            at >= menu.hull_count() and "spectate" or at)
+        local act = menu.pick_profile(at)
         if act then apply_menu(self, act) end
         sfx.ui("ui_move")
         return true

@@ -1761,27 +1761,38 @@ impl Room {
         self.world.set_ship_class(ship, class, None)
     }
 
-    /// Apply a build, for the hull it was spent on.
+    /// Apply a ship: the hull it names and the build it carries.
     ///
     /// One act rather than two, because a build belongs to a hull and the
     /// two arriving separately would deal the wrong one in between: a pilot
     /// moving from an Anvil to a Cipher would fly a Cipher on the Cipher's
     /// own profile for as long as it took the second message to land, and
-    /// their own build would arrive as a second re-deal. So a build naming a
-    /// hull the pilot is not in is a hull change carrying it, under the same
-    /// rules any hull change follows, and a build naming the hull they are
-    /// already in is dealt in place.
+    /// their own build would arrive as a second re-deal.
+    ///
+    /// From a pilot in the air this is a ship change under the core's own
+    /// rules: a full bar, and a respawn to pay for it. That holds whether
+    /// what moved is the hull or the row, because a ship is both together;
+    /// gating one and not the other would leave a refit as the free way out
+    /// of a fight that is going badly.
+    ///
+    /// From a pilot who is not in the air it is dealt in place, because there
+    /// is no fight to leave and no bar to have: a seat benched between
+    /// matches takes its owner's build and flies it at the whistle, which is
+    /// how a build arrives with a pilot who joined during a podium. A pilot
+    /// waiting out a respawn is the same case, and re-speccing on the way
+    /// back costs them the death they have already paid.
     ///
     /// Nothing here is checked against anything: the core fits every build
     /// to the ceilings and the budget on the way in, so a hostile client
     /// spends what a player spends. What it cannot do is refill: a build
-    /// dealt in place clamps the rack down and never up, which is what stops
-    /// a pilot reloading by opening a menu.
+    /// dealt either way clamps the rack down and never up, which is what
+    /// stops a pilot reloading by opening a menu.
     pub(crate) fn set_ship_kit(&mut self, ship: u8, class: u8, kit: &[u8; sim::SLOT_COUNT]) {
-        if self.world.state.ships[ship as usize].cls == class {
-            self.world.set_ship_kit(ship, kit);
-        } else {
+        let sh = &self.world.state.ships[ship as usize];
+        if sh.alive != 0 || sh.cls != class {
             self.world.set_ship_class(ship, class, Some(kit));
+        } else {
+            self.world.set_ship_kit(ship, kit);
         }
     }
 

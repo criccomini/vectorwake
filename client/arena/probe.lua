@@ -259,7 +259,6 @@ local function reading(self, dt, html5, touch, ui, menu)
             landing = menu.home and true or false,
             joined = ui.joined and true or false,
             watching = menu.watching and true or false,
-            spectate = menu.spectate and true or false,
             flying = menu.flying(),
             menu_open = menu.open and true or false,
             column_up = ui.column_up(),

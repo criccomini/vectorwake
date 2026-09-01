@@ -4,11 +4,13 @@
 --
 -- The stop's label and its list come from `landing_ship` and `landing_ships`,
 -- and a press in the list goes through `pick_profile`. What is worth pinning
--- is the contract the landing draws against: the label is the profile's own
--- name or spectate, the list is builds by name with sitting out last, a pick
--- loads that build as the kit in hand and takes a remembered spectate off,
--- and none of it clobbers a kit somebody is mid-tune on in the hangar.
--- landing_test.lua holds the drawing half.
+-- is the contract the landing draws against: the label is the ship's own
+-- name, the list is the roster and nothing else, a pick asks the arena for
+-- that hull, and none of it clobbers a kit somebody is mid-tune on.
+--
+-- Sitting out was the last row of that list and the stop's other answer until
+-- decision 128 took handing a seat back off the ship menu. landing_test.lua
+-- holds the drawing half.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -70,7 +72,6 @@ local menu = require("arena.menu")
 
 -- A pilot at home in the stands, flying an Apex.
 menu.home = true
-menu.spectate = false
 menu.class = 0
 
 check("the stop says the ship the next deploy flies",
@@ -78,13 +79,14 @@ check("the stop says the ship the next deploy flies",
       "said " .. tostring(menu.landing_ship()))
 
 local rows = menu.landing_ships()
-check("the list is the roster and sitting out",
-      #rows == 8 and rows[1].label == "Apex" and rows[2].label == "Wedge"
-      and rows[8].label == "spectate",
+check("the list is the roster and nothing else",
+      #rows == 7 and rows[1].label == "Apex" and rows[2].label == "Wedge"
+      and rows[7].label == "Lattice",
       "got " .. #rows .. " rows")
-check("sitting out is the last row", rows[8].value == "spectate")
+check("every row names a hull to fly",
+      rows[1].value == 0 and rows[7].value == 6)
 check("the ship being flown wears the mark",
-      rows[1].here == true and not rows[2].here and not rows[8].here)
+      rows[1].here == true and not rows[2].here and not rows[7].here)
 
 -- A pick answers with the act the roster's own row answers with, and asks the
 -- arena for that hull. The arena is what actually moves `menu.class`, because
@@ -96,17 +98,8 @@ menu.class = 1
 check("and the stop follows once the arena agrees",
       menu.landing_ship() == "Wedge")
 
--- Sitting out is remembered; picking a ship takes it back off, because
--- picking a ship means arriving in one.
-menu.spectate = true
-check("a remembered spectate is the stop's answer",
-      menu.landing_ship() == "spectate")
-check("and wears the mark in the list",
-      menu.landing_ships()[8].here == true)
-check("sitting out is a pick of its own",
-      menu.pick_profile("spectate") == "spectate" and menu.spectate == true)
 menu.pick_profile(0)
-check("picking a ship takes spectate off", menu.spectate == false)
+menu.class = 0
 
 -- A hull the roster does not have is refused rather than half applied.
 menu.pending = nil

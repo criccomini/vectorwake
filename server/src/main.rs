@@ -6600,6 +6600,69 @@ mod tests {
         );
     }
 
+    /// A build changed under the hull a pilot is already in is a ship change
+    /// like any other: the same gate and the same respawn.
+    ///
+    /// Without this, the ship menu costs two different things depending on
+    /// which part of it a pilot touched. Climbing into another hull is paid
+    /// for with a full bar and a trip back to the start; trading a repel for
+    /// a rung used to be free and instant, which makes a refit the way out of
+    /// a fight that is going badly.
+    #[test]
+    fn a_build_changed_in_the_air_is_a_ship_change() {
+        let cfg: config::ZoneConfig = toml::from_str("[arena]\nmode = \"arena\"\n").unwrap();
+        let mut room = Room::new_from(&cfg);
+        let apex = 0u8;
+        let ship = room.world.spawn(apex, 0, 8, 8, 0) as u8;
+
+        // Everything on one weapon, which is a row no hull arrives wearing.
+        let was = room.world.state.ships[ship as usize].kit;
+        let mut mine = [0u8; sim::SLOT_COUNT];
+        mine[sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize] = sim::KIT_CREDITS;
+        assert_ne!(mine, was, "the row asked for is not the row on the ship");
+
+        // Hurt, and the row stays where it was: the core refuses a ship to
+        // anybody short of a full bar and says nothing about it.
+        room.world.state.ships[ship as usize].energy -= 1;
+        room.world.state.ships[ship as usize].y += 4096;
+        room.set_ship_kit(ship, apex, &mine);
+        assert_eq!(
+            room.world.state.ships[ship as usize].kit, was,
+            "a damaged pilot cannot refit"
+        );
+
+        // Whole, and it lands, at the price a ship costs: back at the start.
+        let full = room.world.eff_max_energy(ship as usize);
+        room.world.state.ships[ship as usize].energy = full;
+        room.set_ship_kit(ship, apex, &mine);
+        let sh = &room.world.state.ships[ship as usize];
+        assert_ne!(sh.kit, was, "and a whole one refits");
+        assert_eq!(sh.cls, apex, "on the hull they never left");
+        assert_eq!(sh.y, sh.spawn_y, "having paid a respawn for it");
+    }
+
+    /// And a build for a pilot who is not in the air is dealt in place, which
+    /// is how one arrives with a pilot who joined during a podium: the seat is
+    /// benched, there is no fight to leave and no bar to have, and the whistle
+    /// deals what the seat is wearing.
+    #[test]
+    fn a_build_for_a_benched_seat_is_dealt_in_place() {
+        let cfg: config::ZoneConfig = toml::from_str("[arena]\nmode = \"arena\"\n").unwrap();
+        let mut room = Room::new_from(&cfg);
+        let apex = 0u8;
+        let ship = room.world.spawn(apex, 0, 8, 8, 0) as u8;
+        room.world.state.ships[ship as usize].alive = 0;
+        room.world.state.ships[ship as usize].energy = 0;
+
+        let was = room.world.state.ships[ship as usize].kit;
+        let mut mine = [0u8; sim::SLOT_COUNT];
+        mine[sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize] = sim::KIT_CREDITS;
+        room.set_ship_kit(ship, apex, &mine);
+        let sh = &room.world.state.ships[ship as usize];
+        assert_ne!(sh.kit, was, "a benched seat takes its owner's build");
+        assert_eq!(sh.alive, 0, "and stays benched for it");
+    }
+
     /// The zone we ship is the documentation for this format. Parsing it is
     /// half the check; the other half is that every name in it resolves, since
     /// a weapon or an add-on the file cannot have is a warning rather than an

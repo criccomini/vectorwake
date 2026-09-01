@@ -98,22 +98,51 @@ local state = package.loaded["arena.state"]
 
 -- --- the harness -----------------------------------------------------------
 
--- The column as `menu.view` builds it in a room holding three sides: the way
--- out, the machine, and which side you are on.
+-- The column as `menu.view` builds it in a room holding three sides: where
+-- you are, what you fly, the machine, and which side you are on.
 local function view(o)
     o = o or {}
     local v = {
         open = o.open ~= false,
         stops = {
-            {stop = "leave", label = "leave", value = "seat"},
+            {stop = "zone", label = "zone", value = "Chaos", named = true},
+            {stop = "ship", label = "ship", value = "Apex", named = true},
             {stop = "settings", label = "settings", mark = "settings"},
             {stop = "side", label = "side", value = "Pylon", named = true},
         },
         rows = {},
     }
-    if o.stops == 2 then table.remove(v.stops) end
+    if o.stops == 3 then table.remove(v.stops) end
     for _, s in ipairs(v.stops) do s.open = (s.stop == o.at) end
-    if o.at == "side" then
+    if o.at == "ship" then
+        -- The landing's own ship panel, standing in the menu's column: five
+        -- parts over the purse they are bought with, and the line on the head
+        -- that says what closing it will do.
+        v.panel = {
+            label = "ship", class = 0, free = 2, credits = 7,
+            rows = {
+                {kind = "sect", sect = "body", label = "Body",
+                 detail = "Apex", raw = true},
+                {kind = "sect", sect = "guns", label = "Guns",
+                 detail = "level 2"},
+                {kind = "sect", sect = "bombs", label = "Bombs"},
+                {kind = "sect", sect = "specials", label = "Specials",
+                 detail = "1 repel"},
+                {kind = "sect", sect = "flair", label = "Flair",
+                 detail = "standard wake"},
+                {kind = "rule"},
+                {kind = "reset", label = "Reset", on = true},
+            },
+        }
+        v.foot = o.foot
+    elseif o.at == "zone" then
+        v.rows = {
+            {label = "Chaos", index = 1, note = "4 v 4", mark = true,
+             named = true, pick = true},
+            {label = "Duel", index = 2, note = "1 v 1", named = true,
+             pick = true},
+        }
+    elseif o.at == "side" then
         v.rows = {
             {label = "Pylon", index = 1, detail = "8", tint = 0, mark = true,
              named = true, pick = true},
@@ -313,17 +342,18 @@ end
 do
     frame(1440, 810, {open = true})
     local stops = hits_of("menu_stop")
-    check("the column carries every stop", #stops == 3, "got " .. #stops)
+    check("the column carries every stop", #stops == 4, "got " .. #stops)
     local by = {}
     for _, r in ipairs(stops) do by[r.value] = r end
-    if by.leave and by.settings and by.side then
-        check("leave stands at the top",
-              by.leave.y < by.settings.y and by.settings.y < by.side.y)
+    if by.zone and by.ship and by.settings and by.side then
+        check("the zone stands at the top",
+              by.zone.y < by.ship.y and by.ship.y < by.settings.y
+              and by.settings.y < by.side.y)
         local go = hit_of("menu_go")
         check("and furthest from the key",
-              go and by.leave.y < by.side.y and by.side.y < go.y)
+              go and by.zone.y < by.side.y and by.side.y < go.y)
     else
-        check("leave stands at the top", false, "stops missing")
+        check("the zone stands at the top", false, "stops missing")
         check("and furthest from the key", false, "stops missing")
     end
 end
@@ -359,20 +389,20 @@ do
           tostring(strokes_in("settings")))
     check("and so does the side stop", strokes_in("side") == 2,
           tostring(strokes_in("side")))
-    check("and leave, which acts rather than opening, wears none",
-          strokes_in("leave") == 0, tostring(strokes_in("leave")))
+    check("and every stop here opens something, so every one wears one",
+          strokes_in("zone") > 0, tostring(strokes_in("zone")))
 end
 
 -- A room that has not named its sides yet gets a shorter column, and it grows
 -- upward: the sides arrive on the roster broadcast, a frame or two after the
 -- column could first be raised, and nothing already under a thumb should move.
 do
-    frame(1440, 810, {open = true, stops = 2})
+    frame(1440, 810, {open = true, stops = 3})
     local two = hit_of("menu_go")
     local top2 = hits_of("menu_stop")
     frame(1440, 810, {open = true})
     local three = hit_of("menu_go")
-    check("a side that has not arrived leaves two stops", #top2 == 2)
+    check("a side that has not arrived leaves three stops", #top2 == 3)
     check("and the key does not move when it does",
           two and three and math.abs(two.y - three.y) < 0.5,
           two and three and (two.y .. " against " .. three.y) or "no key")
@@ -444,7 +474,7 @@ do
     check("the key it came from is off the screen with the column",
           hit_of("menu_go") == nil)
     check("and so are the stops", hit_of("menu_stop", "side") == nil
-          and hit_of("menu_stop", "leave") == nil)
+          and hit_of("menu_stop", "zone") == nil)
     -- As tall as what it holds, standing on the edge it slid out of. It used
     -- to take the whole window, which is right for a hull's build and absurd
     -- for four rows, so what is checked is that it reaches the foot and stops
@@ -556,7 +586,7 @@ do
     frame(1440, 810, {open = true})
     ui.col_sel, ui.col_sel_value = nil, nil
     local walk = ui.col_walk()
-    check("the walk reaches every stop and the key", #walk == 4,
+    check("the walk reaches every stop and the key", #walk == 5,
           "got " .. #walk)
     check("a first press down lands somewhere", ui.col_step(1))
     local first = ui.col_sel
@@ -708,7 +738,7 @@ do
           hit_of("menu_go") == nil)
     at(9.06, view({open = true}))
     check("and then the column comes home", hit_of("menu_go") ~= nil
-          and hit_of("menu_stop", "leave") ~= nil)
+          and hit_of("menu_stop", "zone") ~= nil)
     ui.panel_shut()
 end
 
@@ -762,7 +792,7 @@ do
           ui.col_sel == "menu_stop" and ui.col_sel_value == "side",
           tostring(ui.col_sel) .. " " .. tostring(ui.col_sel_value))
     local n = 0
-    for _, stop in ipairs({"leave", "settings", "side"}) do
+    for _, stop in ipairs({"zone", "ship", "settings", "side"}) do
         if lit(hit_of("menu_stop", stop)) then n = n + 1 end
     end
     check("and lights that one alone", n == 1, n .. " stops lit")
@@ -773,6 +803,58 @@ do
         check("the " .. at .. " page lights its way back",
               lit(hit_of("menu_back")))
     end
+end
+
+-- --- the ship, which is the landing's panel in this column ------------------
+--
+-- One menu for the ship wherever it is read from. The stop opens the same
+-- five parts over the same purse the front page opens, drawn by the same
+-- function off the same rows, and what differs is only what closing it means.
+do
+    frame(1440, 810, {open = true, at = "ship"})
+    local parts = {}
+    for _, r in ipairs(ui.hits) do
+        if r.action == "land_sect" then parts[r.value] = r end
+    end
+    check("the ship stop opens the five parts of a ship",
+          parts.body and parts.guns and parts.bombs and parts.specials
+          and parts.flair, "got " .. tostring(next(parts)))
+    check("with the reset under them", hit_of("land_kit_reset") ~= nil)
+    check("and the purse on the frame, where a credit is spent",
+          said("BUILD CREDITS") ~= nil)
+    check("the way back off it is the column's own",
+          hit_of("menu_back") ~= nil and hit_of("land_back") == nil)
+
+    -- The line that says what closing it will do, on the head, so nobody
+    -- finds out afterwards that they respawned.
+    frame(1440, 810, {open = true, at = "ship",
+                      foot = "you respawn in it"})
+    check("and the head says what leaving it costs",
+          said("respawn") ~= nil)
+
+    -- The walk is the panel's rows and the way back, and nothing behind it:
+    -- the stops went out through the bottom edge with the column.
+    frame(1440, 810, {open = true, at = "ship", sel = "land_sect",
+                      sel_value = "guns"})
+    local walk = ui.col_walk()
+    local seen = {}
+    for _, r in ipairs(walk) do seen[r.action] = true end
+    check("the walk is the panel's rows and its head",
+          seen.land_sect and seen.menu_back and seen.land_kit_reset
+          and not seen.menu_stop, #walk .. " stops")
+
+    -- And left and right step the rows that hold a value, which is how a
+    -- build is spent with a pad or a keyboard.
+    ui.col_sel, ui.col_sel_value = "land_kit_row", 7
+    local act, value = ui.col_side(1)
+    check("a slot under the cursor steps with the arrows",
+          act == "land_kit_step" and value.slot == 7 and value.dir == 1,
+          tostring(act))
+    ui.col_sel, ui.col_sel_value = "land_pick_ship", nil
+    act, value = ui.col_side(-1)
+    check("and the carousel turns with them",
+          act == "land_page_ship" and value == -1, tostring(act))
+    ui.col_sel, ui.col_sel_value = nil, nil
 end
 
 -- --- and the arena is what puts it there ------------------------------------
@@ -796,6 +878,19 @@ do
                                  "cursor")
         setfenv(chunk, env)
         env.menu_cursor = chunk()
+        menu_stub.stop_open = function() return menu_stub.stack[1] end
+
+        -- The way back off a part of the ship is its own function, shared by
+        -- the arrow on the panel's head and by escape, so both branches reach
+        -- it and this has to be in scope for either to run.
+        local sect_back = src:match(
+            "local function ship_sect_back%(%)(.-)\nend\n")
+        check("the arena has a ship_sect_back to run", sect_back ~= nil)
+        local sb = loadstring(
+            "return function()" .. (sect_back or " return false") .. "\nend",
+            "sect_back")
+        setfenv(sb, env)
+        env.ship_sect_back = sb()
 
         local function branch(pattern)
             local body = src:match(pattern)
@@ -880,6 +975,129 @@ do
                   and ui_stub.col_sel_value == "settings",
                   tostring(ui_stub.col_sel) .. " "
                   .. tostring(ui_stub.col_sel_value))
+
+            -- The ship stop's levels are the panel's rather than the stack's,
+            -- so back steps out of a part of the ship onto the ship menu
+            -- before it steps out of the stop, and leaves the cursor on the
+            -- part it came out of: what took the panel's place is what lights.
+            menu_stub.stack = {"ship"}
+            ui_stub.col_sect, ui_stub.col_hull = "guns", nil
+            ui_stub.col_sel, ui_stub.col_sel_value = "menu_back", nil
+            back(nil, "menu_back", nil)
+            check("out of a part of the ship stands on that part",
+                  ui_stub.col_sect == nil
+                  and ui_stub.col_sel == "land_sect"
+                  and ui_stub.col_sel_value == "guns"
+                  and menu_stub.stack[1] == "ship",
+                  tostring(ui_stub.col_sel) .. " "
+                  .. tostring(ui_stub.col_sel_value))
+            back(nil, "menu_back", nil)
+            check("and only then out of the stop",
+                  #menu_stub.stack == 0
+                  and ui_stub.col_sel == "menu_stop"
+                  and ui_stub.col_sel_value == "ship",
+                  tostring(ui_stub.col_sel_value))
+        end
+
+        -- Settling the ship the panel was drafting, which is the arena's own
+        -- function pulled out and run: the gate it passes and the message it
+        -- sends are the whole of what a mid-match ship change is.
+        do
+            local body = src:match(
+                "\nfunction settle_ship%(self%)(.-)\nend\n")
+            check("the arena has a settle_ship to run", body ~= nil)
+            if body then
+                local sent, closed = {}, 0
+                local m = {}
+                m.class = 3
+                m.drafting = function() return m.on end
+                m.drafted = function() return m.touched end
+                m.draft_drop = function() m.on, m.dropped = false, true end
+                m.draft_keep = function() m.on, m.kept = false, true end
+                m.send_build = function(cls) sent[#sent + 1] = cls end
+                m.close = function() closed = closed + 1 end
+                local lines = {}
+                local e = {menu = m, watching = false,
+                           notify = function(t) lines[#lines + 1] = t[1] end,
+                           net = {set_class = function(c) sent.seat = c end}}
+                e.full_bar = function()
+                    if not e.full then m.note = "a new ship needs a full bar" end
+                    return e.full
+                end
+                local c = loadstring("return function(self)" .. body .. "\nend",
+                                     "settle")
+                setfenv(c, e)
+                local settle = c()
+                local room = {online = true, attract = false}
+
+                -- A panel opened and read rather than edited asks for
+                -- nothing: nobody should be respawned for looking at their
+                -- own ship.
+                m.on, m.touched, m.dropped, m.kept = true, false, nil, nil
+                settle(room)
+                check("a draft nobody touched is dropped, not sent",
+                      m.dropped and #sent == 0 and closed == 0)
+
+                -- Edited but short of a bar: the core would refuse it, so
+                -- the client says so and drops it rather than sending into a
+                -- silence.
+                m.on, m.touched, m.dropped, m.kept = true, true, nil, nil
+                e.full = false
+                settle(room)
+                check("and one the bar cannot pay for is dropped too",
+                      m.dropped and #sent == 0 and closed == 0)
+                -- And said out loud, in the feed a pilot mid-match reads.
+                -- The panel's head carried this warning while the panel was
+                -- up, and the panel has just gone.
+                check("with the reason in the feed rather than in silence",
+                      #lines == 1
+                      and lines[1] == "a new ship needs a full bar",
+                      tostring(lines[1]))
+
+                -- Whole, and it goes: one message carrying the hull and the
+                -- build, and the menu comes down onto the fight behind it.
+                m.on, m.touched, m.dropped, m.kept = true, true, nil, nil
+                e.full = true
+                settle(room)
+                check("a draft from a full bar is kept and sent",
+                      m.kept and sent[1] == 3 and closed == 1
+                      and sent.seat == nil,
+                      tostring(sent[1]) .. ", closed " .. closed)
+
+                -- From the stands the seat is asked for first, because a
+                -- room takes a build only from a pilot in one.
+                m.on, m.touched, m.kept = true, true, nil
+                e.watching = true
+                settle(room)
+                check("and from the bench the seat is asked for first",
+                      sent.seat == 3 and sent[2] == 3, tostring(sent.seat))
+
+                -- With no room to tell, there is nothing to settle.
+                m.on, m.touched, m.dropped, m.kept = true, true, nil, nil
+                e.watching = false
+                settle({online = false, attract = false})
+                check("and with no room the draft is simply dropped",
+                      m.dropped and m.kept == nil and #lines == 1)
+            end
+        end
+
+        -- A stop opening the ship panel opens it on the ship being flown, at
+        -- the top of the menu, the way the landing's ship stop does: a stop
+        -- opens where the pilot is rather than where they last read to.
+        local stop2 = branch(
+            '(\n    if action == "menu_stop" then.-\n    end\n)')
+        if stop2 then
+            menu_stub.press_stop = function(name)
+                menu_stub.stack = {name}
+                return nil, true
+            end
+            ui_stub.col_sect, ui_stub.col_hull = "bombs", 4
+            ui_stub.col_scroll = 220
+            stop2(nil, "menu_stop", "ship")
+            check("the ship stop opens on its own menu",
+                  ui_stub.col_sect == nil and ui_stub.col_hull == nil
+                  and ui_stub.col_scroll == 0,
+                  tostring(ui_stub.col_sect))
         end
     end
 end
