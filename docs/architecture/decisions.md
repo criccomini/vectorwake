@@ -7211,7 +7211,7 @@ separately from the code.
 
 ---
 
-## 138. In a duel, the door is the whistle
+## 141. In a duel, the door is the whistle
 
 **Status:** accepted, extending
 [decision 131](#131-a-duel-is-a-two-seat-zone-and-nothing-else).
@@ -7278,3 +7278,98 @@ clock goes back up.
 **Reconsider if:** the restart is what players wait on rather than what they
 came for: a rival who leaves and returns restarts the match twice, and a room
 that sees that often wants a grace period rather than a whistle.
+
+---
+
+## 142. A duel is rounds, and two of them take it
+
+**Status:** accepted, amending
+[decision 131](#131-a-duel-is-a-two-seat-zone-and-nothing-else) and
+[decision 141](#141-in-a-duel-the-door-is-the-whistle), and reinstating the
+round rule from
+[decision 92](#92-duel-is-two-pilots-and-the-door-decides-which-two) that
+[decision 96](#96-duels-are-gone) removed.
+
+**What:** the duel zone runs a mode of its own. A death ends the round rather
+than the match. Two seconds later both pilots are back on their own starts
+with a full bar and a full rack. The first side to two rounds with nobody
+level takes the match; level at two plays on. The three minute clock stays as
+the backstop, where the leader takes it and level is a draw.
+
+**Why:** asked for. Decision 131 brought the duel back as melee in a two seat
+room and said plainly that the maps were the only thing making it a zone.
+That left a 1v1 scored as a three minute kills tally, which is Team Battle's
+answer to a question the duel does not ask. A duel is one fight with a winner,
+and the word carries that expectation before a player has read anything.
+
+Two rounds rather than one, which is the part worth arguing. The old duel was
+first to a single death and the record of what that cost is still here.
+Decision 90 had to hold a decided fight open for two seconds because a bomb
+already in the air scored a trade as a clean win. Decision 74 found the MVP
+mark meaningless, since in a first-to-one duel the winner is the only pilot
+with a kill. And the roster sweep measured 1v1 draws at 27 to 37 percent in
+the low skill band, in a pit built so neither pilot can avoid the other; most
+of this population is that band. Rounds absorb all three. A freak trade costs
+one round instead of the match, and losing the opening exchange leaves a pilot
+one round from level rather than watching out a decided fight, which is the
+best thing that happens in a duel and the thing first blood has none of.
+
+Two rather than three or five because a round is fight time plus two seconds
+and nobody has measured fight time on this ground yet. Two is three rounds at
+most, which fits inside the clock at any plausible round length. Five could
+run to nine rounds and would mostly end on the whistle, which would make the
+backstop the referee. It is one line in the zone file when there is a number
+to move it to.
+
+The score is rounds taken, read off the other side's deaths rather than off
+your own kills. Both cases a player has an opinion about come out right that
+way: fly into a wall and the round goes across the arena instead of coming off
+your own tally, and a trade gives one each. A kills tally answers neither, and
+in a two seat room that was the whole scoreboard.
+
+The two second window is the trade rule and it is the respawn delay, which
+every zone in the catalog already runs at 200 ticks. So a bomb thrown by a
+pilot who is already dead still lands, still kills, and the round goes to both
+sides, and the loser is still down when the round is filed. Decision 90 needed
+a rule for that. Here it falls out of a constant that was there anyway.
+
+Racks refill every round. Keeping them across a match makes spending a repel
+in round one a real decision, which is interesting, and it is invisible: the
+charge is simply not there and nothing on the screen says why. A round is a
+fresh fight or it is not one.
+
+**Cost:** a fourth mode, about a hundred lines, and one new `ModeCtx` flag.
+The flag earns itself by being the thing `open_match` must not be: a match
+start zeroes every tally in the room, and here the tallies are the score, so
+the round reset writes no kill and no death. It benches both pilots with a
+respawn one tick out and lets the core's own spawn path pick the starts and
+fill the bars, which is why a pilot arriving for round two lands exactly where
+one arriving after a death does.
+
+The catalog moves to v40, because `ZoneDef` denies unknown fields and the zone
+file gains `first_to`. An arena on the old build refuses the offer whole and
+holds nothing, which is what `take_catalog` is built to do with a catalog it
+cannot read. Nothing else moves: no protocol, no `CFG_VERSION`, no golden. The
+client already draws two numbers a side in the band, already writes "Rival
+takes it, 2 to 0" on the ending, and reads the banner off the wire, so it
+needed no change at all.
+
+Rating is untouched and this decision does not improve it. Rating settles per
+death with damage split by contribution, so the match result was decorative
+before and still is. This is about how the room reads.
+
+**Verified:** 499 server tests, clippy and fmt clean, the client suite and
+luacheck clean. Eight on the mode: a death ending the round and the round
+going to the other side, a trade inside the window giving both sides one, two
+rounds taking the match, level at the target playing on to three-two, the
+whistle giving it to whoever leads and calling level a draw, a death on the
+whistle scoring without opening a round under the podium, a fresh match
+forgetting both the rounds and an open window, and a self kill handing the
+round across. Two on the room: the reset clearing the air and re-dealing the
+rack while leaving every tally alone, and a duel played through the room in
+rounds into a podium.
+
+**Reconsider if:** rounds turn out to run long enough that two is a short
+match, at which point the number moves rather than the rule. The harness
+already flies 1v1 legs to a death and records ticks per leg, so pointing it at
+the three duel maps is what settles it.

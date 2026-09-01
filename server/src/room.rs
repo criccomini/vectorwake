@@ -744,6 +744,10 @@ pub(crate) struct Room {
     /// seconds on the field, so an arrival in the closing seconds cannot farm
     /// the participation grant.
     pub(crate) match_opened_at: u32,
+    /// Rounds opened in this room since it was built, for the log line the
+    /// whistle's equivalent already prints. A duel counts them; no other mode
+    /// asks for a round, so it stays at zero everywhere else.
+    pub(crate) round_no: u32,
     pub(crate) artifact_id: Option<i64>,
     pub(crate) replay: growth::Recorder,
     /// The share of this room's seats the bot server is asked to keep filled.
@@ -1080,6 +1084,7 @@ impl Room {
             match_ticks: c.match_seconds.unwrap_or(180) as u32 * 100,
             intermission_ticks: c.intermission_seconds.unwrap_or(25) as u32 * 100,
             turf_period: c.turf_seconds.unwrap_or(5) as u32 * 100,
+            first_to: c.first_to.unwrap_or(modes::DEFAULT_FIRST_TO),
         }
     }
 
@@ -1404,6 +1409,7 @@ impl Room {
             map_at: 0,
             match_no: 0,
             match_opened_at: 0,
+            round_no: 0,
             artifact_id: None,
             replay: growth::Recorder::default(),
             bot_fill: catalog::DEFAULT_BOT_FILL,
@@ -3084,11 +3090,13 @@ impl Room {
             banner: std::mem::take(&mut self.banner),
             finished: false,
             open_match: false,
+            round_reset: false,
             close_match: false,
         };
         self.mode.tick(&mut ctx);
         self.banner = std::mem::take(&mut ctx.banner);
         let (finished, closed, opened) = (ctx.finished, ctx.close_match, ctx.open_match);
+        let round = ctx.round_reset;
         // The context holds the world, so it has to go before the room can act
         // on what the mode asked for.
         drop(ctx);
@@ -3100,6 +3108,13 @@ impl Room {
         }
         if opened {
             self.open_match();
+        }
+        // Only where the match itself did not move. A mode that ends the
+        // match on the round which just closed asks for the whistle instead,
+        // and putting both pilots back on the ground under a podium would
+        // undo the bench `close_match` has just written.
+        if round && !closed && !opened {
+            self.open_round();
         }
         // The room's own half is the change signal. A pilot's card only ever
         // moves when a fight is filed, and filing one flips `playing`, which
@@ -3200,6 +3215,64 @@ impl Room {
                 sh.respawn_at = 0;
             }
         }
+    }
+
+    /// Open the next round of a duel: both pilots home, racks re-dealt.
+    ///
+    /// Deliberately not `open_match`, and the difference is the whole reason
+    /// this exists. A match start zeroes every tally in the room, and here
+    /// the tallies are the score: the rounds each side has taken are read off
+    /// the other side's deaths, so anything that clears a death clears the
+    /// scoreboard with it. Nothing below writes a kill or a death.
+    ///
+    /// What it does instead is what the whistle does to the arena without the
+    /// whistle's bookkeeping. The air is cleared, every seat is dealt its kit
+    /// with the ammunition a round is entitled to, and everybody is put down
+    /// with a respawn one tick out, so the core's own spawn path picks the
+    /// starts and fills the bars. That last part is worth doing this way
+    /// rather than by hand: a pilot arriving for round two lands exactly
+    /// where a pilot arriving after a death does, because it is the same
+    /// code.
+    ///
+    /// The energy goes to zero on the way down for the reason `close_match`
+    /// explains: a snapshot carrying a ship that is down with charge still in
+    /// it is refused by `sim_unpack`, and refused by every client at once. It
+    /// is back at full a tick later.
+    pub(crate) fn open_round(&mut self) {
+        self.round_no += 1;
+        if let Some(state) = self.mode.match_state() {
+            println!(
+                "room {}: round {} opens, {}",
+                self.number,
+                self.round_no,
+                state
+                    .score
+                    .iter()
+                    .map(|n| n.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" to ")
+            );
+        }
+        // Nothing left in the air. A bomb thrown at the death that ended the
+        // round would otherwise still be travelling when the next one opens,
+        // which is a round decided by the last one.
+        self.world.state.weapon_count = 0;
+        // The rack is a round's supply rather than a life's, so a repel spent
+        // winning round one is back for round two. Keeping it across rounds
+        // reads as a bug to everybody who has not read this comment: the
+        // charge simply is not there, and nothing on the screen says why.
+        let seats: Vec<u8> = self.names.keys().copied().collect();
+        for ship in seats {
+            self.deal_seat(ship);
+        }
+        for sh in self.world.state.ships.iter_mut() {
+            if sh.active != 0 {
+                sh.alive = 0;
+                sh.energy = 0;
+                sh.respawn_at = 1;
+            }
+        }
+        self.broadcast_roster();
     }
 
     /// Open a fresh match: everybody home, kits re-dealt.
@@ -3592,6 +3665,7 @@ impl Room {
         let mut mode_finished = false;
         let mut close_match = false;
         let mut open_match = false;
+        let mut round_reset = false;
         if !deaths.is_empty() {
             let names = self.public_team_names();
             let mut ctx = modes::ModeCtx {
@@ -3600,6 +3674,7 @@ impl Room {
                 banner: std::mem::take(&mut self.banner),
                 finished: false,
                 open_match: false,
+                round_reset: false,
                 close_match: false,
             };
             for &(victim, killer) in &deaths {
@@ -3609,6 +3684,7 @@ impl Room {
             mode_finished |= ctx.finished;
             close_match |= ctx.close_match;
             open_match |= ctx.open_match;
+            round_reset |= ctx.round_reset;
         }
         for (victim, killer) in deaths {
             // Rating is filed under the pilot's id, which is their account
@@ -3694,6 +3770,9 @@ impl Room {
         }
         if open_match {
             self.open_match();
+        }
+        if round_reset && !close_match && !open_match {
+            self.open_round();
         }
     }
 

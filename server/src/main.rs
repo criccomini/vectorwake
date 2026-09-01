@@ -2847,6 +2847,138 @@ mod tests {
         a
     }
 
+    /// A duel room as the catalog serves one, running the duel mode.
+    fn duel_mode_room(first_to: u16) -> Room {
+        let mut def = wire_zone(1, 2, 2);
+        def.mode = "duel".into();
+        def.max_ships = 2;
+        def.zone_toml = format!(
+            "max_ships = 2\nteams = [\"Pilot\", \"Rival\"]\n\
+             max_humans_per_team = 1\nmax_bots_per_team = 1\n\
+             [arena]\nfirst_to = {first_to}\nmatch_seconds = 180\n\
+             intermission_seconds = 15\nrespawn_delay = 200\n"
+        );
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
+        z.serve_zone(&def).expect("a room");
+        let mut a = z.rooms.remove(0);
+        a.tick();
+        a
+    }
+
+    /// The round reset puts both pilots back on the ground with everything a
+    /// round is entitled to, and leaves the score alone. That last part is
+    /// the whole reason it is not `open_match`.
+    #[test]
+    fn a_duel_round_resets_the_arena_without_touching_the_score() {
+        let mut a = duel_mode_room(2);
+        let pilot = seat_human(&mut a, "pilot");
+        let rival = seat_human(&mut a, "rival");
+        assert_ne!(
+            a.world.state.ships[pilot as usize].team, a.world.state.ships[rival as usize].team,
+            "a side each"
+        );
+        a.tick();
+
+        // A round already taken, and a rack already spent.
+        a.world.state.ships[rival as usize].deaths = 1;
+        a.world.state.ships[pilot as usize].kills = 1;
+        let racked: Vec<u8> = a.world.state.ships[pilot as usize].charge.to_vec();
+        assert!(racked.iter().any(|n| *n > 0), "a rack to spend");
+        for sh in a.world.state.ships.iter_mut() {
+            sh.charge = [0; sim::MAX_CHARGES];
+        }
+        // And the loser hurt, somewhere out on the map, with a bomb still up.
+        a.world.state.ships[rival as usize].energy = 1;
+        a.world.state.ships[rival as usize].x = 40 * 256;
+        a.world.state.weapon_count = 1;
+        let before = a.round_no;
+
+        a.open_round();
+        assert_eq!(a.round_no, before + 1);
+        assert_eq!(a.world.state.weapon_count, 0, "nothing left in the air");
+        for ship in [pilot, rival] {
+            let sh = a.world.state.ships[ship as usize];
+            assert_eq!(sh.alive, 0, "down for the tick between rounds");
+            assert_eq!(sh.energy, 0, "which the snapshot wire requires");
+            assert_eq!(sh.respawn_at, 1, "and back on the next one");
+            assert_eq!(
+                sh.charge.to_vec(),
+                racked,
+                "with the rack a round is entitled to"
+            );
+        }
+        assert_eq!(
+            a.world.state.ships[rival as usize].deaths, 1,
+            "the rounds already taken are the score and survive the reset"
+        );
+        assert_eq!(a.world.state.ships[pilot as usize].kills, 1);
+
+        // One tick, and the core's own spawn puts them back at a full bar on
+        // a start, which is what makes a round open like a match does.
+        a.tick();
+        for ship in [pilot, rival] {
+            let full = a.world.eff_max_energy(ship as usize);
+            let sh = a.world.state.ships[ship as usize];
+            assert_eq!(sh.alive, 1, "flying again");
+            assert_eq!(sh.energy, full, "at a full bar");
+        }
+    }
+
+    /// End to end through the room: a death, the two second window, a fresh
+    /// round, and the second round taking the match into a podium.
+    #[test]
+    fn a_duel_is_played_in_rounds_and_two_of_them_take_it() {
+        let mut a = duel_mode_room(2);
+        let pilot = seat_human(&mut a, "pilot");
+        let rival = seat_human(&mut a, "rival");
+        a.tick();
+        let (mine, theirs) = (
+            a.world.state.ships[pilot as usize].team as usize,
+            a.world.state.ships[rival as usize].team as usize,
+        );
+
+        // The room reads the score off the ships, so a death written here is
+        // a death as far as the mode is concerned.
+        for round in 1..=2 {
+            a.world.state.ships[rival as usize].deaths += 1;
+            let mut ctx = modes::ModeCtx {
+                world: &mut a.world,
+                team_names: &["Pilot".to_string(), "Rival".to_string()],
+                banner: String::new(),
+                finished: false,
+                open_match: false,
+                round_reset: false,
+                close_match: false,
+            };
+            a.mode.on_death(&mut ctx, rival, pilot);
+            drop(ctx);
+            assert_eq!(
+                a.mode.match_state().unwrap().score[mine],
+                round,
+                "the round is the other side's death"
+            );
+
+            let before = a.round_no;
+            for _ in 0..modes::ROUND_CLOSE_TICKS + 2 {
+                a.tick();
+            }
+            if round == 1 {
+                assert_eq!(a.round_no, before + 1, "a fresh round opened");
+                assert!(a.mode.match_state().unwrap().playing);
+            }
+        }
+
+        let state = a.mode.match_state().unwrap();
+        assert!(!state.playing, "two rounds and a lead is the match");
+        assert_eq!(state.score[mine], 2);
+        assert_eq!(state.score[theirs], 0);
+        assert_eq!(
+            a.world.state.ships[pilot as usize].alive, 0,
+            "everybody benched for the podium"
+        );
+    }
+
     #[test]
     fn a_duel_arrival_lands_across_from_the_bot_that_stays() {
         // Two bots hold an empty duel room. The person at the door takes one
@@ -6729,6 +6861,7 @@ mod tests {
                 banner: String::new(),
                 finished: false,
                 open_match: false,
+                round_reset: false,
                 close_match: false,
             };
             room.mode.tick(&mut ctx);

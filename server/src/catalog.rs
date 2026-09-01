@@ -174,6 +174,20 @@ impl ZoneDef {
         match self.mode.as_str() {
             "melee" => (teams(), time(), "kills".into()),
             "turf" => (teams(), time(), "turf".into()),
+            // A duel states the rounds that take it rather than "kills". The
+            // clock is the backstop here, not the referee, but it still gets
+            // printed: a match that reaches the whistle level is a draw, so
+            // the time is a thing a player can be caught by.
+            "duel" => (
+                teams(),
+                time(),
+                format!(
+                    "first to {}",
+                    self.arena
+                        .first_to
+                        .unwrap_or(crate::modes::DEFAULT_FIRST_TO)
+                ),
+            ),
             // A warzone runs rounds rather than a clock, so it states the
             // sides and what wins and leaves the time blank rather than
             // printing a number it does not have.
@@ -945,12 +959,14 @@ mod tests {
             read("war").format(),
             ("4 v 4".into(), String::new(), "flags".into())
         );
-        // And the duel is a melee with one pilot a side, which is a fact the
-        // strip reads off the side cap rather than being told.
+        // And the duel is one pilot a side, which is a fact the strip reads
+        // off the side cap rather than being told, played to rounds rather
+        // than to a tally. The clock is still printed because it still ends
+        // the match, as a draw where nobody reached the rounds.
         assert_eq!(read("duel").label("duel"), "Duel");
         assert_eq!(
             read("duel").format(),
-            ("1 v 1".into(), "3:00".into(), "kills".into())
+            ("1 v 1".into(), "3:00".into(), "first to 2".into())
         );
     }
 
