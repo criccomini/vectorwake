@@ -88,4 +88,4 @@ Fable, Opus, and Sol were used to create this codebase. I steered the design. Se
 
 ## License
 
-vectorwake is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md). It permits use, modification, and distribution for noncommercial purposes.
+vectorwake is copyright Loopweld LLC and source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md). It permits use, modification, and distribution for noncommercial purposes. If you pass any part of it on, the required notice at the top of that file goes with it.

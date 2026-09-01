@@ -1,3 +1,5 @@
+Required Notice: Copyright Loopweld LLC (https://vectorwake.net)
+
 # PolyForm Noncommercial License 1.0.0
 
 <https://polyformproject.org/licenses/noncommercial/1.0.0>

@@ -9,9 +9,12 @@ This is the packet for a qualified attorney. It records facts and questions; it 
 - Initial hosting: United States, through Vultr cloud compute and managed PostgreSQL.
 - Accounts: generated call signs, optional passwords, no email address, no payments, and no player chat.
 - Community: a project-run Discord server with no account linkage to the game.
-- Source distribution: PolyForm Noncommercial License 1.0.0.
+- Source distribution: PolyForm Noncommercial License 1.0.0, with Loopweld LLC named as the licensor in the required notice at the top of `LICENSE.md`.
+- Copyright holder: Loopweld LLC, named on the terms page and in the repository.
 
-Counsel should confirm the operator's legal name, business form, contact address, governing law, and whether a separate entity should operate the service.
+Copyright in the code and the game is held by Loopweld LLC. The site still names Chris as the operator of the hosted service, so the two are not the same party on the page today.
+
+Counsel should confirm the operator's legal name, business form, contact address, governing law, and whether Loopweld LLC should also be the party that operates the service and contracts with players, rather than only the party that holds the rights.
 
 ## Privacy questions
 

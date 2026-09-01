@@ -528,7 +528,8 @@ expensive and reluctance is correct.
 
 ## 18. Source-available, noncommercial license
 
-**Status:** accepted 2026-08-10, PolyForm Noncommercial 1.0.0 in `LICENSE.md`
+**Status:** accepted 2026-08-10, PolyForm Noncommercial 1.0.0 in `LICENSE.md`.
+The licensor it grants on behalf of is named in decision 137.
 
 The intent: anyone can read the code, contribute to it, and run a zone. Nobody
 but the project can sell it or profit from it. That is not OSI open source; it
@@ -7175,3 +7176,35 @@ playtest harness plays it: a new `ship-change` journey boots the real client
 against a real fleet, opens the menu mid-match, turns the carousel, checks the
 room has not moved the pilot, closes the panel, and waits for the server to put
 them in the hull they built. It passes on all four device profiles.
+
+---
+
+## 137. Loopweld LLC is the licensor
+
+**Status:** accepted
+
+Decision 18 picked PolyForm Noncommercial 1.0.0 and then said "the project"
+wherever it meant the party granting the license. PolyForm does not work that
+way: its Notices section makes anyone who passes on a copy also pass on the
+`Required Notice:` lines "that the licensor provided", and there were none. So
+the file granted rights on behalf of nobody in particular, and nobody in
+particular could enforce it or waive it.
+
+Copyright is held by Loopweld LLC. The notice sits at the top of `LICENSE.md`,
+which is where PolyForm looks for it and where a fork carries it away, and the
+terms page says the same for the hosted service.
+
+An entity rather than a person, because decision 18 already assumes one: the
+CLA it wants needs a party for contributors to sign with, and the commercial
+release it protects needs a party to sell. Both are worse to retrofit than to
+name now, before there is a contributor or a buyer to renegotiate with.
+
+**Cost:** the site now names two parties. Loopweld LLC holds the rights and
+Chris is still the operator the terms make the agreement with, which is a
+coherent arrangement but not an obvious one to a reader.
+`docs/launch/legal-review.md` carries it as a question for counsel rather than
+settling it here.
+
+**Reconsider if:** counsel wants the operating party and the rights holder to
+be the same name on the page, or wants a different entity to hold the game
+separately from the code.
