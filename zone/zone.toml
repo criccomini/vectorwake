@@ -36,11 +36,16 @@ bans = []
 mode = "warzone"
 flags = 4
 
-# Misc:BounceFactor: the speed a hit gives back, out of 16, and 16 is the
-# original's, so a wall costs a ship nothing head on. friction is the speed
-# retained along the face, which the original has no setting for.
-bounce = 16
-friction = 14
+# Misc:BounceFactor: the speed a hit gives back, out of 16, against `friction`
+# for the speed retained along the face, which the original has no setting for.
+# Both are 12 in the baseline, so a wall keeps a quarter of whatever hits it.
+# Sixteen is the original's and costs a ship nothing head on:
+#
+#   bounce = 16
+#   friction = 16
+#
+# Left out here, because a zone that runs the game as shipped should feel like
+# the game as shipped.
 
 # Pilots the room holds at once, bots included. 255 is the ceiling and not a
 # preference: a ship index is one byte everywhere it appears, and 255 is already
@@ -51,6 +56,8 @@ friction = 14
 # stay near 64 is how the game plays, not what it costs.
 max_ships = 64
 
+# Four seconds dead rather than the baseline's two, which is a match game's
+# number: this zone has no clock, so the wait is not a fortieth of anything.
 respawn_delay = 400   # ticks, so four seconds
 
 # How precisely a ship lands on the map's spawn point for its side.
@@ -98,9 +105,20 @@ door_open = 400
 # well is close to nothing across most of its reach and overwhelming in the
 # last few tiles. Closer in than one tile it stops climbing.
 #
-# 5859 is the original's own field. Its arithmetic is `gravity * 1000` over the
-# distance squared, and at the Gravity every ship in the Alpha Zone settings
-# carries that comes to 5859 one tile out.
+# 2000 is ours, and it is not the original's. Theirs is 5859: `gravity * 1000`
+# over the distance squared, at the Gravity of 1500 every ship in the Alpha Zone
+# settings carries, comes to that one tile out. That is a number for a 1024-tile
+# map. On a 160-tile one it put the point of no return, the distance inside
+# which a hull at rest cannot pull away on held thrust, at seventeen to
+# twenty-one tiles of a 38-tile field, so half the reach was decided for the
+# pilot rather than being somewhere to fly. At 2000 the radius is ten to twelve
+# tiles and the rest of the field is a current to correct for. Five seconds of
+# ignoring a well at the rim costs a hull 69 px/s toward it rather than 202,
+# against a top speed near 305.
+#
+# How many wormhole tiles a map lays at one spot is the other term in this, and
+# the one to watch when tuning: coincident tiles sum, so a core of n of them
+# pulls n times as hard and pushes the point of no return out by the root of n.
 #
 # `wormhole_range` is a hard edge and is set here rather than derived from the
 # strength. The original ties the two together, so it cannot have a well that
@@ -108,7 +126,7 @@ door_open = 400
 # that reach was drawn for a 1024-tile map. A 160-tile room sits almost
 # entirely inside one well at that width, so this is half of it: 38 tiles,
 # 608 px, close enough to the mouth to be a landmark rather than the weather.
-wormhole_pull = 5859
+wormhole_pull = 2000
 wormhole_range = 608
 
 # What a well adds to a hull's ceiling while it has hold of it, in px/s/10.

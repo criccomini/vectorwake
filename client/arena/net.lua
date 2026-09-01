@@ -294,6 +294,9 @@ M.settings_epoch = 0
 -- local caches; this one orders settings against snapshots from independent
 -- WebTransport lanes.
 local settings_generation = 0
+-- A map has landed and the settings behind it have not. Those are the map's
+-- own whatever generation they name; see the settings handler.
+local map_wants_settings = false
 -- Every move between flying and watching starts another life on this socket.
 -- Inputs and snapshots carry the same number, which makes packets from the
 -- life that ended harmless after the transition.
@@ -1383,6 +1386,7 @@ local function on_message(s)
         local r = sim.apply_map(string.sub(s, 2))
         if r == 0 then
             M.map_epoch = M.map_epoch + 1
+            map_wants_settings = true
         else
             -- -2 is a hash mismatch, which means the zone and this client
             -- disagree about the room. Better to say so than to spend a match
@@ -1395,16 +1399,30 @@ local function on_message(s)
         -- them would mean predicting a different game, so a message we
         -- cannot read is worth losing the connection over -- the same call
         -- the map makes, for the same reason.
+        --
+        -- An older generation on its own is refused: it cannot roll the
+        -- tuning backward. The settings that follow a map are taken whatever
+        -- they name, because they are that map's. Applying a map puts the
+        -- core's numbers back to the baseline, so the pack behind it is the
+        -- only thing standing between the pilot and predicting on defaults,
+        -- and it is older on purpose exactly once: a pilot who sits out is
+        -- handed the copy the stands are holding, five seconds behind the
+        -- room, beside the ground it belongs to. Refusing that left the old
+        -- map under the new generation after a whistle inside the window,
+        -- every frame the stands then served refused, and a seat taken back
+        -- before the channel caught up flown on the wrong walls.
         if #s < 5 then return end
         local epoch = u32(string.byte(s, 2), string.byte(s, 3),
                           string.byte(s, 4), string.byte(s, 5))
-        if settings_generation ~= 0 and epoch ~= settings_generation
+        if not map_wants_settings and settings_generation ~= 0
+            and epoch ~= settings_generation
             and not serial_after(epoch, settings_generation) then
             return
         end
         if sim.apply_settings(string.sub(s, 6)) ~= 0 then
             lost("the zone sent settings this client cannot read")
         else
+            map_wants_settings = false
             settings_generation = epoch
             M.settings_epoch = M.settings_epoch + 1
             -- Spec numbers can move with the settings, and these keys carry
@@ -1695,6 +1713,7 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room, instance)
     snap_tick = 0
     lifecycle = 0
     settings_generation = 0
+    map_wants_settings = false
     have_snapshot = false
     M.join_progress = 0
     net_clock, last_snap_at = 0, nil

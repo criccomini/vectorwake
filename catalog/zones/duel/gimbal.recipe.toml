@@ -9,8 +9,8 @@ min_opening_tiles = 7
 contact_seconds_min = 2.0
 contact_seconds_max = 9.0
 allow_doors = true
-allow_wormholes = true
-expected_hash = "b154cc93"
+allow_wormholes = false
+expected_hash = "0ccc10ed"
 
 [envelope]
 width = 96

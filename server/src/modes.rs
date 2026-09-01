@@ -871,10 +871,10 @@ impl Warzone {
             (None, _) => {
                 self.hold = None;
                 // Nothing. The HUD draws a pennant per flag, colored yours,
-                // theirs or loose, twenty-five points above where this line
-                // lands, so a tally here was the same answer written out
-                // longhand under the picture of itself. The banner is for what
-                // the pennants cannot show: the countdown and the win.
+                // theirs or loose, on the line above where this one lands, so
+                // a tally here was the same answer written out longhand under
+                // the picture of itself. The banner is for what the pennants
+                // cannot show: the countdown and the win.
                 ctx.banner = String::new();
             }
         }

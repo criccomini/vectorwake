@@ -55,45 +55,10 @@ intermission_seconds = 15
 # round into a three flag round nobody can finish.
 flag_carry_seconds = 30
 
-# Two seconds before a dropped flag can be taken again, so the pilot who just
-# killed a carrier does not sweep it up in the same pass that killed them.
-flag_drop_cooldown = 200
-flag_radius = 18
+# The other two flag numbers are the baseline's and so are not written here: a
+# dropped flag waits two seconds before it can be taken again, so the pilot who
+# just killed a carrier does not sweep it up in the same pass, and a flag is
+# taken from eighteen pixels past the hull's own edge.
 
-# Team Battle's economy, unchanged. See catalog/zones/melee/zone.toml.
-bounce = 12
-friction = 12
-respawn_delay = 200
-spawn_radius = 0
-safe_limit = 65535
-streak_kills = 3
-mod_spread = 5
-multi_energy = 25
-multi_delay = 50
-prox_step = 16
-prox_delay = 150
-bomb_safety = true
-bbomb_damage = 1000
-shrap_inactive = 3
-shrap_inactive_ticks = 25
-
-[arena.mod_step]
-multi = 1
-bounce = 1
-prox = 48
-
-[[arena.weapons]]
-name = "gun"
-bounces = 255
-
-[[arena.weapons]]
-name = "gun-2"
-bounces = 255
-
-[[arena.weapons]]
-name = "gun-3"
-bounces = 255
-
-[[arena.weapons]]
-name = "burst"
-damage = 515
+# Nothing else: the ship, the wall and the economy are the baseline's, which is
+# what every zone in this catalog plays. See `sim/src/baseline.c`.

@@ -4,17 +4,18 @@ This is the packet for a qualified attorney. It records facts and questions; it 
 
 ## Operator and launch
 
-- Public operator named on the site: Chris.
+- Public operator named on the site: Loopweld LLC.
 - Product: a free browser-based multiplayer space combat game.
 - Initial hosting: United States, through Vultr cloud compute and managed PostgreSQL.
 - Accounts: generated call signs, optional passwords, no email address, no payments, and no player chat.
 - Community: a project-run Discord server with no account linkage to the game.
 - Source distribution: PolyForm Noncommercial License 1.0.0, with Loopweld LLC named as the licensor in the required notice at the top of `LICENSE.md`.
 - Copyright holder: Loopweld LLC, named on the terms page and in the repository.
+- Contracting party on the terms page, and the controller named in the privacy notice: Loopweld LLC.
 
-Copyright in the code and the game is held by Loopweld LLC. The site still names Chris as the operator of the hosted service, so the two are not the same party on the page today.
+One party holds the rights, operates the service, and answers privacy requests. The site no longer names an individual anywhere: the founder letter that carried the first person voice is gone, and with it the only mention of a person on the public pages. Terms and privacy carry an effective date of September 1, 2026 for that change, and the announcement the terms promise before a material change takes effect has not been made yet.
 
-Counsel should confirm the operator's legal name, business form, contact address, governing law, and whether Loopweld LLC should also be the party that operates the service and contracts with players, rather than only the party that holds the rights.
+Counsel should confirm the company's registered name and state, the notice address the terms should carry, and the governing law and venue. The terms still route every question through the support page and give no postal address.
 
 ## Privacy questions
 
@@ -50,7 +51,7 @@ Counsel should answer these questions in writing:
 6. Is a trademark search and application for Vectorwake advisable before promotion?
 7. Does the PolyForm Noncommercial license cover every distributed file, and is a contributor agreement or certificate of origin needed before accepting outside work?
 
-There is one policy contradiction to resolve. `docs/design/identity.md` says other games will not be named in marketing, while the landing-page founder letter names SubSpace. Counsel and product should choose one rule and make both documents agree.
+`docs/design/identity.md` says other games are not named in marketing, and no public page names one. The founder letter that named SubSpace has been removed from the landing page, which resolves the contradiction this section used to record. The README still credits Subspace Continuum, which question 3 covers.
 
 ## Terms questions
 

@@ -88,7 +88,10 @@ Tests and local debug runs use obvious placeholder public values.
 ## `zone.toml`
 
 A zone file selects a built-in mode, an ordered map rotation, room policy, team
-policy, and simulation tuning. This is a shortened current example:
+policy, and whatever simulation tuning makes it a different game from the one
+the core ships. What it leaves out it plays as shipped, which is how five zones
+share a ship, a wall and an economy without any of them holding a copy. This is
+a shortened current example:
 
 ```toml
 label = "Team Battle"
@@ -117,21 +120,7 @@ admission = "any"
 [arena]
 match_seconds = 180
 intermission_seconds = 15
-bounce = 12
-friction = 12
-respawn_delay = 200
-streak_kills = 3
-
-[[arena.ships]]
-name = "Anvil"
-speed = 2650
-gun_mods = { }
-bomb_mods = { }
-charges = [3, 1]
-
-[[arena.weapons]]
-name = "burst"
-damage = 515
+spawn_radius = 0
 ```
 
 The zone fields are:
@@ -155,8 +144,20 @@ The zone fields are:
 
 `[arena]` is the simulation settings overlay. Missing values keep the core
 baseline, while zero remains a real value. The current field set is defined by
-`ArenaConfig` in `server/src/config.rs`, and the shipped Melee file is the full
-working example.
+`ArenaConfig` in `server/src/config.rs`.
+
+Write a key only where the zone wants a different answer from the baseline's.
+That is not a style rule. The five shipped zones each restated about twenty
+settings once, most of them already the baseline's own value and the rest Team
+Battle's tuning copied four times, which meant every tuning pass had five files
+to remember and a catalog that could disagree with itself about the wall while
+loading cleanly. The numbers are in `sim/src/baseline.c` now, and the shipped
+zone files are the worked examples of how short a zone gets:
+`catalog/zones/duel/zone.toml` is a room shape, a map list and a clock, and
+`catalog/zones/roam/zone.toml` is the longest because it is the most different.
+`every_shipped_zone_flies_the_same_ship` in `server/src/main.rs` is what holds
+the line: it applies each zone, blanks the fields a zone is allowed to differ
+on, and fails if what is left is not identical across the catalog.
 
 Three groups in there are what a zone reaches for to be a different game rather
 than a differently tuned one:
@@ -180,12 +181,16 @@ the rest of a zone file uses: a stat by its own name (`energy`, `recharge`,
 `gun.multi` or `bomb.prox`, and a charge as `repel` or `burst`. A name that is
 not a slot is reported rather than ignored.
 
-`[[arena.ships]]` is one hull, named, and it is where a zone writes a whole
-ship: its flight row, which weapon rungs it fires, what those weapons carry,
-and how many of each charge. A hull left out keeps the baseline's row for it,
-so a zone overrides one ship without restating the other six. Collision
-footprints are not zone fields; every hull occupies the same 625 square pixels
-and the shapes are the core's.
+`[[arena.ships]]` is one hull, named, and it is a flight row: `speed`,
+`thrust`, `rotation`, `energy`, `recharge`. A hull left out keeps the
+baseline's row for it, so a zone retunes one ship without restating the other
+six, and no zone in this catalog writes the block at all.
+
+Nothing about a weapon is in it. A hull is how it flies; the gun, the bomb and
+the two charges belong to the arena, and a pilot's seven credits say what they
+carry, so a zone tunes a weapon by name under `[[arena.weapons]]` and the whole
+room gets it. Collision footprints are not zone fields either: every hull
+occupies the same 625 square pixels and the shapes are the core's.
 
 Unknown keys are refused at every level. That strictness is deliberate: a
 misspelled setting that silently falls back is a deployment that appears to

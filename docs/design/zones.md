@@ -125,6 +125,12 @@ what a 1v1 on melee ground measured as. These are four to six seconds home to
 home rather than twelve to fifteen, so the fight starts at the whistle and
 restarts after every death.
 
+None of the three holds a wormhole. A warp sends whoever touches it back to
+their own start, which on ground this small is a way out of the only fight in
+the room, and its thirty-eight tile field covers most of a ninety-six tile map
+besides. See
+[decision 138](../architecture/decisions.md#138-a-duel-is-too-small-to-hold-a-wormhole).
+
 It is played in rounds. A death ends the round, and two seconds later both
 pilots are back on their own starts with a full bar and a full rack. Two
 rounds take the match, level at two plays on, and the three minute clock is
@@ -209,8 +215,10 @@ Each row in the catalog brings more than a mode:
 - **A bot population that plays the objective.** At our population a zone
   without one is a dead room.
 - **A balance surface.** Every mode is a new answer to "which hull wins here".
-  Turf, War, Duel and Free Roam are all flying the roster Team Battle was
-  tuned for, and none has been measured.
+  Turf, War, Duel and Free Roam are all flying the roster Team Battle was tuned
+  for, and none has been measured. They fly it because the tuning is the
+  core's: a zone file says what makes it that zone and nothing else, so a room
+  that wants a different ship has to say so and be seen saying it.
 - **An arena process.** One per declared zone, which is now five, with the
   services, routes and firewall ports that go with them.
 

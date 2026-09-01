@@ -2948,6 +2948,26 @@ impl Room {
                 "team": self.world.state.ships[ship as usize].team,
             }),
         );
+        // The ground and the rules, live, before the welcome, the same as at
+        // the door. What this client holds is the channel's copy, which runs
+        // `CHANNEL_DELAY` behind the room: a whistle inside that window has
+        // already changed the map and bumped the generation for everybody in
+        // a hull, and the stands are still being shown the last one. Seated
+        // without these, a pilot who pressed deploy in those five seconds
+        // predicted a whole match on the previous map's walls, or refused
+        // every frame for want of the generation the welcome named. The
+        // landing joins this way, so that was the front door.
+        let map = self.map_msg();
+        let name = self.map_name_msg();
+        let settings = self.settings_msg();
+        let landed = Self::offer_map(&self.players[&new_id], &map, &name)
+            && tx.try_send(Message::Binary(settings)).is_ok();
+        if !landed {
+            if let Some(p) = self.players.get_mut(&new_id) {
+                p.owes_map = true;
+            }
+            metrics::SEND_DROPPED.inc();
+        }
         let mut m = vec![S2C_WELCOME, ship];
         m.extend_from_slice(&lifecycle.to_le_bytes());
         m.extend_from_slice(&self.world.state.tick.to_le_bytes());
@@ -3505,9 +3525,10 @@ impl Room {
         }
     }
 
-    /// The ground everybody is playing on. Sent at a join and again whenever a
-    /// match opens on a different map, which is the only time it changes. The
-    /// name rides beside it, when the room has one.
+    /// The ground everybody is playing on. Sent at a join, at a seat taken
+    /// from the stands, and again whenever a match opens on a different map,
+    /// which is the only time it changes. The name rides beside it, when the
+    /// room has one.
     ///
     /// Anybody whose queue refuses it is marked, held back from the tuning,
     /// and offered both again every tick until they land. See `Player::owes_map`
