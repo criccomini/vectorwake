@@ -18,16 +18,20 @@ extern "C" {
  * back when they carried one again. What a ship sends now is the slots its
  * pilot actually spent, one byte each, which seven credits caps at eight;
  * the twenty-three byte vector this used to be would not have fitted the
- * buffer at all. See the build in `sim_pack`. */
-#define SIM_STATE_PACK_MAX 62883
+ * buffer at all. See the build in `sim_pack`.
+ *
+ * Greens add SIM_MAX_GREENS * 11 + 1 on top, which is 705 bytes for a room
+ * running the full field. */
+#define SIM_STATE_PACK_MAX 63588
 
 /* A network snapshot carries one owner-only ship tail. The whole-state
  * replay path and trusted house bots ask for every tail instead.
  *
  * There used to be a second flag for server-private randomness, because the
  * prize stream was a decision the server made and the client was not allowed
- * to predict. Greens are gone and nothing in the state is private any more:
- * a kit is chosen rather than rolled, so both ends can predict all of it. */
+ * to predict. Greens are back and it is still not needed: what a green grants
+ * is decided when it is put out and travels in the snapshot with it, so a
+ * client reading one is reading a fact rather than guessing a roll. */
 #define SIM_PACK_PRIVATE_ALL 0x01u
 
 /* Write s into out. SIM_STATE_PACK_MAX bytes always suffice. Returns bytes

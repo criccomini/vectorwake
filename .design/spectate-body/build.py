@@ -1,0 +1,942 @@
+#!/usr/bin/env python3
+"""Assemble the artboards for what the body carousel draws on spectate.
+
+The ship stop's body section is a carousel: one ship turning on its own
+vertical axis, an arrow either side of it, its name under it and its own
+line under that. Seven hulls turn through it and the eighth stop is
+spectate, which has no hull, so the drawing is skipped and 168 points of
+glass are left empty over the word. Nothing else on the menu has a hole
+in it.
+
+Four drawings for that hole, and a board apiece over the same room, plus
+the empty one that ships today so the four have something to be compared
+against.
+
+The four are not four styles of one idea. Ghost keeps the roster's own
+shape and takes the pilot out of it. Lens is a machine whose whole
+purpose is to look, and it puts its bright cell where a hull carries a
+canopy, which is the one inversion that says watching without a word.
+Mast is a fixture rather than a flier: the thing the channel comes out
+of. Frame is not a craft at all, and does not turn.
+
+Every drawing here is in the local pixels `world.lua` writes a hull in,
+nose along +y, and is drawn by the same four weights the arena gives a
+hull: closed plates washed and outlined in the panel ink, panel lines
+under them, a silhouette whose every edge carries its own brightness off
+a light fixed to the nose, and one bright closed cell. So a pick here is
+a table to paste into `M.HULLS`'s neighborhood rather than a picture to
+work back from.
+
+The shared rule the four agree on: none of them wears the team color. A
+hull on this carousel is drawn in `pal.FRIEND` because the ship you turn
+to is the ship you fly, and a watcher flies nothing and holds no side.
+The instrument gray is what the interface uses for everything that
+describes rather than belongs to you, so these are drawn in it, and the
+word Spectate under them stays blue because the stop is still the one
+you are standing on.
+
+The panel, the tray, the arrows, the type ladder and the geometry are
+lifted from client/arena/ui.lua; the glass, the scene behind it and the
+score band are from ../ship-sections/build.py, which lifted them from
+../dropdown-stack.
+
+Rebuild with: python3 build.py
+"""
+
+import math
+import random
+from pathlib import Path
+
+HERE = Path(__file__).parent
+
+# --- the palette, verbatim from client/arena/palette.lua ---------------------
+BG = "#05070c"
+INK = "#dfe9f5"
+DIM = "#6c7a90"
+READ = "#9fb6d4"
+MUTE = "#8593a9"
+FRIEND = "#4fd6ff"
+ENEMY = "#ffa552"
+TILE = "#3f5878"        # RADAR_TILE: every rule and resting edge
+CAUTION = "#ffd166"     # CHARGE_COL: the credit, and the tray it is spent from
+PANEL_INK = "#9fb6d4"   # the interior of a hull, in a neutral instrument gray
+
+CSS = f"""
+:root{{ --bg:{BG}; --ink:{INK}; --dim:{DIM}; --read:{READ}; --mute:{MUTE};
+  --friend:{FRIEND}; --enemy:{ENEMY}; --tile:{TILE}; --caution:{CAUTION};
+  --mono:"DejaVu Sans Mono","Noto Sans Mono",ui-monospace,monospace;
+  --menu:"Chakra Petch","Segoe UI",system-ui,sans-serif; }}
+*{{box-sizing:border-box}}
+body{{margin:0;background:var(--bg);color:var(--ink);font-family:var(--menu)}}
+a{{color:var(--friend)}}a:hover{{color:#8ee6ff}}
+.mono{{font-family:var(--mono)}}
+.lbl{{font-family:var(--mono);font-size:12px;text-transform:uppercase;
+  letter-spacing:.1em;color:var(--mute)}}
+.row{{display:flex;align-items:center}}
+
+/* The glass: frost plus the button tint, outlined in the tile color. */
+.glass{{border:1px solid rgba(63,88,120,.75);background:rgba(10,15,24,.72);
+  backdrop-filter:blur(5px)}}
+"""
+
+# --- the carousel's own geometry, from client/arena/ui.lua -------------------
+#
+# `pages.land_row_h` gives the art row 198 points plus a line of note at
+# `pages.NOTE_LINE`, so the shipped sentence makes it 217. `land_row` takes
+# the name's 30 and the note's 19 off the bottom, centers the drawing in what
+# is left, and caps its radius at HULL_ART_R. The arrows sit 24 points in from
+# either edge, level with the middle of the drawing rather than of the row.
+ART_ROW = 198
+NAME_H = 30
+NOTE_LINE = 19
+ART_R = 78
+PANEL_MAX = 560
+MARGIN = 14
+INSET = 14
+ARROW_IN = 24
+NOTE = "Watch the room from nobody's cockpit"
+
+
+# --- small marks, at the pen weight the client draws them --------------------
+
+
+def back_tri(a=0.9):
+    return (f'<svg width="11" height="12" viewBox="0 0 11 12" '
+            f'style="flex:none"><polygon points="2,6 9,1.5 9,10.5" '
+            f'fill="rgba(79,214,255,{a})"/></svg>')
+
+
+def step_tri(direction, k=18):
+    pts = "2,6.5 11,1.5 11,11.5" if direction < 0 else "11,6.5 2,1.5 2,11.5"
+    return (f'<svg width="{k}" height="{k}" viewBox="0 0 13 13" '
+            f'style="flex:none"><polygon points="{pts}" '
+            f'fill="rgba(79,214,255,0.9)"/></svg>')
+
+
+def diamond(on=True, k=9):
+    fill = CAUTION if on else "rgba(255,209,102,.18)"
+    return (f'<span style="width:{k}px;height:{k}px;flex:none;'
+            f'transform:rotate(45deg);background:{fill}"></span>')
+
+
+def head(section, pad=INSET):
+    """The back bar: the way back and the name of what you are in."""
+    return (f'<div class="row" style="height:44px;padding:0 {pad}px;gap:10px;'
+            f'flex:none;border-bottom:1px solid rgba(63,88,120,.6)">'
+            f'{back_tri()}'
+            f'<span class="lbl" style="color:{MUTE}">{section}</span></div>')
+
+
+def tray(free=0, total=7, pad=INSET):
+    """The purse, drawn by the panel on every section. Empty on every board
+    here: the default build spends all seven credits, and a watcher is not
+    spending any of them either way."""
+    chips = "".join(diamond(k < free) for k in range(total))
+    return (f'<div style="flex:none">'
+            f'<div class="row" style="height:30px;padding:0 {pad}px">'
+            f'<span class="lbl" style="color:rgba(255,209,102,.8)">'
+            f'build credits</span>'
+            f'<span class="row" style="margin-left:auto;gap:6px">{chips}'
+            f'</span></div>'
+            '<div style="height:1px;background:rgba(63,88,120,.45)"></div>'
+            '</div>')
+
+
+# --- the four drawings -------------------------------------------------------
+#
+# Local pixels, nose along +y, in the shape `M.HULLS` writes a hull in:
+#
+#   poly    the silhouette, every edge lit off the nose
+#   plates  closed interior loops, washed and outlined in the panel ink
+#   lines   open polylines at the panel line's weight
+#   hollow  a closed shape outlined and not filled: a cell with nobody in it
+#   discs   (x, y, r): the one bright cell, drawn the way a lamp is
+#   flat    no nose light, every edge of the silhouette at one brightness
+#   turns   False holds the drawing still while the carousel turns
+
+
+def ring(n, r, cy=0.0, phase=0.5):
+    """A closed regular n-gon, phase in half steps so a flat edge or a
+    vertex can be put at the top."""
+    out = []
+    for i in range(n):
+        a = (i + phase) * 2 * math.pi / n
+        out.append((r * math.cos(a), cy + r * math.sin(a)))
+    return out
+
+
+LENS_C = 2.5
+LENS_R = 14.6
+
+
+def _iris():
+    """Six blades and the spokes behind them: an aperture rather than a
+    dish, so what the ring is for is legible at 156 points across."""
+    blades = ring(6, 6.2, LENS_C, phase=0.5)
+    out = [blades + [blades[0]]]
+    for i in range(6):
+        a = (i + 1.0) * 2 * math.pi / 6
+        out.append([(6.2 * math.cos(a), LENS_C + 6.2 * math.sin(a)),
+                    (10.4 * math.cos(a), LENS_C + 10.4 * math.sin(a))])
+    return out
+
+
+# --- the pilot badge, verbatim from `pilot_mark` in client/arena/ui.lua ------
+#
+# The mark a seat wears when a person is in it, drawn beside a name on the
+# scoreboard, on a nameplate and against the count of humans in a room. Its
+# units are fractions of the mark's own width, y down the screen, and the
+# spread is exactly that width, so a caller can lay it out against one
+# number. The client draws it at eleven points, and at ten beside a name.
+#
+# Three quads and six struck feathers, all in one flat color: the hull is a
+# fuselage running nose to tail through two notches and a wing either side of
+# it, and the feathers root off the leading edge at each height rather than
+# at a shared distance from the middle.
+MARK_HULL = [
+    [(0, -0.325), (0.070, 0.225), (0, 0.325), (-0.070, 0.225)],
+    [(0.052, -0.005), (0.220, 0.275), (0.170, 0.325), (0.070, 0.225)],
+    [(-0.052, -0.005), (-0.220, 0.275), (-0.170, 0.325), (-0.070, 0.225)],
+]
+MARK_FEATHERS = [
+    [(0.118, -0.06), (0.500, -0.30)],
+    [(0.166, 0.06), (0.463, -0.10)],
+    [(0.238, 0.18), (0.389, 0.09)],
+]
+# The circle that holds the mark, measured off every point in it the way
+# world.lua measures a hull: the feather tips reach further than the nose.
+MARK_REACH = max(math.hypot(x, y)
+                 for shape in MARK_HULL + MARK_FEATHERS for x, y in shape)
+
+
+def _mark_points(mirror=True):
+    out = [list(q) for q in MARK_HULL]
+    for f in MARK_FEATHERS:
+        out.append(list(f))
+        if mirror:
+            out.append([(-x, y) for x, y in f])
+    return out
+
+
+# --- the feathers, worked at the size the carousel draws them ----------------
+#
+# The mark is cut for eleven points, where each feather is one point across
+# and a round cap is a rounding error. At 156 the same three strokes are
+# fourteen points across with a half circle on each end, which reads as three
+# sausages rather than three feathers. What is wrong with them is the pen,
+# not the arrangement.
+#
+# Three things to fix, in the order they matter. They are not parallel: 32.1,
+# 28.3 and 30.8 degrees, which is close enough to look like a mistake and far
+# enough to lose the even gap the roots were cut for. The caps are round. And
+# the width is constant, so a feather has no direction in it.
+#
+# Parallel costs almost nothing, which is the surprise: set all three to 30
+# degrees and run each one out to the line the current tips already sit on,
+# and the third lands within a thousandth of where it is now, the second
+# within two hundredths. The shape barely moves. It just stops wobbling.
+PICK = "banded"
+FEATHER_DEG = 30.0
+FEATHER_ROOTS = [(0.118, -0.06), (0.166, 0.06), (0.238, 0.18)]
+# The line the three tips are cut against, which is the one the current tips
+# already lie on: from the top feather's tip to the bottom one's.
+RAKE = ((0.500, -0.30), (0.389, 0.09))
+# What a feather may not do is reach past the mark's own width. Every caller
+# lays the badge out against `k` and one of them sets it beside a name, so a
+# tip corner at 0.51 is a wing that touches a call sign. The set is squeezed
+# in x until the widest point is exactly 0.5, which moves a root two
+# thousandths and keeps the three parallel, since scaling one axis does.
+FEATHER_SPREAD = 0.5
+
+
+def _line_hit(pt, u, line):
+    """How far along `u` from `pt` a line is, so a corner can be run out to
+    it. Every cut here is one of these: a tip line the feathers end on, or a
+    root line they start from."""
+    (ax, ay), (bx, by) = line
+    nx, ny = -(by - ay), (bx - ax)
+    return (nx * (ax - pt[0]) + ny * (ay - pt[1])) / (nx * u[0] + ny * u[1])
+
+
+def _feather(root, u, n, s, w, tip="butt", root_cut=None):
+    """One feather as a closed shape.
+
+    `w` is four offsets along the perpendicular: above and below the
+    centerline at the root, then at the tip. A symmetric pair either end is
+    an ordinary feather; zero above and everything below is one that grows
+    under a straight top edge.
+
+    `tip` cuts the far end square, out to the common rake line, or to a
+    point. `root_cut` does the same at the near end, so the three inner ends
+    can sit on one line the way the tips do."""
+    a0, b0, a1, b1 = w
+    rx, ry_ = root
+    tx, ty = rx + u[0] * s, ry_ + u[1] * s
+    top0 = (rx + n[0] * a0, ry_ + n[1] * a0)
+    bot0 = (rx - n[0] * b0, ry_ - n[1] * b0)
+    if root_cut:
+        top0 = (top0[0] + u[0] * _line_hit(top0, u, root_cut),
+                top0[1] + u[1] * _line_hit(top0, u, root_cut))
+        bot0 = (bot0[0] + u[0] * _line_hit(bot0, u, root_cut),
+                bot0[1] + u[1] * _line_hit(bot0, u, root_cut))
+    if tip == "point":
+        peak = 0.72
+        px_, py_ = rx + u[0] * s * peak, ry_ + u[1] * s * peak
+        return [top0, (px_ + n[0] * a1, py_ + n[1] * a1), (tx, ty),
+                (px_ - n[0] * b1, py_ - n[1] * b1), bot0]
+    top1 = (tx + n[0] * a1, ty + n[1] * a1)
+    bot1 = (tx - n[0] * b1, ty - n[1] * b1)
+    if tip == "rake":
+        top1 = (top1[0] + u[0] * _line_hit(top1, u, RAKE),
+                top1[1] + u[1] * _line_hit(top1, u, RAKE))
+        bot1 = (bot1[0] + u[0] * _line_hit(bot1, u, RAKE),
+                bot1[1] + u[1] * _line_hit(bot1, u, RAKE))
+    return [top0, top1, bot1, bot0]
+
+
+# The line the roots sit on, which is the leading edge they were cut against
+# in the first place: the top feather's root to the bottom one's.
+ROOT_LINE = (FEATHER_ROOTS[0], FEATHER_ROOTS[2])
+
+# Eight ways to cut them. The widths are (above, below) at the root and then
+# at the tip, so a rising pair is a feather with somewhere to go and a zero
+# above is one that grows under a straight edge.
+FEATHERS = {
+    "now": dict(note="as the client cuts it", stroke=True),
+    "parallel": dict(note="parallel, cut square",
+                     w=(0.040, 0.040, 0.040, 0.040)),
+    "taper": dict(note="thin at the root, square tip",
+                  w=(0.020, 0.020, 0.039, 0.039)),
+    "rake": dict(note="tapered, tips on one line",
+                 w=(0.020, 0.020, 0.039, 0.039), tip="rake"),
+    "wedge": dict(note="the same, cut harder",
+                  w=(0.012, 0.012, 0.044, 0.044), tip="rake"),
+    "banded": dict(note="both ends on a line",
+                   w=(0.020, 0.020, 0.039, 0.039), tip="rake",
+                   root_cut=ROOT_LINE),
+    "blade": dict(note="both ends on a line, cut harder",
+                  w=(0.013, 0.013, 0.045, 0.045), tip="rake",
+                  root_cut=ROOT_LINE),
+    "quill": dict(note="tapered to a point",
+                  w=(0.015, 0.015, 0.043, 0.043), tip="point"),
+    "swept": dict(note="grown under a straight top edge",
+                  w=(0.0, 0.040, 0.0, 0.078), tip="rake"),
+}
+
+
+def feather_shapes(style, k=None):
+    """Every feather of one style, both sides, in the mark's own units.
+
+    `k` is the width the mark is about to be drawn at, and all it does is put
+    a floor under the widths, the way `pen` does: nothing narrower than nine
+    tenths of a point, or a taper that is invisible at eleven points is a
+    taper that vanishes on the scoreboard."""
+    spec = FEATHERS[style]
+    if spec.get("stroke"):
+        return None
+    floor = (0.45 / k) if k else 0
+    a = math.radians(FEATHER_DEG)
+    u = (math.cos(a), -math.sin(a))
+    n = (-u[1], u[0])
+    out = []
+    for root in FEATHER_ROOTS:
+        # A feather grown under a straight top edge hangs off that edge
+        # rather than off a centerline, so its root lifts by half of what
+        # sits below it and the set still covers the ground the mark's own
+        # three do.
+        lift = spec["w"][1] / 2 if not spec["w"][0] else 0
+        base = (root[0] + n[0] * lift, root[1] + n[1] * lift)
+        w = tuple(v if v == 0 else max(v, floor) for v in spec["w"])
+        out.append(_feather(base, u, n, _line_hit(base, u, RAKE), w,
+                            spec.get("tip", "butt"), spec.get("root_cut")))
+    far = max(abs(x) for q in out for x, _ in q)
+    k = FEATHER_SPREAD / far
+    both = []
+    for q in out:
+        both.append([(x * k, y) for x, y in q])
+        both.append([(-x * k, y) for x, y in q])
+    return both
+
+
+def wings(cx, cy, r, squash, col=READ, style="banded"):
+    """The badge at the size the carousel draws a ship: `pilot_mark`'s own
+    three quads, filled, with the feathers cut whichever way `style` says.
+
+    It holds still. A badge turning about its own vertical axis is a decal
+    spinning, and there is nothing behind it to come into view."""
+    k = r / MARK_REACH
+
+    def put(pts):
+        return [(cx + x * k, cy + y * k) for x, y in pts]
+
+    def path(pts, close=True):
+        d = "M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+        return d + (" Z" if close else "")
+
+    parts = []
+    for quad in MARK_HULL:
+        parts.append(f'<path d="{path(put(quad))}" fill="{col}" '
+                     f'fill-opacity=".92"/>')
+    shapes = feather_shapes(style, k)
+    if shapes is None:
+        line = max(0.9, k * 0.11) * 0.85
+        for f in MARK_FEATHERS:
+            for w in (1, -1):
+                a, b = put([(w * f[0][0], f[0][1]), (w * f[1][0], f[1][1])])
+                parts.append(f'<path d="M{a[0]:.1f},{a[1]:.1f} '
+                             f'L{b[0]:.1f},{b[1]:.1f}" stroke="{col}" '
+                             f'stroke-width="{line:.1f}" stroke-opacity=".92" '
+                             f'stroke-linecap="round"/>')
+        return "".join(parts)
+    for shape in shapes:
+        parts.append(f'<path d="{path(put(shape))}" fill="{col}" '
+                     f'fill-opacity=".92" stroke-linejoin="miter"/>')
+    return "".join(parts)
+
+
+def wings_built(cx, cy, r, squash, col=READ):
+    """The same badge given the weights the page draws everything else in.
+
+    The hull is three closed shapes rather than three fills: washed in the
+    panel ink, outlined, and lit off the nose the way a silhouette is, so the
+    leading edge is bright and the cut tail falls away. A canopy goes where
+    every hull carries one, forward of center, and the feathers come down
+    from the mark's own fourteen-point pen to the weight a panel line is
+    struck at, which is what keeps three feathers from closing into one wing
+    at this size.
+
+    And it turns, because it is an object now rather than a decal."""
+    k = r / MARK_REACH
+    lo = min(y for shape in _mark_points() for _, y in shape)
+    hi = max(y for shape in _mark_points() for _, y in shape)
+    span = hi - lo
+
+    def put(pts):
+        return [(cx + x * squash * k, cy + y * k) for x, y in pts]
+
+    def path(pts, close):
+        d = "M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+        return d + (" Z" if close else "")
+
+    parts = []
+    for quad in MARK_HULL:
+        t = put(quad)
+        parts.append(f'<path d="{path(t, True)}" fill="{PANEL_INK}" '
+                     f'fill-opacity=".07" stroke="none"/>')
+        for i, (x, y) in enumerate(t):
+            x2, y2 = t[(i + 1) % len(t)]
+            # Up the screen is toward the nose, so the light runs the other
+            # way from a hull's: the mark is written with y down.
+            lit = 1 - (quad[i][1] - lo) / span
+            parts.append(f'<path d="M{x:.1f},{y:.1f} L{x2:.1f},{y2:.1f}" '
+                         f'stroke="{col}" stroke-width="1.8" '
+                         f'stroke-opacity="{max(0.20, lit * lit):.2f}" '
+                         f'stroke-linecap="round"/>')
+    # The same feathers the plain badge is cut with, outlined rather than
+    # filled, so the two are the same drawing at two weights.
+    for shape in feather_shapes("banded", k) or []:
+        parts.append(f'<path d="{path(put(shape), True)}" fill="{PANEL_INK}" '
+                     f'fill-opacity=".06" stroke="{col}" stroke-width="1.4" '
+                     f'stroke-opacity=".62" stroke-linejoin="miter"/>')
+    canopy = [(0, -0.20), (0.038, -0.12), (0, -0.035), (-0.038, -0.12)]
+    parts.append(f'<path d="{path(put(canopy), True)}" fill="{INK}" '
+                 f'fill-opacity=".42" stroke="{INK}" stroke-width="0.9" '
+                 f'stroke-opacity=".95"/>')
+    return "".join(parts)
+
+
+ART = {
+    # Ghost: the roster's own language with the pilot taken out of it. A
+    # plain delta none of the seven flies, its canopy outlined and not
+    # filled, no hardpoints, no lamps, and no light on the nose, because
+    # the light on a hull is a hull under way.
+    "Ghost": dict(
+        poly=[(0, 19), (2.4, 7), (6.6, -1.5), (11, -9.5), (5.5, -9),
+              (3.4, -12), (0, -11), (-3.4, -12), (-5.5, -9), (-11, -9.5),
+              (-6.6, -1.5), (-2.4, 7)],
+        plates=[[(0, 6), (2.0, 1.5), (1.7, -6), (0, -7.6), (-1.7, -6),
+                 (-2.0, 1.5)]],
+        lines=[[(0, 17.6), (2.4, 7), (6.6, -1.5)],
+               [(0, 17.6), (-2.4, 7), (-6.6, -1.5)],
+               [(4.4, 0.4), (8.6, -8.0)], [(-4.4, 0.4), (-8.6, -8.0)],
+               [(-2.0, -8.6), (2.0, -8.6)]],
+        hollow=[[(0, 13.6), (1.5, 9.8), (0, 7.2), (-1.5, 9.8)]],
+        discs=[],
+        flat=True,
+        turns=True,
+        line="A hull with the seat empty",
+    ),
+    # Lens: the channel's own camera. The ring is the silhouette and the
+    # pupil is the bright cell, which is the canopy's place on every other
+    # drawing this carousel shows. A hood over the top says which way it
+    # looks, so the front is visibly not the back at radar scale, and the
+    # ring turning edge on is the clearest read of the turn in the set.
+    "Lens": dict(
+        poly=ring(12, LENS_R, LENS_C),
+        plates=[ring(12, 10.4, LENS_C),
+                [(3.0, -13.0), (2.2, -18.4), (-2.2, -18.4), (-3.0, -13.0)]],
+        lines=_iris() + [
+            [(10.3, 12.8), (6.2, 19.4)], [(-10.3, 12.8), (-6.2, 19.4)],
+            [(-6.2, 19.4), (6.2, 19.4)],
+            [(10.3, -7.8), (2.8, -14.2)], [(-10.3, -7.8), (-2.8, -14.2)],
+        ],
+        hollow=[],
+        discs=[(0, LENS_C, 3.3)],
+        flat=False,
+        turns=True,
+        line="The room's camera, and nothing else",
+    ),
+    # Mast: a relay with panels and a dish, which is a thing the room has
+    # rather than a thing anybody flies. No canopy anywhere on it, and the
+    # bright cell is the feed at the dish's focus.
+    "Mast": dict(
+        poly=[(0, 17), (2.6, 9), (2.2, -2), (3.6, -9), (2.4, -15),
+              (-2.4, -15), (-3.6, -9), (-2.2, -2), (-2.6, 9)],
+        plates=[[(-12.5, 2.2), (-17, 2.2), (-17, -4.5), (-12.5, -4.5)],
+                [(12.5, 2.2), (17, 2.2), (17, -4.5), (12.5, -4.5)]],
+        lines=[[(-11, 7.2), (-7.4, 11.6), (0, 13.8), (7.4, 11.6), (11, 7.2)],
+               [(-11, 7.2), (0, 17.8)], [(11, 7.2), (0, 17.8)],
+               [(-12.5, 0.5), (12.5, 0.5)], [(-9.5, -7.5), (9.5, -7.5)],
+               [(-12.5, 0.5), (-9.5, -7.5)], [(12.5, 0.5), (9.5, -7.5)],
+               [(-12.5, 0.5), (-10.2, -7.5), (-8.0, 0.5), (-5.8, -7.5),
+                (-3.6, 0.5)],
+               [(12.5, 0.5), (10.2, -7.5), (8.0, 0.5), (5.8, -7.5),
+                (3.6, 0.5)]],
+        hollow=[],
+        discs=[(0, 17.8, 1.7)],
+        flat=False,
+        turns=True,
+        line="A fixture the channel comes out of",
+    ),
+    # Frame: no craft at all. Four corner brackets and a reticle, which is
+    # the interface's own language rather than the world's, and the one
+    # drawing here that holds still while the carousel turns.
+    "Frame": dict(
+        poly=[],
+        plates=[],
+        lines=[[(13, 7.5), (13, 13), (7.5, 13)],
+               [(-13, 7.5), (-13, 13), (-7.5, 13)],
+               [(13, -7.5), (13, -13), (7.5, -13)],
+               [(-13, -7.5), (-13, -13), (-7.5, -13)],
+               [(6.2, 0), (8.8, 0)], [(-6.2, 0), (-8.8, 0)],
+               [(0, 6.2), (0, 8.8)], [(0, -6.2), (0, -8.8)]],
+        hollow=[ring(12, 3.8)],
+        discs=[(0, 0, 1.1)],
+        flat=True,
+        turns=False,
+        line="Not a ship, and says so",
+    ),
+    # Wings: the mark a seat already wears when a person is in it, at the
+    # size the carousel draws a ship and otherwise untouched.
+    "Wings": dict(
+        custom=wings,
+        turns=False,
+        line="The badge, feathers recut",
+    ),
+    # The same badge at the page's own weights, which is what it would take
+    # for it to stand among seven ships rather than on top of them.
+    "Wings, built": dict(
+        custom=wings_built,
+        turns=False,
+        line="The same, at the page's weights",
+    ),
+}
+
+
+def _points(spec):
+    out = list(spec["poly"])
+    for group in ("plates", "lines", "hollow"):
+        for shape in spec[group]:
+            out.extend(shape)
+    out.extend((d[0], d[1]) for d in spec["discs"])
+    return out
+
+
+def measure(spec):
+    """`reach` and `mid` the way world.lua measures them at load: the circle
+    that holds the drawing, and halfway up it. Off the silhouette where there
+    is one, and off everything drawn where there is not."""
+    pts = spec["poly"] or _points(spec)
+    lo = min(p[1] for p in pts)
+    hi = max(p[1] for p in pts)
+    reach = max(math.hypot(x, y) for x, y in _points(spec))
+    return reach, (lo + hi) / 2
+
+
+def draw(spec, cx, cy, r, squash, col=READ):
+    """One drawing, turned, in the four weights the arena gives a hull.
+
+    `squash` is the cosine of the turn: local x scaled by it and the length
+    left alone, which is a rotation about the axis running up the screen.
+    Broadside at 1 and edge on at 0, caught mid turn here rather than
+    animated. The client turns a hull once every eleven seconds."""
+    if spec.get("custom"):
+        return spec["custom"](cx, cy, r, 1.0 if not spec["turns"] else squash,
+                              col)
+    reach, mid = measure(spec)
+    k = r / reach
+    if not spec["turns"]:
+        squash = 1.0
+
+    def put(pts):
+        return [(cx + px * squash * k, cy - (py - mid) * k) for px, py in pts]
+
+    def path(pts, close):
+        d = "M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+        return d + (" Z" if close else "")
+
+    parts = []
+    for plate in spec["plates"]:
+        parts.append(f'<path d="{path(put(plate), True)}" fill="{PANEL_INK}" '
+                     f'fill-opacity=".035" stroke="{PANEL_INK}" '
+                     f'stroke-width="0.85" stroke-opacity=".36"/>')
+    for line in spec["lines"]:
+        parts.append(f'<path d="{path(put(line), False)}" fill="none" '
+                     f'stroke="{PANEL_INK}" stroke-width="0.7" '
+                     f'stroke-opacity=".26" stroke-linecap="round"/>')
+    # The silhouette, edge by edge. A light fixed to the drawing's own nose,
+    # unless it is flat: nothing is under way here, and the Ghost is the one
+    # that wants saying so.
+    poly = spec["poly"]
+    if poly:
+        hull = put(poly)
+        lo = min(p[1] for p in poly)
+        span = max(p[1] for p in poly) - lo
+        for i, (x, y) in enumerate(hull):
+            x2, y2 = hull[(i + 1) % len(hull)]
+            t = (poly[i][1] - lo) / span
+            a = 0.45 if spec["flat"] else max(0.18, t * t)
+            parts.append(f'<path d="M{x:.1f},{y:.1f} L{x2:.1f},{y2:.1f}" '
+                         f'stroke="{col}" stroke-width="1.5" '
+                         f'stroke-opacity="{a:.2f}" stroke-linecap="round"/>')
+    for shape in spec["hollow"]:
+        parts.append(f'<path d="{path(put(shape), True)}" fill="none" '
+                     f'stroke="{INK}" stroke-width="0.9" '
+                     f'stroke-opacity=".46"/>')
+    for dx, dy, dr in spec["discs"]:
+        x, y = put([(dx, dy)])[0]
+        parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{dr * 2.4 * k:.1f}"'
+                     f' fill="{col}" fill-opacity=".10"/>')
+        parts.append(f'<ellipse cx="{x:.1f}" cy="{y:.1f}" '
+                     f'rx="{max(1.0, dr * k * squash):.1f}" '
+                     f'ry="{dr * k:.1f}" fill="{INK}" fill-opacity=".42" '
+                     f'stroke="{INK}" stroke-width="0.9" '
+                     f'stroke-opacity=".95"/>')
+    return "".join(parts)
+
+
+# --- the carousel ------------------------------------------------------------
+
+
+def carousel(name, spec=None, squash=0.62, w=PANEL_MAX, note=NOTE):
+    """The body section turned to a stop that is not a hull: the drawing,
+    an arrow either side of it, the name, and the line under the name.
+
+    Sitting out carries no flight bars, because there is no ship to say
+    anything about, so this row is the whole of the section and the panel is
+    as short as the menu ever gets."""
+    h = ART_ROW + NOTE_LINE
+    band = h - NAME_H - NOTE_LINE
+    mid = band / 2
+    art = ""
+    if spec:
+        art = draw(spec, w / 2, mid, min(mid - 6, ART_R), squash)
+    return (f'<div style="position:relative;height:{h}px">'
+            f'<svg width="{w}" height="{h}" style="position:absolute;'
+            f'inset:0">{art}</svg>'
+            f'<div style="position:absolute;left:{ARROW_IN - 9}px;'
+            f'top:{mid - 9:.0f}px">{step_tri(-1)}</div>'
+            f'<div style="position:absolute;right:{ARROW_IN - 9}px;'
+            f'top:{mid - 9:.0f}px">{step_tri(1)}</div>'
+            f'<div style="position:absolute;left:0;right:0;'
+            f'bottom:{NOTE_LINE}px;height:{NAME_H}px;display:flex;'
+            f'align-items:center;justify-content:center;font-size:21px;'
+            f'color:{FRIEND}">{name}</div>'
+            f'<div style="position:absolute;left:0;right:0;bottom:0;'
+            f'height:{NOTE_LINE}px;display:flex;align-items:center;'
+            f'justify-content:center;font-size:14px;color:{READ}">{note}'
+            f'</div></div>')
+
+
+# --- the fight behind the glass, from ../ship-sections -----------------------
+
+SHAPES = {
+    "Wedge":   "M0,-13 L15,9 L7,12 L0,8 L-7,12 L-15,9 Z",
+    "Chord":   "M0,-13 L8,-7 L17,1 L13,5 L5,2 L-5,2 L-13,5 L-17,1 L-8,-7 Z",
+    "Cipher":  "M0,-22 L3,-6 L6,8 L2,12 L-2,12 L-6,8 L-3,-6 Z",
+    "Anvil":   "M-8,-15 L8,-15 L13,-5 L13,6 L8,11 L-8,11 L-13,6 L-13,-5 Z",
+    "Facet":   "M0,-8 L11,-1 L8,12 L-8,12 L-11,-1 Z",
+}
+
+SHIPS = [
+    ("KRAIT 4",   "Wedge",  FRIEND, (0, 10),      18),
+    ("VIREO 9",   "Chord",  FRIEND, (-190, 60),   62),
+    ("SABER 3",   "Facet",  FRIEND, (-350, -160), 118),
+    ("MANTIS 7",  "Cipher", ENEMY,  (170, -95),   205),
+    ("HALCYON 2", "Anvil",  ENEMY,  (385, 65),    160),
+]
+
+
+def scene(w, h, seed):
+    cx, cy = w / 2, h / 2
+    rnd = random.Random(seed)
+    parts = []
+    for _ in range(16):
+        x = rnd.randint(-60, w - 40)
+        y = rnd.randint(-40, h - 40)
+        bw, bh = rnd.choice([(96, 32), (32, 108), (64, 64), (150, 30)])
+        if abs(x + bw / 2 - cx) < 260 and abs(y + bh / 2 - cy) < 200:
+            continue
+        parts.append(
+            f'<rect x="{x}" y="{y}" width="{bw}" height="{bh}" fill="#080d16" '
+            f'stroke="#22344f" stroke-width="1"/>'
+            f'<path d="M{x} {y} H{x + bw}" stroke="#5b82b8" stroke-width="1.4" '
+            f'opacity=".55"/>')
+    parts.append(f'<path d="M{cx + 60} {cy - 32} L{cx + 76} {cy - 44}" '
+                 'stroke="#f7dd0b" stroke-width="2.6" stroke-linecap="round"/>')
+    for name, hull, col, (ox, oy), rot in SHIPS:
+        x, y = cx + ox, cy + oy
+        if not (-40 < x < w + 40 and -40 < y < h + 40):
+            continue
+        parts.append(
+            f'<g transform="translate({x},{y}) rotate({rot})">'
+            f'<path d="M-4,10 L-2,52 L2,52 L4,10 Z" fill="{col}" opacity=".16"/>'
+            f'<path d="{SHAPES[hull]}" fill="#0b1220" stroke="{col}" '
+            f'stroke-width="1.5" stroke-linejoin="round"/></g>'
+            f'<text x="{x + 16}" y="{y + 22}" fill="{col}" opacity=".9" '
+            f'font-family="DejaVu Sans Mono,monospace" font-size="10">{name}'
+            '</text>')
+    return (f'<svg width="{w}" height="{h}" '
+            f'style="position:absolute;inset:0">{"".join(parts)}</svg>')
+
+
+def starfield(w, h, n, seed):
+    rnd = random.Random(seed)
+    out = []
+    for col, r, k in (("#2a3a58", 0.9, n), ("#4a6089", 1.0, n * 2 // 3),
+                      ("#93a9c8", 1.3, n // 4)):
+        for _ in range(k):
+            x, y = rnd.randint(0, w), rnd.randint(0, h)
+            out.append(f"radial-gradient(circle {r}px at {x}px {y}px,"
+                       f"{col} 0 {r}px,transparent {r}px)")
+    return ",".join(out)
+
+
+def score_band(names=True):
+    """The top row over the arena, which the stands get too: the landing
+    watches a live room, so the clock draws while the pilot is not in it."""
+    if not names:
+        return ('<div style="position:absolute;top:14px;left:50%;'
+                'transform:translateX(-50%);display:flex;align-items:center;'
+                'gap:18px">'
+                f'<span class="mono" style="font-size:26px;color:{FRIEND}">3'
+                '</span>'
+                '<span class="mono" style="font-size:30px">1:47</span>'
+                f'<span class="mono" style="font-size:26px;color:{ENEMY}">5'
+                '</span></div>')
+    return ('<div style="position:absolute;top:14px;left:50%;'
+            'transform:translateX(-50%);display:flex;align-items:center;'
+            'gap:22px">'
+            f'<span class="mono" style="font-size:11px;color:{FRIEND}">PYLON'
+            '</span>'
+            f'<span class="mono" style="font-size:30px;color:{FRIEND}">3</span>'
+            '<span class="mono" style="font-size:34px">1:47</span>'
+            f'<span class="mono" style="font-size:30px;color:{ENEMY}">5</span>'
+            f'<span class="mono" style="font-size:11px;color:{ENEMY}">CAISSON'
+            '</span></div>')
+
+
+def wrap(w, h, body, seed=9):
+    return (f'<div style="position:absolute;left:0;top:0;width:{w}px;'
+            f'height:{h}px;overflow:hidden;background-color:{BG};'
+            f'background-image:{starfield(w, h, 40, seed)}">'
+            + "".join(body) + '</div>')
+
+
+def panel(w, inner, margin=MARGIN):
+    """As tall as what it holds, standing on the margin it slid out of."""
+    pw = min(w - 2 * margin, PANEL_MAX)
+    left = (w - pw) / 2
+    return (f'<div class="glass" style="position:absolute;left:{left:.0f}px;'
+            f'width:{pw:.0f}px;bottom:{margin}px;'
+            f'max-height:calc(100% - {2 * margin}px);'
+            f'display:flex;flex-direction:column;overflow:hidden">'
+            + head("body") + tray()
+            + '<div style="padding:5px 0;display:flex;flex-direction:column;'
+            'min-height:0">' + "".join(inner) + '</div></div>')
+
+
+def board(w, h, inner, seed, names=True):
+    return wrap(w, h, [scene(w, h, seed), score_band(names), panel(w, inner)],
+                seed)
+
+
+# --- the boards --------------------------------------------------------------
+
+
+def today_board():
+    """What ships: the drawing is skipped where there is no hull, and the
+    carousel keeps its full height anyway, so the word sits at the bottom of
+    168 empty points with two arrows floating in the middle of them. It reads
+    as a panel that failed to load rather than as a choice."""
+    return board(1440, 810, [carousel("Spectate")], seed=3)
+
+
+def concept_board(name, squash=0.62, seed=3):
+    return board(1440, 810, [carousel("Spectate", ART[name], squash)],
+                 seed=seed)
+
+
+def sheet_board():
+    """The four at the size the carousel draws them, each one broadside and
+    then most of the way round, which is the whole of what a pilot sees: the
+    drawing is never still on this page for longer than it takes to read.
+
+    Frame is the same twice on purpose. It does not turn."""
+    w, h = 1800, 600
+    cols = list(ART.items())
+    step = w / len(cols)
+    parts = []
+    for i, (name, spec) in enumerate(cols):
+        cx = step * (i + 0.5)
+        for j, sq in enumerate((1.0, 0.34)):
+            cy = 152 + j * 208
+            parts.append(f'<g>{draw(spec, cx, cy, ART_R, sq)}</g>')
+    art = f'<svg width="{w}" height="{h}" style="position:absolute;inset:0">'
+    art += "".join(parts) + "</svg>"
+    labels = []
+    for i, (name, spec) in enumerate(cols):
+        left = step * i
+        if not spec["turns"]:
+            labels.append(
+                f'<div class="lbl" style="position:absolute;'
+                f'left:{left:.0f}px;top:436px;width:{step:.0f}px;'
+                f'text-align:center;color:{DIM}">holds still</div>')
+        labels.append(
+            f'<div style="position:absolute;left:{left:.0f}px;top:472px;'
+            f'width:{step:.0f}px;text-align:center">'
+            f'<div style="font-size:21px;color:{FRIEND}">{name}</div>'
+            f'<div style="font-size:14px;color:{READ};padding:6px 40px 0">'
+            f'{spec["line"]}</div></div>')
+    heads = (f'<div style="position:absolute;left:0;right:0;top:34px;'
+             f'text-align:center" class="lbl">six spectate drawings, '
+             f'at the 156 points the carousel gives them</div>'
+             f'<div class="lbl" style="position:absolute;left:26px;top:126px;'
+             f'writing-mode:vertical-rl">broadside</div>'
+             f'<div class="lbl" style="position:absolute;left:26px;top:336px;'
+             f'writing-mode:vertical-rl">turning</div>')
+    return wrap(w, h, [art, heads] + labels, 11)
+
+
+def feathers_board():
+    """Eight cuts of the same three feathers, each on the badge at the 156
+    points the carousel gives it, and then the two that hold up drawn at the
+    sizes the client draws this mark at everywhere else.
+
+    Nothing else moves between these. The hull is `pilot_mark`'s three quads
+    every time and the roots stay on the leading edge where the mark puts
+    them. What changes is the angle, the caps, and whether a feather has a
+    direction in it.
+
+    The strip along the bottom is the part that decides it. `pilot_mark` is
+    one function and the scoreboard sets it at eleven points, a nameplate at
+    ten: a taper cut so fine that it is a hairline there is a taper that
+    disappears from three quarters of its callers. The widths carry the same
+    floor `pen` does, nine tenths of a point, which is what holds the root
+    open at the small sizes."""
+    w, h = 1800, 1000
+    cells = list(FEATHERS.items())
+    cw, ch = w / 4, 250
+    parts, labels = [], []
+    for i, (style, spec) in enumerate(cells):
+        cx = cw * (i % 4 + 0.5)
+        cy = 168 + (i // 4) * ch
+        parts.append(wings(cx, cy, ART_R, 1.0, READ, style))
+        labels.append(
+            f'<div style="position:absolute;left:{cw * (i % 4):.0f}px;'
+            f'top:{cy + 74:.0f}px;width:{cw:.0f}px;text-align:center">'
+            f'<div style="font-size:21px;color:{FRIEND}">{style}'
+            f'{" &#183; the pick" if style == PICK else ""}</div>'
+            f'<div style="font-size:14px;color:{READ};padding:4px 30px 0">'
+            f'{spec["note"]}</div></div>')
+
+    SIZES = (10, 11, 22, 44)
+    COLS = (620, 760, 940, 1200)
+    ROWS = (("now", 720), ("rake", 810), ("banded", 900))
+    for style, cy in ROWS:
+        for mark_k, cx in zip(SIZES, COLS):
+            parts.append(wings(cx, cy, mark_k * MARK_REACH, 1.0, READ, style))
+        labels.append(
+            f'<div class="lbl" style="position:absolute;left:380px;'
+            f'top:{cy - 7:.0f}px;width:200px;text-align:right">{style}</div>')
+    for mark_k, cx in zip(SIZES, COLS):
+        labels.append(
+            f'<div class="lbl" style="position:absolute;left:{cx - 60:.0f}px;'
+            f'top:664px;width:120px;text-align:center;color:{DIM}">'
+            f'{mark_k}</div>')
+    labels.append(
+        f'<div class="lbl" style="position:absolute;left:0;right:0;top:620px;'
+        f'text-align:center">and at the sizes the rest of the client draws '
+        f'the mark, in points</div>')
+
+    art = (f'<svg width="{w}" height="{h}" style="position:absolute;inset:0">'
+           + "".join(parts) + '</svg>')
+    head_ = (f'<div style="position:absolute;left:0;right:0;top:34px;'
+             f'text-align:center" class="lbl">the badge\'s feathers, eight '
+             f'cuts, at the size the carousel draws them</div>')
+    rule_ = ('<div style="position:absolute;left:120px;right:120px;top:596px;'
+             'height:1px;background:rgba(63,88,120,.5)"></div>')
+    return wrap(w, h, [art, head_, rule_] + labels, 23)
+
+
+def phone_board():
+    """362 points of glass on a 390 phone, which is the window less the
+    14-point margin the panel keeps at every size. The drawing is capped by
+    the row rather than by the glass, so it is the same 156 points across
+    here as on a desktop window and the panel is the same height."""
+    w, h = 390, 844
+    return wrap(w, h, [scene(w, h, 29), score_band(names=False),
+                       panel(w, [carousel("Spectate", ART["Lens"], 0.72,
+                                          w=w - 2 * MARGIN)])], 29)
+
+
+# --- assembly ----------------------------------------------------------------
+
+
+def page(name, body):
+    doc = f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600&amp;family=Noto+Sans+Mono:wght@400;500;700&amp;display=swap">
+  <style>{CSS}</style>
+</helmet>
+{body}
+</x-dc>
+</body>
+</html>
+"""
+    (HERE / f"{name}.dc.html").write_text(doc)
+
+
+def main():
+    page("Main", concept_board("Lens", 0.82))
+    page("Today", today_board())
+    page("Ghost", concept_board("Ghost", 0.90, seed=5))
+    page("Mast", concept_board("Mast", 0.88, seed=7))
+    page("Frame", concept_board("Frame", 1.0, seed=13))
+    page("Wings", concept_board("Wings", 1.0, seed=17))
+    page("WingsBuilt", concept_board("Wings, built", 1.0, seed=19))
+    page("Feathers", feathers_board())
+    page("Sheet", sheet_board())
+    page("Phone", phone_board())
+    print("ten artboards written")
+
+
+if __name__ == "__main__":
+    main()

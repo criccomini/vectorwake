@@ -100,9 +100,21 @@ end
 
 local enc
 
+-- A table Lua cannot tell apart from an empty object but the reader must.
+--
+-- `#t == 0` is true of both an empty list and an empty table of keys, and this
+-- encoder used to call both an object. What that hands a reader is `"boxes":
+-- {}` on a screen with no controls, and every reader of a list does something
+-- with its length: the harness's own `s.boxes.length > 0` raised a TypeError
+-- rather than timing out, and the oracle watching for a client that is in a
+-- room and knows of no ships compared `undefined` against zero, so it could
+-- never fire. A field that is always a list says so.
+local LIST = {}
+local function list(t) return setmetatable(t, LIST) end
+
 local function enc_table(v)
     local out, n = {}, #v
-    if n > 0 then
+    if n > 0 or getmetatable(v) == LIST then
         for i = 1, n do out[i] = enc(v[i]) end
         return "[" .. table.concat(out, ",") .. "]"
     end
@@ -130,6 +142,7 @@ enc = function(v)
 end
 
 M.encode = enc
+M.list = list
 
 -- --- the reading -----------------------------------------------------------
 
@@ -161,7 +174,7 @@ local function boxes(ui, density, touching)
             hits_value = won and won.value or nil,
         }
     end
-    return out
+    return list(out)
 end
 
 local function ships(net)
@@ -194,7 +207,7 @@ local function ships(net)
             }
         end
     end
-    return out
+    return list(out)
 end
 
 local function pads(self, touch, density)
@@ -213,7 +226,7 @@ local function pads(self, touch, density)
             absent = p.absent,
         }
     end
-    local sats = {}
+    local sats = list({})
     for i = 1, #(l.sats or {}) do sats[i] = place(l.sats[i]) end
     return {
         used = touch.used and true or false,

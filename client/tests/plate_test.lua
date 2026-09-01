@@ -32,7 +32,7 @@ local W, H = 1280, 800
 local segs = {}
 local layer = {}
 local function noop() end
-for _, n in ipairs({"arc", "disc", "flush", "frame", "outline", "quad",
+for _, n in ipairs({"arc", "disc", "flush", "frame", "outline",
                     "rect", "reset", "ring", "ring_fade", "seg_fade",
                     "seg_flat", "skirt", "tri", "tri_fade", "halo", "fan",
                     "glow_band", "seg_glow"}) do
@@ -44,6 +44,15 @@ end
 layer.seg = function(_, x0, y0, x1, y1, w, col)
     segs[#segs + 1] = {x0 = x0, y0 = y0, x1 = x1, y1 = y1, w = w,
                        col = col and {col[1], col[2], col[3]} or nil}
+end
+-- Closed runs go in the same record, at their own middle. What this page
+-- asks is where the marks around a name landed, and since the feathers were
+-- recut the pilot's badge is cut shapes rather than struck lines: read off
+-- the strokes alone the mark beside a call sign is not there at all.
+layer.quad = function(_, x1, y1, x2, y2, x3, y3, x4, y4)
+    local cx = (x1 + x2 + x3 + x4) / 4
+    local cy = (y1 + y2 + y3 + y4) / 4
+    segs[#segs + 1] = {x0 = cx, y0 = cy, x1 = cx, y1 = cy, w = 0}
 end
 
 -- Seat 0 is the pilot, seat 1 is the hull being read. Sixty pixels apart on

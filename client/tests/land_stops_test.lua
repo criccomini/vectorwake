@@ -9,7 +9,7 @@
 -- that hull, and none of it clobbers a kit somebody is mid-tune on.
 --
 -- Sitting out was the last row of that list and the stop's other answer until
--- decision 129 took handing a seat back off the ship menu. landing_test.lua
+-- decision 136 took handing a seat back off the ship menu. landing_test.lua
 -- holds the drawing half.
 
 package.path = "client/?.lua;" .. package.path

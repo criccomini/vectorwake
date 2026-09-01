@@ -158,9 +158,31 @@ pub struct Brief {
     pub allow_wormholes: bool,
     #[serde(default)]
     pub expected_hash: Option<String>,
+    /// Flag stands to lay, absent meaning whatever the mode wants. Melee
+    /// wants none; a flag game wants the number its zone plays for.
+    #[serde(default)]
+    pub stands: Option<u8>,
 }
 
 impl Brief {
+    /// How many stands this map draws. A melee map draws none and is refused
+    /// if it somehow does; a flag game's default is the count its rules read
+    /// best at, and a recipe overrides either.
+    ///
+    /// Four for War, because a round is won by holding the set and a set of
+    /// four is small enough for a side of four to cover and large enough that
+    /// covering it costs them the map. Six for Turf, where nothing is won by
+    /// holding all of them: two more stands than either side has pilots is
+    /// what stops the game being one scrum that moves around the map.
+    ///
+    /// Both are even, and so is any count a recipe may name. See `add_stands`.
+    pub fn stands(&self) -> u8 {
+        self.stands.unwrap_or(match self.mode {
+            Mode::Melee => 0,
+            Mode::Goal => 4,
+            Mode::Turf => 6,
+        })
+    }
     pub fn candidate(seed: u64, theme: Theme) -> Self {
         Self::named(
             format!("{}-{:04x}", theme.name(), seed & 0xffff),
@@ -192,6 +214,7 @@ impl Brief {
             allow_doors,
             allow_wormholes,
             expected_hash: None,
+            stands: None,
         }
     }
 
@@ -212,6 +235,26 @@ impl Brief {
         if self.contact_seconds_min <= 0.0 || self.contact_seconds_max <= self.contact_seconds_min {
             return Err("the contact-time window is not ordered".into());
         }
+        // The core holds sixteen flags and a room stands one on each stand,
+        // so a map that draws more is drawing objectives no game can see.
+        if self.stands() as usize > sim::MAX_FLAGS {
+            return Err(format!(
+                "a map may draw at most {} flag stands",
+                sim::MAX_FLAGS
+            ));
+        }
+        if self.mode == Mode::Melee && self.stands() != 0 {
+            return Err("a melee map has no flag stands".into());
+        }
+        if self.mode != Mode::Melee && self.stands() == 0 {
+            return Err("a flag game needs stands to fight over".into());
+        }
+        // Every stand is drawn with its half-turn twin, and an even-sided map
+        // has no middle tile that is its own twin, so there is no arrangement
+        // an odd count could take that both sides would face alike.
+        if !self.stands().is_multiple_of(2) {
+            return Err("flag stands are drawn in pairs, so the count is even".into());
+        }
         Ok(())
     }
 
@@ -228,6 +271,7 @@ impl Brief {
             allow_wormholes: self.allow_wormholes,
             wall_band: (lo, hi),
             wall_target: target,
+            stands: self.stands(),
         }
     }
 
@@ -289,6 +333,7 @@ impl Brief {
         let mut canvas = Canvas::new(self.envelope.width, self.envelope.height);
         canvas.reserve_graph(&graph);
         add_spawns(&mut canvas, &graph);
+        add_stands(&mut canvas, &graph, self.stands());
         arena_shape(&mut canvas, self.envelope.shape);
         stamp(&mut canvas, self.theme, &mut Rng::new(self.seed));
         sim::index_map(&mut canvas.map);

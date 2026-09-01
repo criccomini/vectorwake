@@ -50,6 +50,18 @@ services:
   a1:
     <<: *build
     extra_hosts: *names
+  a2:
+    <<: *build
+    extra_hosts: *names
+  a3:
+    <<: *build
+    extra_hosts: *names
+  a4:
+    <<: *build
+    extra_hosts: *names
+  a5:
+    <<: *build
+    extra_hosts: *names
   bots:
     <<: *build
     extra_hosts: *names

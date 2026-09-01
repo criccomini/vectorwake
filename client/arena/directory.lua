@@ -53,6 +53,9 @@ M.why = "asking the directory"
 -- tell a normal two second wait from a fleet that is not there: before the
 -- first reply it says nothing, and after one it can say what came back.
 M.answered = false
+-- The deployment's own front door, by zone key. See `M.head`. Empty against a
+-- directory that predates the field, and `M.head` answers off the list alone.
+M.default_zone = ""
 
 local conn = nil
 local since = 0
@@ -167,6 +170,37 @@ function M.label_of(zone)
     return zone
 end
 
+-- The game to open on, for a client that has not chosen one.
+--
+-- Deliberately not `M.rows[1]`. That list is sorted alphabetically, for
+-- reading, and the head of it is whichever game the alphabet put first. Two
+-- things follow, and both were live until a deployment ran more than one game.
+--
+-- The alphabet is not the deployment's opinion about where a new player should
+-- start, and the catalog already holds one: `default_zone`, the same line an
+-- arena reads when nothing has told it what to serve. So that is asked first.
+--
+-- And a game with no arena behind it is still a row, on purpose, so a player
+-- can see that it exists and is down. The landing dials this row for its
+-- backdrop and draws the whole screen behind that connection, so taking a dead
+-- one head-on was a wordmark on a starfield with no way in and nothing saying
+-- why, however many other games were running.
+--
+-- The head is what is left when nothing is up. That is not a game anybody can
+-- join; it is a name to put on the press so a fleet that is down feels like a
+-- join that waits, which is what it is.
+function M.head()
+    local rows = M.rows or {}
+    local up
+    for _, r in ipairs(rows) do
+        if r.live and (r.address or "") ~= "" then
+            if r.zone == M.default_zone then return r end
+            up = up or r
+        end
+    end
+    return up or rows[1]
+end
+
 local function join_room(z)
     local up = z.instances and z.instances[1] or nil
     if not up or type(up.rooms) ~= "table" then return nil end
@@ -194,6 +228,11 @@ local function on_message(s)
     if type(reply.meta) == "string" then
         account.aim(reply.meta)
     end
+    -- Which of the games below is the way in. Read before the rows are built
+    -- because `M.head` reads both together, and a reply that named a new front
+    -- door while the old rows were still up would open on the wrong one.
+    M.default_zone = type(reply.default_zone) == "string"
+        and reply.default_zone or ""
     local rows = {}
     for _, z in ipairs(reply.zones) do
         local up = z.instances and z.instances[1] or nil

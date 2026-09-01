@@ -112,7 +112,7 @@ const replies = {
   },
   "/v1/admin/pilots": {
     pilots: [], total: 0, offset: 0, more: false,
-    provisional: 10, default_class: "skirmisher",
+    provisional: 10,
   },
   "/v1/admin/bans": {bans: []},
   "/v1/admin/admins": {admins: []},

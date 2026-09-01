@@ -1,0 +1,19 @@
+version = 2
+name = "gyre"
+seed = 4
+mode = "turf"
+theme = "spiral_nebula"
+symmetry = "half_turn"
+routes = 3
+min_opening_tiles = 7
+contact_seconds_min = 6.0
+contact_seconds_max = 16.0
+allow_doors = false
+allow_wormholes = true
+expected_hash = "2be842d3"
+stands = 6
+
+[envelope]
+width = 160
+height = 160
+shape = "rectangle"

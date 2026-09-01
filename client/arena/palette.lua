@@ -67,6 +67,15 @@ M.WHITE     = rgb(0xffffff)
 -- the ramp with everything else fired off a ladder. See world.weapons.
 M.BURST     = rgb(0xc27bff)
 
+-- A green, and the one thing on the field that is nobody's. It is not on the
+-- friend or enemy pair, because a prize belongs to whoever reaches it first
+-- and coloring it by side would be a lie about who may take it. It is not on
+-- the wormhole's violet either, which means a place: this is a thing you pick
+-- up. So it is the color the original called them after, kept bright enough
+-- to read against the terrain at a distance and desaturated enough that a
+-- field of two dozen does not out-shout the ships flying between them.
+M.GREEN     = rgb(0x5be08a)
+
 M.BORDER    = rgb(0x1d2838)
 M.BAR_EDGE  = rgb(0x22304a)
 -- The outline of anything you can press, and the one edge in the interface

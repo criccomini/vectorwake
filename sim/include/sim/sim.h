@@ -774,6 +774,46 @@ typedef struct {
     uint8_t gravity_bombs;
     int32_t flag_radius;    /* Q8 px, pickup distance */
     uint16_t flag_drop_cooldown; /* ticks a dropped flag is untouchable */
+    /* Whether a flag leaves its stand when somebody takes it, which is the
+     * original's Flag:CarryFlags read as a yes or a no.
+     *
+     * Set, a flag rides its taker and drops where they die: that is War, and
+     * the flag is a thing you carry home. Clear, the stand keeps its ground
+     * and only ever changes hands, so flying over one is the whole of
+     * claiming it: that is Turf, where the flag is a place rather than an
+     * object. Both games are the same three fields underneath, which is why
+     * this is a setting and not a second entity. */
+    uint8_t flag_carry;
+    /* Ticks one pilot may hold a flag before it drops on its own, keeping the
+     * side that took it. Zero is no limit.
+     *
+     * A carrying zone wants a number here. Without one, a hull fast enough to
+     * stay alive takes a flag out of the game for as long as it can keep
+     * flying, and the other side has no answer that is not killing them. The
+     * drop is the answer: hold it long enough and the map gets it back. */
+    uint16_t flag_carry_ticks;
+    /* ---- greens ----
+     *
+     * `green_target` is how many the room keeps out at once and is the whole
+     * switch: zero is a zone with no greens, which is every match game we
+     * ship, since there a pilot flies the build they chose and nothing else.
+     * A free roam zone sets it and gets the growth-over-a-life the original's
+     * public zones were built around.
+     *
+     * `green_near` and `green_far` are the ring around a live ship one may
+     * appear in. Both matter: inside the first it is a gift rather than a
+     * trip, outside the second it is not on anybody's radar and might as well
+     * be on the far side of the map. */
+    uint8_t green_target;
+    uint16_t green_life;     /* ticks one lies there before going out */
+    uint16_t green_every;    /* ticks between two being put out */
+    int32_t green_near;      /* Q8 px, the inside of the ring */
+    int32_t green_far;       /* Q8 px, the outside of it */
+    int32_t green_radius;    /* Q8 px, how close you fly to take one */
+    /* How often each slot is rolled, against the sum of all of them. All
+     * zero is no greens whatever `green_target` says, since there would be
+     * nothing for one to be. */
+    uint8_t green_weight[SIM_SLOT_COUNT];
     /* Ships this room will hold, which is a rule about the game rather than
      * about memory: the array is always SIM_MAX_SHIPS long. Clamped to that on
      * the way in, so a zone asking for more gets the ceiling instead of an
@@ -797,6 +837,15 @@ typedef struct {
      * 157 px from a hull, and that is the same size as the error a client
      * carries about where a remote hull is. Contact hits are unaffected, and
      * so are walls.
+     *
+     * The green field is the third, and the widest: a deathless instance puts
+     * none out, expires none, and takes one only for its own pilot. Every
+     * other green it draws comes from a snapshot. Sowing is decision 43, where
+     * interest filtering first made a client's live count a statement about
+     * the few greens near it rather than about the room, so a client that
+     * believed the field was short seeded a phantom prize for the next
+     * snapshot to sweep. Expiry and a stranger's pickup are the same shape:
+     * both are a green the snapshot hands straight back.
      *
      * Neither field is packed or hashed: this is a fact about who is
      * simulating, not about the world. */
@@ -993,7 +1042,37 @@ typedef struct {
     uint8_t team;         /* owning team, or SIM_TEAM_NONE */
     int32_t x, y;         /* Q8 px; tracks the carrier while carried */
     uint16_t cooldown;    /* ticks before it may be picked up again */
+    uint16_t held;        /* ticks this carrier has had it; see flag_carry_ticks */
 } sim_flag;
+
+/* A green: one prize lying on the ground until somebody flies into it.
+ *
+ * What it grants is a slot in the kit space above, which is what a green has
+ * always been here: the comment on that space records it indexing one byte
+ * per prize. So a green raises what a pilot is flying rather than what they
+ * own, and death puts them back on their own build, because a respawn deals
+ * `sim_ship::kit` again and a green never touched it. That is the whole of
+ * the death policy and it needs no setting: a green lasts a life.
+ *
+ * Where they appear is the part that was got wrong the first time and is
+ * recorded in docs/design/maps.md. Scattered by area, two hundred greens over
+ * a thousand tiles is one per five thousand against a pilot who sees sixty,
+ * and a zone that had them read to its players as having none. They are put
+ * out in a ring around a live ship instead: far enough to be a trip, near
+ * enough to be on the radar. Two dozen where the people are beats two hundred
+ * in a million tiles of nobody, and what is sent is then also what is worth
+ * sending. */
+typedef struct {
+    uint8_t active;
+    uint8_t slot;      /* what it fills: an index into the kit space */
+    int32_t x, y;      /* Q8 px */
+    uint16_t life;     /* ticks before it goes out on its own */
+} sim_green;
+
+/* Greens on the field at once, across the whole room. A zone asks for what it
+ * wants below this; the array is the ceiling and the wire's, since a snapshot
+ * writes a count as a byte. */
+#define SIM_MAX_GREENS 64
 
 typedef struct {
     uint8_t spec;  /* index into the settings' spec table */
@@ -1087,7 +1166,12 @@ typedef enum {
      * The room is what reads it. A client predicting locally would emit this
      * again on every rollback that re-ran the kill, so the arena's own copy
      * is the one that reaches a feed. */
-    SIM_EV_STREAK /* a: ship, b: unused, v: kills on the streak */
+    SIM_EV_STREAK, /* a: ship, b: unused, v: kills on the streak */
+    /* A green was taken. `b` is the slot it filled, so a client can say what
+     * it was and a sound can be the same one every time. Appended rather
+     * than filed beside the flag events, because the numbers are mirrored by
+     * hand in server/src/sim.rs. */
+    SIM_EV_GREEN /* a: ship, b: kit slot, v: how much of it they now hold */
 } sim_event_type;
 
 typedef struct {
@@ -1106,6 +1190,28 @@ typedef struct {
     sim_weapon weapons[SIM_MAX_WEAPONS];
     sim_flag flags[SIM_MAX_FLAGS];
     uint8_t flag_count;
+    sim_green greens[SIM_MAX_GREENS];
+    uint8_t green_count;
+    /* The prize stream, and the clock it runs on.
+     *
+     * Neither is packed and neither is hashed, which is one rule rather than
+     * two exceptions: what `sim_hash` covers is what a snapshot carries, and
+     * `sim_pack` round trips are checked by comparing hashes. Both of these
+     * belong to whoever is running the field.
+     *
+     * The stream is separate from `rng` because `rng` is on the wire. A client
+     * needs it to predict a scattergun's spread and a spawn, so every snapshot
+     * publishes it, and rolling the greens from it would let a client work out
+     * where the next one is going to land and go and stand there. Decision 44
+     * is the rule; decision 132 brought the greens back without it.
+     *
+     * Zero is no stream, and a state with no stream puts out no greens at all.
+     * Deliberately loud: a zone that means to sow has to say so through
+     * `sim_prize_seed`, and one that forgets gets an empty map rather than a
+     * predictable one. */
+    uint32_t prize_rng;
+    /* Ticks until the next green is put out. See `green_every`. */
+    uint16_t green_at;
 } sim_state;
 
 typedef struct {
@@ -1221,6 +1327,14 @@ int sim_set_ship_team(sim_state *s, const sim_settings *cfg, uint8_t i,
 
 void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
               uint16_t input_count, const sim_settings *cfg, sim_events *ev);
+
+/* Install the private stream the greens are rolled from. The authority calls
+ * this once, with a value nothing on the wire reveals; a prediction client
+ * never calls it and never sows. Zero puts the field back to sowing nothing.
+ *
+ * Kept out of `sim_init` because the core has no entropy of its own and must
+ * not: the seed there is a public constant in the shipped client. */
+void sim_prize_seed(sim_state *s, uint32_t seed);
 
 uint64_t sim_hash(const sim_state *s);
 

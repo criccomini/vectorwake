@@ -86,6 +86,7 @@ check("login waits for the token before succeeding", logged == nil,
 
 answer(requests[3], "new-session", {
     token = "new-token", account = 2, name = "new-name", claimed = true,
+    ratings = {{class = "melee", rating = 1512, games = 3}},
 })
 check("the new session completes the login", logged and logged.ok,
       tostring(logged and logged.why))
@@ -95,16 +96,13 @@ check("the new account reaches the browser reporter",
       page_scripts[#page_scripts] == "window.vwAccount=2",
       tostring(page_scripts[#page_scripts]))
 
--- Every adopted session asks for the career next, because the guest banner
--- reads it from any tab and a warning that only arms after visiting the page
--- it points at warns nobody.
-check("a fresh session asks for the career", #requests == 4
-      and requests[4].url == "https://meta/v1/career", tostring(#requests))
-answer(requests[4], "career", {class = "arena", games = 3, kills = 2,
-                               deaths = 1})
-check("the career lands on the account",
-      account.career and account.career.games == 3,
-      tostring(account.career and account.career.games))
+-- A session says whether this pilot has ever been rated, off the per-zone
+-- rows it already carries. It is the one question the guest warning asks and
+-- it costs no request of its own.
+check("a session settles the login without a second request", #requests == 3,
+      tostring(#requests))
+check("a rated zone on the session marks the account rated",
+      account.rated == true, tostring(account.rated))
 
 -- The page-load response arrives last. It belongs to the secret the login
 -- replaced and may not put that identity back into the client.
@@ -121,24 +119,25 @@ local claimed = nil
 account.claim("new-password", function(ok, why)
     claimed = {ok = ok, why = why}
 end)
-answer(requests[5], "claim", {})
-check("claim waits for its replacement token", claimed == nil and #requests == 6,
+answer(requests[4], "claim", {})
+check("claim waits for its replacement token", claimed == nil and #requests == 5,
       tostring(#requests))
-answer(requests[6], "claimed-session", {
+answer(requests[5], "claimed-session", {
     token = "claimed-token", account = 2, name = "new-name", claimed = true,
 })
 check("claim completes with the current token", claimed and claimed.ok
       and account.token == "claimed-token")
--- The claimed session re-asks for the career like any other.
-answer(requests[7], "career-again", {class = "arena", games = 3, kills = 2,
-                                     deaths = 1})
+-- A claimed pilot has nothing this warning is about, and the session that
+-- carried no rated zone says so rather than leaving the last answer standing.
+check("a session with no rated zone marks the account unrated",
+      account.rated == false, tostring(account.rated))
 
 local report = {kind = "local_correction"}
 check("a gameplay diagnostic is accepted without a credential",
-      account.report_debug(report) and #requests == 8)
+      account.report_debug(report) and #requests == 6)
 check("the diagnostic carries public context only",
-      requests[8].url == "https://meta/v1/client-debug"
-      and requests[8].method == "POST"
+      requests[6].url == "https://meta/v1/client-debug"
+      and requests[6].method == "POST"
       and report.account == 2 and report.build == "test-build")
 
 local at = #requests

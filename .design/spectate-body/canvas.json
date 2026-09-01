@@ -1,0 +1,117 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Lens \u00b7 the room's camera",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Today.dc.html",
+      "title": "What ships today",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Ghost.dc.html",
+      "title": "Ghost \u00b7 a hull with the seat empty",
+      "x": 0,
+      "y": 950,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Mast.dc.html",
+      "title": "Mast \u00b7 a fixture, not a flier",
+      "x": 1560,
+      "y": 950,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Frame.dc.html",
+      "title": "Frame \u00b7 not a ship, and says so",
+      "x": 3120,
+      "y": 950,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Wings.dc.html",
+      "title": "Wings \u00b7 the badge as it is drawn",
+      "x": 0,
+      "y": 1900,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "WingsBuilt.dc.html",
+      "title": "Wings, built \u00b7 at the page's weights",
+      "x": 1560,
+      "y": 1900,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Feathers.dc.html",
+      "title": "The feathers, eight cuts",
+      "x": 3120,
+      "y": 1900,
+      "w": 1800,
+      "h": 1000
+    },
+    {
+      "file": "Sheet.dc.html",
+      "title": "The six, broadside and turning",
+      "x": 0,
+      "y": 3050,
+      "w": 1800,
+      "h": 600
+    },
+    {
+      "file": "Phone.dc.html",
+      "title": "Lens on a 390 phone",
+      "x": 1920,
+      "y": 3050,
+      "w": 390,
+      "h": 844
+    }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "x": -340,
+      "y": 0,
+      "w": 260,
+      "text": "The body carousel turns through seven hulls and one stop that is not a hull. Spectate has no drawing, so 168 points of glass sit empty over the word.\n\nFour drawings for that hole."
+    },
+    {
+      "id": "shared-rule",
+      "x": -340,
+      "y": 950,
+      "w": 260,
+      "text": "None of the four wears the team color. A hull is drawn in pal.FRIEND because the ship you turn to is the ship you fly; a watcher flies nothing and holds no side, so these are in the instrument gray and only the word stays blue."
+    },
+    {
+      "id": "badge",
+      "x": -340,
+      "y": 1900,
+      "w": 260,
+      "text": "Chris: what about the human icon, the ship with feathers?\n\nIt is the one mark in the game whose subject is the pilot rather than the ship, and this is the one stop whose subject is the pilot rather than the ship. Both hold still: a badge turning is a decal spinning."
+    },
+    {
+      "id": "feathers",
+      "x": 3120,
+      "y": 1740,
+      "w": 420,
+      "text": "Chris: the feathers need work at this resolution. Parallel, sharp edges, thin at the ship and thicker as they go out.\n\nAll three, plus both ends cut on a line. The strip along the bottom is the check that matters: pilot_mark is one function, and the scoreboard draws it at eleven points."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

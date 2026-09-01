@@ -160,14 +160,59 @@ local function vertical(sh)
     return sh.kind == "seg" and math.abs(sh.ax - sh.bx) < 0.01
 end
 
--- A pair of wings, found by its fan: a body with strokes thrown out of it,
--- capped round, three to a side and none of them level or upright.
+-- The long band a four-corner run makes, which is how a feather is measured.
 --
--- The fan is what identifies it rather than the body, because a small solid
--- shape is the commonest thing on these screens and a run of six strokes
--- leaving one place is not drawn anywhere else. Three a side is asked for
--- exactly: the gaps between the feathers are the whole of what makes this
--- wings rather than a moustache, and a cut that loses one loses the mark.
+-- Its sides are the opposite pair that lie parallel, and its ends are the
+-- other pair: their midpoints give the line it lies along and their lengths
+-- give what it is cut to at each end. Taking the two shortest edges as the
+-- ends looks like the same rule and is not. A feather cut for the eleven
+-- points a scoreboard draws at is barely longer than it is wide, and the two
+-- lines its ends are cut against are not the same line, so the end cuts run
+-- at a slant and the shortest edge of the run is one of its sides. Read that
+-- way the shortest feather answered six degrees where its neighbors answered
+-- thirty, which is a measuring fault that reads exactly like a drawing fault.
+--
+-- A band has no head or tail, so the direction is folded to point right and
+-- the reading is the same whichever way round the corners were written.
+local function band(q)
+    local e = {}
+    for i = 1, 4 do
+        local a, b = q.pts[i], q.pts[i % 4 + 1]
+        local dx, dy = b[1] - a[1], b[2] - a[2]
+        e[i] = {dx = dx, dy = dy, len = math.sqrt(dx * dx + dy * dy),
+                mid = {(a[1] + b[1]) / 2, (a[2] + b[2]) / 2}}
+    end
+    local function parallel(i, j)
+        if e[i].len < 1e-9 or e[j].len < 1e-9 then return -1 end
+        return math.abs(e[i].dx * e[j].dx + e[i].dy * e[j].dy)
+            / (e[i].len * e[j].len)
+    end
+    local ends = {2, 4}
+    if parallel(1, 3) < parallel(2, 4) then ends = {1, 3} end
+    local a, b = e[ends[1]], e[ends[2]]
+    local dx = b.mid[1] - a.mid[1]
+    local dy = b.mid[2] - a.mid[2]
+    if dx < 0 then dx, dy = -dx, -dy end
+    return {ends = {a, b}, ang = math.atan2(dy, dx),
+            len = math.sqrt(dx * dx + dy * dy)}
+end
+
+-- A pair of wings, found by its band: a body with six shapes swept off it,
+-- three to a side, every one of them lying along the same line.
+--
+-- The parallel is what identifies the set rather than the body, because a
+-- small solid shape is the commonest thing on these screens and six runs
+-- leaving one place on one angle are not drawn anywhere else. It is also the
+-- property the feathers were recut for: they sat at 32.1, 28.3 and 30.8
+-- degrees, which is close enough to look like a mistake and far enough to
+-- lose the even gap the roots were cut for. Three a side is asked for
+-- exactly, since the gaps between the feathers are the whole of what makes
+-- this wings rather than a moustache and a cut that loses one loses the mark.
+--
+-- Mirrored before they are compared: a wing is symmetric about the middle of
+-- the mark, so a feather on the left lies along the reflection of the angle
+-- its opposite number does, and folding one side over is what lets all six be
+-- asked the same question.
 --
 -- The body is more than one piece, and the mark is found once all the same.
 -- The ship is an arrowhead with an engine block hung under it, which is two
@@ -180,41 +225,64 @@ local function wings(list)
     local seen, out = {}, {}
     for _, q in ipairs(list) do
         if q.kind == "quad" then
-            local left, right, span, lo, hi = 0, 0, 0, math.huge, -math.huge
             local reach = math.max(q.x1 - q.x0, q.y1 - q.y0) * 3
-            local key = ""
-            for i, sh in ipairs(list) do
-                if sh.kind == "seg" and sh.round then
-                    -- The end that starts at the body, whichever it is.
-                    local near_x, near_y, far_x = sh.ax, sh.ay, sh.bx
-                    if math.abs(sh.bx - q.cx) < math.abs(sh.ax - q.cx) then
-                        near_x, near_y, far_x = sh.bx, sh.by, sh.ax
-                    end
-                    if math.abs(near_x - q.cx) < reach
-                        and math.abs(near_y - q.cy) < reach
-                        and not horizontal(sh) and not vertical(sh) then
-                        if far_x < q.cx then left = left + 1 else right = right + 1 end
-                        span = math.max(span, math.abs(far_x - q.cx))
-                        lo = math.min(lo, sh.y0)
-                        hi = math.max(hi, sh.y1)
-                        key = key .. i .. ","
-                    end
+            -- Every other run near this one, by the angle it lies along with
+            -- the left side folded over, so a set that agrees can be found
+            -- without knowing which angle to look for.
+            local by = {}
+            for _, sh in ipairs(list) do
+                if sh.kind == "quad" and sh ~= q
+                    and math.abs(sh.cx - q.cx) < reach
+                    and math.abs(sh.cy - q.cy) < reach then
+                    local b = band(sh)
+                    local ang = sh.cx < q.cx and -b.ang or b.ang
+                    local key = string.format("%.0f", ang * 180 / math.pi)
+                    by[key] = by[key] or {}
+                    table.insert(by[key], {sh = sh, b = b,
+                                           right = sh.cx > q.cx})
                 end
             end
-            if left == 3 and right == 3 then
-                local m = seen[key]
-                if not m then
-                    m = {cx = q.cx, cy = q.cy, w = span * 2, h = hi - lo,
-                         y0 = lo, y1 = hi, body = {}}
-                    seen[key] = m
-                    out[#out + 1] = m
+            -- Angles are bucketed to the degree, so a set can fall either
+            -- side of a boundary: neighbors are taken together.
+            for key in pairs(by) do
+                local set = {}
+                for d = -1, 1 do
+                    for _, f in ipairs(by[tostring(tonumber(key) + d)] or {}) do
+                        set[#set + 1] = f
+                    end
                 end
-                m.body[#m.body + 1] = q
+                local left, right, lo, hi = 0, 0, math.huge, -math.huge
+                local ids = {}
+                for _, f in ipairs(set) do
+                    if f.right then right = right + 1 else left = left + 1 end
+                    lo, hi = math.min(lo, f.sh.y0), math.max(hi, f.sh.y1)
+                    ids[#ids + 1] = string.format("%.1f,%.1f", f.sh.cx, f.sh.cy)
+                end
+                if left == 3 and right == 3 then
+                    table.sort(ids)
+                    local marker = table.concat(ids, " ")
+                    local m = seen[marker]
+                    if not m then
+                        m = {cx = q.cx, cy = q.cy, y0 = lo, y1 = hi,
+                             body = {}, feathers = set}
+                        seen[marker] = m
+                        out[#out + 1] = m
+                    end
+                    m.body[#m.body + 1] = q
+                end
             end
         end
     end
-    -- The body, as the reader sees it: every piece of it at once.
+    -- The body, as the reader sees it: every piece of it at once, which is
+    -- whatever was left over once the six feathers were taken out.
     for _, m in ipairs(out) do
+        local feather = {}
+        for _, f in ipairs(m.feathers) do feather[f.sh] = true end
+        local body = {}
+        for _, q in ipairs(m.body) do
+            if not feather[q] then body[#body + 1] = q end
+        end
+        m.body = body
         local bx0, bx1, by0, by1 = math.huge, -math.huge, math.huge, -math.huge
         for _, q in ipairs(m.body) do
             bx0, bx1 = math.min(bx0, q.x0), math.max(bx1, q.x1)
@@ -223,6 +291,14 @@ local function wings(list)
         m.bx0, m.bx1, m.by0, m.by1 = bx0, bx1, by0, by1
         m.body_w, m.body_h = bx1 - bx0, by1 - by0
         m.cx, m.cy = (bx0 + bx1) / 2, (by0 + by1) / 2
+        -- The spread the mark actually reports, off the feather corners.
+        local far = 0
+        for _, f in ipairs(m.feathers) do
+            far = math.max(far, math.abs(f.sh.x0 - m.cx),
+                           math.abs(f.sh.x1 - m.cx))
+        end
+        m.w = far * 2
+        m.h = m.y1 - m.y0
     end
     return out
 end
@@ -367,19 +443,17 @@ if rail_only[1] then
     check("it lies wider than it stands", wing.w > wing.h * 1.6,
           string.format("%.2f wide by %.2f high", wing.w, wing.h))
 
-    -- Struck under the mark's own pen. A heavy pen closes the gaps it is
-    -- drawn between, and the gaps are the mark: this is the one number in
-    -- the drawing that trades legibility of the shape against weight of the
-    -- line, and raising it to the pen closes the fan first.
+    -- Cut under the mark's own pen. A heavy feather closes the gap beside
+    -- it, and the gaps are the mark: this is the one number in the drawing
+    -- that trades legibility of the shape against weight of the line, and
+    -- raising it closes the fan first.
     local heaviest = 0
-    for _, sh in ipairs(parts) do
-        if sh.kind == "seg" and sh.round then
-            heaviest = math.max(heaviest, sh.w)
-        end
+    for _, f in ipairs(wing.feathers) do
+        heaviest = math.max(heaviest, f.b.ends[1].len, f.b.ends[2].len)
     end
     check("and is cut lighter than the mark it sits in",
           heaviest > 0 and heaviest < wing.body_h,
-          string.format("%.2f of line against a %.2f body", heaviest,
+          string.format("%.2f of feather against a %.2f body", heaviest,
                         wing.body_h))
 
     -- And it is drawn around a body rather than a speck. This first shipped
@@ -406,27 +480,67 @@ if rail_only[1] then
     -- Three feathers to a side, arriving apart. Both halves of that matter
     -- and the second is the one that walks: the gaps between the tips are
     -- what makes this wings rather than one blunt spread, and two feathers
-    -- whose ends land within a stroke of each other have merged into one
+    -- whose ends land within a width of each other have merged into one
     -- however far apart they started. Measured between neighbors rather than
     -- across the set, since a pair can close while the third holds the span
     -- open.
-    local tips = {}
-    for _, sh in ipairs(parts) do
-        if sh.kind == "seg" and sh.round then
-            local ty = sh.bx > sh.ax and sh.by or sh.ay
-            local tx = sh.bx > sh.ax and sh.bx or sh.ax
-            if tx > wing.cx then tips[#tips + 1] = ty end
+    local tips, roots = {}, {}
+    for _, f in ipairs(wing.feathers) do
+        if f.right then
+            local a, b = f.b.ends[1], f.b.ends[2]
+            local far, near_ = a, b
+            if math.abs(b.mid[1] - wing.cx) > math.abs(a.mid[1] - wing.cx) then
+                far, near_ = b, a
+            end
+            tips[#tips + 1] = far
+            roots[#roots + 1] = near_
         end
     end
     check("and carries three feathers a side", #tips == 3,
           #tips .. " tips down one side")
     if #tips == 3 then
-        table.sort(tips)
-        local gap = math.min(tips[2] - tips[1], tips[3] - tips[2])
+        local ys = {}
+        for i, t in ipairs(tips) do ys[i] = t.mid[2] end
+        table.sort(ys)
+        local gap = math.min(ys[2] - ys[1], ys[3] - ys[2])
         check("with none of them arriving on top of another",
               gap > heaviest * 1.2,
-              string.format("%.2f between the closest pair, on a %.2f line",
+              string.format("%.2f between the closest pair, on a %.2f feather",
                             gap, heaviest))
+    end
+
+    -- And they lie along one line. Parallel is not decoration here: the roots
+    -- are cut against the hull's leading edge and the tips against a rake, so
+    -- three that disagree about their angle are three that cannot hold the
+    -- same gap down their whole length. A degree of slop, which is under what
+    -- the rounding in the finder's own buckets allows.
+    local spread = 0
+    for _, f in ipairs(wing.feathers) do
+        for _, g in ipairs(wing.feathers) do
+            local a = f.right and f.b.ang or -f.b.ang
+            local b = g.right and g.b.ang or -g.b.ang
+            spread = math.max(spread, math.abs(a - b))
+        end
+    end
+    check("and all six lie along one line",
+          spread < math.pi / 180,
+          string.format("%.2f degrees between the outliers",
+                        spread * 180 / math.pi))
+
+    -- And each one is cut thinner where it leaves the hull than where it
+    -- ends, which is what gives a feather a direction. The same floor `pen`
+    -- puts under a stroke sits under these, so at the eleven points the
+    -- scoreboard draws this at both ends are the floor and the taper says
+    -- nothing: it is the menu's hundred and thirty this was cut for.
+    if #tips == 3 then
+        local tapered = 0
+        for i = 1, 3 do
+            if tips[i].len > roots[i].len * 1.2 then tapered = tapered + 1 end
+        end
+        check("and widens on its way out",
+              tapered == 3 or heaviest < 1.9,
+              tapered .. " of three wider at the tip, heaviest "
+                  .. string.format("%.2f", heaviest))
     end
 
     -- Nothing closed anywhere near it. The helmets this replaced were a shell

@@ -7,9 +7,14 @@
 
 Every player carries a skill rating that moves when they kill and when they die,
 against humans and against AI alike. It is separate from a match's own score,
-which is kills, deaths and assists and lasts three minutes. Rating is a
-cross-zone estimate of how good you are, and it is the only number in this game
-that outlives the match it was earned in.
+which is kills, deaths and assists and lasts three minutes. Rating is an
+estimate of how good you are at one of these games, and it is the only number
+in this game that outlives the match it was earned in.
+
+One per zone, not one per player. A pilot who has flown Team Battle and Free
+Roam carries two ratings and no total over them, and a first game in a zone
+they have never flown places them from scratch however good they are
+elsewhere. Every screen that shows a rating says which zone it came from.
 
 That makes the ending its one readout. The podium's board carries a column
 saying what the match did to each pilot's rating, signed, and nothing carries it
@@ -117,7 +122,7 @@ more than the bot moves against the human.
 tournaments before they ever meet a human, which produces a sane ladder from the
 start. Human play refines it.
 
-**One ladder, not two.** A player has one rating per mode class, and kills
+**One ladder, not two.** A player has one rating per zone, and kills
 against humans and against AI feed the same number. A separate vs-human rating
 would sit empty during exactly the months when placement matters most, and a
 mixed room, which is the normal early room, would leave the matchmaker unsure
@@ -166,11 +171,24 @@ rather than per arena.
 
 ## What it means, and what it does not
 
-Rating is per mode class rather than global. A hockey zone, a warzone, and a
-three minute melee measure different skills, and one number for all of them is a
-number about nothing. Zones declare which class they belong to and a player
-carries one rating per class, with the default class being general arena
-combat.
+Rating is per zone rather than global. A hockey zone, a warzone, and a three
+minute melee measure different skills, and one number for all of them is a
+number about nothing.
+
+The class a rating is filed under is the zone's own key, per
+[decision 131](../architecture/decisions.md#131-a-duel-is-a-two-seat-zone-and-nothing-else).
+It was the mode name until the duel arrived, which is a melee with one pilot a
+side: filed by mode its rating would have pooled with Team Battle's, and
+holding your own against one rival in a small room has almost nothing to do
+with being useful in a four a side fight. Two zones can run the same mode and
+still measure different things, which is what makes the mode too coarse to
+file under. A standalone arena with no zone to be named by falls back to its
+mode, and to `arena` where it has neither.
+
+A key is not what anybody reads. `melee` is Team Battle on every screen in the
+game and `roam` is Free Roam, so the zone's label is what a page prints and the
+key is what it filters by. `Catalog::zone_label` is the one place that turns
+one into the other.
 
 The attribution math below degenerates to ordinary Elo when there is exactly
 one contributor, so a mode where a kill has a single cause needs no separate
@@ -197,10 +215,38 @@ every hundred points turns into the number it was meant to replace, and the
 stretch above a pilot who has clearly arrived is where the fewest people are
 and the least needs saying about them.
 
+## Where a rating is read
+
+Four surfaces, and every one of them names a zone, because a rating with no
+zone on it reads as a career figure and there is no career figure.
+
+**The pilot's profile** on the site is the full answer: `/v1/pilot` returns a
+row per zone with that zone's rating, tier and rank, and the page draws them
+as a table. The headline above it is the zone that pilot has flown most, said
+in a line under the board, since the kills and deaths beside it are lifetime
+totals over every zone and the two must not read as one thing.
+
+**The pilot directory** ranks each pilot in the zone they have flown most,
+naming it under the tier. Ranks are per zone, so the column is a rank in five
+different ladders and says which each one is.
+
+**The weekly board** takes a zone, or shows the fleet. Filtered, every column
+on a row is that zone's: its kills, its deaths, its rating and the week's
+swing in it. Unfiltered, the kills sum across zones and the rating is read in
+whichever zone each pilot flew most that week, which is a column that does not
+compare row to row. That is the honest reading of a fleet-wide board and it is
+why the filter exists.
+
+**The admin console** prints the tier with its zone in parentheses, always.
+There is no zone whose rating is the unmarked default any more.
+
+The podium's rating column, per the top of this document, is the match's own
+and needs no label: a match is in one zone by definition.
+
 ## Storage
 
 Every rated event involving a human is stored with its inputs: participants,
-weights, ratings before and after, arena, mode class, and timestamp. Bot-only
+weights, ratings before and after, arena, zone, and timestamp. Bot-only
 events update the live ratings and career totals but retain only a compact
 exactly-once receipt.
 

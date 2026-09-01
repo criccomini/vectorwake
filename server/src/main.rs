@@ -1905,7 +1905,7 @@ mod tests {
             "Veteran",
             vec![
                 token::ClassRating {
-                    class: "arena".into(),
+                    class: "testzone".into(),
                     rating: 1640.0,
                     games: 40,
                 },
@@ -1921,8 +1921,8 @@ mod tests {
             .expect("verifies");
         let rid = seat.rid.clone();
         z.restore_pilot(0, &seat);
-        // The zone's mode is the class, and this one is an arena.
-        assert_eq!(z.rating_class(), "arena");
+        // The zone's own name is the class it rates into.
+        assert_eq!(z.rating_class(), "testzone");
         assert_eq!(z.rooms[0].rating.rating_of(&rid), 1640.0);
         assert_eq!(
             z.rooms[0].rating.games_of(&rid),
@@ -5026,7 +5026,7 @@ mod tests {
             true,
             "Veteran",
             vec![token::ClassRating {
-                class: "arena".into(),
+                class: "testzone".into(),
                 rating: 1640.0,
                 games: 40,
             }],
@@ -6497,14 +6497,305 @@ mod tests {
 
     #[test]
     fn a_catalog_room_uses_the_configured_number_of_flags() {
+        let stands = [(500u16, 500), (520, 500), (500, 520), (520, 520)];
         let mut zone = wire_zone(1, 6, 16);
         zone.mode = "warzone".into();
+        zone.maps_b64 = vec![fleet::b64(
+            &sim::World::arena_with_stands(1, &stands).packed_map(),
+        )];
         zone.zone_toml = "teams = [\"Keel\", \"Vantage\"]\n[arena]\nflags = 2\n".into();
 
         let room = ArenaServer::build_room(&zone, None).expect("room");
 
         assert_eq!(room.mode.name(), "warzone");
-        assert_eq!(room.world.state.flag_count, 2);
+        assert_eq!(room.world.state.flag_count, 2, "two of the four it draws");
+    }
+
+    /// Where the flags stand is the map's. This built the arena's own four
+    /// quadrant tiles for any warzone, whatever ground it was on, which put
+    /// four flags out past the wall of every zone map we ship; and it laid
+    /// none at all for a game whose flags are the map's whole objective.
+    #[test]
+    fn a_catalog_room_stands_its_flags_where_the_map_draws_them() {
+        let stands = [(480u16, 512), (544, 512), (512, 480)];
+        let mut zone = wire_zone(1, 6, 16);
+        zone.mode = "turf".into();
+        zone.maps_b64 = vec![fleet::b64(
+            &sim::World::arena_with_stands(1, &stands).packed_map(),
+        )];
+        zone.zone_toml = "teams = [\"Keel\", \"Vantage\"]\n[arena]\nflag_carry = false\n".into();
+
+        let room = ArenaServer::build_room(&zone, None).expect("room");
+
+        assert_eq!(room.mode.name(), "turf");
+        assert_eq!(room.world.state.flag_count, 3, "one per stand, and no more");
+        let mut where_they_are: Vec<(i32, i32)> = (0..3)
+            .map(|i| {
+                let f = room.world.state.flags[i];
+                (f.x / (16 * 256), f.y / (16 * 256))
+            })
+            .collect();
+        where_they_are.sort();
+        assert_eq!(where_they_are, vec![(480, 512), (512, 480), (544, 512)]);
+    }
+
+    /// The turf zone as it ships, played: stands off the map, claimed by
+    /// flying over one, and a clock that pays whoever is holding them.
+    ///
+    /// End to end on purpose. Every piece of this was tested on its own and
+    /// the pieces are in four files, so what is under test here is that the
+    /// zone file, the map, the mode and the core agree about what game is
+    /// being played.
+    #[test]
+    fn the_shipped_turf_zone_plays_turf() {
+        let dir = "../catalog/zones/turf";
+        let def: catalog::ZoneDef = toml::from_str(
+            &std::fs::read_to_string(format!("{dir}/zone.toml")).expect("the turf zone"),
+        )
+        .expect("it parses");
+        let map = std::fs::read(format!("{dir}/{}", def.maps[0])).expect("its first map");
+
+        let mut zone = wire_zone(1, 8, 8);
+        zone.mode = def.mode.clone();
+        zone.maps_b64 = vec![fleet::b64(&map)];
+        zone.zone_toml = std::fs::read_to_string(format!("{dir}/zone.toml")).unwrap();
+        let mut room = ArenaServer::build_room(&zone, None).expect("a room");
+
+        assert_eq!(room.mode.name(), "turf");
+        assert_eq!(room.world.state.flag_count, 6, "six stands off the map");
+        assert_eq!(room.world.cfg.flag_carry, 0, "and none of them travel");
+
+        // A pilot of each side, put on a stand apiece. Standing on it is the
+        // whole of the input: turf is claimed by being there.
+        let (a, b) = (room.world.state.flags[0], room.world.state.flags[1]);
+        assert!(room.world.spawn_at(0, 0, a.x, a.y, 0) >= 0);
+        assert!(room.world.spawn_at(0, 1, b.x, b.y, 0) >= 0);
+
+        for _ in 0..1_000 {
+            room.world.step(&[]);
+            let mut ctx = modes::ModeCtx {
+                world: &mut room.world,
+                team_names: &[String::from("Keel"), String::from("Vantage")],
+                banner: String::new(),
+                finished: false,
+                open_match: false,
+                close_match: false,
+            };
+            room.mode.tick(&mut ctx);
+        }
+
+        assert_eq!(room.world.state.flags[0].team, 0, "one side has its stand");
+        assert_eq!(room.world.state.flags[1].team, 1, "and the other has its");
+        for f in 0..2 {
+            assert_eq!(room.world.state.flags[f].carried, 0, "carried by nobody");
+        }
+        let score = room.mode.match_state().expect("turf has a clock").score;
+        assert_eq!(
+            score,
+            vec![2, 2],
+            "ten seconds of a five second period, one stand each"
+        );
+    }
+
+    /// The War zone as it ships: four flags off the map, carried by whoever
+    /// takes one, and put down on their own after the carry clock runs out.
+    #[test]
+    fn the_shipped_war_zone_carries_its_flags_and_puts_them_down() {
+        let dir = "../catalog/zones/war";
+        let toml_text = std::fs::read_to_string(format!("{dir}/zone.toml")).expect("the war zone");
+        let def: catalog::ZoneDef = toml::from_str(&toml_text).expect("it parses");
+        let map = std::fs::read(format!("{dir}/{}", def.maps[0])).expect("its first map");
+
+        let mut zone = wire_zone(1, 8, 8);
+        zone.mode = def.mode.clone();
+        zone.maps_b64 = vec![fleet::b64(&map)];
+        zone.zone_toml = toml_text;
+        let mut room = ArenaServer::build_room(&zone, None).expect("a room");
+
+        assert_eq!(room.mode.name(), "warzone");
+        assert_eq!(room.world.state.flag_count, 4, "four flags off the map");
+        assert_eq!(room.world.cfg.flag_carry, 1, "and they travel");
+        assert_eq!(
+            room.world.cfg.flag_carry_ticks, 3_000,
+            "thirty seconds of carrying"
+        );
+
+        let f = room.world.state.flags[0];
+        assert!(room.world.spawn_at(0, 0, f.x, f.y, 0) >= 0);
+        room.world.step(&[]);
+        assert_eq!(room.world.state.flags[0].carried, 1, "taken by flying over");
+        assert_eq!(room.world.state.flags[0].team, 0);
+
+        // Held, and then not. Nobody kills the carrier: the clock does it.
+        for _ in 0..2_900 {
+            room.world.step(&[]);
+        }
+        assert_eq!(room.world.state.flags[0].carried, 1, "still held at 29s");
+        for _ in 0..200 {
+            room.world.step(&[]);
+        }
+        assert_eq!(room.world.state.flags[0].carried, 0, "put down at 30s");
+        assert_eq!(
+            room.world.state.flags[0].team, 0,
+            "still owned by that side"
+        );
+    }
+
+    /// Every room this server builds gets a prize stream of its own, and no
+    /// two rooms get the same one.
+    ///
+    /// The core sows nothing without one, so the room that skipped this would
+    /// be a Free Roam with no greens in it. The failure this guards against is
+    /// the other one: rolling them from `sim_state::rng`, which is a public
+    /// constant at `sim_init` and rides in every snapshot after, so a client
+    /// could work out where the next green was going to land and go and stand
+    /// there. Decision 44.
+    #[test]
+    fn every_room_rolls_its_greens_from_a_stream_of_its_own() {
+        let dir = "../catalog/zones/roam";
+        let toml_text = std::fs::read_to_string(format!("{dir}/zone.toml")).expect("the roam zone");
+        let def: catalog::ZoneDef = toml::from_str(&toml_text).expect("it parses");
+        let map = std::fs::read(format!("{dir}/{}", def.maps[0])).expect("its map");
+        let mut zone = wire_zone(1, 64, 64);
+        zone.mode = def.mode.clone();
+        zone.maps_b64 = vec![fleet::b64(&map)];
+        zone.zone_toml = toml_text;
+
+        let a = ArenaServer::build_room(&zone, None).expect("a room");
+        let b = ArenaServer::build_room(&zone, None).expect("another room");
+        assert_ne!(a.world.state.prize_rng, 0, "a room is given a stream");
+        assert_ne!(
+            a.world.state.prize_rng, b.world.state.prize_rng,
+            "and it is not the same one twice"
+        );
+        assert_ne!(
+            a.world.state.prize_rng, a.world.state.rng,
+            "nor the one every snapshot publishes"
+        );
+    }
+
+    /// A map swap takes the greens with it and keeps the stream that rolls
+    /// them. A green lies on ground the next map may have made wall, so it
+    /// goes the way a flag and a round in the air already did; the stream is
+    /// the room's rather than the ground's, and rerolling it every rotation
+    /// would hand a patient client somewhere to start guessing again.
+    #[test]
+    fn a_map_swap_clears_the_greens_and_keeps_the_stream() {
+        let mut world = sim::World::new(0x5eed);
+        world.seed_prizes(0xabcdef01);
+        world.state.green_count = 3;
+        world.state.greens[0].active = 1;
+        world.state.green_at = 42;
+
+        let other = std::sync::Arc::clone(&world.map);
+        world.set_map(other);
+
+        assert_eq!(world.state.green_count, 0, "the field is swept");
+        assert_eq!(world.state.green_at, 0, "and its clock restarts");
+        assert_eq!(
+            world.state.prize_rng, 0xabcdef01,
+            "the stream is the room's and stays"
+        );
+    }
+
+    /// The free roam zone as it ships: greens appear near the pilot they were
+    /// put out for, and flying into one raises what that pilot is flying.
+    #[test]
+    fn the_shipped_roam_zone_puts_greens_where_the_people_are() {
+        let dir = "../catalog/zones/roam";
+        let toml_text = std::fs::read_to_string(format!("{dir}/zone.toml")).expect("the roam zone");
+        let def: catalog::ZoneDef = toml::from_str(&toml_text).expect("it parses");
+        let map = std::fs::read(format!("{dir}/{}", def.maps[0])).expect("its map");
+
+        let mut zone = wire_zone(1, 64, 64);
+        zone.mode = def.mode.clone();
+        zone.maps_b64 = vec![fleet::b64(&map)];
+        zone.zone_toml = toml_text;
+        let mut room = ArenaServer::build_room(&zone, None).expect("a room");
+
+        assert_eq!(room.mode.name(), "arena", "no clock, no podium");
+        assert_eq!(room.world.cfg.green_target, 24, "two dozen out at once");
+        assert!(
+            room.world.cfg.green_weight.iter().any(|w| *w > 0),
+            "and a table saying what one may be"
+        );
+
+        // One pilot, in the middle of a thousand tiles. Everything a green
+        // does is measured against where they are.
+        let seat = room.world.spawn(0, 0, 512, 512, 0);
+        assert!(seat >= 0);
+        let (px, py) = {
+            let sh = room.world.state.ships[seat as usize];
+            (sh.x as i64, sh.y as i64)
+        };
+
+        let mut seen = 0;
+        for _ in 0..6_000 {
+            room.world.step(&[]);
+            seen = (0..room.world.state.green_count as usize)
+                .filter(|i| room.world.state.greens[*i].active == 1)
+                .count();
+            if seen >= 4 {
+                break;
+            }
+        }
+        assert!(seen >= 4, "greens are put out, {seen} of them");
+
+        let near = room.world.cfg.green_near as i64;
+        let far = room.world.cfg.green_far as i64;
+        for i in 0..room.world.state.green_count as usize {
+            let g = room.world.state.greens[i];
+            if g.active == 0 {
+                continue;
+            }
+            let (dx, dy) = (g.x as i64 - px, g.y as i64 - py);
+            let d2 = dx * dx + dy * dy;
+            assert!(
+                d2 >= near * near && d2 <= far * far,
+                "every green is in the ring around the pilot it appeared for"
+            );
+            assert!(
+                room.world.cfg.green_weight[g.slot as usize] > 0,
+                "and is something the zone's table allows"
+            );
+        }
+
+        // Taking one reports what it filled. Whether the pilot is any better
+        // for it is the roll's business: a green that lands on a slot already
+        // at its hull's ceiling is still taken, which is what stops one
+        // nobody can use sitting on a route forever.
+        let g = (0..room.world.state.green_count as usize)
+            .find(|i| room.world.state.greens[*i].active == 1)
+            .expect("one to take");
+        let (gx, gy, slot) = {
+            let it = room.world.state.greens[g];
+            (it.x, it.y, it.slot)
+        };
+        room.world.state.ships[seat as usize].x = gx;
+        room.world.state.ships[seat as usize].y = gy;
+        room.world.step(&[]);
+        assert_eq!(room.world.state.greens[g].active, 0, "the green is taken");
+        let took = room.world.events.e[..room.world.events.count as usize]
+            .iter()
+            .find(|e| e.etype == sim::EV_GREEN)
+            .expect("and says so");
+        assert_eq!(took.a, seat as u8, "by the pilot who flew into it");
+        assert_eq!(took.b, slot, "naming the slot it filled");
+    }
+
+    /// A map that draws no stands is not a flag game and gets no flags. The
+    /// melee zone is the one that proves it matters: it named no flag count,
+    /// took the default four, and carried four unreachable pennants across
+    /// the top of its HUD for a game it was not playing.
+    #[test]
+    fn a_map_with_no_stands_has_no_flags() {
+        let mut zone = wire_zone(1, 6, 16);
+        zone.mode = "melee".into();
+        zone.zone_toml = "teams = [\"Keel\", \"Vantage\"]\n".into();
+
+        let room = ArenaServer::build_room(&zone, None).expect("room");
+
+        assert_eq!(room.world.state.flag_count, 0);
     }
 
     #[test]

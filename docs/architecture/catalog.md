@@ -66,6 +66,12 @@ name = "melee"
 they receive, so a rollback publishes the older content under a new, higher
 number.
 
+`default_zone` must name a declared zone. It answers two questions with one
+line: what an arena serves when nothing has told it, and which game a client
+that has not chosen one opens on. The second travels to clients in the browse
+reply, where [discovery.md](discovery.md#the-browse-reply) says what a client
+does when the front door is down.
+
 Pool tokens are stored as `sha256:` plus 64 hexadecimal characters. The
 committed reference uses `env:VW_POOL_DIGEST`, which names an environment
 variable holding that public digest. The raw token never enters the catalog.
@@ -133,7 +139,7 @@ The zone fields are:
 | Field | Meaning |
 |---|---|
 | `label` | What players read the game as, where it differs from the zone's key. The key is what a join names and what a rating is filed under, so renaming the game a player sees cannot move either. |
-| `mode` | `arena`, `warzone`, or `melee`. |
+| `mode` | `arena`, `warzone`, `melee`, or `turf`. |
 | `maps` | One or more `.vwmap` files relative to the zone directory, in rotation order. |
 | `max_ships` | Total seats in one room, bots included. A ship index is one byte, so 255 is the parse ceiling. |
 | `max_players` | Human seats in one room. |
@@ -151,6 +157,28 @@ The zone fields are:
 baseline, while zero remains a real value. The current field set is defined by
 `ArenaConfig` in `server/src/config.rs`, and the shipped Melee file is the full
 working example.
+
+Three groups in there are what a zone reaches for to be a different game rather
+than a differently tuned one:
+
+| Field | Meaning |
+|---|---|
+| `flags` | How many of the map's flag stands this zone plays for. Absent is all of them. Flags come down but never up: where a stand is belongs to the map, which draws them with `SIM_TILE_TURF`, and a map that draws none is not a flag game. |
+| `flag_carry` | Whether taking a flag picks it up. True is War, where a flag rides its taker and drops where they die; false is Turf, where a stand changes hands where it stands. |
+| `flag_carry_seconds` | How long one pilot may hold a flag before it drops on its own, keeping their side. Absent or zero is no limit. |
+| `turf_seconds` | Seconds between two turf payouts, each paying a side one point per stand it holds. Turf only. |
+| `greens` | Greens the room keeps on the field. Absent or zero is a zone with none, which is every match game. |
+| `green_seconds`, `green_every_seconds` | How long one lies there, and how often one is put out. |
+| `green_near_tiles`, `green_far_tiles` | The ring around a live pilot a green may appear in. See [design/maps.md](../design/maps.md) for why greens are placed around people rather than over the map. |
+| `green_radius` | Px a green is taken from, past the hull's own edge. |
+
+`[arena.green_weights]` is what a green may be, by kit slot name, weighted
+against the sum of them all. An empty table is no greens whatever `greens`
+says, since there would be nothing for one to be. The slot names are the ones
+the rest of a zone file uses: a stat by its own name (`energy`, `recharge`,
+`speed`, `thrust`, `rotation`), a weapon rung as `gun` or `bomb`, an add-on as
+`gun.multi` or `bomb.prox`, and a charge as `repel` or `burst`. A name that is
+not a slot is reported rather than ignored.
 
 `[[arena.ships]]` is one hull, named, and it is where a zone writes a whole
 ship: its flight row, which weapon rungs it fires, what those weapons carry,

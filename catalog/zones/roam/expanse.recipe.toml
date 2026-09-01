@@ -1,0 +1,27 @@
+# Not a mapforge recipe. This map comes from `sim/tools/mapgen.c`, which draws
+# a 1024-tile arena from the measurements in docs/research/map-measurements.md
+# rather than from a theme, and mapforge cannot draw one: its envelope stops at
+# 256 tiles, and past about 300 every theme's pattern thins below its own cover
+# band because the geometry is written in tiles rather than in fractions of the
+# map.
+#
+# The provenance is the seed, which is the whole point of that tool: the same
+# seed draws the same map on any machine, so the committed file can be
+# explained and reproduced rather than merely trusted.
+#
+#   make -C sim build/mapgen
+#   sim/build/mapgen catalog/zones/roam/expanse.vwmap 61
+#
+# What seed 61 draws, checked with sim_map_check:
+#
+#   1024 by 1024 tiles          16384 by 16384 px
+#   one region a hull can fly   nothing stranded
+#   4.37% solid                 the research's figure for a 1998 zone is 3%
+#   16 starts, 8 per side       one wormhole
+#
+# Four seeds were drawn and this is the one whose wall percentage sits closest
+# to the measured figure while leaving the most ground a hull can reach.
+
+tool = "mapgen"
+seed = 61
+hash = "cd43df5e"

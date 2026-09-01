@@ -31,11 +31,22 @@ end
 
 local layer = {n = 0}
 local function noop(self) self.n = self.n + 1 end
-for _, name in ipairs({"arc", "flush", "quad", "reset",
+for _, name in ipairs({"arc", "flush", "reset",
                        "ring", "seg_fade", "seg_flat", "skirt", "tri",
                        "tri_fade", "fan", "seg_glow", "glow_band", "halo",
                        "ring_fade"}) do
     layer[name] = noop
+end
+
+-- Closed runs, corners kept. The other drawing on the carousel is made of
+-- nothing else: sitting out draws the badge a seat wears when a person is in
+-- it, which is three shapes of hull and six of feather. See decision 135.
+local quads = {}
+layer.quad = function(self, x1, y1, x2, y2, x3, y3, x4, y4)
+    self.n = self.n + 1
+    quads[#quads + 1] = {pts = {{x1, y1}, {x2, y2}, {x3, y3}, {x4, y4}},
+                         cx = (x1 + x2 + x3 + x4) / 4,
+                         cy = (y1 + y2 + y3 + y4) / 4}
 end
 
 -- Segments are kept as well, because one drawing out here is made of nothing
@@ -257,6 +268,7 @@ local function frame(w, h, o)
     o = o or {}
     H = h
     boxes, rects, discs = {}, {}, {}
+    quads = {}
     frosted = {}
     state.n = 0
     -- The scoreboard is off unless a check asks for it, the way it is off
@@ -1569,7 +1581,7 @@ do
               flew[1] == 1 and flew.applied == "ship" and ui_stub.col_hull == 1,
               tostring(flew[1]) .. ", " .. tostring(flew.applied))
         -- And every page of it is a hull. Sitting out was the page past the
-        -- last one until decision 129, so turning one more step off the end
+        -- last one until decision 136, so turning one more step off the end
         -- of the roster handed a seat back; there is nothing on this carousel
         -- now but ships.
         ui_stub.col_hull = 6

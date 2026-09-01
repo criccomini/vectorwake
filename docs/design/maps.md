@@ -315,6 +315,15 @@ almost all of it greens nowhere near the player reading them. Interest managemen
 came in and cut what is sent to a 256-tile circle; placing greens where the
 pilots are means what is sent is also what is worth sending.
 
+Two names above are the old ones. Greens went with the match game and came back
+for Free Roam ([decision 132](../architecture/decisions.md#132-a-green-raises-what-you-fly-not-what-you-own)),
+and the rebuild kept every measurement in this passage and none of the
+spelling: the ceiling is `SIM_MAX_GREENS`, the count a zone asks for is
+`green_target`, and the ring is `green_near` and `green_far`. What is not here
+is a `spawn_prizes`. A green fills a slot in the kit space rather than dealing
+a prize, so a pilot starts a life on the build they chose and grows from there,
+and the thirty a fresh spawn used to be dealt has nowhere to go.
+
 The calibration pit has neither. It measures two pilots against each other,
 and a room that size with somewhere invulnerable in it settles nothing. The bot
 ladder found that one the hard way: a pilot that wandered into a safe zone

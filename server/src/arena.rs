@@ -675,17 +675,30 @@ impl ArenaServer {
             .unwrap_or(false)
     }
 
-    /// The class this zone rates into. One number per kind of game, per
-    /// docs/design/rating.md: a warzone and a melee measure different
-    /// skills and one number for both is a number about nothing.
+    /// The class this zone rates into: the zone's own name.
+    ///
+    /// One number per game, per docs/design/rating.md, and the mode is not a
+    /// fine enough answer to that. Two zones can run the same mode and
+    /// measure different skills, which is exactly what the duel is: a melee
+    /// with one pilot a side, where holding your own against one rival in a
+    /// small room has almost nothing to do with being useful in a four a side
+    /// fight. Filed under the mode, those two numbers were one number about
+    /// neither.
+    ///
+    /// This moves nothing already recorded. The class it replaces is the mode
+    /// name, and the one zone that has rated anybody is `melee`, whose key and
+    /// mode are the same word.
+    ///
     /// The zone definition is the authority, not the local config file: a
-    /// catalog-served arena takes its mode from the zone it was handed, and
+    /// catalog-served arena takes its name from the zone it was handed, and
     /// the file underneath it is whatever the image happened to ship.
     pub(crate) fn rating_class(&self) -> String {
-        let m = self
-            .wire_zone()
-            .map(|z| z.mode.clone())
-            .unwrap_or_else(|| self.cfg.current.arena.mode.clone());
+        if !self.zone_name.is_empty() {
+            return self.zone_name.clone();
+        }
+        // Standalone, with no zone to be named by: the mode it is running is
+        // the most this can say.
+        let m = self.cfg.current.arena.mode.clone();
         if m.is_empty() {
             meta::DEFAULT_CLASS.to_string()
         } else {
@@ -752,7 +765,14 @@ impl ArenaServer {
             }
         };
         let first = maps.first().ok_or("the zone names no maps")?;
-        let world = sim::World::on_map(0x5eed, std::sync::Arc::clone(first));
+        let mut world = sim::World::on_map(0x5eed, std::sync::Arc::clone(first));
+        // The stream the greens are rolled from, which is this process's and
+        // never leaves it. 0x5eed above is a public constant: the shipped
+        // client passes the same one to `sim_init`, and `rng` rides in every
+        // snapshot besides, so anything a green was rolled from there would be
+        // a green a client could go and wait for. Zero is the core's "no
+        // stream, sow nothing", so it is the one value this may not hand over.
+        world.seed_prizes(rand::random::<u32>().max(1));
         let def: catalog::ZoneDef =
             toml::from_str(&z.zone_toml).map_err(|e| format!("zone.toml: {e}"))?;
         let mut room = Room::with_world_bare(world);
@@ -772,9 +792,14 @@ impl ArenaServer {
             room.world.cfg.max_ships = m;
         }
         room.set_teams(&def);
-        if z.mode == "warzone" {
-            room.add_default_flags();
-            room.world.state.flag_count = def.arena.flags.min(room.world.state.flag_count);
+        // Where the flags stand is the map's, whatever game is played on it.
+        // This asked the mode instead and laid the built-in arena's four
+        // quadrant tiles for a warzone, which on a zone map is four flags out
+        // past its own wall; a turf zone got none at all, since nothing here
+        // had ever read a stand off the ground.
+        room.place_flags();
+        if let Some(want) = def.arena.flags {
+            room.world.state.flag_count = want.min(room.world.state.flag_count);
         }
         room.mode = modes::build(&z.mode, &room.mode_setup(&def.arena));
         room.bot_fill = def.bot_fill();

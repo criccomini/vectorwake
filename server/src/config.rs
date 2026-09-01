@@ -50,9 +50,6 @@ pub struct ZoneConfig {
 fn default_mode() -> String {
     "warzone".into()
 }
-fn default_flags() -> u8 {
-    4
-}
 
 /// Everything the core calls a setting, in the units an operator thinks in:
 /// px, px/s/10, energy, ticks, degrees.
@@ -67,8 +64,10 @@ fn default_flags() -> u8 {
 pub struct ArenaConfig {
     #[serde(default = "default_mode")]
     pub mode: String,
-    #[serde(default = "default_flags")]
-    pub flags: u8,
+    /// How many of the map's flag stands this zone plays, absent meaning all
+    /// of them. Flags can come down but not up: where they stand is the
+    /// map's, and a zone asking for more than the ground offers is told so.
+    pub flags: Option<u8>,
     /// Restitution out of 16: how much speed a wall gives back.
     pub bounce: Option<i32>,
     /// Speed retained along a wall, out of 16.
@@ -94,6 +93,32 @@ pub struct ArenaConfig {
     /// Px a flag is taken from, and ticks a dropped one is untouchable.
     pub flag_radius: Option<i32>,
     pub flag_drop_cooldown: Option<u16>,
+    /// Whether taking a flag picks it up. True is War, where a flag rides its
+    /// taker; false is Turf, where a stand changes hands where it stands and
+    /// flying over one is the whole of claiming it.
+    pub flag_carry: Option<bool>,
+    /// Seconds one pilot may hold a flag before it drops on its own, keeping
+    /// their side. Absent or zero is no limit. Only a carrying zone reads it.
+    pub flag_carry_seconds: Option<u16>,
+    /// Greens the room keeps out at once. Absent or zero is a zone with none,
+    /// which is every match game: there a pilot flies the build they chose.
+    pub greens: Option<u8>,
+    /// Seconds one lies there before going out, and seconds between two being
+    /// put out.
+    pub green_seconds: Option<u16>,
+    pub green_every_seconds: Option<u16>,
+    /// The ring around a live pilot a green may appear in, in tiles. Outside
+    /// the first so it is a trip rather than a gift; inside the second so it
+    /// lands on their radar. See docs/design/maps.md for what placing them by
+    /// area did instead.
+    pub green_near_tiles: Option<i32>,
+    pub green_far_tiles: Option<i32>,
+    /// Px a green is taken from, past the hull's own edge.
+    pub green_radius: Option<i32>,
+    /// What a green may be, by kit slot name, and how often each is rolled
+    /// against the sum of them all. An empty table is no greens whatever
+    /// `greens` says, since there would be nothing for one to be.
+    pub green_weights: HashMap<String, u8>,
     /// A door's cycle, in ticks, and how much of it stands open. Zero for the
     /// period leaves every door shut.
     pub door_period: Option<u16>,
@@ -134,6 +159,11 @@ pub struct ArenaConfig {
     /// a bad one is nearly over. Only a match game reads them.
     pub match_seconds: Option<u16>,
     pub intermission_seconds: Option<u16>,
+    /// Seconds between two turf payouts, each paying a side one point per
+    /// stand it holds. Five by default, which over a three minute match makes
+    /// a stand held end to end worth 36 and a match worth arguing about.
+    /// Only Turf reads it.
+    pub turf_seconds: Option<u16>,
     /// How many kills without dying put a pilot on a streak. Zero turns
     /// streaks off in this zone.
     pub streak_kills: Option<u16>,
@@ -289,12 +319,11 @@ impl Default for ZoneConfig {
             wt_cert: String::new(),
             wt_key: String::new(),
             max_players: 16,
-            // A file with no [arena] table at all still gets a mode and a set
-            // of flags; everything else in there is absent, which the core
-            // reads as its own baseline.
+            // A file with no [arena] table at all still gets a mode;
+            // everything else in there is absent, which the core reads as its
+            // own baseline and the flag count reads as the map's own stands.
             arena: ArenaConfig {
                 mode: default_mode(),
-                flags: default_flags(),
                 ..Default::default()
             },
             bans: Vec::new(),
@@ -386,7 +415,7 @@ rotation = 260
     fn a_zone_file_parses() {
         let c: ZoneConfig = toml::from_str(SAMPLE).unwrap();
         assert_eq!(c.name, "test zone");
-        assert_eq!(c.arena.flags, 3);
+        assert_eq!(c.arena.flags, Some(3));
         assert_eq!(c.arena.bounce, Some(12));
         assert_eq!(c.arena.ships[0].speed, Some(3700));
         assert_eq!(c.arena.ships[0].rotation, Some(260));
@@ -405,13 +434,14 @@ rotation = 260
 
     #[test]
     fn a_table_with_no_mode_in_it_is_still_a_warzone() {
-        // The two keys that are the arena's rather than the core's have a
-        // value for a default, whether the file writes an [arena] table or
-        // not. Everything else in there is absent when unset, which is a
-        // different thing from zero.
+        // The mode is the arena's own rather than the core's and has a value
+        // for a default, whether the file writes an [arena] table or not.
+        // Everything else in there is absent when unset, which is a different
+        // thing from zero: the flag count absent is every stand the map draws,
+        // and zero would be a flag game with no flags in it.
         let c: ZoneConfig = toml::from_str("[arena]\nbounce = 0\n").unwrap();
         assert_eq!(c.arena.mode, "warzone");
-        assert_eq!(c.arena.flags, 4);
+        assert_eq!(c.arena.flags, None);
         assert_eq!(
             c.arena.bounce,
             Some(0),

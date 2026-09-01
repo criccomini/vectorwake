@@ -5,7 +5,7 @@
 # whole of the conflict resolution and a rollback needs a new higher number
 # rather than a reused one.
 
-version = 35
+version = 39
 name = "vectorwake"
 description = "the reference deployment"
 
@@ -62,3 +62,19 @@ max_instances = 8
 # requirement tied to this list.
 [[zone]]
 name = "melee"
+
+# Turf is the same eight seats over six stands that pay whoever holds them.
+[[zone]]
+name = "turf"
+
+# War is the flag game: four flags, and a round to whoever holds the set.
+[[zone]]
+name = "war"
+
+# Duel is one against one on a small map, paired by the fill ladder.
+[[zone]]
+name = "duel"
+
+# Free Roam is the persistent one: no clock, a thousand tiles, and greens.
+[[zone]]
+name = "roam"

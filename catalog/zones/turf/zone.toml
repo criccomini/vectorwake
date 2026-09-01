@@ -1,0 +1,103 @@
+# Turf: four a side, three minutes, six stands that pay whoever holds them.
+#
+# A flag here is a place rather than an object. Nobody carries one: fly over a
+# stand and it is yours, and it stays yours until somebody of another side
+# crosses it. Every five seconds each side is paid a point for each stand it is
+# holding, and the match belongs to whoever has the most when the clock runs
+# out.
+#
+# That scoring is the whole design. Holding two stands of six is not losing, it
+# is two points every five seconds, so a side that gives up the middle and
+# keeps its own half is playing a real strategy rather than waiting to be
+# beaten. It is also what stops the game collapsing into one scrum: a scrum
+# wins one stand while the four it left pay somebody else.
+
+label = "Turf"
+
+mode = "turf"
+
+# Three maps, one theme apiece, each drawing six stands down its long axis.
+# `mapforge verify` proves each is the exact output its recipe names.
+maps = [
+  "stanchion.vwmap",
+  "gyre.vwmap",
+  "holdfast.vwmap",
+]
+
+# Eight seats, four a side, the same shape Team Battle plays. A pilot who
+# knows one game's room size knows the other's.
+max_players = 8
+max_ships = 8
+bot_fill = 1.0
+fill_target = 8
+max_rooms = 10
+
+teams = ["Keel", "Vantage"]
+max_teams = 2
+max_humans_per_team = 4
+max_bots_per_team = 4
+
+[arena]
+match_seconds = 180
+intermission_seconds = 15
+
+# The rule that makes this turf rather than War: a stand cannot be picked up.
+flag_carry = false
+
+# Five seconds a payout. Over a three minute match that is thirty-six of them,
+# so one stand held end to end is worth 36 and the six between them put 216
+# points on the board. Small enough that a single stand taken late still moves
+# the result, large enough that the numbers on the scoreboard are worth
+# reading.
+turf_seconds = 5
+
+# A stand settles for two seconds after changing hands. Without it two pilots
+# of opposite sides sitting on one stand take it from each other a hundred
+# times a second, the pennant strobes, and which side the clock happens to pay
+# is decided by the tick the payout lands on rather than by the fight.
+flag_drop_cooldown = 200
+
+# Eighteen pixels past the hull's own edge, the baseline's. A stand is claimed
+# by flying over it, so this is the whole of how precisely you have to.
+flag_radius = 18
+
+# Everything below is Team Battle's, unchanged, and deliberately so. A pilot
+# moving between the two games should find the same ship, the same wall and
+# the same economy; what differs is what the room is for. See
+# catalog/zones/melee/zone.toml for the argument behind each number.
+bounce = 12
+friction = 12
+respawn_delay = 200
+spawn_radius = 0
+safe_limit = 65535
+streak_kills = 3
+mod_spread = 5
+multi_energy = 25
+multi_delay = 50
+prox_step = 16
+prox_delay = 150
+bomb_safety = true
+bbomb_damage = 1000
+shrap_inactive = 3
+shrap_inactive_ticks = 25
+
+[arena.mod_step]
+multi = 1
+bounce = 1
+prox = 48
+
+[[arena.weapons]]
+name = "gun"
+bounces = 255
+
+[[arena.weapons]]
+name = "gun-2"
+bounces = 255
+
+[[arena.weapons]]
+name = "gun-3"
+bounces = 255
+
+[[arena.weapons]]
+name = "burst"
+damage = 515

@@ -4003,7 +4003,285 @@ static void test_scoring(const sim_settings *base) {
             CHECK(!s.flags[f].carried, "and both flags are on the ground");
     }
 
+    /* A stand a zone will not let anybody carry changes hands where it
+     * stands, which is the whole of a turf claim: fly over it and it is
+     * yours, and the next pilot of another side to cross it takes it back. */
+    {
+        sim_settings turf = cfg;
+        turf.flag_carry = 0;
+        turf.flag_drop_cooldown = 100;
 
+        static sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &turf);
+        sim_spawn(&s, APEX, 1, 8192, 8192, 0, &turf);
+        int f = sim_add_flag(&s, 8192, 8192);
+        int32_t was_x = s.flags[f].x, was_y = s.flags[f].y;
+
+        step_n(&s, &turf, 0, 0, 1);
+        CHECK(s.flags[f].team == 0, "the first hull over it claims it");
+        CHECK(!s.flags[f].carried, "without picking it up");
+        CHECK(s.flags[f].held == 0, "so no carry clock is running");
+        CHECK(s.flags[f].x == was_x && s.flags[f].y == was_y,
+              "and the stand has not moved");
+
+        /* A rival is sitting on the same stand. Without the settling window
+         * the two of them would take it from each other every tick. */
+        step_n(&s, &turf, 0, 0, 98);
+        CHECK(s.flags[f].team == 0, "and it holds while the window runs");
+
+        step_n(&s, &turf, 0, 0, 4);
+        CHECK(s.flags[f].team == 1, "then the rival on it takes it");
+        CHECK(s.flags[f].x == was_x && s.flags[f].y == was_y, "still put");
+    }
+
+    /* Greens: prizes that appear near the people who might take them.
+     *
+     * The ring is the whole design and is why this checks where they land
+     * rather than only that they exist. Scattered by area they were a zone
+     * that read to its players as having none; see docs/design/maps.md. */
+    {
+        sim_settings g = cfg;
+        g.green_target = 6;
+        g.green_every = 10;
+        g.green_life = 2000;
+        g.green_near = 6 * SIM_TILE_PX * 256;
+        g.green_far = 28 * SIM_TILE_PX * 256;
+        g.green_radius = 18 * 256;
+        /* Everything a green can be, in this room, is one more energy step. */
+        memset(g.green_weight, 0, sizeof g.green_weight);
+        g.green_weight[SIM_SLOT_STAT(SIM_UP_ENERGY)] = 1;
+
+        static sim_state s;
+        sim_init(&s, 7);
+        /* The field is the authority's and does not sow without a stream of
+         * its own; see `prize_rng`. A test is the authority here. */
+        sim_prize_seed(&s, 0xc0ffeeu);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &g);
+        int live = 0;
+        for (int t = 0; t < 400 && live < 6; t++) {
+            step_n(&s, &g, 0, 0, 1);
+            live = 0;
+            for (int i = 0; i < s.green_count; i++)
+                if (s.greens[i].active) live++;
+        }
+        CHECK(live == 6, "the room fills to what the zone asked for");
+
+        for (int i = 0; i < s.green_count; i++) {
+            const sim_green *p = &s.greens[i];
+            if (!p->active) continue;
+            CHECK(p->slot == SIM_SLOT_STAT(SIM_UP_ENERGY),
+                  "and every one of them is what the table allows");
+            int64_t dx = (int64_t)p->x - 8192 * 256;
+            int64_t dy = (int64_t)p->y - 8192 * 256;
+            int64_t d2 = dx * dx + dy * dy;
+            CHECK(d2 >= (int64_t)g.green_near * g.green_near,
+                  "no closer than the ring's inside, so it is a trip");
+            CHECK(d2 <= (int64_t)g.green_far * g.green_far,
+                  "and no further than its outside, so it is on the radar");
+            int32_t tx = p->x / (SIM_TILE_PX * 256);
+            int32_t ty = p->y / (SIM_TILE_PX * 256);
+            CHECK(SIM_TILE_CLASS(sim_tile_at(cfg.map, tx, ty)) != SIM_TILE_SOLID,
+                  "and none of them is inside a wall");
+        }
+
+        /* Taking one raises what the pilot is flying. */
+        int held_before = s.ships[0].up[SIM_UP_ENERGY];
+        int idx = -1;
+        for (int i = 0; i < s.green_count; i++)
+            if (s.greens[i].active) { idx = i; break; }
+        CHECK(idx >= 0, "there is one to take");
+        /* Walk the hull onto it rather than the green onto the hull, so the
+         * pickup test is the one the game runs. */
+        s.ships[0].x = s.greens[idx].x;
+        s.ships[0].y = s.greens[idx].y;
+        step_n(&s, &g, 0, 0, 1);
+        CHECK(!s.greens[idx].active, "the green is taken");
+        CHECK(s.ships[0].up[SIM_UP_ENERGY] == held_before + 1,
+              "and the pilot is flying one step more energy");
+
+        /* And death puts them back on their own build, because a respawn
+         * deals `kit` again and a green never touched it. That is the whole
+         * of the death policy: a green lasts a life. */
+        s.ships[0].alive = 0;
+        s.ships[0].respawn_at = 2;
+        step_n(&s, &g, 0, 0, 4);
+        CHECK(s.ships[0].alive, "the pilot comes back");
+        CHECK(s.ships[0].up[SIM_UP_ENERGY] == held_before,
+              "on the build they own, without what the green lent them");
+    }
+
+    /* A green goes out on its own, so a room nobody visits does not silently
+     * carpet itself with everything anybody ever failed to collect. */
+    {
+        sim_settings g = cfg;
+        g.green_target = 1;
+        /* Long between two, so what this watches expire is not replaced in
+         * the same slot before it can be looked at. */
+        g.green_every = 500;
+        g.green_life = 50;
+        g.green_near = 6 * SIM_TILE_PX * 256;
+        g.green_far = 28 * SIM_TILE_PX * 256;
+        g.green_radius = 18 * 256;
+        memset(g.green_weight, 0, sizeof g.green_weight);
+        g.green_weight[SIM_SLOT_STAT(SIM_UP_ENERGY)] = 1;
+
+        static sim_state s;
+        sim_init(&s, 3);
+        sim_prize_seed(&s, 0xbeef01u);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &g);
+        step_n(&s, &g, 0, 0, 5);
+        int idx = -1;
+        for (int i = 0; i < s.green_count; i++)
+            if (s.greens[i].active) { idx = i; break; }
+        CHECK(idx >= 0, "one is out");
+        step_n(&s, &g, 0, 0, 60);
+        CHECK(!s.greens[idx].active, "and it has gone out on its own");
+    }
+
+    /* The field belongs to the zone, and a prediction client only takes from
+     * it. Same rule as a death and a proximity fuse, for the same reason: a
+     * green a client puts out or expires on its own is one the next snapshot
+     * takes back.
+     *
+     * The flicker this stops was worth watching. Interest filtering writes an
+     * out-of-radius green inert, so a client counts a handful live against a
+     * room-wide target and always believes the field is short; `green_at` is
+     * state rather than wire, so every snapshot left it at zero and the very
+     * next tick put a green out. At snapshot rate that is a prize blinking in
+     * and out of existence somewhere near you, twenty times a second, none of
+     * them real. */
+    {
+        sim_settings g = cfg;
+        g.green_target = 6;
+        g.green_every = 10;
+        g.green_life = 50;
+        g.green_near = 6 * SIM_TILE_PX * 256;
+        g.green_far = 28 * SIM_TILE_PX * 256;
+        g.green_radius = 18 * 256;
+        memset(g.green_weight, 0, sizeof g.green_weight);
+        g.green_weight[SIM_SLOT_STAT(SIM_UP_ENERGY)] = 1;
+
+        /* The zone first, to get a real green in a real place. */
+        static sim_state s;
+        sim_init(&s, 11);
+        sim_prize_seed(&s, 0xd0d0d0u);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &g);
+        sim_spawn(&s, APEX, 1, 8192 + 4096, 8192, 0, &g);
+        step_n(&s, &g, 0, 0, 20);
+        int idx = -1;
+        for (int i = 0; i < s.green_count; i++)
+            if (s.greens[i].active) { idx = i; break; }
+        CHECK(idx >= 0, "the zone has put one out");
+
+        /* Now the same world as a client holds it after a snapshot: seat zero
+         * is this pilot, and `green_at` is zero because no snapshot carries
+         * it. */
+        sim_settings c = g;
+        c.deathless = 1;
+        c.mortal_ship = 0;
+
+        static sim_state cs;
+        cs = s;
+        cs.green_at = 0;
+        uint8_t was = cs.green_count;
+        step_n(&cs, &c, 0, 0, 1);
+        CHECK(cs.green_count == was, "a client puts none out on the tick after a snapshot");
+        step_n(&cs, &c, 0, 0, 300);
+        CHECK(cs.green_count == was, "nor over three hundred ticks of being short");
+        CHECK(cs.greens[idx].active,
+              "and the one the zone put out has not expired under it");
+
+        /* A stranger flying over one takes nothing here: that pickup is the
+         * zone's to report, and it arrives as the green leaving a snapshot. */
+        cs.ships[1].x = cs.greens[idx].x;
+        cs.ships[1].y = cs.greens[idx].y;
+        step_n(&cs, &c, 0, 0, 1);
+        CHECK(cs.greens[idx].active, "a remote hull on a green does not take it");
+
+        /* This pilot's own is predicted, so the prize and its sound land on
+         * the frame they were earned rather than a round trip later. */
+        cs.ships[0].x = cs.greens[idx].x;
+        cs.ships[0].y = cs.greens[idx].y;
+        step_n(&cs, &c, 0, 0, 1);
+        CHECK(!cs.greens[idx].active, "this client's own pilot takes it");
+    }
+
+    /* A zone that asks for none gets none, which is every match game we
+     * ship: there a pilot flies the build they chose and nothing else. The
+     * stream is installed here so what is being tested is `green_target` and
+     * not the absence of one. */
+    {
+        static sim_state s;
+        sim_init(&s, 5);
+        sim_prize_seed(&s, 0x515151u);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        step_n(&s, &cfg, 0, 0, 500);
+        CHECK(s.green_count == 0, "the baseline puts out no greens");
+    }
+
+    /* And a room with no stream of its own sows nothing whatever the zone
+     * asked for. Loud rather than quiet: a field nobody seeded is empty, and
+     * an empty Free Roam is noticed in a minute, where greens landing where a
+     * client could have worked out in advance would not be noticed at all. */
+    {
+        sim_settings g = cfg;
+        g.green_target = 6;
+        g.green_every = 10;
+        g.green_life = 2000;
+        g.green_near = 6 * SIM_TILE_PX * 256;
+        g.green_far = 28 * SIM_TILE_PX * 256;
+        g.green_radius = 18 * 256;
+        memset(g.green_weight, 0, sizeof g.green_weight);
+        g.green_weight[SIM_SLOT_STAT(SIM_UP_ENERGY)] = 1;
+
+        static sim_state s;
+        sim_init(&s, 7);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &g);
+        step_n(&s, &g, 0, 0, 500);
+        CHECK(s.green_count == 0, "an unseeded field puts out nothing");
+
+        /* Seeded, the same room fills. */
+        sim_prize_seed(&s, 0x9e3779b9u);
+        step_n(&s, &g, 0, 0, 500);
+        CHECK(s.green_count > 0, "and fills once the zone installs one");
+    }
+
+    /* A carry clock puts a flag down on its own, keeping the side that took
+     * it. Without one, a hull that can stay alive takes a flag out of the
+     * game for as long as it keeps flying. */
+    {
+        sim_settings timed = cfg;
+        timed.flag_carry = 1;
+        timed.flag_carry_ticks = 300;
+        timed.flag_drop_cooldown = 50;
+
+        static sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &timed);
+        int f = sim_add_flag(&s, 8192, 8192);
+
+        step_n(&s, &timed, 0, 0, 2);
+        CHECK(s.flags[f].carried && s.flags[f].carrier == 0,
+              "a carrying zone still picks it up");
+        CHECK(s.flags[f].team == 0, "for the side that took it");
+
+        step_n(&s, &timed, SIM_BTN_THRUST, 0, 250);
+        CHECK(s.flags[f].carried, "and it is still held before the clock is up");
+        CHECK(s.flags[f].held > 0, "with a clock running on it");
+
+        /* One tick at a time from here, so the checks land on the tick the
+         * flag comes down rather than a hundred ticks after it. */
+        int dropped_on = -1;
+        for (int t = 0; t < 100 && dropped_on < 0; t++) {
+            step_n(&s, &timed, SIM_BTN_THRUST, 0, 1);
+            if (!s.flags[f].carried) dropped_on = t;
+        }
+        CHECK(dropped_on >= 0, "the clock puts it down");
+        CHECK(s.flags[f].team == 0, "still owned by the side that had it");
+        CHECK(s.flags[f].held == 0, "with the clock wound back");
+        CHECK(s.flags[f].cooldown > 0, "and untouchable for a moment");
+    }
 }
 
 static void test_physics_and_wire(sim_map *m, const sim_settings *base) {
@@ -4858,6 +5136,26 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
         CHECK(back.weapons[0].link == 0xa1b2c3d4u,
               "a gun-volley link survives the snapshot");
 
+        /* The prize stream and its clock stay behind. This is the check that
+         * keeps them off the wire: a green is rolled from `prize_rng`, so a
+         * snapshot carrying it would tell every client in the room where the
+         * next one is going to land. `sim_hash` is the other half, because
+         * the round trip above is asserted by comparing hashes, and a field
+         * that is hashed but not packed would break that instead of this. */
+        {
+            static sim_state seeded, seeded_back;
+            seeded = s;
+            sim_prize_seed(&seeded, 0x1234abcdu);
+            seeded.green_at = 77;
+            CHECK(sim_hash(&seeded) == sim_hash(&s),
+                  "the private stream is not in the hash");
+            int m = sim_pack(&seeded, buf, sizeof buf);
+            CHECK(m == n, "nor does it cost the snapshot a byte");
+            CHECK(sim_unpack(&seeded_back, buf, m) == 0, "and it unpacks");
+            CHECK(seeded_back.prize_rng == 0 && seeded_back.green_at == 0,
+                  "and neither reaches the far end");
+        }
+
         /* A message longer than this build knows how to read is refused.
          *
          * This is the case that reached a player. Three fields were added to the
@@ -5078,6 +5376,44 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
                   "and back on the same tile, whatever else the room did");
         }
 
+        /* A green is filtered like a ship and unlike a flag, per decision
+         * 133: one is put out near a live pilot, so an unfiltered field is a
+         * beacon on everybody in the room, lawful sight or not. Out of
+         * radius it arrives as eleven bytes of nothing, so the count and the
+         * indices hold and the format does not move. */
+        {
+            static sim_state m;
+            sim_init(&m, 5);
+            sim_spawn(&m, APEX, 0, 300 * 16, 300 * 16, 0, &cfg);
+            m.green_count = 2;
+            m.greens[0].active = 1;
+            m.greens[0].slot = 3;
+            m.greens[0].x = 310 * 16 * 256; /* ten tiles off: in sight */
+            m.greens[0].y = 300 * 16 * 256;
+            m.greens[0].life = 500;
+            m.greens[1] = m.greens[0];
+            m.greens[1].x = 900 * 16 * 256; /* the far side of the map */
+            m.greens[1].y = 900 * 16 * 256;
+
+            const int32_t R = 84 * 16 * 256;
+            int n = sim_pack_around(&m, buf, sizeof buf, m.ships[0].x,
+                                    m.ships[0].y, R, 0, 0);
+            static sim_state client;
+            CHECK(n > 0 && sim_unpack(&client, buf, n) == 0,
+                  "the filtered snapshot reads");
+            CHECK(client.green_count == 2, "the count is the room's");
+            CHECK(client.greens[0].active && client.greens[0].slot == 3,
+                  "the green in reach arrives whole");
+            CHECK(!client.greens[1].active && client.greens[1].x == 0,
+                  "and the far one arrives as nothing at all");
+
+            /* The whole-state path is the replay's and stays unfiltered. */
+            int whole = sim_pack(&m, buf, sizeof buf);
+            CHECK(whole > 0 && sim_unpack(&client, buf, whole) == 0,
+                  "the whole state reads");
+            CHECK(client.greens[1].active, "with every green in it");
+        }
+
         /* Distance is the only rule a round meets, with no exception for
          * whose it is. Every round in the game is spent within seconds and
          * near the hull that fired it, so a pilot's own are inside the radius
@@ -5171,6 +5507,7 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
         }
         full.weapon_count = SIM_MAX_WEAPONS;
         full.flag_count = SIM_MAX_FLAGS;
+        full.green_count = SIM_MAX_GREENS;
 
         static uint8_t packed[SIM_STATE_PACK_MAX];
         int whole = sim_pack(&full, packed, sizeof packed);

@@ -264,6 +264,36 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w16(&w, f->cooldown);
     }
 
+    /* Greens, at eleven bytes each. The count is what keeps that honest: a
+     * room that keeps two dozen out pays 264 bytes a snapshot, and the ring
+     * placement means those two dozen are near the people reading them.
+     *
+     * Filtered like the ships and the rounds, unlike the flags, and decision
+     * 133 is the argument: a flag's state is the scoreboard, while a green is
+     * put out six to twenty-eight tiles from a live ship, so an unfiltered
+     * field is a beacon on every pilot in the room, the ones far outside
+     * lawful sight included. An out-of-radius green is written inert rather
+     * than dropped, so the record stays eleven bytes of nothing and the
+     * format does not move. */
+    w8(&w, s->green_count);
+    for (int i = 0; i < s->green_count; i++) {
+        const sim_green *g = &s->greens[i];
+        if (!within(g->x, g->y, cx, cy, radius, r2)) {
+            w8(&w, 0);
+            w32(&w, 0);
+            w32(&w, 0);
+            w16(&w, 0);
+            continue;
+        }
+        /* One byte for both, the way a flag writes its own two: a slot index
+         * stops at twenty-two, so it and the live bit share a byte and a
+         * green stays the eleven bytes docs/design/maps.md costed it at. */
+        w8(&w, (uint32_t)(g->active | (g->slot << 1)));
+        w32(&w, (uint32_t)g->x);
+        w32(&w, (uint32_t)g->y);
+        w16(&w, g->life);
+    }
+
     return w.overflow ? -1 : (int)(w.p - out);
 }
 
@@ -431,6 +461,21 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
         f->cooldown = (uint16_t)r16(&r);
     }
 
+    uint32_t greens = r8(&r);
+    if (greens > SIM_MAX_GREENS) return -1;
+    s->green_count = (uint8_t)greens;
+    for (uint32_t i = 0; i < greens; i++) {
+        sim_green *g = &s->greens[i];
+        uint32_t bits = r8(&r);
+        g->active = (uint8_t)(bits & 1);
+        g->slot = (uint8_t)(bits >> 1);
+        if (g->slot >= SIM_SLOT_COUNT) return -1;
+        g->x = (int32_t)r32(&r);
+        g->y = (int32_t)r32(&r);
+        if (!world_point(g->x, g->y)) return -1;
+        g->life = (uint16_t)r16(&r);
+    }
+
     /* Read short is as wrong as read long.
      *
      * `underflow` catches a reader running past the end, which is a new build
@@ -519,7 +564,7 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
  * linear falloff to the pull one tile out of an inverse square one, which is
  * exactly the kind of change a version exists to refuse: the bytes still line
  * up and the flight does not. */
-#define CFG_VERSION 21
+#define CFG_VERSION 23
 
 static int settings_valid(const sim_settings *cfg) {
     if (cfg->class_count == 0 || cfg->class_count > SIM_MAX_CLASSES
@@ -652,6 +697,15 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     w8(&w, cfg->gravity_bombs);
     w32(&w, (uint32_t)cfg->flag_radius);
     w16(&w, cfg->flag_drop_cooldown);
+    w8(&w, cfg->flag_carry);
+    w16(&w, cfg->flag_carry_ticks);
+    w8(&w, cfg->green_target);
+    w16(&w, cfg->green_life);
+    w16(&w, cfg->green_every);
+    w32(&w, (uint32_t)cfg->green_near);
+    w32(&w, (uint32_t)cfg->green_far);
+    w32(&w, (uint32_t)cfg->green_radius);
+    for (int i = 0; i < SIM_SLOT_COUNT; i++) w8(&w, cfg->green_weight[i]);
     w8(&w, cfg->max_ships);
 
     return w.overflow ? -1 : (int)(w.p - out);
@@ -764,6 +818,16 @@ int sim_settings_unpack(sim_settings *out, const uint8_t *in, int len) {
     cfg->gravity_bombs = (uint8_t)r8(&r);
     cfg->flag_radius = (int32_t)r32(&r);
     cfg->flag_drop_cooldown = (uint16_t)r16(&r);
+    cfg->flag_carry = (uint8_t)r8(&r);
+    cfg->flag_carry_ticks = (uint16_t)r16(&r);
+    cfg->green_target = (uint8_t)r8(&r);
+    cfg->green_life = (uint16_t)r16(&r);
+    cfg->green_every = (uint16_t)r16(&r);
+    cfg->green_near = (int32_t)r32(&r);
+    cfg->green_far = (int32_t)r32(&r);
+    cfg->green_radius = (int32_t)r32(&r);
+    for (int i = 0; i < SIM_SLOT_COUNT; i++)
+        cfg->green_weight[i] = (uint8_t)r8(&r);
     cfg->max_ships = r8(&r);
 
     /* Read short is as wrong as read long.

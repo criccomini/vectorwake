@@ -1,0 +1,18 @@
+version = 2
+name = "gimbal"
+seed = 1
+mode = "melee"
+theme = "rings"
+symmetry = "half_turn"
+routes = 2
+min_opening_tiles = 7
+contact_seconds_min = 2.0
+contact_seconds_max = 9.0
+allow_doors = true
+allow_wormholes = true
+expected_hash = "b154cc93"
+
+[envelope]
+width = 96
+height = 96
+shape = "rectangle"

@@ -94,12 +94,51 @@ class PageNode {
     this.textContent = "";
     this.innerHTML = "";
     this.href = attrs.href || "";
+    // A control's own value, which for the zone picker is the whole of what
+    // the page reads back off it. Assigning `innerHTML` is how the options
+    // are drawn, and a browser drops a value its list no longer offers; this
+    // keeps whatever was set, which is enough to press the wrong zone and see
+    // it refuse.
+    this.value = "";
     this.listeners = {};
+    // Nodes the page built and hung under this one. The profile draws its
+    // per-zone table by appending cells to rows and rows to a tbody, so a
+    // test that cannot see through that cannot see the table at all.
+    this.children = [];
+    this.own = "";
+    this.className = attrs.class || "";
+    this.classList = {
+      toggle: (name, on) => {
+        const held = this.className.split(/\s+/).filter(Boolean);
+        const without = held.filter((held) => held !== name);
+        if (on) without.push(name);
+        this.className = without.join(" ");
+      },
+    };
     for (const [name, value] of Object.entries(attrs)) {
       if (!name.startsWith("data-")) continue;
       const key = name.slice(5).replace(/-([a-z])/g, (_, ch) => ch.toUpperCase());
       this.dataset[key] = value === true ? "" : value;
     }
+  }
+
+  // Setting it replaces whatever was under the node, as the DOM does.
+  set textContent(value) {
+    this.own = String(value ?? "");
+    this.children = [];
+  }
+
+  get textContent() {
+    const below = this.children.map((child) => child.textContent).join(" ");
+    return below ? (this.own ? this.own + " " + below : below) : this.own;
+  }
+
+  append(...nodes) {
+    this.children.push(...nodes);
+  }
+
+  replaceChildren(...nodes) {
+    this.children = nodes;
   }
 
   addEventListener(name, callback) {
@@ -133,11 +172,21 @@ function pageDocument(path) {
   const body = nodes.find((node) => node.tagName === "BODY");
   return {
     body,
+    createElement(tag) {
+      return new PageNode(tag, {});
+    },
     querySelector(selector) {
-      const wanted = /^\[([^\]]+)\]$/.exec(selector);
-      if (!wanted) throw new Error("Unsupported selector " + selector);
-      return nodes.find((node) =>
-        Object.prototype.hasOwnProperty.call(node.attrs, wanted[1])) || null;
+      const attribute = /^\[([^\]]+)\]$/.exec(selector);
+      if (attribute) {
+        return nodes.find((node) =>
+          Object.prototype.hasOwnProperty.call(node.attrs, attribute[1])) || null;
+      }
+      // An id, which is how the pilot pages reach their own elements. Only
+      // the shipping HTML's ids resolve: a page that loses one gets null
+      // here, which is the early return the script takes in a browser.
+      const id = /^#([\w-]+)$/.exec(selector);
+      if (id) return nodes.find((node) => node.attrs.id === id[1]) || null;
+      throw new Error("Unsupported selector " + selector);
     },
   };
 }
@@ -148,16 +197,23 @@ function response(ok, status, body) {
 
 async function runGrowth(document, location, fetch, navigator) {
   const source = fs.readFileSync("deploy/site/growth.js", "utf8");
+  const addresses = [];
   const context = vm.createContext({
     document,
     location,
     fetch,
     navigator,
     console,
+    URLSearchParams,
+    // The week's zone rides the address so a filtered board can be sent to
+    // somebody. Recorded rather than applied: what matters is that the page
+    // writes the zone it is showing, not that this stand-in navigates.
+    history: {replaceState(_state, _title, url) { addresses.push(url); }},
     setTimeout(callback) { callback(); },
   });
   vm.runInContext(source, context, {filename: "deploy/site/growth.js"});
   await settle();
+  return addresses;
 }
 
 async function matchPageTest() {
@@ -226,18 +282,32 @@ async function matchPageTest() {
 async function weekPageTest() {
   const document = pageDocument("deploy/site/week.html");
   const calls = [];
-  const payload = {
-    since: "2026-08-17",
-    week: [
-      {name: "Aster 1", kills: 9, deaths: 2, rating: 1510,
-       swing: 14, wins: 1, seconds: 720},
-      {name: "Rook 2", kills: 4, deaths: 5, rating: 1480,
-       swing: -6, wins: 3, seconds: 180},
-    ],
-  };
+  // Every zone the fleet runs, which is what the picker is built from. The
+  // two whose key is not their name are the ones a page that printed keys
+  // would get wrong.
+  const zones = [
+    {zone: "melee", label: "Team Battle"},
+    {zone: "turf", label: "Turf"},
+    {zone: "roam", label: "Free Roam"},
+  ];
   const fetch = async (path, options) => {
-    calls.push({path, body: JSON.parse(options.body)});
-    return response(true, 200, payload);
+    const body = JSON.parse(options.body);
+    calls.push({path, body});
+    return response(true, 200, {
+      since: "2026-08-17",
+      zone: body.zone || "",
+      label: (zones.find((z) => z.zone === body.zone) || {}).label || "",
+      zones,
+      week: body.zone === "turf" ? [
+        {name: "Rook 2", kills: 4, deaths: 5, rating: 1480,
+         swing: -6, wins: 3, seconds: 180},
+      ] : [
+        {name: "Aster 1", kills: 9, deaths: 2, rating: 1510,
+         swing: 14, wins: 1, seconds: 720},
+        {name: "Rook 2", kills: 4, deaths: 5, rating: 1480,
+         swing: -6, wins: 3, seconds: 180},
+      ],
+    });
   };
   const copied = [];
   const navigator = {
@@ -250,14 +320,15 @@ async function weekPageTest() {
   };
   const location = {
     pathname: "/week",
+    search: "",
     href: "https://vectorwake.net/week",
   };
-  await runGrowth(document, location, fetch, navigator);
+  const addresses = await runGrowth(document, location, fetch, navigator);
   await settle(() => document.querySelector("[data-rows]").innerHTML !== "");
 
   check("the weekly page requests the current recap",
     calls.length === 1 && calls[0].path === "/v1/week"
-      && calls[0].body.back === 0,
+      && calls[0].body.back === 0 && calls[0].body.zone === "",
     JSON.stringify(calls));
   check("the weekly page renders stories and standings",
     document.querySelector("[data-stories]").hidden === false
@@ -266,12 +337,119 @@ async function weekPageTest() {
       && document.querySelector("[data-ladder]").hidden === false
       && document.querySelector("[data-rows]").innerHTML.includes("Aster 1"));
 
+  // A rating is kept per zone, so the board offers one game at a time. The
+  // picker is drawn from the reply, which is what lets a zone added to the
+  // catalog reach this page without an edit here.
+  const picker = document.querySelector("[data-zone]");
+  check("the weekly page offers every zone by the name players read",
+    document.querySelector("[data-zone-filter]").hidden === false
+      && picker.innerHTML.includes("Every zone")
+      && picker.innerHTML.includes(">Team Battle<")
+      && picker.innerHTML.includes(">Free Roam<")
+      && picker.innerHTML.includes("value=\"melee\""),
+    picker.innerHTML);
+
+  picker.value = "turf";
+  await picker.emit("change");
+  await settle(() =>
+    document.querySelector("[data-status]").textContent.includes("Turf"));
+  check("choosing a zone reads the board again for that zone alone",
+    calls.length === 2 && calls[1].body.zone === "turf",
+    JSON.stringify(calls));
+  check("and the board redraws as that zone's",
+    document.querySelector("[data-rows]").innerHTML.includes("Rook 2")
+      && !document.querySelector("[data-rows]").innerHTML.includes("Aster 1")
+      && document.querySelector("[data-status]").textContent.includes("Turf"),
+    document.querySelector("[data-status]").textContent);
+  check("and the zone rides the address so the board can be linked",
+    addresses.length === 1 && addresses[0] === "/week?zone=turf",
+    JSON.stringify(addresses));
+
   const share = document.querySelector("[data-share]");
   await share.emit("click");
   check("the weekly page falls back to copying its link",
     copied.length === 1 && copied[0] === location.href
       && share.textContent === "Link copied",
     JSON.stringify(copied));
+}
+
+// A pilot's profile, which is the one page that shows what a rating actually
+// is: one per zone, and no total over them.
+async function profilePageTest() {
+  const document = pageDocument("deploy/site/pilot.html");
+  const payload = {
+    pilot: {
+      account: 12, name: "Aster 1", kind: "human",
+      kills: 240, deaths: 180, assists: 96,
+      ratings: [
+        {zone: "Team Battle", class: "melee", rating: 1612.4,
+         games: 140, tier: "Ace", rank: 3, of: 90},
+        {zone: "Free Roam", class: "roam", rating: 1488.7,
+         games: 20, tier: "Wing", rank: 41, of: 90},
+        // Placing: enough games to be listed, not enough to be told a tier.
+        {zone: "Duel", class: "duel", rating: 1502.0,
+         games: 2, tier: null, rank: null, of: null},
+      ],
+    },
+  };
+  const calls = [];
+  const fetch = async (path, options) => {
+    calls.push({path, body: JSON.parse(options.body)});
+    return response(true, 200, payload);
+  };
+  const location = {
+    pathname: "/pilots/12",
+    search: "",
+    href: "https://vectorwake.net/pilots/12",
+  };
+  const source = fs.readFileSync("deploy/site/pilots.js", "utf8");
+  const context = vm.createContext({
+    document, fetch, console, Intl, URLSearchParams,
+    window: {location, history: {replaceState() {}}},
+  });
+  vm.runInContext(source, context, {filename: "deploy/site/pilots.js"});
+  await settle(() =>
+    document.querySelector("#profile-rating-rows").children.length > 0);
+
+  check("the profile asks for the pilot named by its address",
+    calls.length === 1 && calls[0].path === "/v1/pilot"
+      && calls[0].body.account === 12,
+    JSON.stringify(calls));
+
+  // The whole point of the table: a row per zone, named as players name it.
+  // "melee" and "roam" are keys, and a page that printed them would be
+  // naming two games that go by other names on every other screen.
+  const rows = document.querySelector("#profile-rating-rows").children;
+  check("the profile lists a rating for every zone the pilot has flown",
+    rows.length === 3
+      && rows[0].textContent.includes("Team Battle")
+      && rows[1].textContent.includes("Free Roam")
+      && rows[2].textContent.includes("Duel")
+      && !rows[0].textContent.includes("Overall"),
+    rows.map((row) => row.textContent).join(" | "));
+  check("and each row carries that zone's own tier and rank",
+    rows[0].textContent.includes("Ace")
+      && rows[0].textContent.includes("#3")
+      && rows[1].textContent.includes("Wing")
+      && rows[2].textContent.includes("Placing")
+      && rows[2].textContent.includes("Not ranked"),
+    rows.map((row) => row.textContent).join(" | "));
+  check("and the table is shown rather than left hidden",
+    document.querySelector("#profile-ratings").hidden === false
+      && document.querySelector("#profile-scoreboard").hidden === false);
+
+  // The headline is the most-flown zone, not a career: there is no number
+  // over every zone and the page must not read as if there were.
+  check("the profile's headline figures come from the most-flown zone",
+    document.querySelector("#profile-tier").textContent === "Ace"
+      && document.querySelector("#profile-rank").textContent === "#3"
+      && document.querySelector("#profile-games").textContent === "140",
+    document.querySelector("#profile-tier").textContent);
+  check("and it says which zone they are from",
+    document.querySelector("#profile-zone-note").hidden === false
+      && document.querySelector("#profile-zone-note").textContent
+        .includes("Team Battle"),
+    document.querySelector("#profile-zone-note").textContent);
 }
 
 // The canvas has to own every gesture that lands on it.
@@ -297,6 +475,7 @@ function canvasGesturesTest() {
   await diagnosticsTest();
   await matchPageTest();
   await weekPageTest();
+  await profilePageTest();
   if (failures > 0) process.exit(1);
 })().catch((error) => {
   console.error(error);

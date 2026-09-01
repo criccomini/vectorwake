@@ -160,21 +160,24 @@ impl ZoneDef {
     /// live and a client should read them rather than know them. A mode this
     /// has no words for sends empty strings and the row draws no strip.
     pub fn format(&self) -> (String, String, String) {
+        // Only what the zone actually states. A game without a per-side cap
+        // or a clock has no honest number to print, and an empty stack beats
+        // an invented one.
+        let teams = || match (self.max_humans_per_team, self.teams.len()) {
+            (Some(h), 2) => format!("{h} v {h}"),
+            _ => String::new(),
+        };
+        let time = || match self.arena.match_seconds {
+            Some(s) if s > 0 => format!("{}:{:02}", s / 60, s % 60),
+            _ => String::new(),
+        };
         match self.mode.as_str() {
-            "melee" => {
-                // Only what the zone actually states. A melee without a
-                // per-side cap or a clock has no honest number to print,
-                // and an empty stack beats an invented one.
-                let teams = match (self.max_humans_per_team, self.teams.len()) {
-                    (Some(h), 2) => format!("{h} v {h}"),
-                    _ => String::new(),
-                };
-                let time = match self.arena.match_seconds {
-                    Some(s) if s > 0 => format!("{}:{:02}", s / 60, s % 60),
-                    _ => String::new(),
-                };
-                (teams, time, "kills".into())
-            }
+            "melee" => (teams(), time(), "kills".into()),
+            "turf" => (teams(), time(), "turf".into()),
+            // A warzone runs rounds rather than a clock, so it states the
+            // sides and what wins and leaves the time blank rather than
+            // printing a number it does not have.
+            "warzone" => (teams(), String::new(), "flags".into()),
             _ => (String::new(), String::new(), String::new()),
         }
     }
@@ -307,6 +310,37 @@ impl Catalog {
 
     pub fn zone(&self, name: &str) -> Option<&ZoneDef> {
         self.zones.get(name)
+    }
+
+    /// What a player calls the game a rating was earned in.
+    ///
+    /// A rating class is a zone key (`Arena::rating_class`), and a key is not
+    /// what anybody reads: the zone keyed `melee` is Team Battle on every
+    /// screen in the game, and `roam` is Free Roam. A page that prints the key
+    /// is naming a game that does not exist under that name anywhere else.
+    ///
+    /// A class with no zone behind it keeps its own key. That covers the
+    /// standalone arena's `arena`, and it covers a zone that has since left
+    /// the catalog while the ratings it wrote stand: neither has a label to
+    /// look up, and the key is at least true.
+    pub fn zone_label<'a>(&'a self, class: &'a str) -> &'a str {
+        match self.zones.get(class) {
+            Some(zone) => zone.label(class),
+            None => class,
+        }
+    }
+
+    /// Every zone this deployment runs, in the order the catalog declares
+    /// them, as the key a query is filtered by and the name it is offered
+    /// under. What a zone picker is built from.
+    pub fn zone_labels(&self) -> Vec<(&str, &str)> {
+        self.order
+            .iter()
+            .filter_map(|key| {
+                let zone = self.zones.get(key)?;
+                Some((key.as_str(), zone.label(key)))
+            })
+            .collect()
     }
 
     /// Every map a zone plays, read from its own directory, in its own order,
@@ -899,6 +933,99 @@ mod tests {
             read("melee").format(),
             ("4 v 4".into(), "3:00".into(), "kills".into())
         );
+        assert_eq!(read("turf").label("turf"), "Turf");
+        assert_eq!(
+            read("turf").format(),
+            ("4 v 4".into(), "3:00".into(), "turf".into())
+        );
+        // A war zone runs rounds inside its match, so what it says it scores
+        // in is flags, and the clock beside it is the match's.
+        assert_eq!(read("war").label("war"), "War");
+        assert_eq!(
+            read("war").format(),
+            ("4 v 4".into(), String::new(), "flags".into())
+        );
+        // And the duel is a melee with one pilot a side, which is a fact the
+        // strip reads off the side cap rather than being told.
+        assert_eq!(read("duel").label("duel"), "Duel");
+        assert_eq!(
+            read("duel").format(),
+            ("1 v 1".into(), "3:00".into(), "kills".into())
+        );
+    }
+
+    #[test]
+    fn a_rating_class_reads_as_the_game_it_was_earned_in() {
+        // A rating class is a zone key, and the two zones whose key is not
+        // their name are exactly the two a profile would otherwise print
+        // wrong: `melee` is Team Battle everywhere else in the game, and
+        // `roam` is Free Roam.
+        let mut c = Catalog::default();
+        for (key, label) in [
+            ("melee", Some("Team Battle")),
+            ("roam", Some("Free Roam")),
+            ("turf", None),
+        ] {
+            c.order.push(key.into());
+            c.zones.insert(
+                key.into(),
+                ZoneDef {
+                    label: label.map(str::to_string),
+                    ..ZoneDef::default()
+                },
+            );
+        }
+        assert_eq!(c.zone_label("melee"), "Team Battle");
+        assert_eq!(c.zone_label("roam"), "Free Roam");
+        // A zone that names itself keeps its key, and so does a class with no
+        // zone behind it: the standalone arena's `arena`, and any class left
+        // standing by a zone that has since left the catalog.
+        assert_eq!(c.zone_label("turf"), "turf");
+        assert_eq!(c.zone_label("arena"), "arena");
+        assert_eq!(c.zone_label("gone"), "gone");
+
+        // The picker is built in the catalog's own order, not the map's,
+        // which has none worth relying on.
+        assert_eq!(
+            c.zone_labels(),
+            vec![
+                ("melee", "Team Battle"),
+                ("roam", "Free Roam"),
+                ("turf", "turf")
+            ]
+        );
+    }
+
+    /// Every zone the catalog declares has a directory with a readable file
+    /// in it, naming a mode that exists and maps that are on disk. A zone
+    /// listed and not shipped is a row in the games list that refuses every
+    /// join, which the fleet finds out about and the author does not.
+    #[test]
+    fn every_declared_zone_ships_what_it_names() {
+        let text = std::fs::read_to_string("../catalog/catalog.toml").expect("the catalog");
+        let cat: toml::Value = toml::from_str(&text).expect("the catalog parses");
+        let zones = cat["zone"].as_array().expect("a zone list");
+        assert!(!zones.is_empty());
+        for z in zones {
+            let name = z["name"].as_str().expect("a zone name");
+            let dir = format!("../catalog/zones/{name}");
+            let path = format!("{dir}/zone.toml");
+            let def: ZoneDef =
+                toml::from_str(&std::fs::read_to_string(&path).expect(&path)).expect(&path);
+            assert!(
+                crate::modes::exists(&def.mode),
+                "zone {name} names mode {:?}, which has no implementation",
+                def.mode
+            );
+            assert!(!def.maps.is_empty(), "zone {name} names no maps");
+            for m in &def.maps {
+                let map = format!("{dir}/{m}");
+                assert!(
+                    std::path::Path::new(&map).exists(),
+                    "zone {name} names {m}, which is not there"
+                );
+            }
+        }
     }
 
     #[test]
