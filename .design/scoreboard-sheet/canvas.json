@@ -60,15 +60,6 @@
       "page": "page-1"
     },
     {
-      "file": "TeamBattleTeams.dc.html",
-      "title": "Team Battle, named Teams",
-      "x": 3440,
-      "y": 2220,
-      "w": 1440,
-      "h": 810,
-      "page": "page-1"
-    },
-    {
       "file": "TeamBattlePortrait.dc.html",
       "title": "Team Battle, phone",
       "x": 0,
@@ -238,7 +229,7 @@
       "y": 0,
       "w": 400,
       "page": "page-1",
-      "text": "The scoreboard sheet\n\nRound three, on the sheet. The list is flat: every pilot in one list ranked by kills, their side in the Team column and in the color of their name. Time is gone. A press on a pilot (enter, click or tap) opens their card, a panel that stacked, and the card's breathing key is JOIN, named for their side. So a side is joined through one of its pilots, the way an invitation was sent from the info box, and the selectable section round two needed is not needed.\n\nThe stop stays: SCOREBOARD, answering where you stand. TEAMS is drawn beside it on the Team Battle board to compare.\n\nWhat this costs: a side with nobody on it has no row to press, so it cannot be joined from here; in Free Roam, founding a side needs a door of its own."
+      "text": "The players sheet\n\nRound three, on the sheet, after Chris's notes. The panel is called Players, and so is its stop in the column, whose answer is where you stand: your side, or Watching. The list is flat: your own side first and then everyone else, each run alphabetical, with the side in the Team column and in the color of the name. The side line under the head is gone, since the Team column already names every side and the band carries the score. A press on a player (enter, click or tap) opens their card, a panel that stacked, and the card's breathing key is JOIN, named for their side. So a side is joined through one of its players, the way an invitation was sent from the info box.\n\nWhat this costs: a side with nobody on it has no row to press, so it cannot be joined from here; in Free Roam, founding a side needs a door of its own."
     },
     {
       "id": "note-zones",
@@ -246,7 +237,7 @@
       "y": 0,
       "w": 400,
       "page": "page-2",
-      "text": "By zone\n\nOne sheet, five zones. The line under the head says the sides, with each side's stands or flags in Turf and War, the ones nobody holds dim. The duel's two pilots are the two rows, with a Rounds band under them listing who took each and how long it ran. Free Roam is one ranked list of thirty one with the Team column doing the work the colors cannot for eight sides, scrolling under the pinned head."
+      "text": "By zone\n\nOne sheet, five zones. The Team column says the side; the band above says the score, with each side's stands or flags under it in Turf and War. The duel's two players are the two rows, with no Team column, and a Rounds band under them lists who took each and how long it ran. Free Roam is one list of thirty one, your pact first, where the Team column does the work eight colors cannot, scrolling under the pinned head."
     },
     {
       "id": "note-band",
