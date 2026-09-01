@@ -928,10 +928,16 @@ impl World {
         self.map = map;
         self.reset_settings();
         // Nothing in the old geometry survives the swap. A flag stands on a
-        // tile of a map that is gone and a round in the air was fired down a
-        // lane that no longer exists.
+        // tile of a map that is gone, a round in the air was fired down a lane
+        // that no longer exists, and a green is lying on ground that may be
+        // wall on the next map. The prize stream itself stays: it belongs to
+        // the room rather than to the ground, and a room that rerolled it on
+        // every rotation would be one a patient client could resynchronize
+        // against.
         self.state.flag_count = 0;
         self.state.weapon_count = 0;
+        self.state.green_count = 0;
+        self.state.green_at = 0;
     }
 
     /// Another simulation of the same geometry, for a second room of a zone.

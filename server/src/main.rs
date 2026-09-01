@@ -6674,6 +6674,30 @@ mod tests {
         );
     }
 
+    /// A map swap takes the greens with it and keeps the stream that rolls
+    /// them. A green lies on ground the next map may have made wall, so it
+    /// goes the way a flag and a round in the air already did; the stream is
+    /// the room's rather than the ground's, and rerolling it every rotation
+    /// would hand a patient client somewhere to start guessing again.
+    #[test]
+    fn a_map_swap_clears_the_greens_and_keeps_the_stream() {
+        let mut world = sim::World::new(0x5eed);
+        world.seed_prizes(0xabcdef01);
+        world.state.green_count = 3;
+        world.state.greens[0].active = 1;
+        world.state.green_at = 42;
+
+        let other = std::sync::Arc::clone(&world.map);
+        world.set_map(other);
+
+        assert_eq!(world.state.green_count, 0, "the field is swept");
+        assert_eq!(world.state.green_at, 0, "and its clock restarts");
+        assert_eq!(
+            world.state.prize_rng, 0xabcdef01,
+            "the stream is the room's and stays"
+        );
+    }
+
     /// The free roam zone as it ships: greens appear near the pilot they were
     /// put out for, and flying into one raises what that pilot is flying.
     #[test]
