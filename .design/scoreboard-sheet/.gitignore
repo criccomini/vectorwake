@@ -1,0 +1,4 @@
+# The seeded canvas is a couple of megabytes of editor payload wrapped round
+# the artboards, rebuilt from them by the command in README.md. Kept out of
+# history for the same reason client/dist/ is.
+scoreboard-sheet.html
