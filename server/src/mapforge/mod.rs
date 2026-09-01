@@ -227,6 +227,9 @@ pub(crate) struct Canvas {
     pub reserved: Vec<bool>,
     pub w: i32,
     pub h: i32,
+    /// Whether `wormhole` lays a mouth or only the clearing around one. A
+    /// theme asks for its wormholes and the brief decides; see that method.
+    pub allow_wormholes: bool,
 }
 
 impl Canvas {
@@ -238,6 +241,7 @@ impl Canvas {
             reserved: vec![false; width as usize * height as usize],
             w: width as i32,
             h: height as i32,
+            allow_wormholes: true,
         }
     }
 
@@ -452,8 +456,15 @@ impl Canvas {
     /// Two calls at the same place make one well twice as strong rather than
     /// two wells, because the core sums every wormhole tile in range. A theme
     /// wanting a wider mouth is asking for a harder pull as well.
+    ///
+    /// A brief that refuses wormholes gets the clearing and no mouth. The
+    /// reservation stands either way, so a theme's remaining stamps land
+    /// exactly where they would have: refusing the warp asks for this map
+    /// without it rather than for a different map.
     pub fn wormhole(&mut self, x: i32, y: i32) {
-        self.pair(x, y, tile(WORMHOLE, 0));
+        if self.allow_wormholes {
+            self.pair(x, y, tile(WORMHOLE, 0));
+        }
         self.reserve_disk(x, y, 5);
         self.reserve_disk(self.w - 1 - x, self.h - 1 - y, 5);
     }

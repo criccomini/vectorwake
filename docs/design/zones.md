@@ -121,6 +121,12 @@ what a 1v1 on melee ground measured as. These are four to six seconds home to
 home rather than twelve to fifteen, so the fight starts at the whistle and
 restarts after every death.
 
+None of the three holds a wormhole. A warp sends whoever touches it back to
+their own start, which on ground this small is a way out of the only fight in
+the room, and its thirty-eight tile field covers most of a ninety-six tile map
+besides. See
+[decision 138](../architecture/decisions.md#138-a-duel-is-too-small-to-hold-a-wormhole).
+
 Pairing by rating is not here. That needs a band and a queue and is a decision
 to take on its own.
 
