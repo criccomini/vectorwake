@@ -166,7 +166,7 @@ whole window on a phone and a third of one on a desk: `MENU_SCALE`, 1.25, grew
 its rows, gaps, marks and column together on anything not `M.compact`. The
 column is one column, laid out at the same width on every window and sized by
 the same rules wherever it stands, so there is nothing left to zoom. See
-[decisions 102 and 140](../architecture/decisions.md).
+[decisions 102 and 141](../architecture/decisions.md).
 
 ### The inks
 
@@ -345,7 +345,7 @@ Bottom middle: the faint `MENU` key, and the column it raises, in a room you
 are in. Top left held MENU until decision 102 moved it to the foot, where the
 panel it opens stands. The front page carries the column and not the key: out
 there the column is already standing and cannot be put away, so there would be
-nothing for a key to raise (decision 140).
+nothing for a key to raise (decision 141).
 Top right: the radar or the map (one corner, one instrument), with the feed
 under it and, over both, the two readings that corner is asked for. The tile
 you are on sits at the instrument's left edge with POS in front of it, four

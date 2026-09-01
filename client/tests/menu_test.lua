@@ -181,7 +181,7 @@ end
 --
 -- Who you are, where you are, what you fly, and the machine, top down in that
 -- order, and the same four wherever the column is standing. There is one menu
--- (decision 140): the landing and the in-match column were the same drawing
+-- (decision 141): the landing and the in-match column were the same drawing
 -- off two models, each carrying the stop the other lacked, so the settings
 -- lived only in a match and the account only on the front page.
 --
@@ -383,6 +383,35 @@ act, moved = menu.step({back = true})
 check("escape answers the question instead of shutting the menu",
       act == nil and moved and menu.ask == nil and menu.open,
       tostring(act) .. ", open " .. tostring(menu.open))
+
+-- A game the fleet is not serving is on the list all the same, and says two
+-- things about itself. It cannot be flown to, which is what dims it, and it is
+-- still being looked for, which is the dial the drawing puts at the end of the
+-- row: the directory is asked again every three seconds and an arena can come
+-- back to a game at any of them.
+--
+-- One list draws these rows wherever the column stands, so what is checked
+-- here is the field the drawing reads: a row that only dimmed would be the
+-- client saying it had given up when it has not.
+do
+    local dir = package.loaded["arena.directory"]
+    dir.rows[#dir.rows + 1] = {zone = "war", name = "War", teams = "4v4",
+                               count = "", players = 0, bots = 0,
+                               live = false}
+    open("zone")
+    local up, down = row_named("Chaos"), row_named("War")
+    check("a game with no arena behind it is still a row on the list",
+          down ~= nil, labels())
+    if up and down then
+        check("and is dim, because it cannot be flown to",
+              down.dim == true and not up.dim)
+        check("and is being looked for, which is not the same thing",
+              down.waiting == true and not up.waiting)
+        check("while still saying what the game is",
+              down.note == "4v4", tostring(down.note))
+    end
+    dir.rows[#dir.rows] = nil
+end
 
 -- --- settings, which are values rather than destinations -------------------
 --
@@ -928,7 +957,7 @@ end
 -- --- the account, which is the column's first stop ------------------------
 --
 -- These acts left the drawer with the pilot page (decision 99) and stood on
--- the landing alone until the menus were unified (decision 140). They are a
+-- the landing alone until the menus were unified (decision 141). They are a
 -- page of the tree now, pressed by index like every other row here, and what
 -- they do is unchanged.
 

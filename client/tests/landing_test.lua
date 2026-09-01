@@ -10,7 +10,7 @@
 -- away is the TAKE SEAT chip, because the key is that key.
 --
 -- It is the same column a player raises mid-match, drawn by the same function
--- off the same view (decision 140). What is checked here is the home arm of
+-- off the same view (decision 141). What is checked here is the home arm of
 -- it: the lockup over the stops, the rail it lies down into on a short window,
 -- and the room still being readable behind the lot.
 --
@@ -36,10 +36,20 @@ end
 local layer = {n = 0}
 local function noop(self) self.n = self.n + 1 end
 for _, name in ipairs({"arc", "flush", "reset",
-                       "ring", "seg_fade", "seg_flat", "skirt", "tri",
+                       "seg_fade", "seg_flat", "skirt", "tri",
                        "tri_fade", "fan", "seg_glow", "glow_band", "halo",
                        "ring_fade"}) do
     layer[name] = noop
+end
+
+-- Rings are kept, because the one instrument out here is made of them: the
+-- dial that says a game is being looked for is range rings with a hand
+-- sweeping round inside them, and where it lands and how wide it came out is
+-- the whole question about it.
+local rings = {}
+layer.ring = function(self, x, y, r)
+    self.n = self.n + 1
+    rings[#rings + 1] = {x = x, y = y, r = r}
 end
 
 -- Closed runs, corners kept. The other drawing on the carousel is made of
@@ -305,6 +315,7 @@ local function frame(w, h, o)
     o = o or {}
     H = h
     boxes, rects, discs = {}, {}, {}
+    rings = {}
     quads = {}
     frosted = {}
     state.n = 0
@@ -1030,6 +1041,83 @@ do
     check("flair carries the wake and takes a press",
           word("Wake") ~= nil and flair ~= nil)
     frame(1440, 810, {col_open = "ship"})
+end
+
+-- --- a game with no arena is still being looked for --------------------------
+--
+-- A zone the fleet is not serving is a row, not a gap: a player is better off
+-- seeing that War exists and is down than wondering whether they misread the
+-- list. Two things are true of that row and it says both. It cannot be
+-- pressed, which is what dims it and what keeps a box off it. And something
+-- is still looking for it, which is the dial at the right end: the directory
+-- is asked again every three seconds and an arena can come back at any of
+-- them, so a row that simply sat there dim would be the client saying it had
+-- given up when it has not.
+--
+-- What the row reads is read either way. The format of a game is what the
+-- game is, and it is true whether or not anybody is running one.
+do
+    local DOWN = {}
+    for k, v in pairs(LAND) do DOWN[k] = v end
+    -- The two formats are written differently on purpose: the one below
+    -- asks whether the dead row still reads, and a string both rows carried
+    -- would come back from the live one.
+    DOWN.zones = {
+        {label = "Team Battle", named = true, note = "4v4 \194\183 3:00",
+         mark = true, index = 1},
+        {label = "War", named = true, note = "4v4", dim = true,
+         waiting = true, index = 2},
+    }
+
+    frame(1440, 810, {land = DOWN, col_open = "zone"})
+    check("a game nobody is serving is still on the list", word("War") ~= nil)
+    local pressable = {}
+    for _, r in ipairs(ui.hits) do
+        if r.action == "menu_pick" then pressable[r.value] = true end
+    end
+    check("and the row for it takes no press",
+          pressable[1] and not pressable[2],
+          "the dead game published a box")
+    -- Two range rings at this size, a hand and its trail inside them. Three
+    -- rings across twenty two points would be five apart, which is closer
+    -- than the stroke drawing them, so the small dial keeps two.
+    check("and wears the dial that is looking for one", #rings == 2,
+          #rings .. " rings on screen, wanted 2")
+    local row = nil
+    for _, r in ipairs(ui.hits) do
+        if r.action == "menu_pick" and r.value == 1 then row = r end
+    end
+    if row and #rings == 2 then
+        -- Rows are one height, so the dead one is the row under the live one:
+        -- the box the live row published, moved down by its own height. Hit
+        -- boxes count down from the top of the window and the mesh counts up
+        -- from the bottom of it, so the dial's own y is flipped to meet them.
+        local want = row.y + row.h
+        local cy = 810 - rings[1].y
+        local widest = 0
+        for _, g in ipairs(rings) do widest = math.max(widest, g.r) end
+        check("standing in the row it belongs to",
+              cy > want and cy < want + row.h,
+              string.format("%.0f against %.0f..%.0f", cy, want, want + row.h))
+        check("and inside the row's own height",
+              2 * widest < row.h,
+              string.format("%.0f across a row of %.0f", 2 * widest, row.h))
+        check("at the end of the row rather than the middle of it",
+              rings[1].x > row.x + row.w * 0.8,
+              string.format("%.0f across a row from %.0f to %.0f",
+                            rings[1].x, row.x, row.x + row.w))
+    end
+    -- And what the game is is still said, because that is true of a game
+    -- whether or not there is an arena running it.
+    check("a game that is down still says what it is",
+          word("4v4") ~= nil)
+
+    -- A fleet with everything up draws no dial at all. The instrument means
+    -- "still looking", and a list where nothing is being looked for that
+    -- carried one would be saying so about games it had already found.
+    frame(1440, 810, {col_open = "zone"})
+    check("and a list with every game up wears none", #rings == 0,
+          #rings .. " rings over a fleet that is entirely up")
 end
 
 -- --- the account stop opens the same kind of list ---------------------------
@@ -2091,7 +2179,7 @@ do
         frame(w, h)
         local landed = word("vectorwake")
 
-        boxes, rects = {}, {}
+        boxes, rects, rings = {}, {}, {}
         state.n = 0
         H = h
         ui.begin(layer, w, h, 1, false, 0)
@@ -2130,6 +2218,43 @@ do
         check(shape .. " waiting says nothing while it is only waiting",
               #words() == 1,
               #words() .. " words on screen, wanted 1")
+        -- It does not say nothing at all, though. The dial that looks for a
+        -- game stands in the middle of the window, which is where the hull
+        -- the stands are watching stands and why the column above keeps clear
+        -- of that band: while this screen is up there is no hull there, and
+        -- the instrument looking for one takes the place until it arrives.
+        --
+        -- Three range rings where there is room for three, and two where
+        -- there is not: three across a face of twenty two points would be
+        -- five apart, which is closer than the stroke drawing them. The
+        -- smallest window is the one that gets two, because the lockup on it
+        -- comes up to meet the dial and the dial is what gives way.
+        local widest_ring = 0
+        for _, g in ipairs(rings) do
+            widest_ring = math.max(widest_ring, g.r)
+        end
+        check(shape .. " waiting looks for the room it has not found",
+              #rings == (widest_ring > 24 and 3 or 2),
+              #rings .. " rings across " .. string.format("%.0f", widest_ring))
+        if #rings >= 2 and waiting then
+            local widest = widest_ring
+            -- The mesh counts up from the bottom and everything read back
+            -- here counts down from the top, so the dial is flipped to meet
+            -- the name.
+            local cy = h - rings[1].y
+            check(shape .. " and stands it in the middle of the window",
+                  math.abs(rings[1].x - w / 2) < 1
+                  and math.abs(cy - h / 2) < 1,
+                  string.format("%.0f,%.0f against %.0f,%.0f",
+                                rings[1].x, cy, w / 2, h / 2))
+            -- And clear of the name, which does not move for it: the whole
+            -- rule of this screen is that nothing already on it shifts when
+            -- the room arrives.
+            check(shape .. " and clear of the name under it",
+                  cy + widest < waiting.y - 8,
+                  string.format("%.0f against a name at %.0f",
+                                cy + widest, waiting.y))
+        end
     end
 
     -- A fleet that is down does say so, in the slot the key will take. A

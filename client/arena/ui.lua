@@ -1868,8 +1868,8 @@ end
 --
 -- Filled once a frame by `M.hud` rather than worked out on demand, because
 -- the top depends on what is standing between the band and the list (the
--- band always, and a line of banner when the room has said something), and
--- three panels read it.
+-- band always, a strip of pennants in a mode with flags, and a line of banner
+-- when the room has said something), and three panels read it.
 --
 -- Wider than the 248-point columns down the side of the screen, and capped
 -- rather than fluid. A roster row is a name and five numbers, and at 248 the
@@ -3723,33 +3723,6 @@ local function debug_hud(o, top)
     if not F.menu_up then hit(x, y, w, h, "debug", nil, nil, -1) end
 end
 
--- The flags, as flags.
---
--- This was a sentence -- "flags  you 2 - 1 them   1 loose" -- which is three
--- numbers, two of them derivable from the third, in enough characters to
--- cross a phone. One pennant per flag, colored by who holds it, says the
--- same thing in a glance and in a fifth of the width: you count shapes, not
--- words, and it scales to whatever number of flags a mode puts out.
-local function flag_strip(me)
-    local n = sim.flag_count()
-    if n == 0 then return end
-    local my_team = view_team
-    local pitch = 15 * F.scale
-    local x0 = F.w / 2 - (n - 1) * pitch / 2
-    local y = F.safe_t + 30 * F.scale
-    for i = 0, n - 1 do
-        local _, _, team = sim.flag_at(i)
-        local col = (team == 255) and pal.a(pal.DIM, 0.55)
-            or (team == my_team and pal.FRIEND or pal.ENEMY)
-        local px = x0 + i * pitch
-        -- The same pennant the radar draws, so a flag looks like a flag
-        -- wherever it is shown.
-        F.layer:seg(px, ry(y + 9 * F.scale, 0), px, ry(y - 8 * F.scale, 0), 1.6 * F.scale, col)
-        F.layer:tri(px, ry(y - 8 * F.scale, 0), px + 9 * F.scale, ry(y - 4 * F.scale, 0),
-              px, ry(y, 0), col)
-    end
-end
-
 local function match_ended(m)
     return m ~= nil and not m.playing
 end
@@ -3757,6 +3730,66 @@ end
 -- the whistle benched every hull, so the pads have nothing to drive, and the
 -- board's own rows land exactly where the gun pad draws.
 M.match_ended = match_ended
+
+-- The flags, as flags.
+--
+-- This was a sentence, "flags  you 2 - 1 them   1 loose", which is three
+-- numbers, two of them derivable from the third, in enough characters to
+-- cross a phone. One pennant per flag, colored by who holds it, says the
+-- same thing in a glance and in a fifth of the width: you count shapes, not
+-- words, and it scales to whatever number of flags a mode puts out.
+--
+-- One pennant, from the tip of its staff down: `rise` above the line it hangs
+-- on and `drop` below it, with `gap` of air between the band and the staff.
+-- Written down because the strip is not the only thing under the band, and
+-- everything else down there is placed off how much room this took.
+--
+-- One table holding both the measurements and the reach, rather than three
+-- constants and a function, because ui.lua sits on Lua 5.1's ceiling of 200
+-- locals in a chunk and had exactly one left. A fourth `local` at this level
+-- does not fail a test, it fails to load the file.
+local FLAG = {gap = 8, rise = 8, drop = 9}
+
+-- How far the strip pushes the rest of the stack down: nothing in a mode with
+-- no flags, and nothing at the whistle, where the band's own line is what the
+-- clock is counting down to.
+--
+-- The band is the top of a column, and this is what the column is made of: the
+-- clock and the two sides, the pennants, the room's line, then the board a
+-- press on the band opens. Each of those used to be placed against the band on
+-- its own, and the pennants were placed against neither the band nor the
+-- window: they were pinned twenty-five points above where the banner lands,
+-- which is a real measurement taken from the wrong end of the stack. The band
+-- ends eight points above that line, so the strip was drawn straight through
+-- the clock and every flag stood a staff up through a numeral. Nothing showed
+-- it until there were flags to draw, and Turf and War are the first modes
+-- that put any out.
+function FLAG.stack(m)
+    if match_ended(m) or sim.flag_count() == 0 then return 0 end
+    return (FLAG.gap + FLAG.rise + FLAG.drop) * F.scale
+end
+
+local function flag_strip(m)
+    if FLAG.stack(m) == 0 then return end
+    local n = sim.flag_count()
+    local my_team = view_team
+    local pitch = 15 * F.scale
+    local x0 = F.w / 2 - (n - 1) * pitch / 2
+    local y = band_bottom() + (FLAG.gap + FLAG.rise) * F.scale
+    for i = 0, n - 1 do
+        local _, _, team = sim.flag_at(i)
+        local col = (team == 255) and pal.a(pal.DIM, 0.55)
+            or (team == my_team and pal.FRIEND or pal.ENEMY)
+        local px = x0 + i * pitch
+        -- The same pennant the radar draws, so a flag looks like a flag
+        -- wherever it is shown.
+        F.layer:seg(px, ry(y + FLAG.drop * F.scale, 0), px,
+                    ry(y - FLAG.rise * F.scale, 0), 1.6 * F.scale, col)
+        F.layer:tri(px, ry(y - FLAG.rise * F.scale, 0),
+                    px + 9 * F.scale, ry(y - 4 * F.scale, 0),
+                    px, ry(y, 0), col)
+    end
+end
 
 -- The clock and the score, dead center at the top, which are the two facts a
 -- three minute match is about.
@@ -3928,7 +3961,8 @@ local function match_clock(o, m, names, alone)
     press()
 end
 
--- What the room has to say, under the band that carries everything else.
+-- What the room has to say, under the band that carries everything else, and
+-- under the pennants when the mode has flags to hang there.
 --
 -- This was a sentence across the middle of the screen in the largest type on
 -- it, and it said things the instruments already said: which rung had just
@@ -3954,7 +3988,7 @@ local function match_note(o, m)
     -- enough, but the lag notice under this one is the red one and two reds in
     -- a column would stop meaning anything.
     local px = (M.compact and 9 or 11) * F.scale
-    txt(line, F.w / 2, band_bottom() + 8 * F.scale, px,
+    txt(line, F.w / 2, band_bottom() + FLAG.stack(m) + 8 * F.scale, px,
         pal.a(pal.INK, 0.9), "center")
 end
 
@@ -4280,7 +4314,7 @@ end
 -- One function, because there is one column. There were two, `landing_geom`
 -- and `menu_geom`, and the second was written as "the same stops at the same
 -- width over the same breathing key" as the first: two copies of one
--- measurement, kept in step by hand and by comment. See decision 140.
+-- measurement, kept in step by hand and by comment. See decision 141.
 --
 -- `home` is the whole difference. The front page has a name to carry above
 -- the column and a watched hull to keep off, so it measures whether the two
@@ -4852,6 +4886,52 @@ local function commit_key(x, y, w, h, px, word, hot)
     txt(word, x + w / 2, y + h / 2, px, pal.a(pal.INK, 1), "center")
 end
 
+-- The dial that says something is being looked for, at whatever size it is
+-- handed: the screen's own while a room is still being found, and a row's
+-- when the games list has the zone but nothing is serving it. Everything
+-- about it is measured off its radius, so the small one is the large one
+-- rather than a second drawing that has to be kept in step with it.
+--
+-- Nothing else in this interface turns for the sake of turning, and this is
+-- telling the truth while it does: the directory is asked again every three
+-- seconds, and a zone with nobody running it is one an arena can come back
+-- to. `F.now` is zero under the test harness, which holds it still.
+--
+-- On `pages` rather than in a local of its own, for the reason `pages.dot`
+-- is: a Lua chunk may hold two hundred locals and this file is at that
+-- ceiling. See client/tests/upvalues_test.lua.
+function pages.sweep_dial(cx, cy, r)
+    local ring = math.max(0.8 * F.scale, r * 0.022)
+    -- Three range rings where there is room for three. A dial the height of a
+    -- row has twenty two points across it, and three rings in that are five
+    -- points apart, which is closer than the stroke drawing them: they close
+    -- up into a disc with a fringe. Two rings at that size is the same
+    -- instrument, read at the distance it is actually being read from.
+    local rings = (r > 24 * F.scale) and {0.42, 0.72, 1.0} or {0.55, 1.0}
+    local sides = math.max(18, math.min(30, math.floor(r / F.scale)))
+    for k, f in ipairs(rings) do
+        F.layer:ring(cx, ry(cy), r * f, ring, sides,
+                     pal.a(pal.RADAR_TILE, 0.55 - k * 0.12))
+    end
+    local ang = -F.now * 0.8
+    -- How much of the circle the tail covers. Fewer strokes on the small dial:
+    -- the same half radian of them, on something twenty two points across, is
+    -- a quarter of the face filled in, and a sweep that wide is a pie chart.
+    local tail = (r > 24 * F.scale) and 10 or 5
+    for k = 0, tail - 1 do
+        -- The trail is behind the hand, which for a sweep going round the way
+        -- a dial's goes is the side it has just left.
+        local a = ang + k * 0.05
+        local f = 1 - k / tail
+        F.layer:seg(cx, ry(cy), cx + math.cos(a) * r * 0.98,
+                    ry(cy - math.sin(a) * r * 0.98),
+                    math.max(1.0 * F.scale, r * 0.028),
+                    pal.a(pal.FRIEND, 0.32 * f * f), true)
+    end
+    F.layer:disc(cx, ry(cy), math.max(1.2 * F.scale, r * 0.05), 10,
+                 pal.a(pal.DIM, 0.9))
+end
+
 -- A stop's rows, drawn from `top` down the panel that opened them. Rows wear
 -- the menu's own states from decision 72: the row the pointer rests on washes
 -- at 0.18, the row you are already in at 0.07.
@@ -4883,6 +4963,7 @@ local function land_list(kx, kw, top, list, drh)
             menu_row(kx + pad, y, kw - 2 * pad, drh, {
                 label = r.label, named = r.raw, detail = r.note,
                 mark = r.here, tint = r.tint, offer = r.offer, dim = r.dim,
+                waiting = r.waiting,
             }, hov)
             if not r.dim then
                 hit(kx, y, kw, drh, r.action, r.value, nil, 1)
@@ -5430,7 +5511,33 @@ end
 -- thing the hand-off should never do.
 function M.waiting(note)
     M.foot_key, M.joined = false, false
+    local g = column_geom(COLUMN_STOPS, true)
     landing_mark()
+    -- And the dial, standing where the room will stand.
+    --
+    -- The middle of the window is the hull the stands are watching, which is
+    -- why the column above keeps clear of it, and while this screen is up
+    -- there is no hull there: the instrument that is looking for one takes the
+    -- place until it arrives. That covers both waits with one drawing, because
+    -- they are one wait. A first boot is a directory lookup and a handshake; a
+    -- game picked off the list drops the room on screen and dials the next
+    -- one, and the seconds in between used to be a starfield with a name on it
+    -- and nothing saying anything was happening.
+    --
+    -- Sized off the shorter side of the window rather than off the height
+    -- alone, so a phone held upright gets a dial that fits across it, and
+    -- capped again by the room between the middle and the lockup. The lockup
+    -- sits below the middle on every window, since that is what keeps it off
+    -- the hull, and how far below is the column's answer rather than this
+    -- one's: on the smallest window the stops lie down into two rows and the
+    -- name comes up to meet a dial that had been sized against nothing.
+    -- Nothing on this screen moves when the room arrives, so it is the dial
+    -- that gives way.
+    local room = g.mark_y - F.h / 2 - 10 * F.scale
+    pages.sweep_dial(F.w / 2, F.h / 2,
+                     math.max(14 * F.scale,
+                              math.min(56 * F.scale, room,
+                                       math.min(F.w, F.h) * 0.12)))
     -- The one control, drawn here rather than through the corner row, which
     -- carries a roster this screen has not got.
     --
@@ -5444,7 +5551,6 @@ function M.waiting(note)
     -- noise. A fleet that is down is different, and silence there would be a
     -- client that looks like it is still trying.
     if note and note ~= "" then
-        local g = column_geom(COLUMN_STOPS, true)
         txt(note, F.w / 2, g.ky + g.kh / 2, (M.compact and 11 or 13) * F.scale,
             pal.a(pal.DIM, 0.9), "center", MENU_FONT, true)
     end
@@ -5533,10 +5639,11 @@ function M.hud(o)
     -- in one slot and neither has to put the other away.
     rooms_panel(o.rooms, o.room)
     -- Where that column starts, before anything in it draws. Under the band,
-    -- and under the room's note as well when there is one, since a line of
-    -- text between them is a line the list would otherwise be drawn over.
+    -- under the pennants when the mode has flags, and under the room's note as
+    -- well when there is one, since anything drawn between them is a line the
+    -- list would otherwise be drawn over.
     local note = (o.banner and o.banner ~= "") and 16 * F.scale or 0
-    set_board(note)
+    set_board(FLAG.stack(o.match) + note)
     -- The wash the board is read over. Laid down before the board's own panel
     -- and after nothing else, so the fight behind it goes back and the panel
     -- in front of it does not. Not under an open menu: that is a panel over
@@ -5719,6 +5826,12 @@ function M.hud(o)
     -- carries the score, so the band gives its two sides up while that block
     -- is on screen and keeps the numerals. See `match_clock`.
     match_clock(o, o.match, o.side_names, o.menu_open or not M.joined)
+    -- The pennants belong to the band and are drawn with it, which puts them
+    -- above the menu's early return below. Same reason the clock is: the menu
+    -- is a scrim rather than a curtain, and who is holding what is exactly the
+    -- reading a player opening it wants to keep. Called between the two lines
+    -- it sits between on the screen, so the order here is the order down it.
+    flag_strip(o.match)
     match_note(o, o.match)
     -- The menu key, at the foot, wherever there is a room to have a menu
     -- about and no column standing on the spot already. It is drawn from here
@@ -5755,11 +5868,11 @@ function M.hud(o)
     elseif M.help_prompt then
         help_prompt()
     end
-    flag_strip(me)
-    -- The room's own line is drawn with the band it hangs off, above. See
-    -- `match_note`.
+    -- The room's own line and the pennant strip are drawn with the band they
+    -- hang off, above. See `match_note` and `flag_strip`.
     if o.lag_notice and o.lag_notice ~= "" then
-        txt(o.lag_notice, F.w / 2, band_bottom() + 26 * F.scale,
+        txt(o.lag_notice, F.w / 2,
+            band_bottom() + FLAG.stack(o.match) + 26 * F.scale,
             (M.compact and 10 or 13) * F.scale,
             pal.a(pal.HURT, 0.95), "center")
     end
@@ -5851,7 +5964,8 @@ end
 --
 -- and the states that can be true of any of them: `hot` where a press would
 -- land, `mark` where you already are, `tint` for a side, `offer` for the one
--- row that is an offer, `dim` for a row that cannot act.
+-- row that is an offer, `dim` for a row that cannot act, and `waiting` for a
+-- game the fleet is not serving yet.
 --
 -- `x`/`w` are the type column, not the panel: the field a state lights runs
 -- the panel's full width and is laid down by the caller, which is the only
@@ -5869,6 +5983,20 @@ function menu_row(x, y, w, h, r, hot)
     -- the mark's cyan because your own side generates cyan anyway, so the two
     -- rules agree on the one row where they could disagree.
     if r.tint then col = team_col(r.tint) end
+    -- A game nothing is serving keeps the dial that is looking for one, at the
+    -- right end where a reading sits, and gives up that much of the column.
+    --
+    -- The one state on a row that draws rather than colors. `dim` says the row
+    -- cannot be pressed and this says why, which is the part that can change
+    -- while the list is on screen: the directory is re-asked every three
+    -- seconds and an arena can come back to a game at any of them. What the row
+    -- reads is still read, because the format of a game is true whether or not
+    -- anybody is running it; it is set inside the dial rather than under it.
+    if r.waiting then
+        local dr = 11 * F.scale
+        pages.sweep_dial(x + w - dr, y + h / 2, dr)
+        w = w - 2 * dr - 10 * F.scale
+    end
     -- No field is laid here. The cursor and the standing mark are a field of
     -- team blue across the row, and the row this function draws is the type
     -- column: fourteen points in on either side of the glass. Lighting from
@@ -6673,7 +6801,7 @@ local page_followed = nil
 -- when a row was reachable, two sets of actions for one press. What a player
 -- got out of that was a front page with no settings on it and a match menu
 -- with no account, so where a thing lived depended on whether you had taken
--- a seat yet. See decision 140.
+-- a seat yet. See decision 141.
 --
 -- `home` is the one difference left, and it is about the screen rather than
 -- about the menu: out there the column is the whole front end, so it carries
@@ -6782,7 +6910,7 @@ function M.menu(v)
     -- One word, and which word is the whole of what this screen knows about
     -- where you are sitting. No seat anywhere, at home or on a bench, and it
     -- is the way into one; a seat of your own, and it is the way back out to
-    -- the stands of the same game. See decision 140.
+    -- the stands of the same game. See decision 141.
     local ky = g.ky + rise + drop
     local key_hot = M.col_sel == "menu_go"
     if at < 1 then
@@ -6825,7 +6953,7 @@ function M.menu(v)
                                        note = r.note or r.detail,
                                        raw = r.named, here = r.mark,
                                        tint = r.tint, dim = r.dim,
-                                       offer = r.offer,
+                                       offer = r.offer, waiting = r.waiting,
                                        action = "menu_pick", value = r.index}
                 end
             end

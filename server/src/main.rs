@@ -4363,6 +4363,85 @@ mod tests {
     }
 
     #[test]
+    fn a_seat_taken_from_the_stands_comes_with_the_ground_the_room_is_on() {
+        // The landing joins by watching the channel and then asking for a
+        // hull on the same socket, and the channel runs CHANNEL_DELAY behind
+        // the room. A whistle inside that window changed the map and the
+        // generation for everybody in a hull while the stands were still
+        // being shown the last match. The seat used to come with a welcome
+        // and nothing else, so a pilot who pressed deploy in those seconds
+        // held the old ground and flew the new match on its walls.
+        let mut a = match_room(60, 4);
+        seat_human(&mut a, "pilot");
+        let (tx, mut rx) = mpsc::channel(OUT_QUEUE);
+        let wid = a
+            .watch_join(Seat::guest("deploy", false), tx)
+            .expect("a place in the stands");
+        a.lag_policy.spectate_silence_ticks = u32::MAX;
+
+        // Long enough for the stands to hold a served copy of the ground.
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        for _ in 0..(CHANNEL_DELAY / SNAPSHOT_EVERY * 2) {
+            for _ in 0..SNAPSHOT_EVERY {
+                a.tick();
+            }
+            a.broadcast_snapshot(&mut buf);
+            drain(&mut rx);
+        }
+
+        let stale_map = a.map_msg();
+        let stale_generation = a.settings_generation;
+        a.close_match();
+        assert_ne!(a.map_msg(), stale_map, "the whistle changed the ground");
+        assert_ne!(
+            a.settings_generation, stale_generation,
+            "and the generation"
+        );
+
+        // One frame into the window: the stands are still shown the old match.
+        for _ in 0..SNAPSHOT_EVERY {
+            a.tick();
+        }
+        a.broadcast_snapshot(&mut buf);
+        let shown = drain(&mut rx);
+        assert!(
+            !shown.iter().any(|m| m.first() == Some(&S2C_MAP)),
+            "the channel has not served the new ground yet"
+        );
+
+        a.fly(wid, 0, 8).expect("a seat on the field");
+        let got = drain(&mut rx);
+        let map_at = got
+            .iter()
+            .position(|m| m.first() == Some(&S2C_MAP))
+            .expect("the seat comes with the map");
+        assert_eq!(got[map_at], a.map_msg(), "and it is the map the room is on");
+        assert!(
+            got.iter()
+                .any(|m| m.first() == Some(&protocol::S2C_MAPNAME)),
+            "with its name"
+        );
+        let settings_at = got
+            .iter()
+            .position(|m| m.first() == Some(&S2C_SETTINGS))
+            .expect("and the rules");
+        let generation =
+            u32::from_le_bytes(got[settings_at][1..5].try_into().expect("a generation"));
+        assert_eq!(
+            generation, a.settings_generation,
+            "under the generation the frames to come are packed under"
+        );
+        let welcome_at = got
+            .iter()
+            .position(|m| m.first() == Some(&S2C_WELCOME))
+            .expect("a welcome");
+        assert!(
+            map_at < welcome_at && settings_at < welcome_at,
+            "ground and rules before the welcome, the way the door hands them out"
+        );
+    }
+
+    #[test]
     fn the_door_to_the_stands_hands_out_the_clock_the_channel_is_showing() {
         // Somebody arriving used to be set up from the live room and then
         // served a five second old picture, so their first seconds in the
@@ -6445,6 +6524,111 @@ mod tests {
         }
     }
 
+    /// One game, five rooms: every zone we ship flies the same ship into the
+    /// same wall, and what a zone file changes is what the room is *for*.
+    ///
+    /// That claim used to be enforced by copying twenty settings into each new
+    /// zone file and hoping the next tuning pass edited all five. It is the
+    /// baseline's now, and this is what says so: apply a zone, blank the
+    /// handful of fields a zone is allowed to differ on, and everything left
+    /// has to be identical across the catalog. A zone that quietly tunes the
+    /// gun fails here rather than in a player's hands, and a genuinely new
+    /// per-zone rule fails too, until it is named in the list below and thereby
+    /// argued for.
+    #[test]
+    fn every_shipped_zone_flies_the_same_ship() {
+        catalog::set_placeholder_identity();
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog");
+        let cat = catalog::load(dir).expect("the catalog we ship loads");
+        let mut digests: Vec<(String, Vec<u8>)> = Vec::new();
+        for name in &cat.order {
+            let mut w = sim::World::new(1);
+            Room::apply_config(&mut w, &cat.zone(name).unwrap().arena);
+            // What a zone says about its own room rather than about the game
+            // in it: how long you wait to fly again and where you arrive, the
+            // flag rules that separate Turf from War, the greens that make
+            // Free Roam persistent, and how many seats there are.
+            w.cfg.respawn_delay = 0;
+            w.cfg.spawn_radius = 0;
+            w.cfg.flag_radius = 0;
+            w.cfg.flag_drop_cooldown = 0;
+            w.cfg.flag_carry = 0;
+            w.cfg.flag_carry_ticks = 0;
+            w.cfg.green_target = 0;
+            w.cfg.green_life = 0;
+            w.cfg.green_every = 0;
+            w.cfg.green_near = 0;
+            w.cfg.green_far = 0;
+            w.cfg.green_radius = 0;
+            w.cfg.green_weight = [0; sim::SLOT_COUNT];
+            w.cfg.max_ships = 0;
+            digests.push((name.clone(), w.packed_settings()));
+        }
+        let (first, want) = &digests[0];
+        for (name, got) in &digests[1..] {
+            assert_eq!(
+                got, want,
+                "{name} and {first} disagree about the ship, the weapons or the wall"
+            );
+        }
+    }
+
+    /// The other half of that rule: a shipped zone writes a setting only where
+    /// it wants a different answer from the baseline's.
+    ///
+    /// A key that restates the baseline is not harmless. It reads as a
+    /// decision this zone made, so the next tuning pass has to work out
+    /// whether the zone meant it, and it is how the five files filled up with
+    /// twenty settings apiece in the first place. Each key gets applied on its
+    /// own here and has to move something.
+    #[test]
+    fn a_shipped_zone_writes_only_what_it_changes() {
+        catalog::set_placeholder_identity();
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog");
+        let cat = catalog::load(dir).expect("the catalog we ship loads");
+        let baseline = {
+            let w = sim::World::new(1);
+            w.packed_settings()
+        };
+        // Keys that are the room's rather than the simulation's: the mode and
+        // its clocks, how many of the map's stands to play, and the connection
+        // policy. None of them reach the settings a client is sent, so they
+        // cannot be checked this way and are not what this test is about.
+        const NOT_SETTINGS: [&str; 6] = [
+            "mode",
+            "flags",
+            "match_seconds",
+            "intermission_seconds",
+            "turf_seconds",
+            "lag",
+        ];
+        for name in &cat.order {
+            let src = std::fs::read_to_string(format!("{dir}/zones/{name}/zone.toml")).unwrap();
+            let doc: toml::Value = toml::from_str(&src).unwrap();
+            let Some(arena) = doc.get("arena").and_then(|a| a.as_table()) else {
+                continue;
+            };
+            for (key, value) in arena {
+                if NOT_SETTINGS.contains(&key.as_str()) {
+                    continue;
+                }
+                let mut one = toml::map::Map::new();
+                one.insert(key.clone(), value.clone());
+                let mut doc = toml::map::Map::new();
+                doc.insert("arena".into(), toml::Value::Table(one));
+                let doc = toml::to_string(&toml::Value::Table(doc)).unwrap();
+                let (w, warn) = tuned(&doc);
+                assert!(warn.is_empty(), "{name}: {key}: {warn:?}");
+                assert_ne!(
+                    w.packed_settings(),
+                    baseline,
+                    "{name} writes {key}, which is already what the baseline says: \
+                     delete the line rather than restating it"
+                );
+            }
+        }
+    }
+
     #[test]
     fn a_zone_prices_multifire() {
         let (w, warn) = tuned(
@@ -6471,8 +6655,8 @@ mod tests {
         );
         assert_eq!(w.cfg.mod_multi_energy, 25);
         assert_eq!(w.cfg.mod_multi_delay, 50);
-        assert_eq!(w.cfg.mod_spread, 2730, "fifteen degrees, still");
-        assert_eq!(w.cfg.bounce, 16, "and the field past the splinters");
+        assert_eq!(w.cfg.mod_spread, 910, "five degrees, still");
+        assert_eq!(w.cfg.bounce, 12, "and the field past the splinters");
     }
 
     /// `mode` and `flags` were documented keys that nobody read: the arena
@@ -7088,7 +7272,7 @@ mod tests {
 
         // Left out, each is the core's own.
         let (w, _) = tuned("[arena]\nmode = \"warzone\"\n");
-        assert_eq!(w.cfg.bounce, 16);
+        assert_eq!(w.cfg.bounce, 12);
         assert_eq!(w.cfg.door_period, 600);
         assert_eq!(w.cfg.flag_radius, 18 * 256);
     }

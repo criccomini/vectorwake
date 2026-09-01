@@ -37,7 +37,7 @@ local rects = {}
 local layer = {n = 0}
 local function noop(self) self.n = self.n + 1 end
 for _, name in ipairs({"arc", "disc", "flush", "halo", "outline", "quad",
-                       "reset", "ring", "seg", "seg_fade", "seg_flat",
+                       "reset", "ring", "seg_fade", "seg_flat",
                        "skirt", "tri", "tri_fade"}) do
     layer[name] = noop
 end
@@ -66,8 +66,24 @@ layer.rect = function(self, x, y, w, h, col)
     self.n = self.n + 1
     rects[#rects + 1] = {x = x, y = y, w = w, h = h, col = col}
 end
+-- The pennant strip is drawn as mesh rather than as type, so it is the only
+-- thing on the band's column a check cannot find by its words. Every upright
+-- segment on the frame is kept; which of them are the strip is `strip`'s
+-- question, below, since it takes the window's own size to ask.
+local uprights = {}
+layer.seg = function(self, x1, y1, x2, y2, t)
+    self.n = self.n + 1
+    if math.abs(x1 - x2) < 0.01 then
+        uprights[#uprights + 1] = {x = x1, top = math.min(y1, y2),
+                                   bottom = math.max(y1, y2), t = t}
+    end
+end
 
 local room = {count = 4, teams = {[0] = 0, 1, 0, 1}}
+-- What the room's flags are this frame, swapped by the section that asks
+-- about them. Each row is what `sim.flag_at` answers: x, y, owning team,
+-- carried. Empty everywhere else, which is every mode but Turf and War.
+local flags = {}
 _G.sim = {
     ship_count = function() return room.count end,
     ship_x = function(i) return 100 + i * 180 end,
@@ -92,8 +108,11 @@ _G.sim = {
     has_trigger = function() return true end,
     tick = function() return 4242 end,
     weapon_count = function() return 0 end,
-    flag_count = function() return 0 end,
-    flag_at = function() return 0, 0, 255 end,
+    flag_count = function() return #flags end,
+    flag_at = function(i)
+        local f = flags[i + 1]
+        return f[1], f[2], f[3], f[4]
+    end,
     map_coarse = function() return nil end,
     BTN_FIRE = 1,
 }
@@ -144,6 +163,8 @@ local function frame(o)
     o = o or {}
     w_now, h_now = o.w or W, o.h or H
     rects = {}
+    uprights = {}
+    flags = o.flags or {}
     thinnest = nil
     state.n = 0
     ui.begin(layer, w_now, h_now, 1, false, o.now)
@@ -662,6 +683,136 @@ if note and clock then
           string.format("%.0f of %d", down(note), H))
     check("and at a label's size rather than a headline's",
           note.px <= 13, string.format("%.0f", note.px))
+end
+
+-- --- the pennants are a line of their own ----------------------------------
+--
+-- A mode with flags hangs one pennant per flag off the band, colored by who
+-- holds it. This is where it goes, and the check is mostly that it goes
+-- anywhere at all: the strip was pinned twenty-five points above where the
+-- room's line lands, which is eight points inside the band, so in Turf and War
+-- every flag stood a staff up through the clock and the score read as garble.
+-- Nothing caught it because until those zones there were no flags to draw.
+--
+-- Measured against the clock's own box rather than a number written here. The
+-- band is a key tall and the strip is placed off its foot, so a check against a
+-- constant would pass on a band that had moved.
+
+local FLAGS = {{100, 100, 0, 0}, {200, 100, 1, 0},
+               {300, 100, 255, 0}, {400, 100, 0, 0}}
+
+-- The strip, in the coordinates everything here counts in: down from the top,
+-- where the mesh the staffs came off counts up from the bottom.
+--
+-- Which uprights are the strip's takes two bounds, and both earn their place.
+-- The dial draws the same pennant for the same flags in its own corner, and
+-- the corner stack draws short uprights down the right side, so asking for
+-- upright alone collects the whole screen and asking for near the top alone
+-- still collects the dial's, which on a phone hang level with these. What is
+-- left after both is the band's column: the middle of the window, above the
+-- fight.
+--
+-- Read with the board shut. An open board is a panel standing in that same
+-- column, and it rules its own rows and columns with uprights of exactly this
+-- kind; where the board goes is asked below by taking its published box on one
+-- frame and the strip on another, since neither moves for the other.
+local function strip()
+    local reach = {top = nil, bottom = nil, left = nil, right = nil, n = 0}
+    for _, g in ipairs(uprights) do
+        local hi, lo = h_now - g.bottom, h_now - g.top
+        if math.abs(g.x - w_now / 2) < w_now / 6 and hi < h_now / 4 then
+            reach.n = reach.n + 1
+            if not reach.top or hi < reach.top then reach.top = hi end
+            if not reach.bottom or lo > reach.bottom then reach.bottom = lo end
+            if not reach.left or g.x < reach.left then reach.left = g.x end
+            if not reach.right or g.x > reach.right then reach.right = g.x end
+        end
+    end
+    if reach.n == 0 then return nil end
+    return reach
+end
+
+do
+    frame()
+    check("a mode with no flags draws no strip", strip() == nil,
+          "something upright is drawn on the band with no flags out")
+
+    frame({flags = FLAGS})
+    local pennants, tick = strip(), drawn("0:33")
+    check("a mode with flags draws one pennant per flag",
+          pennants ~= nil and pennants.n == #FLAGS,
+          pennants and (pennants.n .. " staffs for " .. #FLAGS .. " flags")
+              or "no strip at all")
+    if pennants and tick then
+        local band_low = down(tick) + tick.px / 2
+        check("and the strip stands clear under the band",
+              pennants.top >= band_low,
+              string.format("strip starts %.1f, the clock ends %.1f",
+                            pennants.top, band_low))
+        check("and is centered on the same middle the band is",
+              math.abs((pennants.left + pennants.right) / 2 - W / 2) < 0.5,
+              string.format("%.1f of %d",
+                            (pennants.left + pennants.right) / 2, W / 2))
+    end
+
+    -- And the rest of the column comes down to meet it, rather than the strip
+    -- being drawn through whatever was already standing there. The room's line
+    -- and the board are both placed off the band, so both have to know.
+    local line = "Keel holds all 4 flags"
+    frame({flags = FLAGS, banner = line})
+    local said, penn = drawn(line), strip()
+    check("the room's line is still drawn with flags out", said ~= nil,
+          table.concat(words(), " | "))
+    if said and penn then
+        check("and lands under the pennants rather than through them",
+              down(said) - said.px / 2 >= penn.bottom,
+              string.format("the line starts %.1f, the strip ends %.1f",
+                            down(said) - said.px / 2, penn.bottom))
+    end
+
+    frame({flags = FLAGS})
+    local shut = strip()
+    ui.details = true
+    frame({flags = FLAGS})
+    local column = box("scores")
+    ui.details = false
+    check("the board opens with flags out", column ~= nil, "no board")
+    if column and shut then
+        check("and under the strip, not over it",
+              column.y >= shut.bottom,
+              string.format("board at %.1f, the strip ends %.1f",
+                            column.y, shut.bottom))
+    end
+
+    -- Nothing moves in a mode without them. The stack is the same column it
+    -- was before flags existed when the room has none to hang on it.
+    frame({banner = line})
+    local bare = drawn(line)
+    frame({flags = FLAGS, banner = line})
+    local under = drawn(line)
+    check("and a room with no flags keeps the line where it always was",
+          bare ~= nil and under ~= nil and down(under) > down(bare),
+          bare and under and string.format("%.1f against %.1f",
+                                           down(under), down(bare))
+              or "the line went missing")
+
+    -- At the whistle the band's own slot goes back to the clock's countdown:
+    -- the match is over, so who is holding what is a reading about a fight
+    -- that has finished, and NEXT MATCH IN wants the line under the band.
+    frame({flags = FLAGS,
+           match = {playing = false, left = 21, score = {[0] = 15, [1] = 19}}})
+    check("and the whistle takes the strip down", strip() == nil,
+          "the pennants outlived the match")
+    local next_up = drawn("NEXT MATCH IN")
+    frame({match = {playing = false, left = 21, score = {[0] = 15, [1] = 19}}})
+    local flagless = drawn("NEXT MATCH IN")
+    check("so the countdown's caption is where it is without them",
+          next_up ~= nil and flagless ~= nil
+              and math.abs(down(next_up) - down(flagless)) < 0.5,
+          next_up and flagless
+              and string.format("%.1f against %.1f",
+                                down(next_up), down(flagless))
+              or "no caption")
 end
 
 if fails > 0 then

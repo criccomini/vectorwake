@@ -3,7 +3,7 @@
 --
 --     lua5.1 client/tests/column_test.lua
 --
--- It is the same column the front page is (decision 140), and this is the
+-- It is the same column the front page is (decision 141), and this is the
 -- other arm of it: raised over a fight rather than standing as the screen, so
 -- it washes the glass behind it, it can be put away, and it stands where the
 -- key that raised it stood. Four stops over one key, and nothing pauses while
