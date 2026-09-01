@@ -4877,6 +4877,52 @@ local function commit_key(x, y, w, h, px, word, hot)
     txt(word, x + w / 2, y + h / 2, px, pal.a(pal.INK, 1), "center")
 end
 
+-- The dial that says something is being looked for, at whatever size it is
+-- handed: the screen's own while a room is still being found, and a row's
+-- when the games list has the zone but nothing is serving it. Everything
+-- about it is measured off its radius, so the small one is the large one
+-- rather than a second drawing that has to be kept in step with it.
+--
+-- Nothing else in this interface turns for the sake of turning, and this is
+-- telling the truth while it does: the directory is asked again every three
+-- seconds, and a zone with nobody running it is one an arena can come back
+-- to. `F.now` is zero under the test harness, which holds it still.
+--
+-- On `pages` rather than in a local of its own, for the reason `pages.dot`
+-- is: a Lua chunk may hold two hundred locals and this file is at that
+-- ceiling. See client/tests/upvalues_test.lua.
+function pages.sweep_dial(cx, cy, r)
+    local ring = math.max(0.8 * F.scale, r * 0.022)
+    -- Three range rings where there is room for three. A dial the height of a
+    -- row has twenty two points across it, and three rings in that are five
+    -- points apart, which is closer than the stroke drawing them: they close
+    -- up into a disc with a fringe. Two rings at that size is the same
+    -- instrument, read at the distance it is actually being read from.
+    local rings = (r > 24 * F.scale) and {0.42, 0.72, 1.0} or {0.55, 1.0}
+    local sides = math.max(18, math.min(30, math.floor(r / F.scale)))
+    for k, f in ipairs(rings) do
+        F.layer:ring(cx, ry(cy), r * f, ring, sides,
+                     pal.a(pal.RADAR_TILE, 0.55 - k * 0.12))
+    end
+    local ang = -F.now * 0.8
+    -- How much of the circle the tail covers. Fewer strokes on the small dial:
+    -- the same half radian of them, on something twenty two points across, is
+    -- a quarter of the face filled in, and a sweep that wide is a pie chart.
+    local tail = (r > 24 * F.scale) and 10 or 5
+    for k = 0, tail - 1 do
+        -- The trail is behind the hand, which for a sweep going round the way
+        -- a dial's goes is the side it has just left.
+        local a = ang + k * 0.05
+        local f = 1 - k / tail
+        F.layer:seg(cx, ry(cy), cx + math.cos(a) * r * 0.98,
+                    ry(cy - math.sin(a) * r * 0.98),
+                    math.max(1.0 * F.scale, r * 0.028),
+                    pal.a(pal.FRIEND, 0.32 * f * f), true)
+    end
+    F.layer:disc(cx, ry(cy), math.max(1.2 * F.scale, r * 0.05), 10,
+                 pal.a(pal.DIM, 0.9))
+end
+
 -- A stop's rows, drawn from `top` down the panel that opened them. Rows wear
 -- the menu's own states from decision 72: the row the pointer rests on washes
 -- at 0.18, the row you are already in at 0.07.
@@ -4908,6 +4954,7 @@ local function land_list(kx, kw, top, list, drh)
             menu_row(kx + pad, y, kw - 2 * pad, drh, {
                 label = r.label, named = r.raw, detail = r.note,
                 mark = r.here, tint = r.tint, offer = r.offer, dim = r.dim,
+                waiting = r.waiting,
             }, hov)
             if not r.dim then
                 hit(kx, y, kw, drh, r.action, r.value, nil, 1)
@@ -5445,10 +5492,18 @@ local function landing(land, covered)
             for _, z in ipairs(land.zones) do
                 -- Every game is named rather than described, so every row
                 -- here is quoted.
+                --
+                -- Two things are true of a game with no arena behind it and
+                -- they are said in two ways: it cannot be pressed, which is
+                -- what dims it, and it is being looked for, which is the dial
+                -- at the end of the row. Written out rather than derived from
+                -- one flag, because the other list this function draws is the
+                -- account, where a row that cannot act is not a row anybody is
+                -- searching for.
                 list[#list + 1] = {label = z.label, value = z.zone,
                                    action = "land_pick_zone", here = z.here,
-                                   dim = not z.live, note = z.format,
-                                   raw = true}
+                                   dim = not z.live, waiting = not z.live,
+                                   note = z.format, raw = true}
             end
         elseif open == "ship" and land.panel then
             -- The ship stop opens a panel rather than a list, and it is the
@@ -5728,6 +5783,23 @@ end
 function M.waiting(note)
     M.foot_key, M.menu_column, M.joined = false, false, false
     landing_mark()
+    -- And the dial, standing where the room will stand.
+    --
+    -- The middle of the window is the hull the stands are watching, which is
+    -- why the column above keeps clear of it, and while this screen is up
+    -- there is no hull there: the instrument that is looking for one takes the
+    -- place until it arrives. That covers both waits with one drawing, because
+    -- they are one wait. A first boot is a directory lookup and a handshake; a
+    -- game picked off the list drops the room on screen and dials the next
+    -- one, and the seconds in between used to be a starfield with a name on it
+    -- and nothing saying anything was happening.
+    --
+    -- Sized off the shorter side of the window rather than off the height
+    -- alone, so a phone held upright gets a dial that fits across it.
+    pages.sweep_dial(F.w / 2, F.h / 2,
+                     math.max(22 * F.scale,
+                              math.min(56 * F.scale,
+                                       math.min(F.w, F.h) * 0.12)))
     -- The one control, drawn here rather than through the corner row, which
     -- carries a roster this screen has not got.
     --
@@ -6162,7 +6234,8 @@ end
 --
 -- and the states that can be true of any of them: `hot` where a press would
 -- land, `mark` where you already are, `tint` for a side, `offer` for the one
--- row that is an offer, `dim` for a row that cannot act.
+-- row that is an offer, `dim` for a row that cannot act, and `waiting` for a
+-- game the fleet is not serving yet.
 --
 -- `x`/`w` are the type column, not the panel: the field a state lights runs
 -- the panel's full width and is laid down by the caller, which is the only
@@ -6180,6 +6253,20 @@ function menu_row(x, y, w, h, r, hot)
     -- the mark's cyan because your own side generates cyan anyway, so the two
     -- rules agree on the one row where they could disagree.
     if r.tint then col = team_col(r.tint) end
+    -- A game nothing is serving keeps the dial that is looking for one, at the
+    -- right end where a reading sits, and gives up that much of the column.
+    --
+    -- The one state on a row that draws rather than colors. `dim` says the row
+    -- cannot be pressed and this says why, which is the part that can change
+    -- while the list is on screen: the directory is re-asked every three
+    -- seconds and an arena can come back to a game at any of them. What the row
+    -- reads is still read, because the format of a game is true whether or not
+    -- anybody is running it; it is set inside the dial rather than under it.
+    if r.waiting then
+        local dr = 11 * F.scale
+        pages.sweep_dial(x + w - dr, y + h / 2, dr)
+        w = w - 2 * dr - 10 * F.scale
+    end
     -- No field is laid here. The cursor and the standing mark are a field of
     -- team blue across the row, and the row this function draws is the type
     -- column: fourteen points in on either side of the glass. Lighting from
@@ -7089,6 +7176,7 @@ function M.menu(v)
                 list[#list + 1] = {label = r.label, note = r.note or r.detail,
                                    raw = r.named, here = r.mark,
                                    tint = r.tint, dim = r.dim,
+                                   waiting = r.waiting,
                                    action = "menu_pick", value = r.index}
             end
         end

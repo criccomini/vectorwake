@@ -383,6 +383,36 @@ check("escape answers the question instead of shutting the menu",
       act == nil and moved and menu.ask == nil and menu.open,
       tostring(act) .. ", open " .. tostring(menu.open))
 
+-- A game the fleet is not serving is on the list all the same, and says two
+-- things about itself. It cannot be flown to, which is what dims it, and it is
+-- still being looked for, which is the dial the drawing puts at the end of the
+-- row: the directory is asked again every three seconds and an arena can come
+-- back to a game at any of them.
+--
+-- The landing's zone stop says both in the same two ways off the same field,
+-- which is the point of checking it here: this list and that one are the same
+-- list, and a row that only dimmed would be the client saying it had given up
+-- when it has not.
+do
+    local dir = package.loaded["arena.directory"]
+    dir.rows[#dir.rows + 1] = {zone = "war", name = "War", teams = "4v4",
+                               count = "", players = 0, bots = 0,
+                               live = false}
+    open("zone")
+    local up, down = row_named("Chaos"), row_named("War")
+    check("a game with no arena behind it is still a row on the list",
+          down ~= nil, labels())
+    if up and down then
+        check("and is dim, because it cannot be flown to",
+              down.dim == true and not up.dim)
+        check("and is being looked for, which is not the same thing",
+              down.waiting == true and not up.waiting)
+        check("while still saying what the game is",
+              down.note == "4v4", tostring(down.note))
+    end
+    dir.rows[#dir.rows] = nil
+end
+
 -- --- the sides, which are the one page that arrives over the wire ----------
 --
 -- A room says what sides it has, and until it does there are none to stand on.

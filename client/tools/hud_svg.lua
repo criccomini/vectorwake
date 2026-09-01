@@ -9,8 +9,8 @@
 -- landing-account open a stop's list, landing-login the panel an
 -- account act opens over one), waiting (what the loader hands off to
 -- before a room answers), loadout (a loaded hull with charges in hand, for
--- the corner stack), menu (the in-match column; menu-settings and menu-side
--- open a stop's panel).
+-- the corner stack), menu (the in-match column; menu-settings, menu-side and
+-- menu-zone open a stop's panel).
 -- Rasterize with any browser:
 --
 --     chromium --headless --screenshot=out.png --window-size=1280,800 out.svg
@@ -262,7 +262,7 @@ end
 -- Four frames of the front end: the stops closed, and each of the three
 -- lists down.
 local in_menu = scenario == "menu" or scenario == "menu-settings"
-    or scenario == "menu-side"
+    or scenario == "menu-side" or scenario == "menu-zone"
 local landing = scenario == "landing" or scenario == "landing-zones"
     or scenario == "landing-ships" or scenario == "landing-account"
     or scenario == "landing-login"
@@ -359,6 +359,11 @@ local land = landing and {
         -- a row under the cursor at once. Those are the two states a row has
         -- and one row could only ever be in one of them.
         {label = "Duel", zone = "duel", live = true, format = "1v1"},
+        -- And a third nothing is serving, which is the row that dims and
+        -- wears the dial that is looking for an arena. It is a state a row
+        -- has and neither of the two above can be in, so without it the
+        -- picture cannot show what a fleet with a game down looks like.
+        {label = "War", zone = "war", live = false, format = "4v4"},
     },
     -- What the ship stop opens: one hull with its flight and its credits,
     -- and the rows those credits go on. `menu.ship_panel` builds it, driven
@@ -495,19 +500,38 @@ end
 if in_menu then
     local open = scenario ~= "menu"
     local side = scenario == "menu-side"
+    local zone = scenario == "menu-zone"
+    local at = (side and "side") or (zone and "zone") or "settings"
     ui.menu({
         open = true,
-        at = side and "side" or "settings",
-        page = open and (side and "side" or "settings") or nil,
+        at = at,
+        page = open and at or nil,
         depth = open and 1 or nil,
+        -- The four stops `menu.stops` builds. LEAVE SEAT stood here until
+        -- decision 136 took it out: leaving is choosing another game off the
+        -- zone stop, which is why that stop heads the column.
         stops = {
-            {stop = "leave", label = "leave", value = "seat"},
-            {stop = "settings", label = "settings", mark = "settings",
-             open = open and not side},
+            {stop = "zone", label = "zone", value = "Team Battle",
+             named = true, open = zone},
+            {stop = "ship", label = "ship", value = "Wedge", named = true},
+            {stop = "settings", label = "settings",
+             open = open and not side and not zone},
             {stop = "side", label = "side", value = "Pylon", named = true,
              open = side},
         },
-        rows = open and (side and {
+        rows = open and (zone and {
+            -- The games list, as `menu.zone_rows` builds it and `M.menu`
+            -- turns it into the landing's own kind of list: the format at the
+            -- right end, a mark on the one you are in, and a game the fleet is
+            -- not serving dimmed with the dial that is looking for an arena
+            -- beside its format.
+            {label = "Team Battle", named = true, note = "4v4 · 3:00",
+             mark = true, index = 0, pick = true},
+            {label = "Duel", named = true, note = "1v1 · 3:00",
+             index = 1, pick = true},
+            {label = "War", named = true, note = "4v4", dim = true,
+             waiting = true, index = 2, pick = true},
+        } or side and {
             {label = "Pylon", detail = "4 pilots", named = true,
              mark = true, tint = 0, index = 0},
             {label = "Caisson", detail = "4 pilots", named = true,
