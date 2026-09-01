@@ -1,0 +1,282 @@
+{
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "One board"
+    },
+    {
+      "id": "page-2",
+      "name": "Hang"
+    },
+    {
+      "id": "page-3",
+      "name": "Wings"
+    },
+    {
+      "id": "page-4",
+      "name": "Sheet"
+    }
+  ],
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "The shared anatomy",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1150,
+      "page": "page-1"
+    },
+    {
+      "file": "HangDesktop.dc.html",
+      "title": "Hang \u00b7 desktop, open",
+      "x": 0,
+      "y": 1470,
+      "w": 1440,
+      "h": 810,
+      "page": "page-1"
+    },
+    {
+      "file": "WingsDesktop.dc.html",
+      "title": "Wings \u00b7 desktop, open",
+      "x": 1720,
+      "y": 1470,
+      "w": 1440,
+      "h": 810,
+      "page": "page-1"
+    },
+    {
+      "file": "SheetDesktop.dc.html",
+      "title": "Sheet \u00b7 desktop, open",
+      "x": 3440,
+      "y": 1470,
+      "w": 1440,
+      "h": 810,
+      "page": "page-1"
+    },
+    {
+      "file": "HangDesktopEnd.dc.html",
+      "title": "Hang \u00b7 desktop, between rounds",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 810,
+      "page": "page-2"
+    },
+    {
+      "file": "HangRoam.dc.html",
+      "title": "Hang \u00b7 desktop, Free Roam",
+      "x": 1720,
+      "y": 0,
+      "w": 1440,
+      "h": 810,
+      "page": "page-2"
+    },
+    {
+      "file": "HangLandscape.dc.html",
+      "title": "Hang \u00b7 landscape, open",
+      "x": 0,
+      "y": 950,
+      "w": 844,
+      "h": 390,
+      "page": "page-2"
+    },
+    {
+      "file": "HangLandscapeEnd.dc.html",
+      "title": "Hang \u00b7 landscape, between rounds",
+      "x": 924,
+      "y": 950,
+      "w": 844,
+      "h": 390,
+      "page": "page-2"
+    },
+    {
+      "file": "HangPortrait.dc.html",
+      "title": "Hang \u00b7 portrait, open",
+      "x": 1850,
+      "y": 950,
+      "w": 390,
+      "h": 844,
+      "page": "page-2"
+    },
+    {
+      "file": "HangPortraitEnd.dc.html",
+      "title": "Hang \u00b7 portrait, between rounds",
+      "x": 2320,
+      "y": 950,
+      "w": 390,
+      "h": 844,
+      "page": "page-2"
+    },
+    {
+      "file": "WingsDesktopEnd.dc.html",
+      "title": "Wings \u00b7 desktop, between rounds",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 810,
+      "page": "page-3"
+    },
+    {
+      "file": "WingsRoam.dc.html",
+      "title": "Wings \u00b7 desktop, Free Roam",
+      "x": 1720,
+      "y": 0,
+      "w": 1440,
+      "h": 810,
+      "page": "page-3"
+    },
+    {
+      "file": "WingsLandscape.dc.html",
+      "title": "Wings \u00b7 landscape, open",
+      "x": 0,
+      "y": 950,
+      "w": 844,
+      "h": 390,
+      "page": "page-3"
+    },
+    {
+      "file": "WingsLandscapeEnd.dc.html",
+      "title": "Wings \u00b7 landscape, between rounds",
+      "x": 924,
+      "y": 950,
+      "w": 844,
+      "h": 390,
+      "page": "page-3"
+    },
+    {
+      "file": "WingsPortrait.dc.html",
+      "title": "Wings \u00b7 portrait, open",
+      "x": 1850,
+      "y": 950,
+      "w": 390,
+      "h": 844,
+      "page": "page-3"
+    },
+    {
+      "file": "WingsPortraitEnd.dc.html",
+      "title": "Wings \u00b7 portrait, between rounds",
+      "x": 2320,
+      "y": 950,
+      "w": 390,
+      "h": 844,
+      "page": "page-3"
+    },
+    {
+      "file": "SheetDesktopEnd.dc.html",
+      "title": "Sheet \u00b7 desktop, between rounds",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 810,
+      "page": "page-4"
+    },
+    {
+      "file": "SheetRoam.dc.html",
+      "title": "Sheet \u00b7 desktop, Free Roam",
+      "x": 1720,
+      "y": 0,
+      "w": 1440,
+      "h": 810,
+      "page": "page-4"
+    },
+    {
+      "file": "SheetLandscape.dc.html",
+      "title": "Sheet \u00b7 landscape, open",
+      "x": 0,
+      "y": 950,
+      "w": 844,
+      "h": 390,
+      "page": "page-4"
+    },
+    {
+      "file": "SheetLandscapeEnd.dc.html",
+      "title": "Sheet \u00b7 landscape, between rounds",
+      "x": 924,
+      "y": 950,
+      "w": 844,
+      "h": 390,
+      "page": "page-4"
+    },
+    {
+      "file": "SheetPortrait.dc.html",
+      "title": "Sheet \u00b7 portrait, open",
+      "x": 1850,
+      "y": 950,
+      "w": 390,
+      "h": 844,
+      "page": "page-4"
+    },
+    {
+      "file": "SheetPortraitEnd.dc.html",
+      "title": "Sheet \u00b7 portrait, between rounds",
+      "x": 2320,
+      "y": 950,
+      "w": 390,
+      "h": 844,
+      "page": "page-4"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "note-one",
+      "x": -470,
+      "y": 0,
+      "w": 400,
+      "page": "page-1",
+      "text": "One board\n\nScoreboard, ending, player list and side picker are one thing. The band stays the instrument it is; a press on it (or the board key) opens the room in sections, one per side, and a side's head is the door onto that side: yours wears the here wedge, any other carries JOIN while it has a seat and says FULL when it has not. Pilots stand under their head, watchers at the foot.\n\nBetween rounds the same panel comes up on its own, same size, same place, and grows the one line it could not know: who took it, and the bar. The band keeps the clock (decision 94). No zoom, no full-window wash.\n\nThe three directions below agree on all of that and disagree about where the thing stands. Each has its own page with the phone shapes, the between-rounds state and Free Roam."
+    },
+    {
+      "id": "note-hang",
+      "x": 0,
+      "y": 1250,
+      "w": 400,
+      "page": "page-1",
+      "text": "Hang \u00b7 one column under the band\n\nWhere the board is today, 400 wide, hanging off the control that opens it. The smallest change from what ships: the side list moves in as the section heads.\n\nCost: it stands over the middle of the screen, which on a sideways phone is where your ship is. Free Roam's eight sides run past the foot of a monitor and scroll."
+    },
+    {
+      "id": "note-wings",
+      "x": 1720,
+      "y": 1250,
+      "w": 400,
+      "page": "page-1",
+      "text": "Wings \u00b7 a wing under each side of the clock\n\nEach side hangs off its own half of the band, yours left and theirs right, the way the band already reads, and the clock's column stays clear between them. Shallow: four pilots a side takes the top 150 points and no more, so the fight under it stays a fight. The reader's side never moves, at the whistle included; the result is a line across the top and each wing's head grows its score.\n\nCost: an upright phone gives each wing 177 points, so names cut at seven letters and the assists column goes. Eight sides are a grid on a monitor and a scroll on a phone."
+    },
+    {
+      "id": "note-sheet",
+      "x": 3440,
+      "y": 1250,
+      "w": 400,
+      "page": "page-1",
+      "text": "Sheet \u00b7 the menu's own panel\n\nThe room is one more panel in decision 104's language: the glass, the head, rows of 44, up through the bottom edge and standing on the margin, capped at 560. A side row is the side list decision 102 drew, pilots indented under it. Nothing new to learn, and a thumb is already there.\n\nCost: height. Eleven rows at the touch floor is 484 points before the head, more than a sideways phone has, so there it scrolls under the pinned head, and Free Roam scrolls everywhere. The score on the head repeats the band, because the band is a screen away."
+    },
+    {
+      "id": "note-hang-page",
+      "x": -470,
+      "y": 0,
+      "w": 400,
+      "page": "page-2",
+      "text": "Hang\n\nThe column under the band at every window: 400 on a monitor, the full width between the margins on an upright phone. Between rounds the panel gains the result line and the bar and the winner leads; a sideways phone has no row left for the watchers at the whistle and gives them up. Free Roam is eight sections in one column, which is more than a monitor has, and scrolls."
+    },
+    {
+      "id": "note-wings-page",
+      "x": -470,
+      "y": 0,
+      "w": 400,
+      "page": "page-3",
+      "text": "Wings\n\nTwo wings off the two sides of the clock. A sideways phone is the shape this was drawn for: wide and shallow, the ship under it untouched. Upright, the wings share the width, names cut at seven and A goes. Between rounds the reader's side stays left, the line says who took it, and the heads carry the scores large. Free Roam tiles eight wings four across."
+    },
+    {
+      "id": "note-sheet-page",
+      "x": -470,
+      "y": 0,
+      "w": 400,
+      "page": "page-4",
+      "text": "Sheet\n\nThe menu's panel, so it is the one direction whose portrait and desktop boards are the same drawing in a different window. Between rounds the head is the result, in the winner's color, with the bar under it, and the sheet rises by itself the way the ending does today. The sideways phone and Free Roam both scroll under the head; the thumb on the right edge says so."
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-1"
+  }
+}
