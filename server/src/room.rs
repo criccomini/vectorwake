@@ -2654,6 +2654,16 @@ impl Room {
         // twice.
         w.extend_from_slice(&(self.number as u16).to_le_bytes());
         w.extend_from_slice(&self.settings_generation.to_le_bytes());
+        // Why they are in the stands. A pilot who pressed the key already
+        // knows; one the room moved cannot tell from the swap alone, because
+        // the stands run five seconds behind and the first thing they are
+        // shown is their own hull, still flying. Without a word on the screen
+        // that reads as the game coming apart rather than as a bench.
+        w.push(match why {
+            SitOutWhy::Asked => WHY_NONE,
+            SitOutWhy::Safe => WHY_SAFE,
+            SitOutWhy::Lag => WHY_LAG,
+        });
         let _ = tx.try_send(Message::Binary(w));
         // They were flying a second ago and their screen still holds the live
         // clock. The stands run five seconds behind, so hand them what the
@@ -2775,6 +2785,7 @@ impl Room {
         // the client reads it off the end of the message and got nothing.
         m.extend_from_slice(&(self.number as u16).to_le_bytes());
         m.extend_from_slice(&self.settings_generation.to_le_bytes());
+        m.push(WHY_NONE);
         let _ = tx.try_send(Message::Binary(m));
         self.broadcast_roster();
         self.broadcast_teams();

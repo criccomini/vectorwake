@@ -90,9 +90,9 @@ local function le32(v)
 end
 
 local snapshot_seq = 0
-local function welcome(subject, lifecycle)
+local function welcome(subject, lifecycle, why)
     return string.char(1, subject) .. le32(lifecycle) .. le32(0)
-        .. string.char(1, 0) .. le32(0)
+        .. string.char(1, 0) .. le32(0) .. string.char(why or 0)
 end
 
 local function snapshot(subject, at, watching, lifecycle)
@@ -199,6 +199,36 @@ deliver(snapshot(4, 1002, false, 3))
 net.step(0)
 check("and the input path returns with its startup lead",
       calls.replay == replays + 9)
+
+-- --- benched ----------------------------------------------------------------
+
+-- A welcome that takes the hull away carries why, and the two the pilot did
+-- not ask for are the two worth a line. Without one the stands are a puzzle:
+-- the channel runs five seconds behind, so the first frame a benched pilot is
+-- served has their own ship still flying in it.
+check("an ordinary sit-out is not news", net.benched == nil)
+
+deliver(welcome(255, 4, net.WHY_LAG))
+check("a bench for silence is flagged for the arena to say",
+      net.benched == net.WHY_LAG, tostring(net.benched))
+
+-- The arena clears it once it has drawn the line, so a frame that draws
+-- nothing new does not draw this again.
+net.benched = nil
+deliver(welcome(255, 4, net.WHY_LAG))
+check("and a welcome delivered twice says it once", net.benched == nil)
+
+deliver(welcome(5, 5))
+deliver(welcome(255, 6, net.WHY_SAFE))
+check("the safe-zone sweep is its own reason",
+      net.benched == net.WHY_SAFE, tostring(net.benched))
+
+net.benched = nil
+deliver(welcome(6, 7))
+check("and taking a hull back says nothing", net.benched == nil)
+deliver(welcome(255, 8))
+check("nor does sitting out because you pressed the key",
+      net.benched == nil)
 
 if fails > 0 then os.exit(1) end
 print("all fine")

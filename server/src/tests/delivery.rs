@@ -518,6 +518,65 @@ fn sustained_input_silence_moves_a_pilot_to_the_stands() {
     );
 }
 
+/// A pilot who did not ask to be in the stands is told which of the two ways
+/// they got there.
+///
+/// The client cannot work this out for itself. Both involuntary benchings
+/// arrive as an ordinary welcome on seat 255, identical to the one a pilot
+/// gets for pressing the key, and the frame served under it is five seconds
+/// old: the first thing on screen is the pilot's own hull, still flying. So
+/// the reason rides the message that takes the seat away rather than being
+/// paired up at the far end with a lag notice by timing.
+#[test]
+fn a_bench_says_why_on_the_welcome_that_takes_the_seat() {
+    let reason = |rx: &mut mpsc::Receiver<Message>| -> Vec<(u8, u8)> {
+        drain(rx)
+            .iter()
+            .filter(|m| m.first() == Some(&S2C_WELCOME))
+            .map(|m| (m[1], *m.last().expect("a welcome carries its reason")))
+            .collect()
+    };
+
+    let mut a = room_with_teams("teams = [\"Keel\"]\n");
+    a.lag_policy.spectate_silence_ticks = 1;
+    let (_, id, mut rx) = seat_rx(&mut a, "lossy");
+    a.players.get_mut(&id).unwrap().lag.synchronize_input();
+    a.tick();
+    assert_eq!(
+        reason(&mut rx),
+        vec![(255, WHY_LAG)],
+        "the room took the seat for silence and says so"
+    );
+
+    // And the way back carries nothing to say: the pilot asked for this one.
+    a.fly(id, 0, 32).expect("the pilot may recover into a hull");
+    assert_eq!(
+        reason(&mut rx)
+            .iter()
+            .map(|(_, why)| *why)
+            .collect::<Vec<_>>(),
+        vec![WHY_NONE],
+    );
+
+    // The safe-zone sweep is the other one nobody asked for, and it is a
+    // different sentence at the far end.
+    let mut a = room_with_teams("teams = [\"Keel\"]\n");
+    a.lag_policy.spectate_silence_ticks = u32::MAX;
+    let (_, id, mut rx) = seat_rx(&mut a, "loiterer");
+    drain(&mut rx);
+    assert!(a.sit_out(id, true));
+    assert_eq!(reason(&mut rx), vec![(255, WHY_SAFE)]);
+
+    // Pressing the key is not news. It is the same operation and the same
+    // message, and the only one of the three the pilot already knows about.
+    let mut a = room_with_teams("teams = [\"Keel\"]\n");
+    a.lag_policy.spectate_silence_ticks = u32::MAX;
+    let (_, id, mut rx) = seat_rx(&mut a, "asker");
+    drain(&mut rx);
+    assert!(a.sit_out(id, false));
+    assert_eq!(reason(&mut rx), vec![(255, WHY_NONE)]);
+}
+
 #[test]
 fn nearby_hostiles_select_the_combat_snapshot_lane() {
     let mut world = sim::World::new(1);
