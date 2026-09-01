@@ -181,6 +181,131 @@ def _iris():
     return out
 
 
+# --- the pilot badge, verbatim from `pilot_mark` in client/arena/ui.lua ------
+#
+# The mark a seat wears when a person is in it, drawn beside a name on the
+# scoreboard, on a nameplate and against the count of humans in a room. Its
+# units are fractions of the mark's own width, y down the screen, and the
+# spread is exactly that width, so a caller can lay it out against one
+# number. The client draws it at eleven points, and at ten beside a name.
+#
+# Three quads and six struck feathers, all in one flat color: the hull is a
+# fuselage running nose to tail through two notches and a wing either side of
+# it, and the feathers root off the leading edge at each height rather than
+# at a shared distance from the middle.
+MARK_HULL = [
+    [(0, -0.325), (0.070, 0.225), (0, 0.325), (-0.070, 0.225)],
+    [(0.052, -0.005), (0.220, 0.275), (0.170, 0.325), (0.070, 0.225)],
+    [(-0.052, -0.005), (-0.220, 0.275), (-0.170, 0.325), (-0.070, 0.225)],
+]
+MARK_FEATHERS = [
+    [(0.118, -0.06), (0.500, -0.30)],
+    [(0.166, 0.06), (0.463, -0.10)],
+    [(0.238, 0.18), (0.389, 0.09)],
+]
+# The circle that holds the mark, measured off every point in it the way
+# world.lua measures a hull: the feather tips reach further than the nose.
+MARK_REACH = max(math.hypot(x, y)
+                 for shape in MARK_HULL + MARK_FEATHERS for x, y in shape)
+
+
+def _mark_points(mirror=True):
+    out = [list(q) for q in MARK_HULL]
+    for f in MARK_FEATHERS:
+        out.append(list(f))
+        if mirror:
+            out.append([(-x, y) for x, y in f])
+    return out
+
+
+def wings(cx, cy, r, squash, col=READ):
+    """The badge at the size the carousel draws a ship, and otherwise
+    untouched: one flat color, filled hull, feathers struck at the pen the
+    mark sets for itself, which is `pen(k, 0.11) * 0.85` and scales with the
+    mark. At eleven points that stroke is one point across. Blown up to fill
+    the same circle a hull fills it is fourteen, which is what makes this an
+    emblem rather than a thing.
+
+    It holds still. A badge turning about its own vertical axis is a decal
+    spinning, and there is nothing behind it to come into view."""
+    k = 2 * r / (2 * MARK_REACH)
+    k = r / MARK_REACH
+
+    def put(pts):
+        return [(cx + x * k, cy + y * k) for x, y in pts]
+
+    def path(pts, close):
+        d = "M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+        return d + (" Z" if close else "")
+
+    parts = []
+    for quad in MARK_HULL:
+        parts.append(f'<path d="{path(put(quad), True)}" fill="{col}" '
+                     f'fill-opacity=".92"/>')
+    line = max(0.9, k * 0.11) * 0.85
+    for f in MARK_FEATHERS:
+        for w in (1, -1):
+            a, b = put([(w * f[0][0], f[0][1]), (w * f[1][0], f[1][1])])
+            parts.append(f'<path d="M{a[0]:.1f},{a[1]:.1f} '
+                         f'L{b[0]:.1f},{b[1]:.1f}" stroke="{col}" '
+                         f'stroke-width="{line:.1f}" stroke-opacity=".92" '
+                         f'stroke-linecap="round"/>')
+    return "".join(parts)
+
+
+def wings_built(cx, cy, r, squash, col=READ):
+    """The same badge given the weights the page draws everything else in.
+
+    The hull is three closed shapes rather than three fills: washed in the
+    panel ink, outlined, and lit off the nose the way a silhouette is, so the
+    leading edge is bright and the cut tail falls away. A canopy goes where
+    every hull carries one, forward of center, and the feathers come down
+    from the mark's own fourteen-point pen to the weight a panel line is
+    struck at, which is what keeps three feathers from closing into one wing
+    at this size.
+
+    And it turns, because it is an object now rather than a decal."""
+    k = r / MARK_REACH
+    lo = min(y for shape in _mark_points() for _, y in shape)
+    hi = max(y for shape in _mark_points() for _, y in shape)
+    span = hi - lo
+
+    def put(pts):
+        return [(cx + x * squash * k, cy + y * k) for x, y in pts]
+
+    def path(pts, close):
+        d = "M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+        return d + (" Z" if close else "")
+
+    parts = []
+    for quad in MARK_HULL:
+        t = put(quad)
+        parts.append(f'<path d="{path(t, True)}" fill="{PANEL_INK}" '
+                     f'fill-opacity=".07" stroke="none"/>')
+        for i, (x, y) in enumerate(t):
+            x2, y2 = t[(i + 1) % len(t)]
+            # Up the screen is toward the nose, so the light runs the other
+            # way from a hull's: the mark is written with y down.
+            lit = 1 - (quad[i][1] - lo) / span
+            parts.append(f'<path d="M{x:.1f},{y:.1f} L{x2:.1f},{y2:.1f}" '
+                         f'stroke="{col}" stroke-width="1.8" '
+                         f'stroke-opacity="{max(0.20, lit * lit):.2f}" '
+                         f'stroke-linecap="round"/>')
+    line = max(0.9, k * 0.075)
+    for f in MARK_FEATHERS:
+        for w in (1, -1):
+            a, b = put([(w * f[0][0], f[0][1]), (w * f[1][0], f[1][1])])
+            parts.append(f'<path d="M{a[0]:.1f},{a[1]:.1f} '
+                         f'L{b[0]:.1f},{b[1]:.1f}" stroke="{col}" '
+                         f'stroke-width="{line:.1f}" stroke-opacity=".72" '
+                         f'stroke-linecap="round"/>')
+    canopy = [(0, -0.20), (0.038, -0.12), (0, -0.035), (-0.038, -0.12)]
+    parts.append(f'<path d="{path(put(canopy), True)}" fill="{INK}" '
+                 f'fill-opacity=".42" stroke="{INK}" stroke-width="0.9" '
+                 f'stroke-opacity=".95"/>')
+    return "".join(parts)
+
+
 ART = {
     # Ghost: the roster's own language with the pilot taken out of it. A
     # plain delta none of the seven flies, its canopy outlined and not
@@ -262,6 +387,20 @@ ART = {
         turns=False,
         line="Not a ship, and says so",
     ),
+    # Wings: the mark a seat already wears when a person is in it, at the
+    # size the carousel draws a ship and otherwise untouched.
+    "Wings": dict(
+        custom=wings,
+        turns=False,
+        line="The badge, as the client draws it",
+    ),
+    # The same badge at the page's own weights, which is what it would take
+    # for it to stand among seven ships rather than on top of them.
+    "Wings, built": dict(
+        custom=wings_built,
+        turns=False,
+        line="The badge, at the page's weights",
+    ),
 }
 
 
@@ -292,6 +431,9 @@ def draw(spec, cx, cy, r, squash, col=READ):
     left alone, which is a rotation about the axis running up the screen.
     Broadside at 1 and edge on at 0, caught mid turn here rather than
     animated. The client turns a hull once every eleven seconds."""
+    if spec.get("custom"):
+        return spec["custom"](cx, cy, r, 1.0 if not spec["turns"] else squash,
+                              col)
     reach, mid = measure(spec)
     k = r / reach
     if not spec["turns"]:
@@ -512,7 +654,7 @@ def sheet_board():
     drawing is never still on this page for longer than it takes to read.
 
     Frame is the same twice on purpose. It does not turn."""
-    w, h = 1440, 600
+    w, h = 1800, 600
     cols = list(ART.items())
     step = w / len(cols)
     parts = []
@@ -538,7 +680,7 @@ def sheet_board():
             f'<div style="font-size:14px;color:{READ};padding:6px 40px 0">'
             f'{spec["line"]}</div></div>')
     heads = (f'<div style="position:absolute;left:0;right:0;top:34px;'
-             f'text-align:center" class="lbl">four spectate drawings, '
+             f'text-align:center" class="lbl">six spectate drawings, '
              f'at the 156 points the carousel gives them</div>'
              f'<div class="lbl" style="position:absolute;left:26px;top:126px;'
              f'writing-mode:vertical-rl">broadside</div>'
@@ -588,9 +730,11 @@ def main():
     page("Ghost", concept_board("Ghost", 0.90, seed=5))
     page("Mast", concept_board("Mast", 0.88, seed=7))
     page("Frame", concept_board("Frame", 1.0, seed=13))
+    page("Wings", concept_board("Wings", 1.0, seed=17))
+    page("WingsBuilt", concept_board("Wings, built", 1.0, seed=19))
     page("Sheet", sheet_board())
     page("Phone", phone_board())
-    print("seven artboards written")
+    print("nine artboards written")
 
 
 if __name__ == "__main__":

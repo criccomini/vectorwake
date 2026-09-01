@@ -3,8 +3,12 @@
 Chris's ask: come up with a ship design for spectate on the menu, a few
 ideas, mocked up.
 
-Seven boards, drawn against the client rather than around it. Not shipped:
+Nine boards, drawn against the client rather than around it. Not shipped:
 this is a set to pick from.
+
+Chris then asked whether the human icon, the ship with feathers, could be the
+spectate drawing as well. Two more boards for that, and it changed which one
+I would ship.
 
 Artifact: [Spectate Ship Art](https://claude.ai/code/artifact/a620110a-adb9-4014-b03c-dca169cc43ee)
 
@@ -51,7 +55,7 @@ the interface uses for everything that describes rather than belongs to you,
 and the word Spectate under them stays blue because the stop is still the
 one you are standing on. One line in `land_row` picks the color.
 
-## The four
+## The six
 
 **Ghost.** The roster's own language with the pilot taken out of it: a plain
 delta none of the seven flies, its canopy outlined and not filled, no
@@ -88,37 +92,91 @@ Its cost is that it is the fussiest of the four at 156 points, and a
 structure with no nose is the hardest to tell which way it is facing.
 
 **Frame.** Not a craft at all. Four corner brackets and a reticle, in the
-interface's own language rather than the world's, and the one drawing here
-that holds still while the carousel turns. It is the honest answer: there is
-no ship, so what stands in the ship's place is the act of framing the room.
+interface's own language rather than the world's, and one of the drawings
+here that holds still while the carousel turns. It is the honest answer:
+there is no ship, so what stands in the ship's place is the act of framing
+the room.
 
 Its cost is that it is furniture. The other seven stops on this carousel are
 things in the world, and a viewfinder among them reads as the menu talking
 about itself.
 
+**Wings.** The badge a seat already wears when a person is in it, at the size
+the carousel draws a ship and otherwise untouched: `pilot_mark`'s own three
+quads and six struck feathers, in one flat color, holding still.
+
+It is the boldest drawing on the sheet and the only one a player has already
+learned to read, which is the whole argument for it. Against it: at eleven
+points the feathers are a point across, and scaled to fill a hull's circle
+they are fourteen, so this is the one drawing here that is solid where the
+identity document asks for thin bright outlines over a darker fill. It is an
+emblem in a place where everything else is an object.
+
+**Wings, built.** The same badge at the weights the rest of the page is drawn
+in. The hull is outlined and washed rather than filled, lit off its nose the
+way a silhouette is, with a canopy where every hull carries one; the feathers
+come down from the mark's fourteen-point pen to something a panel line's
+weight. It still reads as the badge at a glance and stops shouting over the
+line art around it.
+
+Both hold still. A badge turning about its own vertical axis is a decal
+spinning, and there is nothing behind one to come into view.
+
 ## What I would ship
 
-Lens. It is the only one of the four whose meaning is carried by the drawing
-rather than by the absence of something, it puts its one bright cell where
-the seven hulls put theirs so the carousel keeps its grammar, and a circle
-going edge on is the best turn in the set at a size where the Mast's truss
-is already crowded. Ghost is the safe second and the one to fall back to if
-the Lens reads as a machine from a different game.
+Wings, built. The badge is the only mark in this game whose subject is the
+pilot rather than the ship, and this is the only stop on the carousel whose
+subject is the pilot rather than the ship. Everything else here had to invent
+a meaning; this one is already carrying it, and `ui.lua` says so in its own
+comment: a badge is what a seat is issued rather than what sits in it.
+`spectating.md` opens on the same sentence from the other side, that a
+watcher is a connection with a seat in the roster and no ship in the
+simulation. The seat is the thing both of them are about.
 
-The line under the name stays what it is. "Watch the room from nobody's
-cockpit" is doing the work no drawing can, and a drawing that needs the
-sentence changed to explain it is the wrong drawing.
+The built one over the plain one, because the plain one is fourteen points of
+solid stroke on a page of hairlines, and the badge survives being drawn in
+outline. If it turns out not to, the plain one is the fallback and costs one
+line.
+
+Lens is what I would ship if the answer is that spectate should be a thing
+rather than an emblem. It is the better drawing on its own: its meaning is in
+the picture rather than in what a player already knows, it puts its bright
+cell where the hulls put theirs, and it is the only one of the six with a
+turn worth watching. The badge wins on being already true rather than on
+being better drawn.
+
+One thing to know before picking the badge. The scoreboard already draws it
+beside watchers: a row that is not `r.ai` gets the wings, and a row that is
+`r.watch` gets the word "watching" in the columns the numbers would use. So
+the mark is currently answering "a person is in this seat" on a surface where
+watchers are listed, and the menu would have it answer "the stop about the
+person" a screen away. The two readings agree on pilot and differ on what is
+being said about them. It has not been a problem for the bot mark, which
+means silicon in three places and never anything else, and this is the first
+time the wings would mean two things.
+
+The line under the name stays what it is on any of the six. "Watch the room
+from nobody's cockpit" is doing the work no drawing can, and a drawing that
+needs the sentence changed to explain it is the wrong drawing.
 
 ## Building the one that wins
 
-`hull_art` reads `world.HULLS[cls + 1]`, so the drawing wants to live in a
-table of the same shape. It does not want to live in `M.HULLS`: that list is
-the roster, `TAIL` walks it and reads `.jets` off every entry, and none of
-these four has an engine. An eighth entry there is a crash at load rather
-than an eighth ship.
+The two badges are the cheap ones. `pilot_mark` is a local in `ui.lua`
+declared three thousand lines above `land_row`, and it already takes a
+center, a color and the width to draw at, which is everything the carousel
+has to hand. The plain one is a call. The built one is that function given a
+second way to draw itself, or a sibling beside it, and no new geometry either
+way: the quads and the feather roots are the numbers already in the file, and
+the comment above them warns what happens when they are set wrong.
 
-So: a table of its own beside the roster, baked by the same loop that bakes
-the hulls, and three lines where the carousel draws. `land_row` picks the
-gray instead of `pal.FRIEND` on the spectate row, calls the drawing where it
-now skips one, and holds the turn still if Frame wins. Nothing on the wire
+The other four want a table shaped like a hull's, because `hull_art` reads
+`world.HULLS[cls + 1]`. That table does not want to live in `M.HULLS`: the
+list is the roster, `TAIL` walks it and reads `.jets` off every entry, and
+none of the four has an engine. An eighth entry there is a crash at load
+rather than an eighth ship. So it goes beside the roster, baked by the same
+loop that bakes the hulls.
+
+Either way `land_row` needs the same three things: the gray instead of
+`pal.FRIEND` on the spectate row, a drawing where it now skips one, and the
+turn held still for the drawings that do not take one. Nothing on the wire
 moves, nothing in `sim` moves, and no other page draws a hull this way.
