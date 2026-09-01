@@ -1,11 +1,11 @@
 {
   "name": "eddy",
-  "hash": "8527f177",
+  "hash": "cd26cbe1",
   "width": 96,
   "height": 96,
   "accepted": true,
   "gates": [],
-  "quality": 96.27179962894247,
+  "quality": 92.27179962894247,
   "core": {
     "regions": 1,
     "regions_shut": 1,
@@ -41,7 +41,7 @@
   "dead_ends": 2,
   "wall_percent": 3.409090909090909,
   "thick_generic_wall_tiles": 0,
-  "landmark_count": 68,
+  "landmark_count": 66,
   "cover_quadrants_percent": [
     3.512396694214876,
     3.3057851239669422,
@@ -49,7 +49,7 @@
     3.512396694214876
   ],
   "symmetry_mismatches": 0,
-  "theme_fidelity": 1.0,
+  "theme_fidelity": 0.8,
   "materials": {
     "wall": 0,
     "rocks": 264,
@@ -57,7 +57,7 @@
     "scenery": 140,
     "slopes": 0,
     "doors": 0,
-    "wormholes": 2,
+    "wormholes": 0,
     "safe": 0,
     "goals": 0,
     "turf": 0

@@ -467,6 +467,13 @@ core wears a rock collar with four diagonal mouths, and the middle lane bows
 around it, because a wormhole sitting on the shortest home-to-home route is a
 trap the route gate cannot see. A path search reads a warp as open ground.
 
+It is also the one element a brief can refuse. `allow_wormholes = false` on a
+theme that draws one lays the clearing and no mouth, leaving the rest of the
+pattern on the tiles it was on, which is how the duel's ninety-six tile maps
+are the nebula and the rings without a well in either. Doors work the other
+way: a brief that refuses them on a theme that draws them is rejected rather
+than redrawn.
+
 The spiral is integer arithmetic against a baked table of headings rather
 than a call to `sin`. A recipe pins the hash of the map it draws, and a libm
 that rounds one heading differently would move a rock a tile and fail

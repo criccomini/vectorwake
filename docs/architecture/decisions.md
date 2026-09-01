@@ -6457,6 +6457,77 @@ swapped inside every pair, equivalence tested at five points with the family
 Holm-adjusted across the seven. `make -C sim check` with the hashes
 regenerated, 457 server tests, clippy and fmt.
 
+## 124. A wormhole is the original's field
+
+**Status:** accepted, superseding a well that pulled linearly; the strength
+retuned by decision 125
+
+**Decision:** a wormhole pulls on an inverse square law. `wormhole_pull` is
+quoted one tile out rather than at the mouth, and inside that tile it stops
+climbing, so one number is both the reference distance the law needs and the
+cap on the hardest kick anything can take. It is 5859, the original's.
+`wormhole_range` is a setting of its own rather than a consequence of the
+strength, and it is 38 tiles. A field lifts a caught hull's speed ceiling by
+100 instead of replacing it. `gravity_bombs` is on, so a thrown round bends
+across a well and a bullet crosses it straight. Settings version 21.
+
+**Why:** the well this replaces was ours and it had the wrong shape: 90 at the
+mouth, falling off linearly to nothing at a hard rim 220 px out. Fourteen tiles
+of fairly even pressure and then nothing at all. It nudged a hull that flew
+near one and nudged harder a hull that flew into one, and no part of it caught
+anybody, so a wormhole was a texture on the map rather than something to plan a
+route around.
+
+The original's law catches. Its `gravity * 1000 / distance^2`, at the Gravity
+of 1500 every ship in the Alpha Zone settings carries, is 5859 at one tile out,
+and an inverse square is close to nothing across most of a wide field and
+overwhelming in the last few tiles. That inverts the bargain: most of the field
+becomes a current to correct for and the middle becomes a place not to be.
+
+Quoting the strength at the mouth is not available under that law, since the
+center of a well is a divide by nothing. So it is quoted a tile out, and a tile
+in is where it stops climbing.
+
+The reach is the one place we do not follow. There the range falls out of the
+strength, so the original cannot express a well that is strong and small. Ours
+can, and it has to: 76 tiles is where its field ends at that Gravity, drawn for
+a 1024-tile map, and our melee rooms are 160 across. This shipped at 76 and was
+halved to 38 the same day, which is 608 px, close enough to the mouth to be a
+landmark rather than the weather over an entire room. Nothing else moved for
+the halving, because what an inverse square puts in the outer half of a field
+is almost nothing.
+
+The ceiling lift is what makes a well throw a ship instead of only aiming one.
+Without it the speed clamp takes back every pixel a second the pull just handed
+over, so a hull falling in arrives at exactly the speed it could have flown
+there under thrust. 100 is the original's, and it is small on purpose: it
+applies anywhere in the field, and the field is most of a small map.
+
+**Cost:** 5859 came in on the original's authority without being measured
+against our maps, and it did not survive being measured. It put the point of no
+return, the distance inside which a hull at rest cannot pull away on held
+thrust, at seventeen to twenty-one tiles of the 38-tile field. That is the same
+error the reach had, at a smaller radius, and halving the reach while leaving
+the strength alone was reading half of it. Decision 125 cuts the pull to 2000.
+
+`wormhole_pull` keeps its name and its type and changes what it means: it was
+the pull at the mouth of a linear well and it is the pull one tile out of an
+inverse square one. A zone file carrying the old number parses cleanly and
+flies nothing like it did, which is the case a settings version exists for, so
+this is version 21.
+
+**Verified:** `make -C sim check`, with new tests that pin the shape rather
+than the numbers. A probe at half the distance is pulled four times as hard,
+the rim sits where the setting says, a hull inside a field tops out at exactly
+`max_speed + wormhole_top_speed`, and a bomb thrown across a well bends where a
+bullet does not. Sim behavior changed deliberately, so `sim/tests/golden.txt`
+was regenerated with `make -C sim golden`: the replay map has a wormhole at
+500,520 and the new reach touches the trace where the old one did not, so the
+hashes move from tick 1000 on. The halving needed no regeneration of its own,
+since the trace's nearest hull sits 127 tiles from that wormhole and outside
+both rims. Widening the baseline to 400 tiles did move them, which is how that
+null result was checked.
+
 ## 125. A wormhole you can still fly out of
 
 **Status:** accepted, tuning the field decision 124 gave a wormhole
@@ -7105,6 +7176,8 @@ The shipped cut was read back out of the client through the test harness and
 checked against the board Chris picked from: the angle, both end widths and
 all three lengths agree to a thousandth of a mark unit. luacheck clean.
 
+---
+
 ## 136. A ship is one thing, and changing it costs a respawn
 
 **Status:** accepted
@@ -7199,19 +7272,119 @@ CLA it wants needs a party for contributors to sign with, and the commercial
 release it protects needs a party to sell. Both are worse to retrofit than to
 name now, before there is a contributor or a buyer to renegotiate with.
 
-**Cost:** the site now names two parties. Loopweld LLC holds the rights and
-Chris is still the operator the terms make the agreement with, which is a
-coherent arrangement but not an obvious one to a reader.
-`docs/launch/legal-review.md` carries it as a question for counsel rather than
-settling it here.
+**Cost:** for a few hours the site named two parties, since the terms still
+made their agreement with Chris. [Decision 139](#139-the-site-speaks-as-the-company)
+closed that.
 
-**Reconsider if:** counsel wants the operating party and the rights holder to
-be the same name on the page, or wants a different entity to hold the game
-separately from the code.
+**Reconsider if:** counsel wants a different entity to hold the game separately
+from the code.
 
 ---
 
-## 138. The baseline is what the fleet plays
+## 138. A duel is too small to hold a wormhole
+
+**Status:** accepted
+
+**What:** `allow_wormholes` in a map brief is an instruction and not only a
+check. A brief that refuses one gets its theme's pattern with the mouth left
+out and everything else on the tile it was already on. Eddy and gimbal are
+regenerated that way, so no map in the duel rotation warps.
+
+**Why:** a wormhole sends the ship that touches it back to its own start, and
+its field reaches thirty-eight tiles. That reach was set against the match
+maps, which are a hundred and sixty tiles across. The duel's are ninety-six.
+Eddy's mouth sits on the middle of the map and half its tiles are inside the
+field; gimbal has two mouths fifty-five tiles apart, and nearly three quarters
+of its tiles are. A well that covers the room is weather rather than somewhere
+a pilot chooses to go, which is the reading
+[decision 125](#125-a-wormhole-you-can-still-fly-out-of) cut the pull to get
+away from.
+
+What the warp does to the game is worse than what it does to the ground. This
+zone exists because two pilots on melee ground spend the round looking for each
+other, and ninety-six tiles is close enough that the fight starts at the
+whistle and restarts after every death. Touching a warp puts you back on your
+own start with the map between you again. On a melee map that costs part of a
+twelve to fifteen second crossing; here it undoes the one thing the small map
+was for.
+
+**Cost:** both maps score lower against their own theme, and the score is right
+to say so. A fifth of the nebula's fidelity mark rides on its wormholes and a
+tenth of the rings', so eddy falls from 96 to 92 and gimbal from 84 to 82. Eddy
+is a spiral nebula with nothing at the middle of it now, and the rock collar
+drawn to give the mouth four approaches is a ring around an empty pocket. It is
+still the middle of the map, which is most of what it was worth to a fight.
+
+Nothing else moves. The refusal is taken at the mouth rather than by choosing
+another theme or another seed, and a mouth's clearing is reserved whether or
+not the mouth is laid, so every rock, wall, door and star on both maps is on
+the tile it was on. Both hashes move and both recipes are re-pinned.
+
+Doors are still checked rather than obeyed. A brief that refuses them on a
+theme that draws them is rejected at the gate, because nothing has wanted the
+other answer yet.
+
+**Reconsider if:** a duel map is drawn big enough that a well is a landmark
+again. Nothing about the format stops one; the flag is per map, and sconce
+already refused a warp before this by being drawn from a theme that has none.
+
+**Verified:** `mapforge verify` on all twenty recipes in the catalog: the two
+regenerated maps against their new hashes, and the other eighteen unmoved.
+Read out of the packed files rather than out of the generator's own report,
+eddy and gimbal each differ from the map they shipped as in exactly two tiles,
+both of them a wormhole that is now empty, and sconce in none. Their metrics
+move only where that can move them: the hash, the landmark count, and the
+fidelity term the missing mouths were worth.
+
+485 server tests. One is new and holds that a theme's warp is left out for a
+brief that refuses one while every other tile stays where it was, and the
+rotation test now pins all fourteen version 2 maps in the catalog rather than
+the five in melee, so the turf and war rooms are held to their recipes too.
+clippy and fmt.
+
+---
+
+## 139. The site speaks as the company
+
+**Status:** accepted
+
+Decision 137 put the copyright on Loopweld LLC and stopped there. The terms
+still made their agreement with Chris, and the clause limiting liability still
+limited his. A company that holds the rights while a person signs the contract
+absorbs nothing, which is the one thing it was formed to do. So the operator on
+the terms page is Loopweld LLC, and the privacy notice names it as the party
+deciding what the service keeps.
+
+The privacy notice needed more than a swapped name. Its section headed "Who runs
+Vectorwake" never said who: it listed the sites the notice covers and pointed at
+support. `docs/launch/legal-review.md` measures that notice against GDPR
+Article 13, which asks first for the identity of the controller.
+
+The founder letter is gone, at Chris's ask. It was the landing page's only
+first person voice and its only mention of a person, and it named SubSpace,
+which `docs/design/identity.md` had ruled out in marketing. The launch brief
+carried that as a contradiction for counsel to settle, and removing the letter
+settles it. Every footer now carries the copyright line. No page had one, and it
+is the first place a reader looks for a holder.
+
+**Cost:** the landing page loses its middle. It is the hero, then Features,
+then the foot, and the letter's "Start playing now" was the only call to act
+between the first and the last. The hero's button and the nav still lead to the
+same places, so nothing is unreachable, but a page that used to say something in
+a human voice now only lists what the game has.
+
+Terms and privacy moved to an effective date of September 1, 2026, because
+both pages say the date changes when they change and the party you are
+contracting with is not a small change. The terms also promise to announce a
+material change before it takes effect when practical, and no announcement has
+gone out. That one is Chris's to post, not something a commit can do.
+
+**Reconsider if:** the landing page wants a voice in the middle again, in which
+case it is the company's and not a person's, and it does not name another game.
+
+---
+
+## 140. The baseline is what the fleet plays
 
 **Status:** accepted
 

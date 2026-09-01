@@ -70,10 +70,20 @@ export async function run (pilot, { log = () => {} } = {}) {
     log(`turning the carousel off hull ${opened.screen.hull_shown}`)
     await pilot.tap('land_page_ship', { value: 1 })
     await pilot.tap('land_page_ship', { value: 1 })
-    const turned = await pilot.until('a different hull on the carousel',
-      s => s.screen.hull_shown !== undefined && s.screen.hull_shown !== was)
-    const want = turned.screen.hull_shown
-    log(`carousel is on hull ${want}`)
+
+    // Wait for it to come to rest, rather than reading it on the way through.
+    // A tap returns when its press is sent and not when the client has read
+    // it, so a wait for "any hull but the one we were flying" can answer with
+    // the first of those two steps while the second is still on its way. Rest
+    // is two readings that agree, which is the test a press already makes on a
+    // box before it lands.
+    let before = null
+    await pilot.until(`the carousel at rest off hull ${was}`, s => {
+      const on = s.screen.hull_shown
+      const rest = on !== null && on !== undefined && on !== was && on === before
+      before = on
+      return rest
+    })
 
     // And nothing has been asked of the room. This is the half of the design
     // that cannot be seen from either end alone: the panel is an editor, so
@@ -86,6 +96,14 @@ export async function run (pilot, { log = () => {} } = {}) {
         'spot. In a match the panel drafts: nothing should reach the room ' +
         'until it closes, or crossing the roster costs a respawn a step.')
     }
+
+    // The hull the carousel is showing when the panel closes is the hull the
+    // room is asked for, so this is read as late as it can be rather than out
+    // of the wait above. A journey that takes it any earlier is guessing at a
+    // draft still being edited, and one that guesses wrong waits out its whole
+    // answer and then reports a refusal that never happened.
+    const want = held.screen.hull_shown
+    log(`carousel is on hull ${want}`)
 
     // Out of the body onto the ship menu, then out of the ship stop, which is
     // what settles the draft. Whole again first, because the panel's head has

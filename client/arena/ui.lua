@@ -1877,8 +1877,8 @@ end
 --
 -- Filled once a frame by `M.hud` rather than worked out on demand, because
 -- the top depends on what is standing between the band and the list (the
--- band always, and a line of banner when the room has said something), and
--- three panels read it.
+-- band always, a strip of pennants in a mode with flags, and a line of banner
+-- when the room has said something), and three panels read it.
 --
 -- Wider than the 248-point columns down the side of the screen, and capped
 -- rather than fluid. A roster row is a name and five numbers, and at 248 the
@@ -3732,33 +3732,6 @@ local function debug_hud(o, top)
     if not F.menu_up then hit(x, y, w, h, "debug", nil, nil, -1) end
 end
 
--- The flags, as flags.
---
--- This was a sentence -- "flags  you 2 - 1 them   1 loose" -- which is three
--- numbers, two of them derivable from the third, in enough characters to
--- cross a phone. One pennant per flag, colored by who holds it, says the
--- same thing in a glance and in a fifth of the width: you count shapes, not
--- words, and it scales to whatever number of flags a mode puts out.
-local function flag_strip(me)
-    local n = sim.flag_count()
-    if n == 0 then return end
-    local my_team = view_team
-    local pitch = 15 * F.scale
-    local x0 = F.w / 2 - (n - 1) * pitch / 2
-    local y = F.safe_t + 30 * F.scale
-    for i = 0, n - 1 do
-        local _, _, team = sim.flag_at(i)
-        local col = (team == 255) and pal.a(pal.DIM, 0.55)
-            or (team == my_team and pal.FRIEND or pal.ENEMY)
-        local px = x0 + i * pitch
-        -- The same pennant the radar draws, so a flag looks like a flag
-        -- wherever it is shown.
-        F.layer:seg(px, ry(y + 9 * F.scale, 0), px, ry(y - 8 * F.scale, 0), 1.6 * F.scale, col)
-        F.layer:tri(px, ry(y - 8 * F.scale, 0), px + 9 * F.scale, ry(y - 4 * F.scale, 0),
-              px, ry(y, 0), col)
-    end
-end
-
 local function match_ended(m)
     return m ~= nil and not m.playing
 end
@@ -3766,6 +3739,66 @@ end
 -- the whistle benched every hull, so the pads have nothing to drive, and the
 -- board's own rows land exactly where the gun pad draws.
 M.match_ended = match_ended
+
+-- The flags, as flags.
+--
+-- This was a sentence, "flags  you 2 - 1 them   1 loose", which is three
+-- numbers, two of them derivable from the third, in enough characters to
+-- cross a phone. One pennant per flag, colored by who holds it, says the
+-- same thing in a glance and in a fifth of the width: you count shapes, not
+-- words, and it scales to whatever number of flags a mode puts out.
+--
+-- One pennant, from the tip of its staff down: `rise` above the line it hangs
+-- on and `drop` below it, with `gap` of air between the band and the staff.
+-- Written down because the strip is not the only thing under the band, and
+-- everything else down there is placed off how much room this took.
+--
+-- One table holding both the measurements and the reach, rather than three
+-- constants and a function, because ui.lua sits on Lua 5.1's ceiling of 200
+-- locals in a chunk and had exactly one left. A fourth `local` at this level
+-- does not fail a test, it fails to load the file.
+local FLAG = {gap = 8, rise = 8, drop = 9}
+
+-- How far the strip pushes the rest of the stack down: nothing in a mode with
+-- no flags, and nothing at the whistle, where the band's own line is what the
+-- clock is counting down to.
+--
+-- The band is the top of a column, and this is what the column is made of: the
+-- clock and the two sides, the pennants, the room's line, then the board a
+-- press on the band opens. Each of those used to be placed against the band on
+-- its own, and the pennants were placed against neither the band nor the
+-- window: they were pinned twenty-five points above where the banner lands,
+-- which is a real measurement taken from the wrong end of the stack. The band
+-- ends eight points above that line, so the strip was drawn straight through
+-- the clock and every flag stood a staff up through a numeral. Nothing showed
+-- it until there were flags to draw, and Turf and War are the first modes
+-- that put any out.
+function FLAG.stack(m)
+    if match_ended(m) or sim.flag_count() == 0 then return 0 end
+    return (FLAG.gap + FLAG.rise + FLAG.drop) * F.scale
+end
+
+local function flag_strip(m)
+    if FLAG.stack(m) == 0 then return end
+    local n = sim.flag_count()
+    local my_team = view_team
+    local pitch = 15 * F.scale
+    local x0 = F.w / 2 - (n - 1) * pitch / 2
+    local y = band_bottom() + (FLAG.gap + FLAG.rise) * F.scale
+    for i = 0, n - 1 do
+        local _, _, team = sim.flag_at(i)
+        local col = (team == 255) and pal.a(pal.DIM, 0.55)
+            or (team == my_team and pal.FRIEND or pal.ENEMY)
+        local px = x0 + i * pitch
+        -- The same pennant the radar draws, so a flag looks like a flag
+        -- wherever it is shown.
+        F.layer:seg(px, ry(y + FLAG.drop * F.scale, 0), px,
+                    ry(y - FLAG.rise * F.scale, 0), 1.6 * F.scale, col)
+        F.layer:tri(px, ry(y - FLAG.rise * F.scale, 0),
+                    px + 9 * F.scale, ry(y - 4 * F.scale, 0),
+                    px, ry(y, 0), col)
+    end
+end
 
 -- The clock and the score, dead center at the top, which are the two facts a
 -- three minute match is about.
@@ -3937,7 +3970,8 @@ local function match_clock(o, m, names, alone)
     press()
 end
 
--- What the room has to say, under the band that carries everything else.
+-- What the room has to say, under the band that carries everything else, and
+-- under the pennants when the mode has flags to hang there.
 --
 -- This was a sentence across the middle of the screen in the largest type on
 -- it, and it said things the instruments already said: which rung had just
@@ -3963,7 +3997,7 @@ local function match_note(o, m)
     -- enough, but the lag notice under this one is the red one and two reds in
     -- a column would stop meaning anything.
     local px = (M.compact and 9 or 11) * F.scale
-    txt(line, F.w / 2, band_bottom() + 8 * F.scale, px,
+    txt(line, F.w / 2, band_bottom() + FLAG.stack(m) + 8 * F.scale, px,
         pal.a(pal.INK, 0.9), "center")
 end
 
@@ -5803,10 +5837,11 @@ function M.hud(o)
     -- in one slot and neither has to put the other away.
     rooms_panel(o.rooms, o.room)
     -- Where that column starts, before anything in it draws. Under the band,
-    -- and under the room's note as well when there is one, since a line of
-    -- text between them is a line the list would otherwise be drawn over.
+    -- under the pennants when the mode has flags, and under the room's note as
+    -- well when there is one, since anything drawn between them is a line the
+    -- list would otherwise be drawn over.
     local note = (o.banner and o.banner ~= "") and 16 * F.scale or 0
-    set_board(note)
+    set_board(FLAG.stack(o.match) + note)
     -- The wash the board is read over. Laid down before the board's own panel
     -- and after nothing else, so the fight behind it goes back and the panel
     -- in front of it does not. Not under an open menu: that is a panel over
@@ -5988,6 +6023,12 @@ function M.hud(o)
     -- carries the score, so the band gives its two sides up while that block
     -- is on screen and keeps the numerals. See `match_clock`.
     match_clock(o, o.match, o.side_names, o.menu_open or not M.joined)
+    -- The pennants belong to the band and are drawn with it, which puts them
+    -- above the menu's early return below. Same reason the clock is: the menu
+    -- is a scrim rather than a curtain, and who is holding what is exactly the
+    -- reading a player opening it wants to keep. Called between the two lines
+    -- it sits between on the screen, so the order here is the order down it.
+    flag_strip(o.match)
     match_note(o, o.match)
     -- The menu key, at the foot, wherever there is a room to have a menu
     -- about and no column standing on the spot already. It is drawn from here
@@ -6025,11 +6066,11 @@ function M.hud(o)
     elseif M.help_prompt then
         help_prompt()
     end
-    flag_strip(me)
-    -- The room's own line is drawn with the band it hangs off, above. See
-    -- `match_note`.
+    -- The room's own line and the pennant strip are drawn with the band they
+    -- hang off, above. See `match_note` and `flag_strip`.
     if o.lag_notice and o.lag_notice ~= "" then
-        txt(o.lag_notice, F.w / 2, band_bottom() + 26 * F.scale,
+        txt(o.lag_notice, F.w / 2,
+            band_bottom() + FLAG.stack(o.match) + 26 * F.scale,
             (M.compact and 10 or 13) * F.scale,
             pal.a(pal.HURT, 0.95), "center")
     end
