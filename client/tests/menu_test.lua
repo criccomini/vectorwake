@@ -43,9 +43,6 @@ local account = {
     refuse = nil, password = nil, logged = nil, renamed = 0,
     profiles = {},
 }
-function account.refresh_career()
-    account.asked_career = (account.asked_career or 0) + 1
-end
 function account.online()
     return account.base ~= ""
 end
@@ -1299,42 +1296,36 @@ check("this file holds no cursor of its own",
 -- question is a dot on the landing's account stop now, which landing_test.lua
 -- reads; what is left here is the rule underneath it.
 do
-    local kept = {claimed = account.claimed, career = account.career}
-    account.claimed = false
-    account.career = nil
+    local kept = {claimed = account.claimed, rated = account.rated,
+                  pilots = net.pilots, me = net.me}
+    account.claimed, account.rated = false, nil
+    net.pilots, net.me = {}, 0
     check("a fresh guest has nothing to lose", menu.guest_stakes() == false)
-    account.career = {games = 1, kills = 0, deaths = 1}
-    check("a rated game flown arms the warning", menu.guest_stakes() == true)
+    account.rated = true
+    check("a rated zone on the session arms the warning",
+          menu.guest_stakes() == true)
     account.claimed = true
     check("and signing up takes it down", menu.guest_stakes() == false)
-    account.claimed, account.career = kept.claimed, kept.career
-end
 
--- The figure it arms on is rated games, and a guest's first one is filed while
--- they are flying: the copy fetched when the session woke says none for the
--- whole of the session the game was flown in. So the menu asks again while the
--- answer is still nothing, and stops the moment it is not.
-do
-    local kept = {claimed = account.claimed, career = account.career,
-                  asked = account.asked_career}
-    open()
-    account.claimed, account.career = false, nil
-    account.asked_career = 0
-    menu.tick(20)
-    check("a guest with nothing recorded re-asks for their career",
-          account.asked_career > 0, tostring(account.asked_career))
-    local asked = account.asked_career
-    account.career = {games = 2, kills = 3, deaths = 1}
-    menu.tick(20)
-    check("and stops once a game has been flown",
-          account.asked_career == asked, tostring(account.asked_career))
-    account.career, account.asked_career = nil, 0
-    account.claimed = true
-    menu.tick(20)
-    check("a signed-in pilot is never asked on this timer",
-          account.asked_career == 0, tostring(account.asked_career))
-    account.claimed = kept.claimed
-    account.career, account.asked_career = kept.career, kept.asked
+    -- The other half, and the one the warning is really for: a guest whose
+    -- first rated game lands in the room they are sitting in. The session
+    -- said no and cannot be asked again mid-match, so the roster is what
+    -- arms it, off the games flown in this seat.
+    account.claimed, account.rated = false, false
+    net.me = 3
+    net.pilots = {[3] = {games = 0}}
+    check("a seat that has flown nothing leaves it down",
+          menu.guest_stakes() == false)
+    net.pilots = {[3] = {games = 1}}
+    check("and the first rated game on the roster arms it",
+          menu.guest_stakes() == true)
+    -- A watcher holds no seat, so there is no row to read and nothing to say.
+    net.me = 255
+    check("a watcher with no seat is not warned",
+          menu.guest_stakes() == false)
+
+    account.claimed, account.rated = kept.claimed, kept.rated
+    net.pilots, net.me = kept.pilots, kept.me
 end
 
 -- --- what a tick tidies up ------------------------------------------------

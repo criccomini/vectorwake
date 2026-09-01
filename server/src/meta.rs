@@ -1216,51 +1216,6 @@ async fn route(
             (200, serde_json::json!({ "ships": ships }))
         }
 
-        "/v1/career" => {
-            let account = match account_from_secret(&db, &s("secret")).await {
-                Ok(account) => account,
-                Err(reply) => return reply,
-            };
-            let row = db
-                .query_one(
-                    "with best as (
-                         select class, rating, games from ratings
-                         where account = $1
-                         order by games desc, rating desc, class limit 1
-                     )
-                     select b.class, b.rating, b.games,
-                            (select coalesce(sum(games), 0)::bigint
-                             from ratings where account = $1),
-                            coalesce(ps.kills, 0), coalesce(ps.deaths, 0)
-                     from (select 1) one
-                     left join best b on true
-                     left join pilot_stats ps on ps.account = $1",
-                    &[&account],
-                )
-                .await;
-            match row {
-                Ok(row) => {
-                    let class: Option<String> = row.get(0);
-                    let score: Option<f64> = row.get(1);
-                    let games: Option<i32> = row.get(2);
-                    let rated = matches!((score, games), (Some(_), Some(g))
-                        if g as u32 >= rating::PROVISIONAL_GAMES);
-                    (
-                        200,
-                        serde_json::json!({
-                            "class": class,
-                            "rating": if rated { score } else { None },
-                            "tier": if rated { score.map(rating::tier) } else { None },
-                            "games": row.get::<_, i64>(3),
-                            "kills": row.get::<_, i64>(4),
-                            "deaths": row.get::<_, i64>(5),
-                        }),
-                    )
-                }
-                Err(error) => (500, serde_json::json!({ "error": format!("{error}") })),
-            }
-        }
-
         // The week: kills, the best run, and what the rating did, resetting
         // Monday. Read off the pilot log, which is where a kill row already
         // lands, so this is a query rather than a second tally kept in step.

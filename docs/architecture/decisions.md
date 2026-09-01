@@ -6959,3 +6959,48 @@ flag.
 
 **Reconsider if:** being lit makes nobody carry. The counterweight is the
 carry clock: thirty seconds of being hunted is a shift, not a sentence.
+
+---
+
+## 134. The career endpoint goes; the session and the roster already said it
+
+**Status:** accepted
+
+**What:** `/v1/career` is deleted, along with the ten second poll behind it.
+The one fact its caller wanted, whether this pilot has ever been rated, now
+comes off two things the client already receives.
+
+**Why:** the endpoint was built for the in-game career page in
+[decision 70](#70-sign-up-and-the-pilot-page-is-the-career) and
+outlived it.
+[Decision 99](#99-the-account-is-a-dropdown-and-the-pilot-page-is-gone)
+moved the career to the site's own `/pilots` and deleted the page, leaving
+one reader: `guest_stakes()` in the menu, which took `.games > 0` off the
+reply and ignored the rating, the tier and the lifetime totals that came
+with it. Every unclaimed guest asked for all of that every ten seconds to
+learn one bit.
+
+Both halves of that bit were already on hand and neither costs a request.
+`/v1/session` returns a row per zone with the games flown in each, because the
+token is minted from those same rows and the reply carries them for the panel;
+the client received the array and dropped it. That answers for a pilot who
+arrives already rated. It cannot answer for the guest whose first rated game
+lands in the room they are sitting in, which is the case the poll existed for,
+and the roster broadcast answers that one: it carries games flown per seat and
+arrives twice a second, so the warning arms about as fast as the death that
+earned it is drawn.
+
+The two are read together because they answer different questions. The session
+is every zone and the whole account's history; the roster is this seat in this
+zone, and a guest rated in Team Battle shows nothing on a Free Roam roster.
+Either one alone under-reports.
+
+**Cost:** the warning is now armed by a latch over two sources rather than one
+number from one place, which is more moving parts in exchange for no endpoint,
+no poll, and no query. A watcher holds no seat, so mid-match arming does not
+apply to them; the session still covers what they have already earned.
+
+**Reconsider if:** something wants the lifetime kill and death totals in the
+client. They are on the site's pilot page and nothing in the game asks for
+them, which is why they left with the route rather than being kept against a
+caller that might appear.

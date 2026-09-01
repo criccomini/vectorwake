@@ -44,7 +44,6 @@ local account = {
     name = "", claimed = false, base = "https://meta",
     aim = function() end,
     online = function() return true end,
-    refresh_career = function() end,
     claim = function() end,
     login = function() end,
     rename = function() end,
