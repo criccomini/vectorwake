@@ -243,7 +243,15 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// and ignores a byte, so this one is not refusing a misparse the way 22 and
 /// 31 did: it is there so the fleet and the page cannot sit one build apart on
 /// a wire field, which is how the DESTROYED outage above happened.
-pub(crate) const CLIENT_PROTOCOL: u8 = 33;
+///
+/// 34 puts the greens in the snapshot. A count and eleven bytes apiece follow
+/// the flags, which is squarely a misparse for a client built for 33: it stops
+/// reading where the flags end, and `sim_unpack` treats a short read as an
+/// error exactly as it treats a long one, so every snapshot from a room with
+/// greens in it would be refused rather than misread. Every match game runs
+/// none, so on those the only difference is a zero byte; Free Roam is the zone
+/// a stale client could not join at all.
+pub(crate) const CLIENT_PROTOCOL: u8 = 34;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of

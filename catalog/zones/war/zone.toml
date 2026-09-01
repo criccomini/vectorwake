@@ -1,0 +1,99 @@
+# War: four a side over four flags, and a round belongs to whoever holds all
+# of them at once.
+#
+# The flag game the original's War Zone was named for. A flag can only be
+# taken from a side that is not yours, it rides whoever took it, and it drops
+# where they die. Hold the whole set for ten seconds and the round is yours;
+# the flags then go neutral and back on their stands, and the next one starts.
+#
+# What is ours is the match around the rounds. A room that ran rounds forever
+# had no score to show, no clock beside the deploy key and no reason to change
+# ground, so it was the one game in the catalog a player could not read from
+# the outside. Four minutes of rounds, a podium, next map: the same shape Team
+# Battle and Turf play, scored in rounds instead of kills or stands.
+
+label = "War"
+
+mode = "warzone"
+
+# Three maps, each drawing four stands. Two are the same theme at different
+# proportions, which changes the geometry rather than the paint: a keep on a
+# wide map is approached along its face and a keep on a tall one is approached
+# down a corridor.
+maps = [
+  "rampart.vwmap",
+  "bulwark.vwmap",
+  "lattice.vwmap",
+]
+
+max_players = 8
+max_ships = 8
+bot_fill = 1.0
+fill_target = 8
+max_rooms = 10
+
+teams = ["Keel", "Vantage"]
+max_teams = 2
+max_humans_per_team = 4
+max_bots_per_team = 4
+
+[arena]
+# Four minutes rather than three. A round needs the set gathered and then held
+# for ten seconds, which is a slower thing to build than a kill, and a match
+# that ends before either side ever completes one is a match about nothing.
+match_seconds = 240
+intermission_seconds = 15
+
+# Thirty seconds is what one pilot may carry a flag for before it drops on its
+# own, keeping their side. Home to home on these maps is about twelve seconds,
+# so a carry is two crossings: long enough to bring a flag to where your side
+# holds the others, short enough that the fastest hull in the room cannot take
+# one out of the game by staying alive with it.
+#
+# Without a limit that is exactly what happens. The other side's only answer to
+# a runner is to kill them, and a hull built to not be killed turns a four flag
+# round into a three flag round nobody can finish.
+flag_carry_seconds = 30
+
+# Two seconds before a dropped flag can be taken again, so the pilot who just
+# killed a carrier does not sweep it up in the same pass that killed them.
+flag_drop_cooldown = 200
+flag_radius = 18
+
+# Team Battle's economy, unchanged. See catalog/zones/melee/zone.toml.
+bounce = 12
+friction = 12
+respawn_delay = 200
+spawn_radius = 0
+safe_limit = 65535
+streak_kills = 3
+mod_spread = 5
+multi_energy = 25
+multi_delay = 50
+prox_step = 16
+prox_delay = 150
+bomb_safety = true
+bbomb_damage = 1000
+shrap_inactive = 3
+shrap_inactive_ticks = 25
+
+[arena.mod_step]
+multi = 1
+bounce = 1
+prox = 48
+
+[[arena.weapons]]
+name = "gun"
+bounces = 255
+
+[[arena.weapons]]
+name = "gun-2"
+bounces = 255
+
+[[arena.weapons]]
+name = "gun-3"
+bounces = 255
+
+[[arena.weapons]]
+name = "burst"
+damage = 515

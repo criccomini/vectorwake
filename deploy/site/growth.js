@@ -96,10 +96,37 @@ function story(label, pilot, figure, detail) {
   return `<article class="story"><p>${html(label)}</p><strong>${html(pilot.name)}</strong><span>${html(figure)}</span><small>${html(detail)}</small></article>`;
 }
 
-async function weekPage() {
-  const payload = await request("/v1/week", { back: 0 });
+// The board reads one game at a time, or all of them.
+//
+// A rating is kept per zone, so an unfiltered board cannot put a rating
+// column beside a name and mean one thing by it: every row is read in
+// whichever zone that pilot flew most, and two rows beside each other can be
+// ratings in different games. Naming a zone makes the whole row that zone's,
+// the kills and the swing along with the rating.
+//
+// The picker is drawn from the reply rather than written out here, so a zone
+// added to the catalog appears on this page without an edit.
+function drawZones(payload, chosen) {
+  const filter = document.querySelector("[data-zone-filter]");
+  const select = document.querySelector("[data-zone]");
+  if (!filter || !select) return;
+  const zones = payload.zones || [];
+  filter.hidden = !zones.length;
+  select.innerHTML = [`<option value="">Every zone</option>`].concat(
+    zones.map((zone) =>
+      `<option value="${html(zone.zone)}"${zone.zone === chosen ? " selected" : ""}>${html(zone.label || zone.zone)}</option>`)
+  ).join("");
+  select.value = chosen;
+}
+
+async function weekBoard(zone) {
+  const payload = await request("/v1/week", { back: 0, zone });
   const rows = payload.week || [];
-  text("[data-status]", rows.length ? `Week of ${payload.since}. ${rows.length} pilots on the board.` : "No flights have landed this week yet.");
+  const where = payload.label ? ` in ${payload.label}` : "";
+  text("[data-status]", rows.length
+    ? `Week of ${payload.since}${where}. ${rows.length} pilots on the board.`
+    : `No flights have landed${where} this week yet.`);
+  drawZones(payload, zone);
   const best = (field) => rows.reduce((held, row) => !held || (row[field] || 0) > (held[field] || 0) ? row : held, null);
   const stories = document.querySelector("[data-stories]");
   stories.hidden = !rows.length;
@@ -114,6 +141,22 @@ async function weekPage() {
   document.querySelector("[data-rows]").innerHTML = rows.slice(0, 100).map((row) =>
     `<div class="ladder-row"><span>${html(row.name)}</span><span>${Number(row.kills) || 0}</span><span>${Number(row.deaths) || 0}</span><span>${Number(row.rating) || "unrated"}</span><span class="${row.swing >= 0 ? "friend" : "enemy"}">${row.swing > 0 ? "+" : ""}${Number(row.swing) || 0}</span></div>`
   ).join("");
+}
+
+async function weekPage() {
+  // The zone rides the address, so a filtered board is a link somebody can
+  // send. Anything the catalog does not run is refused by the server, and
+  // the page says so rather than showing an empty week as if it were true.
+  const wanted = new URLSearchParams(location.search || "").get("zone") || "";
+  await weekBoard(wanted);
+  const select = document.querySelector("[data-zone]");
+  if (select) {
+    select.addEventListener("change", () => {
+      const zone = select.value || "";
+      history.replaceState({}, "", zone ? `/week?zone=${encodeURIComponent(zone)}` : "/week");
+      weekBoard(zone).catch((error) => text("[data-status]", error.message));
+    });
+  }
   sharePage("This week in Vectorwake");
 }
 

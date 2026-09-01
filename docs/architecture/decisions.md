@@ -6192,7 +6192,8 @@ than back at the start.
 
 ## 119. A hull's line reads the five bars under it
 
-**Status:** accepted
+**Status:** superseded by [decision
+128](#128-the-ship-is-a-row-and-says-nothing)
 
 **Decision:** the sentence under a hull's name on the body carousel says where
 that hull stands in speed, thrust, turn, energy and recharge, and says nothing
@@ -6621,35 +6622,419 @@ seats, plus a constant_drift guard holding `CLIENT_PROTOCOL` and the two reason
 codes against their Rust originals: perturbing either side fails it. luacheck
 clean.
 
-## 128. Sitting out wears the badge
+## 128. The ship is a row, and says nothing
+
+**Status:** accepted, superseding [decision
+119](#119-a-hulls-line-reads-the-five-bars-under-it)
+
+**Decision:** the hull on the body carousel is drawn in one ordinary row of
+the panel, with its name under it at a row's own weight and an arrow either
+side level with the middle of the two. The sentence that ran under the name
+is gone, and the roster in `menu.lua` is seven names.
+
+**Why:** Chris said the drawing was too tall, twice. It was 168 points of
+picture over five bars that take 130 between them, and taking sixteen points
+off the radius did not change what it was: a drawing with a size of its own,
+written down beside it and answering to nothing on the page around it. Every
+other row on that panel is 44 points because 44 is the floor a platform puts
+under a fingertip, and the carousel is the one row that had opted out. It is
+a row now, and the radius is whatever that leaves.
+
+The sentence went with the height, and for its own reason. Decision 119 had
+already narrowed it twice: it was the silhouette, then the weapons, then where
+the hull stands in speed, thrust, turn, energy and recharge. That last one is
+what the five bars directly beneath it draw. So the page was agreeing with
+itself out loud, in adjectives above and in lengths below, and spending two
+wrapped lines a hull to do it. The bars are the better half of the pair, since
+they answer "faster than what" against the rest of the roster where a sentence
+can only assert.
+
+**Cost:** the ship is small. The Wedge was drawn 83 by 103 points and is now
+27 by 33, measured off the strokes it puts on the layer. It comes out smaller
+than the row even so, because `reach` is a radius over the whole polygon
+rather than along the length, so a hull as wide as it is long sits well inside
+its own circle. What the drawing has to do at that size is tell seven
+silhouettes apart, and it does, because the identity was built around a front
+visibly not a back rather than around detail. It is no longer a portrait.
+
+The seven lines are gone from the tree. They were good sentences and nothing
+reads them now; `docs/design/ships.md` is where the roster is described at
+length, and that is the right place for prose about a hull.
+
+Two things followed the height down. The name was set at `TYPE.LEAD`, the
+largest type the interface has, which left the biggest thing on the page
+announcing the smallest; it is `TYPE.ROW` now, the weight every other label on
+this panel is set at, and its band is 26 rather than 30, the same as one of
+the flight rows under it. And the arrows moved off the drawing's middle onto
+the row's. They stood beside the ship because the ship is what they turn, but
+the name turns with it: beside the upper half of the pair they sat in the top
+third of the row with its centre line empty between them.
+
+**Verified:** `landing_test` measures the drawing off the strokes it puts on
+the layer and holds it inside one row, which fails at 103 points against the
+code this replaces. `menu_test` holds every page of the carousel to a name
+with no sentence on it. The arrow marks are read off the layer rather than off
+the boxes they publish, since a box centred on its own mark says nothing about
+where either sits, and held to the middle of the row: level with the ship it
+misses by thirteen points and fails. Their boxes were a fixed 52 points and
+hung over the edge of a row this short, so each takes the whole row instead.
+A second check opens the section at a phone's measure and finds all five
+flight rows drawn; it passes against the old height too, so it is a guard on
+what the room is spent on rather than evidence of a fix. luacheck clean, the
+client's whole suite green, and the section photographed at both measures.
+
+---
+
+## 129. A flag stands where the map says
+
+**Status:** accepted
+
+**What:** flags come off the map's own `SIM_TILE_TURF` tiles. A map that draws
+none is not a flag game and gets no flags. `arena.flags` becomes a cap on how
+many of them a zone plays rather than a count of how many to invent, and
+mapforge lays stands beside the spawns, so any theme can carry them.
+
+The core gets two settings to go with it. `flag_carry` decides whether taking a
+flag picks it up, which is the original's `Flag:CarryFlags` read as a yes or a
+no, and it is the whole difference between War and Turf. `flag_carry_ticks`
+puts a carried flag down on its own after a while, keeping the side that took
+it.
+
+**Why:** both paths that built a room laid four flags at tiles 472 and 552,
+which are the built-in arena's quadrants, measured on the 1024-tile ground that
+arena is. Every map a zone ships is 96 to 256 tiles, so those four flags sat
+outside the map's own wall, unreachable, and Team Battle drew a pennant apiece
+across the top of its HUD for a game it was not playing. Nothing was going to
+notice: the melee mode does not read flags, so the only symptom was four grey
+marks nobody could explain.
+
+A turf zone made the same bug the other way round. Its stands are the whole of
+where the fight happens and there was nowhere for them to come from, because
+nothing had ever read a stand off a map.
+
+The carry clock is a separate answer to a separate problem, and it is here
+because it is the same three fields. Without it the other side's only reply to
+a pilot running off with a flag is to kill them, and a hull built not to be
+killed takes a four flag round down to three that nobody can finish.
+
+**Cost:** `CFG_VERSION` moves to 22. The determinism golden did not move: no
+flag in the replay trace is carried, and the state hash of a flag with no clock
+running on it is what it always was.
+
+A zone that wants the old four-flag arena on a map with no stands cannot have
+it. That is deliberate. The alternative is a room deciding for itself where a
+game's objective goes, which is what produced the flags outside the wall.
+
+**Reconsider if:** a map wants stands somewhere a half-turn cannot put them.
+Stands are drawn in pairs, so the count is even, and a map with an odd number
+of them is refused rather than quietly given one more than it asked for.
+
+---
+
+## 130. Turf is paid, War is a match
+
+**Status:** accepted
+
+**What:** two zones off the flag mechanism above.
+
+Turf pays each side one point per stand held, every five seconds, and the match
+belongs to whoever has the most at the whistle. Its flags cannot be carried:
+flying over a stand claims it, and it then settles for the drop cooldown before
+it can change hands again.
+
+War keeps the original's round, where a side takes it by holding every flag at
+once for ten seconds, and wraps a four-minute match around the rounds. The
+match score is rounds taken.
+
+**Why:** the payout is what stops turf collapsing into one scrum. Holding two
+stands of six is not a losing position, it is two points every five seconds, so
+a side that gives up the middle and keeps its own half is playing rather than
+waiting to be beaten, and a scrum that wins one stand is paying for it with the
+four it left.
+
+The settling window is not a nicety. Two pilots of opposite sides sitting on
+one stand take it from each other every tick, a hundred times a second: the
+pennant strobes and which side the clock happens to pay is decided by the tick
+the payout lands on rather than by the fight.
+
+The match around War's rounds is ours and the original had nothing like it. A
+room that ran rounds forever had no score to show, no clock beside the deploy
+key, no ending board and no reason to change ground, which made it the one game
+in the catalog a player could not read from outside the room.
+
+**Cost:** three modes now want the same two-phase clock, so it moved out into
+one that reports which beat a tick is. Melee is the same game through it, and
+the whistle tick still belongs to the match it ended, which is what makes a
+bomb already in the air count and what lets a round completed as the clock runs
+out be a round taken.
+
+Two more zones is two more bot populations to keep honest and two more balance
+surfaces. Neither has been measured yet; both are drawing the roster Team
+Battle was tuned for.
+
+**Reconsider if:** the five second period reads as arbitrary in play. It is
+thirty-six payouts over a three minute match, which puts a stand held end to
+end at 36 and the six between them at 216, and none of that has been played.
+
+---
+
+## 131. A duel is a two-seat zone and nothing else
+
+**Status:** accepted
+
+**What:** the duel comes back as a catalog zone running the melee mode with one
+pilot a side, on maps ninety-six tiles across. No matchmaker, no rival hold, no
+per-seat card.
+
+**Why:** [decision 96](#96-duels-are-gone) took duels out and its own note on
+what would bring them back said the pieces worth keeping were the pairing rule
+at the door and the card, and that both were built around a zone whose rooms
+hold two seats. A two-seat room turns out to make the first of those free: the
+fill ladder already prefers the fullest room below its cap, which for a room of
+two means the one with somebody waiting in it, and a pilot who finds nobody
+opens a room and becomes the person the next arrival is put beside.
+
+The maps are the reason this is a zone rather than a line in the melee file.
+Two pilots searching a hundred and sixty tiles for each other is a draw, which
+is what a 1v1 on melee ground measured as. Ninety-six tiles with two routes
+between the pockets is four to six seconds home to home rather than twelve to
+fifteen.
+
+**Cost:** a zone now rates into its own name rather than its mode. Filed by
+mode, a duel's rating would have been pooled with Team Battle's, and holding
+your own against one rival in a small room has almost nothing to do with being
+useful in a four a side fight. Nothing already recorded moves: the only zone
+that has rated anybody is melee, whose key and mode are the same word.
+
+Pairing by rating stays out. It is decision 92's, it needs a band and a queue,
+and it is a decision to take on its own rather than something to slip in with a
+zone file.
+
+**Reconsider if:** the door pairs people who should not be paired. The fill
+ladder is blind to rating, so at any population above a handful the first two
+people to arrive are the fight, whoever they are.
+
+---
+
+## 132. A green raises what you fly, not what you own
+
+**Status:** accepted
+
+**What:** greens are back in the simulation core, and a free roam zone turns
+them on. A green fills a slot in the kit space; a pilot keeps it until they
+die, because a respawn deals `sim_ship::kit` again and a green never touched
+it. That is the whole death policy and it has no setting.
+
+They are put out in a ring six to twenty-eight tiles from a live ship, two
+dozen at a time, rolled against a per-zone weight table.
+
+**Why:** the zone this catalog did not have is the one the original was about.
+Every other game here is a match, and what replaces the match as a reason to
+keep flying is growth over a life.
+
+The ring is the part that was got wrong the first time and is recorded in
+[design/maps.md](../design/maps.md). Scattered by area, two hundred greens over
+a million tiles is one per five thousand against a pilot who sees sixty tiles,
+and the zone that ran that way read to its players as having none at all. Two
+dozen where the people are beats two hundred in a million tiles of nobody, and
+it also answers the bandwidth: eleven bytes a green, and every one of them near
+somebody who might take it.
+
+Filling a slot rather than granting a thing is what makes this cheap. The kit
+space is already the shape of the question, its own header records that it used
+to be what a green indexed, and `sim_grant` already refuses to push a slot past
+the hull's ceiling. So a green that lands on a full slot is spent for nothing,
+which is a real cost of taking one you did not need.
+
+Who runs the field is a rule this repository had already made, and this went
+out without it. Decision 43 states it: interest filtering writes an
+out-of-radius green inert, so a client's live count says something about the
+few greens near it rather than about the room, and a client that believes the
+field is short sows a phantom prize for the next snapshot to sweep. Here it
+was louder than it had been in 43, because `green_at` is state rather than
+wire. Every snapshot left the timer at zero, so the next tick put one out, and
+what Free Roam showed a pilot was a green blinking in and out of existence
+near them at snapshot rate, none of them real. A deathless instance now puts
+none out, expires none, and takes one only for its own pilot; `sim.h` carries
+that beside the two rules of the same shape it already had.
+
+Decision 44's private prize generator was lost the same way, and is back. A
+green was being rolled from `sim_state::rng`, which every snapshot carries
+because a client needs it to predict a scattergun's spread and a spawn. A
+client could advance it and work out where the next green would land and what
+it would be, then go and wait there. The greens now roll from `prize_rng`,
+which no snapshot carries and which `sim_prize_seed` installs: the arena gives
+each room a value out of its own entropy, and the shipped client never calls
+it. The stream and its clock are out of `sim_hash` as well as off the wire,
+which is one rule rather than two exceptions, because what the hash covers is
+what a snapshot carries and a pack round trip is checked by comparing hashes.
+
+Zero means no stream and a state with no stream sows nothing. That is the loud
+failure on purpose: a room that skips the seeding is a Free Roam with no
+prizes in it, which somebody notices within a minute, where greens landing
+somewhere a client could have named in advance is a thing nobody sees at all.
+
+44's other half does not carry over. It had a client remove a green it touched
+while applying no grant, because back then the roll happened at the moment of
+pickup and a guessed grant would have shown a player the roll. A green decides
+what it is when it is put out now, and `slot` rides in the snapshot beside its
+position, so there is nothing left at pickup to hide and the client's own is
+predicted whole.
+
+**Cost:** `CLIENT_PROTOCOL` moves to 34 and `CFG_VERSION` to 23, and the
+determinism golden is regenerated. The state hash covers the greens now, which
+moves it even in a room that has none, and every match game we ship has none.
+
+The protocol bump is a real refusal rather than a courtesy. Greens go in the
+snapshot after the flags, so a client built for 33 stops reading where the
+flags end, and `sim_unpack` treats a short read as an error exactly as it
+treats a long one: every snapshot from a room with greens in it would be
+refused rather than misread. On a match game the difference is one zero byte;
+Free Roam is the zone a stale build could not have joined at all.
+
+The map is not mapforge's. Its envelope stops at 256 tiles and past about 300
+every theme thins below its own cover band, because the geometry is written in
+tiles rather than in fractions of the map. `mapgen` draws the 1024-tile arena
+instead, from the measurements in
+[research/map-measurements.md](../research/map-measurements.md), and the seed is
+the provenance. That leaves one map in the catalog with no `mapforge verify`
+behind it.
+
+**Reconsider if:** the weights are wrong, which they have not been played
+against. They are stats-heavy, which is what Alpha Zone's own file is, on the
+argument that growth should feel like a slope rather than a series of unlocks.
+
+---
+
+## 133. Carrying the flag puts you on the map
+
+**Status:** accepted; the client's side of it and the green filter are not
+built yet, and this record gains a Verified section when they are.
+
+**What:** three rulings on what the objective wire discloses, made together
+because they are one question.
+
+Flags keep traveling whole, carried flags included, to every client in the
+room. A carried flag reports its carrier's exact position, so this is a
+deliberate disclosure: pick up a flag and you are lit, map-wide, until it
+comes down. The client is taught to draw what the wire already says, so
+lawful sight matches disclosure: flags go on the map overview at their true
+positions, and a carried enemy flag outside the radar's window pins to the
+radar's edge as a bearing.
+
+Greens go behind the interest filter with the ships and the rounds,
+out-of-radius entries written inert so the format does not move.
+
+**Why:** the doctrine in [networking.md](networking.md) is "no knowledge
+beyond lawful sight", and the two entities break it in opposite directions,
+so they get opposite fixes.
+
+Flag state is the scoreboard. The pennant strip already tells every pilot who
+holds what, grounded flags stand on tiles the map file itself publishes, and
+the original showed its flags zone-wide on the big map. The one thing the
+wire said that the client did not show was the carrier's position, which made
+it a maphack: information only a modified build could render. Freezing or
+blurring the carried position was considered and rejected, because hunting
+the runner is the game War is about, and a carry clock already bounds how
+long anybody stays lit. So the fix runs the other way: widen lawful sight to
+match the wire. The overview's own rule survives intact. It draws no ships
+because a map of everybody would be a wall hack, and a flag is not a ship; a
+carried flag putting its carrier on the map is the cost of the flag, paid
+knowingly by whoever takes it.
+
+Greens have no scoreboard argument and carry a second signal flags do not:
+one is put out six to twenty-eight tiles from a live ship, so an unfiltered
+field is a beacon on every pilot in the room, including the ones far outside
+anybody's lawful sight. The honest client draws them only inside the render
+window and never on the radar, so beyond the fairness radius they are
+disclosure with no legitimate reader. The interest radius was originally
+sized "when it filtered prizes alone"; the rebuild of greens dropped that
+without noticing, and this puts it back.
+
+**Cost:** an inert green record is the same eleven bytes, so the filter buys
+disclosure and not bandwidth, and the wire format holds: no protocol move.
+The overview gives up a little of its austerity, and a pilot who wants to
+stay dark in War has one honest way to do it, which is to not pick up the
+flag.
+
+**Reconsider if:** being lit makes nobody carry. The counterweight is the
+carry clock: thirty seconds of being hunted is a shift, not a sentence.
+
+---
+
+## 134. The career endpoint goes; the session and the roster already said it
+
+**Status:** accepted
+
+**What:** `/v1/career` is deleted, along with the ten second poll behind it.
+The one fact its caller wanted, whether this pilot has ever been rated, now
+comes off two things the client already receives.
+
+**Why:** the endpoint was built for the in-game career page in
+[decision 70](#70-sign-up-and-the-pilot-page-is-the-career) and
+outlived it.
+[Decision 99](#99-the-account-is-a-dropdown-and-the-pilot-page-is-gone)
+moved the career to the site's own `/pilots` and deleted the page, leaving
+one reader: `guest_stakes()` in the menu, which took `.games > 0` off the
+reply and ignored the rating, the tier and the lifetime totals that came
+with it. Every unclaimed guest asked for all of that every ten seconds to
+learn one bit.
+
+Both halves of that bit were already on hand and neither costs a request.
+`/v1/session` returns a row per zone with the games flown in each, because the
+token is minted from those same rows and the reply carries them for the panel;
+the client received the array and dropped it. That answers for a pilot who
+arrives already rated. It cannot answer for the guest whose first rated game
+lands in the room they are sitting in, which is the case the poll existed for,
+and the roster broadcast answers that one: it carries games flown per seat and
+arrives twice a second, so the warning arms about as fast as the death that
+earned it is drawn.
+
+The two are read together because they answer different questions. The session
+is every zone and the whole account's history; the roster is this seat in this
+zone, and a guest rated in Team Battle shows nothing on a Free Roam roster.
+Either one alone under-reports.
+
+**Cost:** the warning is now armed by a latch over two sources rather than one
+number from one place, which is more moving parts in exchange for no endpoint,
+no poll, and no query. A watcher holds no seat, so mid-match arming does not
+apply to them; the session still covers what they have already earned.
+
+**Reconsider if:** something wants the lifetime kill and death totals in the
+client. They are on the site's pilot page and nothing in the game asks for
+them, which is why they left with the route rather than being kept against a
+caller that might appear.
+
+---
+
+## 135. Sitting out wears the badge
 
 **Status:** accepted
 
 **What:** the ship stop's body carousel draws the pilot's badge on its last
-page, where seven hulls turn through the six before it. `pilot_mark` gets a
-fourth caller, at a hundred and thirty-four points rather than eleven, in the
-instrument gray rather than in the pilot's color, and it holds still while
-every hull on the same carousel turns.
+page, where seven hulls turn through the pages before it. `pilot_mark` gets a
+fourth caller, at the circle a hull is drawn in rather than at eleven points,
+in the instrument gray rather than in the pilot's color, and it holds still
+while every hull on the same carousel turns.
 
-The badge's feathers are recut for that size, everywhere it is drawn. They
-were three struck lines a side, at 32.1, 28.3 and 30.8 degrees, capped round.
-They are six closed shapes now, all six at 30 degrees, cut against two lines
-and tapered from 0.020 of the mark at the root to 0.039 at the tip.
+The badge's feathers are recut, everywhere it is drawn. They were three struck
+lines a side, at 32.1, 28.3 and 30.8 degrees, capped round. They are six
+closed shapes now, all six at 30 degrees, cut against two lines and tapered
+from 0.020 of the mark at the root to 0.039 at the tip.
 
 **Why:** the carousel had a hole in it. `sect_rows` sets a row's `cls` only
-where the roster's value is a number, `land_row` draws a ship only where `cls`
-is set, and `land_row_h` gives the row 198 points plus a line of sentence
-whatever is in it. So sitting out was a word at the bottom of 168 empty points
-with two arrows floating in the middle of them, and it read as a panel that
-failed to load rather than as a choice. Nothing else on this menu has a hole
-in it.
+where the roster's value is a number and `land_row` draws a ship only where
+`cls` is set, but the row keeps a hull's height whether or not there is a hull
+to put in it. So sitting out was a word under an empty space with an arrow
+either side of it, and it read as a row that had failed to load rather than as
+a choice. Nothing else on this menu has a hole in it.
 
 Four drawings were made for that hole and mocked over the real menu in
 `.design/spectate-body`: the roster's own shape with the canopy outlined and
 empty, a camera whose bright cell is a pupil where a hull carries a canopy, a
 relay with a dish, and a viewfinder that is not a craft at all. Chris asked
 whether the badge could do the job instead, and it is the better answer for a
-reason none of the four can match: it is the only mark in this game whose
+reason none of the four can match. It is the only mark in this game whose
 subject is the pilot rather than the ship, and this is the only stop on the
 carousel whose subject is the pilot rather than the ship. `pilot_mark`'s own
 comment had already said a badge is what a seat is issued rather than what
@@ -6660,27 +7045,30 @@ Both sentences are about the seat.
 The gray is the same argument in paint. A hull on this carousel is drawn in
 `pal.FRIEND` because the ship you turn to is the ship you fly; a watcher flies
 nothing and holds no side, so the badge is drawn in the ink the interface uses
-for everything that describes rather than belongs to you. The word under it
+for everything that describes rather than belongs to you. The name under it
 stays blue, because the stop is still the one you are standing on.
 
-The recut is the size. A feather cut for eleven points is a stroke a point
-across where a round cap is a rounding error; the same stroke at a hundred and
-thirty-four is fourteen points across with a half circle on each end, which is
-three sausages. Parallel turned out to cost nothing: run each feather out to
-the line the old tips already lay on and the bottom one lands within a
-thousandth of where it was, the middle one within two hundredths. Both ends
-are cut on a line now, the tips on that rake and the roots on the hull's own
-leading edge, which is what the roots were placed against in the first place,
-so the wing is one band with a clean edge either side and the same gap behind
-every feather. The taper is what gives a feather a direction at a size where a
-constant width is a bar.
+The recut is a separate fault, found by drawing the mark eight times its own
+size to look at it. Three feathers at 32.1, 28.3 and 30.8 degrees are close
+enough to look like a mistake and far enough to lose the even gap the roots
+were cut for, and that is wrong at any size. Parallel turned out to cost
+nothing: run each one out to the line the old tips already lay on and the
+bottom feather lands within a thousandth of where it was, the middle one
+within two hundredths. Both ends are cut on a line now, the tips on that rake
+and the roots on the hull's own leading edge, which is what the roots were
+placed against in the first place, so the wing is one band with a clean edge
+either side and the same gap behind every feather. The taper is what gives a
+feather a direction where a constant width is a bar, and round caps are what
+made three of them read as three sausages at any size worth looking at.
 
-**Cost:** the recut changes the mark everywhere, and three of its four callers
-draw it at ten or eleven points where none of this is visible. That is the
-right trade only because it costs them nothing: the widths carry the floor
-`pen` already puts under a stroke, nine tenths of a point, so at ten and
-eleven both ends are the floor and the mark comes out where it always did.
-The taper says nothing until about twenty.
+**Cost:** the recut changes the mark everywhere and pays off in one place.
+Three of the four callers draw it at ten or eleven points, where the widths
+are both on the floor `pen` already puts under a stroke, nine tenths of a
+point, and the mark comes out where it always did. The taper only says
+anything from about twenty up, which since
+[decision 128](#128-the-ship-is-a-row-and-says-nothing) put the carousel in an
+ordinary row is the carousel alone. A wider change than its payoff, and the
+payoff is the page this decision is about.
 
 Six drawings rather than six strokes is six `quad` calls where there were six
 `seg` calls, in a function that was already drawing its hull with `quad`
@@ -6698,9 +7086,17 @@ finder now identifies the mark by six shapes lying along one angle rather than
 by six round-capped strokes, which is the property the recut was for, and it
 asks that the six agree within a degree, that each widens on its way out, and
 that the three a side still arrive apart. The landing asks that the page draws
-nine shapes where a hull would go, at a hull's own width, and that its span
-does not move between two points of the turn. Both were made to fail by
-perturbing the angle and by handing the row a turn. The shipped cut was read
-back out of the client and checked against the board Chris picked from: the
-angle, both end widths and all three lengths agree to a thousandth of a mark
-unit. luacheck clean over 108 files.
+nine shapes where a hull would go, at the width of the circle a hull is drawn
+in, and that its span does not move between two points of the turn. Both were
+made to fail by perturbing the angle and by handing the row a turn.
+
+Writing the finder turned up a measuring trap worth recording. Taking a band's
+two shortest edges as its ends is wrong at eleven points, where the shortest
+feather is barely longer than it is wide and its slanted end cuts make one of
+its sides the shortest edge of the run: read that way it answered six degrees
+where its neighbors answered thirty, which looks exactly like a drawing fault.
+The sides are the opposite pair that lie parallel.
+
+The shipped cut was read back out of the client through the test harness and
+checked against the board Chris picked from: the angle, both end widths and
+all three lengths agree to a thousandth of a mark unit. luacheck clean.

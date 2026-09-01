@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#05070c">
-  <meta name="description" content="A Vectorwake pilot profile with career combat totals and rating history.">
+  <meta name="description" content="A Vectorwake pilot profile with combat totals and a rating in every zone they have flown.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
   <link rel="stylesheet" href="/site.css">
   <title>Pilot / vectorwake</title>
@@ -62,14 +62,16 @@
         <div><dt>Rated events</dt><dd id="profile-games">0</dd></div>
       </dl>
 
+      <p class="profile-zone-note" id="profile-zone-note" hidden></p>
+
       <section class="profile-ratings" id="profile-ratings" aria-labelledby="ratings-title" hidden>
         <h2 id="ratings-title">Ratings</h2>
         <div class="pilot-table-wrap">
           <table class="pilot-table ratings-table">
-            <caption>Rating and rank by competition class</caption>
+            <caption>Rating and rank in every zone this pilot has flown</caption>
             <thead>
               <tr>
-                <th scope="col">Class</th>
+                <th scope="col">Zone</th>
                 <th scope="col">Tier</th>
                 <th scope="col" class="number">Rating</th>
                 <th scope="col" class="number">Rank</th>

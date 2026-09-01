@@ -107,9 +107,13 @@ export async function buildPage (directoryUrl, opts = {}) {
 // it rebuilds a little more often than it strictly must.
 function fresh (page) {
   const built = statSync(page).mtimeMs
-  const watched = ['client/arena', 'client/render', 'client/ui', 'client/main',
-    'client/web', 'client/game.project', 'client/build.sh', 'sim/src',
-    'sim/include']
+  // `client/ext` is the native extension, and it was missing from this list.
+  // It is the one source here that is not Lua: it wraps the simulation core
+  // for the client and compiles a boot's worth of sound, so a run against a
+  // stale bundle would be a run against a different game than the tree says.
+  const watched = ['client/arena', 'client/ext', 'client/render', 'client/ui',
+    'client/main', 'client/web', 'client/game.project', 'client/build.sh',
+    'sim/src', 'sim/include']
   for (const rel of watched) {
     const full = path.join(ROOT, rel)
     if (!existsSync(full)) continue

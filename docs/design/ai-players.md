@@ -291,9 +291,10 @@ run somebody is hunting. It uses short-range defensive fire to make room, then
 flies for cover and does not re-enter on the first tick above its danger
 threshold.
 
-Greens are gone and so is the section that described searching for them. What
-is left in its place is the charge budget below, which is the only thing a
-pilot now accumulates and spends inside a match.
+Greens left with the match game and came back with Free Roam, and what a pilot
+does about them lives in [Playing the objective](#playing-the-objective)
+below. Inside a match the only thing a pilot accumulates and spends is still
+the charge budget here.
 
 Charges are spent against the match rather than the moment. The rack the hull
 carries is dealt at the start of a match and never at a spawn, so a repel is a third of a
@@ -303,6 +304,118 @@ that would end the life is worth spending on, and in the last thirty seconds a
 charge still in hand is about to be wasted, so nearly anything buys it. Asking
 instead whether a round was arriving empties every rack into the opening joust,
 because in a room of eight there is always a round arriving.
+
+## Playing the objective
+
+The four zones beside Team Battle each ask the brain for something the melee
+never did, and this section is the design for all of it. Stage, plainly:
+greens and growth are being built now; the rest is settled design with no code
+behind it yet, and each piece should arrive with the zone probe below saying
+what it changed.
+
+**A bot learns what game it is in from the settings it was dealt.** Nothing
+tells it the mode, and nothing needs to: a bot is a client (decision 29) and
+the zone's settings arrive the way they arrive for anybody. Flags that cannot
+be carried are Turf, a carry clock on carriable flags is War, a green target
+above zero is Free Roam. Reading the game off the physics it is flying under
+keeps every input a bot has one a player has too.
+
+**Objectives are map knowledge; greens are sight knowledge.** A player reads
+every flag's ownership off the pennant strip and the map, so a bot restricted
+to seeing flags at sixty tiles is playing blinder than the person next to it,
+and the brain reads the set off the state instead. A green is the opposite: it
+is drawn in the world and nowhere else, so a bot wants only the greens a
+player in its seat would have noticed.
+
+### Greens are opportunism
+
+A pilot detours for a green the way a person does: when it is close, when
+nothing is shooting at them, and in proportion to how hungry this life still
+is. Hunger is the complement of growth, so a fresh spawn wants the trip and a
+grown life has better things to protect, and the score for a green sits under
+any fightable foe and under any flag, which is what keeps one something
+collected on the way rather than instead. A green whose slot this hull already
+has at its ceiling is not worth a detour at all: the core consumes it anyway,
+and a player watching a bot collect nothing reads it as a bot being a bot.
+
+### A grown life flies like it is worth something
+
+Growth is the steps a pilot is wearing above the build they spawned on. Only a
+green ever raises it and only death takes it back, so it is zero in every
+match game and it is the whole ladder of a Free Roam life. It feeds the
+retreat threshold: the further into a grown life a pilot is, the earlier they
+break contact, worth a little less than a carried flag, which somebody else is
+waiting on. That caution is not a handicap, it is the hunting dynamic the zone
+runs on: a hull that has been alive four minutes runs sooner, is chased
+further, and is worth more to bring down, which is true of the person flying
+next to it for the same reason.
+
+### Holding a point is a race, not a circle
+
+Turf stands and dropped War flags need a pilot who stays, and Travel cannot
+stay: it arrives, the goal clears, and the next decision drifts off to fight.
+The missing mode is a hold, and its leash is the part that has to be right.
+A radius drawn in map distance holds a bot eight tiles from its stand on the
+wrong side of a long wall while the enemy walks in the open side, sixty tiles
+away by any road the bot can actually fly. So the leash is a race in route
+terms: this pilot's road back to the anchor must stay shorter than the nearest
+threat's road to it, with straight-line distance serving for the threat's side
+because underestimating their road overestimates the danger, which errs
+toward hugging the post. With nobody on the scan the leash goes slack, and a
+holder can drift to a nearby green without abandoning anything; as a hostile
+closes it tightens to sitting on the point.
+
+Route cost is paid the way `plot` already pays it: line of sight as the cheap
+first answer, the router consulted at the planning cadence and memoized
+against drift, and an empty route read as "out of leash, walk at it" rather
+than as fine, because the one geometry that returns empty is the wall the
+leash exists for. The hold anchor is not the stand but the door: nav's route
+from the stand toward trouble names the side trouble comes from, and the
+orbit biases there. And a holder re-decides the moment its anchor changes
+hands rather than at the next cadence, because ownership is in every
+snapshot and a defender that watches its stand flip and finishes its orbit
+first reads as asleep.
+
+### Turf spreads out; War ferries and counts
+
+A turf side of four on six stands must not arrive anywhere as a clump, so a
+stand's score is discounted by the allies already nearer it than you, which
+spreads the side with no captain and re-forms it the moment somebody dies.
+Defense enters as its own choice: your own stand with a hostile nearer to it
+than any ally is a place to be. Which pilots take and which hold falls out of
+the personalities the roster already has, the way everything else about a
+bot's taste does.
+
+War wants two behaviors on top of the shared flag chase. The ferry: a carried
+flag drops after thirty seconds wherever its carrier is, keeping the side, so
+the whole skill of carrying is to fly it home and stay alive until the clock
+puts it down on your doorstep, then go get the next. A pilot knows it is
+carrying from the state and flies accordingly, which the retreat logic
+already half does. And the count: the set is in every snapshot, so the brain
+knows we-hold-three the same way the mode does. A side holding the whole set
+turtles on its flags while the ten seconds run; a side facing a completed set
+rushes the nearest enemy flag, because touching one resets the clock; and in
+between the ordinary take-ferry-hunt loop plays.
+
+### The room follows the people
+
+On a thousand tiles, thirty-two bots spread evenly is a map of nobody. Roam
+targets get nudged toward the nearest human, with enough jitter to arrive as
+traffic rather than as a swarm, through the same room-level seam that already
+hands a pilot its standing. And the duel's stand-in should be cast by
+strength, the archetype nearest the waiting pilot's rating, which is the one
+piece of decision 92 worth taking back: it is a bot-server choice, not a
+brain's, and it is the difference between a new player's first duel being a
+game and being an execution.
+
+### Measured before believed
+
+None of this ships on the feeling that the bots seem better. A zone probe in
+the melee probe's family runs bot-only rooms and reports the number that says
+the game happened at all: rounds completed per match in War, score spread and
+stand traffic in Turf, greens taken and time spent near humans in Free Roam.
+The probe runs before a behavior lands and after, and the difference is the
+review.
 
 ## The roster: bots as long-lived individuals
 

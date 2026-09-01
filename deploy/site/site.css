@@ -806,6 +806,14 @@ button {
   text-transform: uppercase;
 }
 
+.profile-zone-note {
+  max-width: 640px;
+  margin: 24px 0 0;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.8;
+}
+
 .profile-ratings {
   margin-top: clamp(100px, 13vw, 190px);
 }
@@ -1538,6 +1546,46 @@ button {
 .button-line {
   background: transparent;
   cursor: pointer;
+}
+
+.zone-filter {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 34px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.zone-filter label {
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.zone-filter select {
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid #35445a;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font: 13px var(--mono);
+}
+
+.zone-filter select:focus {
+  border-color: var(--friend);
+}
+
+/* The list itself is drawn by the browser, on its own surface: without this
+   the options inherit a transparent background and land as dark text on a
+   dark page. */
+.zone-filter option {
+  background: var(--panel);
+  color: var(--ink);
 }
 
 .story-grid {

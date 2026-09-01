@@ -260,6 +260,10 @@ void sim_init(sim_state *s, uint32_t seed) {
     s->rng = seed ? seed : 1u;
 }
 
+void sim_prize_seed(sim_state *s, uint32_t seed) {
+    s->prize_rng = seed;
+}
+
 static void clear_hurt(sim_ship *sh);
 
 void sim_deal_kit(sim_ship *sh, const sim_settings *cfg, int ammunition) {
@@ -1435,6 +1439,7 @@ int sim_add_flag(sim_state *s, int32_t x_px, int32_t y_px) {
     f->x = x_px * 256;
     f->y = y_px * 256;
     f->cooldown = 0;
+    f->held = 0;
     return i;
 }
 
@@ -1445,31 +1450,44 @@ int sim_flags_held(const sim_state *s, uint8_t team) {
     return n;
 }
 
-/* Drop every flag a ship is carrying where it died, keeping the team that
- * held it: a dropped flag stays yours until somebody takes it back. */
+/* Put one carried flag down where its carrier is, keeping the team that held
+ * it: a dropped flag stays yours until somebody takes it back.
+ *
+ * Both ways a flag comes down land here, a carrier dying and a carry clock
+ * running out, because the part that is easy to get wrong is the same for
+ * both: where it ends up. */
+static void put_flag_down(sim_state *s, const sim_settings *cfg, int i,
+                          sim_events *ev) {
+    sim_flag *f = &s->flags[i];
+    const sim_ship *sh = &s->ships[f->carrier];
+    f->carried = 0;
+    f->carrier = 0;
+    f->held = 0;
+    f->x = sh->x;
+    f->y = sh->y;
+    /* Where they fell, unless the map is going to close over it. A carrier
+     * killed in an open door left the flag inside the door, and a flag
+     * nobody can reach is a round nobody can finish. Only then is it moved,
+     * so an ordinary drop still lands exactly where the hull was. */
+    if (!ground(cfg->map, f->x / (SIM_TILE_PX * 256),
+                f->y / (SIM_TILE_PX * 256))) {
+        int32_t tx = f->x / (SIM_TILE_PX * 256);
+        int32_t ty = f->y / (SIM_TILE_PX * 256);
+        nearest_ground(cfg->map, &tx, &ty);
+        f->x = tile_mid(tx);
+        f->y = tile_mid(ty);
+    }
+    f->cooldown = cfg->flag_drop_cooldown;
+    emit(ev, SIM_EV_FLAG_DROP, (uint8_t)i, f->team, 0);
+}
+
+/* Drop every flag a ship is carrying where it died. */
 static void drop_flags(sim_state *s, const sim_settings *cfg, uint8_t ship,
                        sim_events *ev) {
     for (int i = 0; i < s->flag_count; i++) {
         sim_flag *f = &s->flags[i];
         if (!f->active || !f->carried || f->carrier != ship) continue;
-        f->carried = 0;
-        f->carrier = 0;
-        f->x = s->ships[ship].x;
-        f->y = s->ships[ship].y;
-        /* Where they fell, unless the map is going to close over it. A carrier
-         * killed in an open door left the flag inside the door, and a flag
-         * nobody can reach is a round nobody can finish. Only then is it moved,
-         * so an ordinary drop still lands exactly where the hull was. */
-        if (!ground(cfg->map, f->x / (SIM_TILE_PX * 256),
-                    f->y / (SIM_TILE_PX * 256))) {
-            int32_t tx = f->x / (SIM_TILE_PX * 256);
-            int32_t ty = f->y / (SIM_TILE_PX * 256);
-            nearest_ground(cfg->map, &tx, &ty);
-            f->x = tile_mid(tx);
-            f->y = tile_mid(ty);
-        }
-        f->cooldown = cfg->flag_drop_cooldown;
-        emit(ev, SIM_EV_FLAG_DROP, (uint8_t)i, f->team, 0);
+        put_flag_down(s, cfg, i, ev);
     }
 }
 
@@ -1585,7 +1603,16 @@ static void update_flags(sim_state *s, const sim_settings *cfg, sim_events *ev) 
                 /* The carrier stopped existing without dying properly. */
                 f->carried = 0;
                 f->carrier = 0;
+                f->held = 0;
                 f->cooldown = cfg->flag_drop_cooldown;
+                continue;
+            }
+            /* The carry clock, when the zone runs one. Counted before the
+             * move so a flag whose time is up is put down at the tile its
+             * carrier reached rather than a tick further on. */
+            if (cfg->flag_carry_ticks &&
+                ++f->held >= cfg->flag_carry_ticks) {
+                put_flag_down(s, cfg, i, ev);
                 continue;
             }
             f->x = sh->x;
@@ -1602,15 +1629,182 @@ static void update_flags(sim_state *s, const sim_settings *cfg, sim_events *ev) 
             if (!hull_reaches(&cfg->classes[sh->cls], sh->heading,
                               sh->x, sh->y, f->x, f->y, cfg->flag_radius))
                 continue;
-            f->carried = 1;
-            f->carrier = (uint8_t)k;
             f->team = sh->team;
-            f->x = sh->x;
-            f->y = sh->y;
+            /* A stand that cannot be carried changes hands where it stands,
+             * and that is the whole of a turf claim.
+             *
+             * It then settles for the same window a dropped flag does. Two
+             * pilots of opposite sides sitting on one stand would otherwise
+             * take it from each other every tick, a hundred times a second:
+             * the pennant strobes, and which side the clock happens to pay is
+             * decided by the tick the payout lands on rather than by the
+             * fight. With the window, a contested stand changes hands at a
+             * rate a person can read and a payout means something. */
+            if (cfg->flag_carry) {
+                f->carried = 1;
+                f->carrier = (uint8_t)k;
+                f->held = 0;
+                f->x = sh->x;
+                f->y = sh->y;
+            } else {
+                f->cooldown = cfg->flag_drop_cooldown;
+            }
             emit(ev, SIM_EV_FLAG_TAKE, (uint8_t)k, (uint8_t)i, 0);
             break;
         }
     }
+}
+
+/* ---- greens ---- */
+
+/* How much of one slot a hull is wearing. Defined with the rest of the kit
+ * grants below; a green needs it to report what it just handed over. */
+static uint8_t held(const sim_ship *sh, uint8_t type);
+
+/* Roll a slot against the zone's weights. Returns -1 when the table is empty,
+ * which is a zone that wants no greens however many it asked for. */
+static int roll_green(const sim_settings *cfg, uint32_t *rng) {
+    uint32_t total = 0;
+    for (int i = 0; i < SIM_SLOT_COUNT; i++) total += cfg->green_weight[i];
+    if (total == 0) return -1;
+    *rng = xorshift32(*rng);
+    uint32_t pick = (*rng >> 8) % total;
+    for (int i = 0; i < SIM_SLOT_COUNT; i++) {
+        uint32_t w = cfg->green_weight[i];
+        if (pick < w) return i;
+        pick -= w;
+    }
+    return -1; /* unreachable: the loop above sums to `total` */
+}
+
+/* Put one green out in the ring around a live ship.
+ *
+ * Sixteen draws and then give up for this tick, which is the same budget
+ * `pick_spawn` gives itself for the same problem. A room whose pilots are all
+ * standing in a pocket surrounded by wall will place fewer than it wants, and
+ * that is the right failure: the alternative is walking the map looking for
+ * ground, once a tick, forever. */
+static void put_green(sim_state *s, const sim_settings *cfg) {
+    /* No private stream, no field. See `prize_rng`: rolling a green off the
+     * generator every snapshot publishes would put the next one's position on
+     * the wire in advance. */
+    if (s->prize_rng == 0) return;
+
+    /* Somebody to put it near. A room with nobody alive in it gets none,
+     * which is also what stops an empty room filling up with prizes nobody
+     * ever came for. */
+    int alive = 0;
+    for (int i = 0; i < s->ship_count; i++)
+        if (s->ships[i].active && s->ships[i].alive) alive++;
+    if (alive == 0) return;
+
+    s->prize_rng = xorshift32(s->prize_rng);
+    int nth = (int)((s->prize_rng >> 8) % (uint32_t)alive);
+    int host = -1;
+    for (int i = 0; i < s->ship_count; i++) {
+        if (!s->ships[i].active || !s->ships[i].alive) continue;
+        if (nth-- == 0) { host = i; break; }
+    }
+    if (host < 0) return;
+
+    int slot = roll_green(cfg, &s->prize_rng);
+    if (slot < 0) return;
+
+    int32_t span = cfg->green_far - cfg->green_near;
+    if (span < 0) span = 0;
+    for (int n = 0; n < 16; n++) {
+        s->prize_rng = xorshift32(s->prize_rng);
+        uint16_t heading = (uint16_t)(s->prize_rng >> 16);
+        s->prize_rng = xorshift32(s->prize_rng);
+        int32_t reach = cfg->green_near
+                        + (span ? (int32_t)((s->prize_rng >> 8)
+                                            % (uint32_t)span) : 0);
+        int32_t dx, dy;
+        heading_dir(heading, &dx, &dy);
+        int32_t x = s->ships[host].x + (int32_t)(((int64_t)dx * reach) >> 15);
+        int32_t y = s->ships[host].y + (int32_t)(((int64_t)dy * reach) >> 15);
+        /* Off the top or left has to be refused here rather than left to the
+         * tile lookup: dividing a negative truncates toward zero, so every
+         * point in the first tile's worth of negative space reads as tile
+         * zero and would place a green inside the border. */
+        if (x < 0 || y < 0) continue;
+        if (!ground(cfg->map, x / (SIM_TILE_PX * 256), y / (SIM_TILE_PX * 256)))
+            continue;
+        /* A safe zone is where a pilot cannot be shot, so a prize lying in
+         * one is a free upgrade collected at leisure. */
+        if (sim_in_safe(cfg->map, x, y)) continue;
+
+        int at = -1;
+        for (int i = 0; i < s->green_count; i++)
+            if (!s->greens[i].active) { at = i; break; }
+        if (at < 0) {
+            if (s->green_count >= SIM_MAX_GREENS) return;
+            at = s->green_count++;
+        }
+        sim_green *g = &s->greens[at];
+        g->active = 1;
+        g->slot = (uint8_t)slot;
+        g->x = x;
+        g->y = y;
+        g->life = cfg->green_life;
+        return;
+    }
+}
+
+/* Age what is out, put out what is missing, and hand over what anybody
+ * reached.
+ *
+ * The field is the zone's, and a prediction client only takes from it.
+ *
+ * Same rule as a death and a proximity fuse (see `deathless` in sim.h), for
+ * the same reason: a green a client puts out or expires on its own is one the
+ * next snapshot takes back. Two things made that louder here than anywhere
+ * else. Interest filtering writes an out-of-radius green inert, so a client
+ * counts the handful near it against a room-wide `green_target` and always
+ * believes the field is short; and `green_at` is state rather than wire, so
+ * every snapshot left it at zero and the next tick put one out. What a pilot
+ * saw in Free Roam was a prize blinking in and out of existence somewhere near
+ * them at snapshot rate, none of them real.
+ *
+ * Their own pickup is still predicted, so the prize and its sound land on the
+ * frame they were earned. Everyone else's arrives the way a remote death does:
+ * as a green that is no longer in the snapshot. */
+static void update_greens(sim_state *s, const sim_settings *cfg,
+                          sim_events *ev) {
+    int live = 0;
+    for (int i = 0; i < s->green_count; i++) {
+        sim_green *g = &s->greens[i];
+        if (!g->active) continue;
+        if (!cfg->deathless && g->life > 0 && --g->life == 0) {
+            g->active = 0;
+            continue;
+        }
+        live++;
+
+        for (int k = 0; k < s->ship_count; k++) {
+            sim_ship *sh = &s->ships[k];
+            if (!sh->active || !sh->alive) continue;
+            if (!may_settle(cfg, k)) continue;
+            if (!hull_reaches(&cfg->classes[sh->cls], sh->heading,
+                              sh->x, sh->y, g->x, g->y, cfg->green_radius))
+                continue;
+            /* Taken even when the slot is already full. The green is gone
+             * either way, which is what stops one a pilot cannot use sitting
+             * on their route forever, and the event says how much they hold
+             * so a client can tell a step up from a shrug. */
+            sim_grant(sh, cfg, g->slot);
+            emit(ev, SIM_EV_GREEN, (uint8_t)k, g->slot, held(sh, g->slot));
+            g->active = 0;
+            live--;
+            break;
+        }
+    }
+
+    if (cfg->deathless) return;
+    if (live >= cfg->green_target) return;
+    if (s->green_at > 0) { s->green_at--; return; }
+    s->green_at = cfg->green_every;
+    put_green(s, cfg);
 }
 
 /* ---- kit grants ---- */
@@ -2352,6 +2546,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
     }
 
     update_flags(next, cfg, ev);
+    update_greens(next, cfg, ev);
 
     /* --- weapons ---
      *
@@ -2707,7 +2902,19 @@ uint64_t sim_hash(const sim_state *s) {
                             | ((uint32_t)f->team << 24));
         h = hash_u32(h, (uint32_t)f->x);
         h = hash_u32(h, (uint32_t)f->y);
-        h = hash_u32(h, f->cooldown);
+        h = hash_u32(h, (uint32_t)f->cooldown | ((uint32_t)f->held << 16));
+    }
+    /* The count and not the clock: `green_at` and `prize_rng` are the
+     * authority's, no snapshot carries either, and this hash is what a pack
+     * round trip is checked against. A divergence in the clock shows up
+     * anyway, in the greens it puts out, which are hashed below. */
+    h = hash_u32(h, s->green_count);
+    for (int i = 0; i < s->green_count; i++) {
+        const sim_green *g = &s->greens[i];
+        h = hash_u32(h, (uint32_t)g->active | ((uint32_t)g->slot << 8)
+                            | ((uint32_t)g->life << 16));
+        h = hash_u32(h, (uint32_t)g->x);
+        h = hash_u32(h, (uint32_t)g->y);
     }
     for (uint16_t i = 0; i < s->weapon_count; i++) {
         const sim_weapon *w = &s->weapons[i];

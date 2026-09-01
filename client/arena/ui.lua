@@ -1432,6 +1432,14 @@ local function own_arrow(ax, ay, ox, oy, side, me)
           pal.WHITE)
 end
 
+-- A flag at four pixels: the same pennant wherever an instrument shows one,
+-- so a flag looks like a flag on the dial, on the map, and pinned to a rim.
+local function pennant(px, py, s, col)
+    F.layer:seg(px, ry(py + 3 * s, 0), px, ry(py - 3.5 * s, 0), s, pal.a(col, 0.95))
+    F.layer:tri(px, ry(py - 3.5 * s, 0), px + 4 * s, ry(py - 2 * s, 0),
+          px, ry(py - 0.5 * s, 0), pal.a(col, 0.9))
+end
+
 local function radar(cx, cy, me)
     -- No panel and no inset. The dial is the most valuable thing on screen on
     -- a map a thousand tiles across and it keeps every pixel; what made it
@@ -1513,17 +1521,30 @@ local function radar(cx, cy, me)
 
     local my_team = view_team
     for i = 0, sim.flag_count() - 1 do
-        local fx, fy, team = sim.flag_at(i)
+        local fx, fy, team, carried = sim.flag_at(i)
         local px, py = put(fx, fy)
+        local col = (team == 255) and pal.INK
+            or (team == my_team and pal.FRIEND or pal.ENEMY)
         if px then
-            local col = (team == 255) and pal.INK
-                or (team == my_team and pal.FRIEND or pal.ENEMY)
             -- A pennant rather than a bar: a flag should look like one even
             -- at four pixels.
-            F.layer:seg(px, ry(py + 3 * F.scale, 0), px, ry(py - 3.5 * F.scale, 0), F.scale,
-                  pal.a(col, 0.95))
-            F.layer:tri(px, ry(py - 3.5 * F.scale, 0), px + 4 * F.scale, ry(py - 2 * F.scale, 0),
-                  px, ry(py - 0.5 * F.scale, 0), pal.a(col, 0.9))
+            pennant(px, py, F.scale, col)
+        elseif carried and team ~= my_team then
+            -- The runner, as a bearing. Carrying the flag puts you on the
+            -- map (decision 133): the wire has always said where a carried
+            -- flag is, so the dial says it too, pinned to the rim it left
+            -- by. Only a carrier earns this; a flag lying somewhere far away
+            -- is going nowhere and can wait for the map.
+            local dx, dy = fx - qx, fy - qy
+            local m = math.max(math.abs(dx), math.abs(dy))
+            if m > 0 then
+                local inset = 5 * F.scale
+                local ex = ix + (dx * SPAN / m + SPAN) * k
+                local ey = iy + (dy * SPAN / m + SPAN) * k
+                ex = math.min(math.max(ex, ix + inset), ix + r - inset)
+                ey = math.min(math.max(ey, iy + inset), iy + r - inset)
+                pennant(ex, ey, F.scale, col)
+            end
         end
     end
 
@@ -1617,18 +1638,33 @@ local function overview(me)
         end
     end
     bracket(ix, iy, side, side, pal.a(pal.RADAR_TILE, 0.8), 22 * F.scale)
-    -- You, and only you. No ships is the rule above, and it stands: a map
-    -- showing where everybody is would be a wall hack. Where *you* are is
-    -- something you already know, and without it a view of a thousand tiles
-    -- is a picture of somewhere rather than of where you are standing, which
-    -- is the whole question the map exists to answer.
+    -- You, and only you, of the ships. That rule stands: a map showing where
+    -- everybody is would be a wall hack. Where *you* are is something you
+    -- already know, and without it a view of a thousand tiles is a picture of
+    -- somewhere rather than of where you are standing, which is the whole
+    -- question the map exists to answer.
+    --
+    -- The flags are not ships and they are on it, carried ones included,
+    -- which is decision 133: the wire tells every client where every flag is,
+    -- so the map draws it, and being lit map-wide is the cost of picking one
+    -- up, paid knowingly by whoever does. The one map the original's players
+    -- watched all game showed exactly this.
     --
     -- A cell is OVERVIEW_CELL tiles of sixteen pixels, so the world divides
     -- by that to land in the same coordinates the rectangles above use.
-    if ov.grid > 0 and me then
+    if ov.grid > 0 then
         local cell = 4 * 16
-        own_arrow(ox + (sim.ship_x(me) / cell) * k,
-                  oy + (sim.ship_y(me) / cell) * k, ix, iy, side, me)
+        local my_team = view_team
+        for i = 0, sim.flag_count() - 1 do
+            local fx, fy, team = sim.flag_at(i)
+            local col = (team == 255) and pal.INK
+                or (team == my_team and pal.FRIEND or pal.ENEMY)
+            pennant(ox + (fx / cell) * k, oy + (fy / cell) * k, F.scale, col)
+        end
+        if me then
+            own_arrow(ox + (sim.ship_x(me) / cell) * k,
+                      oy + (sim.ship_y(me) / cell) * k, ix, iy, side, me)
+        end
     end
     -- Clicking it again puts the radar back, which is the same gesture that
     -- opened it.
@@ -4856,16 +4892,24 @@ end
 -- under the test harness, which holds every one of these still.
 local HULL_TURN = 11
 
--- How large a hull is drawn, as the radius of the circle that holds it.
-local HULL_ART_R = 78
-
--- The hull's own line, broken to the glass it is drawn on, and never nothing:
--- the height and the drawing both count these, so an absent sentence is an
--- empty list rather than a nil to guard twice.
-local function art_lines(note, kw)
-    if not note or note == "" then return {} end
-    return pages.note_lines(note, kw - 2 * M.ROW_INSET * F.scale) or {}
-end
+-- The drawing stands in an ordinary row, and the name takes a line under it.
+--
+-- Which is the whole of the carousel's height: `land_row_h` asks for one row
+-- of the panel's own and adds the name to it, and the radius falls out of
+-- whatever that leaves. The drawing carried a radius of its own for as long
+-- as it existed, 78 and then 62, and both of them were a picture sized
+-- against nothing: at 78 it stood 168 points tall where the five flight bars
+-- under it take 130 between them, so the section a pilot picks a hull on was
+-- mostly ship. A row is the measure everything else on this panel is drawn
+-- to, so it is the one the ship gets as well. The name under it takes the
+-- same band as a flight row, since it is set at the same weight as one.
+--
+-- The air is two points rather than the six it was. Six is nothing against a
+-- circle of 78 and twelve of a row's forty four, and the hulls do not need
+-- it: `reach` is a radius over every point of the polygon, so a hull as wide
+-- as it is long already stands well inside its own circle.
+local HULL_ART_PAD = 2
+local HULL_NAME_H = 26
 
 -- One hull, turning on its own vertical axis, drawn the way the arena draws
 -- one.
@@ -5038,11 +5082,11 @@ local function land_row(kx, kw, y, h, r)
         -- whose subject is the pilot rather than the ship: `pilot_mark`'s own
         -- comment says a badge is what a seat is issued rather than what sits
         -- in it, and docs/design/spectating.md opens by calling a watcher a
-        -- seat in the roster with no ship in the simulation. See decision 128.
+        -- seat in the roster with no ship in the simulation. See decision 135.
         --
         -- In the instrument gray rather than in your color, because the ship
         -- you turn to is the ship you fly and a watcher flies nothing. The
-        -- word under it stays blue: the stop is still the one you are
+        -- name under it stays blue: the stop is still the one you are
         -- standing on.
         --
         -- And it holds still while every hull on this carousel turns, which
@@ -5050,47 +5094,55 @@ local function land_row(kx, kw, y, h, r)
         -- about its vertical axis is a decal spinning with nothing behind it
         -- to come into view.
         local watching = r.value == "spectate"
-        -- The name and the hull's own line under the drawing, and the
-        -- drawing over what is left. The line wraps to the glass rather than
-        -- running off it: at a phone's measure the longest of them is wider
-        -- than the panel, and a centred run has no edge to be cut against.
-        local lines = art_lines(r.note, kw)
-        local nameh = 30 * F.scale
-        local noteh = #lines * pages.NOTE_LINE * F.scale
-        local mid = y + (h - nameh - noteh) / 2
-        local art_r = math.min((h - nameh - noteh) / 2 - 6 * F.scale,
-                               HULL_ART_R * F.scale)
+        -- The name under the drawing, and the drawing over what is left.
+        --
+        -- A sentence about the hull used to run under the name, wrapped to
+        -- the glass. It went with the height: what it said was where the hull
+        -- stands in speed, thrust, turn, energy and recharge, which is what
+        -- the five bars directly beneath it draw, so it was the page saying
+        -- the same thing twice and taking two more lines to do it.
+        local nameh = HULL_NAME_H * F.scale
+        local mid = y + (h - nameh) / 2
+        local art_r = (h - nameh) / 2 - HULL_ART_PAD * F.scale
         if r.cls then
             hull_art(kx + kw / 2, mid, r.cls, art_r, col, a)
         elseif watching then
+            -- Cut to the circle a hull is drawn in, so the two stops read at
+            -- one size: `reach` is the badge's own, measured off every corner
+            -- it draws the way world.lua measures a hull's when it loads.
             pilot_mark(kx + kw / 2, mid, pal.READ, art_r / WING.reach)
         end
-        txt(r.label, kx + kw / 2, y + h - noteh - nameh / 2,
-            TYPE.LEAD * F.scale, pal.a(col, a), "center", MENU_FONT,
+        -- The name is set at a row's own weight rather than a heading's. It
+        -- is the label of the thing the row holds, the way every other label
+        -- on this panel is, and a heading over a drawing thirty points tall
+        -- was the largest type on the page announcing the smallest thing on
+        -- it.
+        txt(r.label, kx + kw / 2, y + h - nameh / 2,
+            TYPE.ROW * F.scale, pal.a(col, a), "center", MENU_FONT,
             r.value ~= "spectate")
-        local ny = y + h - noteh + pages.NOTE_LINE * F.scale / 2
-        for _, line in ipairs(lines) do
-            -- Raw, because `note_lines` cased the sentence once before it
-            -- broke it. Left to `txt` the case is applied to each line as it
-            -- is drawn, and a sentence that wrapped comes back with a capital
-            -- in the middle of itself: "behind a fused blast and six /
-            -- Fragments".
-            txt(line, kx + kw / 2, ny, TYPE.BODY * F.scale, pal.READ,
-                "center", MENU_FONT, true)
-            ny = ny + pages.NOTE_LINE * F.scale
-        end
         -- The two arrows, at the glass's own edges and level with the middle
-        -- of the ship rather than with the row: what they turn is the
-        -- drawing, so that is what they stand beside.
+        -- of the row.
+        --
+        -- The middle of the drawing before that, on the argument that the
+        -- drawing is what they turn. What that missed is that the name turns
+        -- with it: the pair is one thing, and standing beside its upper half
+        -- put both arrows in the top third of the row with the row's own
+        -- centre line empty between them.
+        --
+        -- Each takes the whole row, which is over the floor a platform puts
+        -- under a fingertip and is centred on the mark it draws. It was a
+        -- fixed 52 points, taller than this row, so both boxes hung over the
+        -- edge into whatever the panel had put above them.
+        local rowmid = y + h / 2
         for _, d in ipairs({{-1, kx + 24 * F.scale},
                             {1, kx + kw - 24 * F.scale}}) do
             local dir, ax = d[1], d[2]
-            F.layer:tri(ax + dir * 7 * F.scale, ry(mid),
-                        ax - dir * 6 * F.scale, ry(mid - 9 * F.scale),
-                        ax - dir * 6 * F.scale, ry(mid + 9 * F.scale),
+            F.layer:tri(ax + dir * 7 * F.scale, ry(rowmid),
+                        ax - dir * 6 * F.scale, ry(rowmid - 9 * F.scale),
+                        ax - dir * 6 * F.scale, ry(rowmid + 9 * F.scale),
                         pal.a(pal.FRIEND, 0.9))
-            hit(ax - 24 * F.scale, mid - 26 * F.scale, 48 * F.scale,
-                52 * F.scale, "land_page_ship", dir, nil, 1)
+            hit(ax - 24 * F.scale, y, 48 * F.scale, h,
+                "land_page_ship", dir, nil, 1)
         end
         -- The ship itself takes no press. Turning the carousel is the whole
         -- of choosing: what a pilot arrives as changes as they turn, so
@@ -5164,10 +5216,7 @@ end
 -- one, the roster's column head is a band, and the hairline over the reset is
 -- the rule the account list already draws between its two groups.
 function pages.land_row_h(r, drh)
-    if r.kind == "art" then
-        return (198 + #art_lines(r.note, panel_width()) * pages.NOTE_LINE)
-            * F.scale
-    end
+    if r.kind == "art" then return drh + HULL_NAME_H * F.scale end
     if r.kind == "stat" then return 26 * F.scale end
     if r.kind == "rule" then return 9 * F.scale end
     return drh

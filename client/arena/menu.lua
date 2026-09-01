@@ -113,11 +113,6 @@ M.ask = nil             -- {head, keys = {{label, act}}, sel, fields, field}
 -- typeable because it is never shown or spoken, only hashed.
 local NAME_MAX = 24
 local PASSWORD_MAX = 64
--- How often a guest with nothing recorded yet re-asks for their career, which
--- is the figure the guest warning arms on. Slow, because what it is watching
--- for happens once in an account's life.
-local career_due = 0
-local CAREER_EVERY = 10
 -- How many hulls the ship page is drawing across, set by whoever draws it.
 -- The page is a grid rather than a list and its arrows have to mean what a
 -- grid's arrows mean, which needs the one number this file cannot work out
@@ -222,14 +217,18 @@ local CAPS = {{0, "display"}, {60, "60 a second"}, {30, "30 a second"}}
 -- Not the two ladders either, though those really are the hull's. They are
 -- nowhere on this page, so a line about them is one a pilot has to take on
 -- faith, and it would be sitting over five bars that say something else.
+-- The roster, in the order the carousel turns through it.
+--
+-- Names alone. Each one carried a sentence about how the hull flies, drawn
+-- under its name on the body section, and the five flight bars directly under
+-- that sentence say the same thing as bars: a line reading "the fastest hull
+-- in the game, on the thinnest pool in it" stood over a full speed bar and an
+-- almost empty energy one. The bars are the better half of that pair, since
+-- they answer "faster than what" against the rest of the roster, and the
+-- sentence was costing the page two more lines to agree with them.
 local HULLS = {
-    {"Apex", "Quick at everything that moves it, and shallow in the pool"},
-    {"Wedge", "A deep pool that fills slower than any, on a hull slow to turn"},
-    {"Chord", "Turns inside everything and outruns nothing"},
-    {"Anvil", "The deepest pool and the quickest to fill it, on the slowest hull"},
-    {"Cipher", "The fastest hull in the game, on the thinnest pool in it"},
-    {"Facet", "Second quickest into a turn, on a pool as thin as the game has"},
-    {"Lattice", "Third in speed, third in the pool, and slow to fill it back"},
+    {"Apex"}, {"Wedge"}, {"Chord"}, {"Anvil"},
+    {"Cipher"}, {"Facet"}, {"Lattice"},
 }
 
 local SAVE = sys.get_save_file("vectorwake", "pilot")
@@ -903,17 +902,10 @@ function M.sect_rows(cls, sect, at)
         if at < 0 or at > #HULLS then at = M.panel_home() end
         local h = roster[at + 1]
         if h then
-            local hull = HULLS[at + 1]
             rows[#rows + 1] = {kind = "art", label = h.label, value = h.value,
                                at = at, pages = #HULLS + 1,
                                cls = type(h.value) == "number" and h.value
-                                   or nil,
-                               -- What this hull is, in the one line the
-                               -- roster has carried since it was written.
-                               -- Nothing had ever drawn it: the page that
-                               -- named a hull was a row, and a row of a list
-                               -- has no second line to put a sentence on.
-                               note = hull and hull[2] or h.note}
+                                   or nil}
             for i, name in ipairs(FLIGHT_NAMES) do
                 if h.bars then
                     rows[#rows + 1] = {kind = "stat", label = name,
@@ -1199,8 +1191,7 @@ function M.landing_ships()
                            bars = flight_bars(i - 1)}
     end
     rows[#rows + 1] = {label = "spectate", value = "spectate",
-                       here = M.spectating(),
-                       note = "watch the room from nobody's cockpit"}
+                       here = M.spectating()}
     return rows
 end
 
@@ -2208,12 +2199,18 @@ end
 -- are no upgrades. A rating is the only durable thing a pilot has now, so the
 -- question is simply whether they have started earning one.
 --
--- Up here rather than beside the view that reads it, because `M.tick` reads
--- it too: the career this asks about is fetched once a session, which is a
--- session too late for the guest who flies their first game in it.
+-- Two sources, because one rating is durable and the other is happening now.
+-- The session reply carries a row per zone and answers for every game this
+-- pilot has ever flown, which is the whole of it for somebody who arrives
+-- already rated. It cannot answer for the guest whose first rated game lands
+-- in the room they are sitting in, and that is the one this warning is for:
+-- the roster names the games flown in this seat twice a second, so the first
+-- one arms it about as fast as the death that earned it is drawn.
 local function guest_stakes()
     if account.base == "" or account.claimed then return false end
-    return ((account.career or {}).games or 0) > 0
+    if account.rated then return true end
+    local me = (net.pilots or {})[net.me]
+    return (me and (me.games or 0) or 0) > 0
 end
 
 -- And the same question from outside, for the landing's account stop, where
@@ -2255,29 +2252,6 @@ function M.tick(dt)
         if not held then M.stack = {} end
     end
     if M.at() ~= "controls" then M.foot = nil end
-    -- The career, while a guest still has nothing a sweep would cost
-    -- them. It was also re-asked whenever the pilot page came up, and that
-    -- page is gone: the warning below is the only reader left, and it reads
-    -- from every tab rather than from a page you have to visit.
-    --
-    -- One request per session was enough while the pilot page was the only
-    -- reader, since that page asked again on arrival; a guest's first rated
-    -- game is filed long after the session woke. So the copy this client held
-    -- said no games for the whole of the session the first game was flown in,
-    -- and the warning that is supposed to arrive the moment there is
-    -- something to lose arrived a session late, which for a player who never
-    -- comes back is never.
-    --
-    -- It stops as soon as it has an answer, and it never starts for a claimed
-    -- pilot or for a guest who has already bought a rung.
-    career_due = career_due - (dt or 0)
-    if career_due <= 0 then
-        career_due = CAREER_EVERY
-        if account.base ~= "" and not account.claimed and not guest_stakes()
-        then
-            account.refresh_career()
-        end
-    end
 end
 
 -- What the drawing code needs, and nothing about how it is drawn. Values are

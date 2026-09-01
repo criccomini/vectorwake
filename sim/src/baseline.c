@@ -386,6 +386,33 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->flag_radius = 18 * 256;
     /* A dropped flag stays put for two seconds before another hull can take it. */
     cfg->flag_drop_cooldown = 200;
+    /* Flags are carried, and held for as long as their carrier lives. Both
+     * are the original's defaults and both are what a War zone wants; a turf
+     * zone clears the first and a zone that thinks a carrier should have to
+     * work sets the second. */
+    cfg->flag_carry = 1;
+    cfg->flag_carry_ticks = 0;
+    /* No greens. Every match game we ship flies the build a pilot chose and
+     * nothing else, so this is off unless a zone turns it on. The rest of the
+     * numbers are what a zone that does turn it on gets without arguing.
+     *
+     * The ring is six to twenty-eight tiles, which is docs/design/maps.md's:
+     * outside the first so a green is a trip rather than a gift, inside the
+     * second so it lands on the radar of the pilot it appeared for. A green
+     * lies there for a minute, and one goes out every second and a half,
+     * which fills a two dozen field in about half a minute from empty. */
+    cfg->green_target = 0;
+    cfg->green_life = 6000;
+    cfg->green_every = 150;
+    cfg->green_near = 6 * SIM_TILE_PX * 256;
+    cfg->green_far = 28 * SIM_TILE_PX * 256;
+    /* The same reach a flag is taken from. Both are "fly into it". */
+    cfg->green_radius = 18 * 256;
+    /* Weights are a zone's own: what a green may be is what that game is
+     * about, and a table here would be a fifth opinion about the tech tree.
+     * Empty means no greens even where one was asked for, which is what an
+     * unset table should mean. */
+    memset(cfg->green_weight, 0, sizeof cfg->green_weight);
     /* Sixty-four is four times what the original aimed a public room at:
      * General:DesiredPlaying defaults to 15 playing pilots and its whole job is
      * deciding when to open another arena. So this is the room size we think

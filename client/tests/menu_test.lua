@@ -43,9 +43,6 @@ local account = {
     refuse = nil, password = nil, logged = nil, renamed = 0,
     profiles = {},
 }
-function account.refresh_career()
-    account.asked_career = (account.asked_career or 0) + 1
-end
 function account.online()
     return account.base ~= ""
 end
@@ -708,11 +705,11 @@ do
 
     -- A key somebody else is on: the two trade, and nothing is left over. That
     -- is the property that makes this safe with no confirmation on it, and a
-    -- pilot who put `map` on W would otherwise have to hunt for their burst.
+    -- pilot who put `map` on W would otherwise have to hunt for their charge.
     menu.press_row(map_at)
-    local traded = menu.bind_chord({"space"})
+    local traded = menu.bind_chord({"d"})
     check("a taken key trades", traded
-          and binds.chord_of.map[1] == "space"
+          and binds.chord_of.map[1] == "d"
           and binds.chord_of.guns[1] == "z",
           table.concat(binds.chord_of.map, "+") .. " / "
           .. table.concat(binds.chord_of.guns, "+"))
@@ -1299,42 +1296,36 @@ check("this file holds no cursor of its own",
 -- question is a dot on the landing's account stop now, which landing_test.lua
 -- reads; what is left here is the rule underneath it.
 do
-    local kept = {claimed = account.claimed, career = account.career}
-    account.claimed = false
-    account.career = nil
+    local kept = {claimed = account.claimed, rated = account.rated,
+                  pilots = net.pilots, me = net.me}
+    account.claimed, account.rated = false, nil
+    net.pilots, net.me = {}, 0
     check("a fresh guest has nothing to lose", menu.guest_stakes() == false)
-    account.career = {games = 1, kills = 0, deaths = 1}
-    check("a rated game flown arms the warning", menu.guest_stakes() == true)
+    account.rated = true
+    check("a rated zone on the session arms the warning",
+          menu.guest_stakes() == true)
     account.claimed = true
     check("and signing up takes it down", menu.guest_stakes() == false)
-    account.claimed, account.career = kept.claimed, kept.career
-end
 
--- The figure it arms on is rated games, and a guest's first one is filed while
--- they are flying: the copy fetched when the session woke says none for the
--- whole of the session the game was flown in. So the menu asks again while the
--- answer is still nothing, and stops the moment it is not.
-do
-    local kept = {claimed = account.claimed, career = account.career,
-                  asked = account.asked_career}
-    open()
-    account.claimed, account.career = false, nil
-    account.asked_career = 0
-    menu.tick(20)
-    check("a guest with nothing recorded re-asks for their career",
-          account.asked_career > 0, tostring(account.asked_career))
-    local asked = account.asked_career
-    account.career = {games = 2, kills = 3, deaths = 1}
-    menu.tick(20)
-    check("and stops once a game has been flown",
-          account.asked_career == asked, tostring(account.asked_career))
-    account.career, account.asked_career = nil, 0
-    account.claimed = true
-    menu.tick(20)
-    check("a signed-in pilot is never asked on this timer",
-          account.asked_career == 0, tostring(account.asked_career))
-    account.claimed = kept.claimed
-    account.career, account.asked_career = kept.career, kept.asked
+    -- The other half, and the one the warning is really for: a guest whose
+    -- first rated game lands in the room they are sitting in. The session
+    -- said no and cannot be asked again mid-match, so the roster is what
+    -- arms it, off the games flown in this seat.
+    account.claimed, account.rated = false, false
+    net.me = 3
+    net.pilots = {[3] = {games = 0}}
+    check("a seat that has flown nothing leaves it down",
+          menu.guest_stakes() == false)
+    net.pilots = {[3] = {games = 1}}
+    check("and the first rated game on the roster arms it",
+          menu.guest_stakes() == true)
+    -- A watcher holds no seat, so there is no row to read and nothing to say.
+    net.me = 255
+    check("a watcher with no seat is not warned",
+          menu.guest_stakes() == false)
+
+    account.claimed, account.rated = kept.claimed, kept.rated
+    net.pilots, net.me = kept.pilots, kept.me
 end
 
 -- --- what a tick tidies up ------------------------------------------------
@@ -1503,73 +1494,30 @@ do
           #stats == 5 and stats[1] == "speed" and stats[5] == "recharge"
           and type(body[2].share) == "number",
           table.concat(stats, " "))
-    -- Every hull says where it stands in the five rows drawn under it, which
-    -- is what that sentence is for now. It was the silhouette while every
-    -- hull flew the same row, and then the weapons for a day, and both of
-    -- those stopped being the hull's.
-    local said = {}
+    -- A hull is its name, its drawing and those five bars, and nothing else.
+    --
+    -- Each one used to carry a sentence drawn under the name, saying where
+    -- the hull stood in speed, thrust, turn, energy and recharge. The bars
+    -- immediately under it say that, against the rest of the roster rather
+    -- than in adjectives, so the page was agreeing with itself out loud and
+    -- spending two wrapped lines a hull to do it.
+    local said = nil
     for at = 0, 6 do
         local art = menu.sect_rows(0, "body", at)[1]
-        said[#said + 1] = art.note or ""
+        if art.note or art.detail then said = art.label end
     end
-    check("every hull says where it stands in its flight", #said == 7
-          and said[5]:find("fastest") ~= nil and said[4]:find("slowest") ~= nil
-          and said[7]:find("speed") ~= nil, said[5])
-    -- And about nothing but those five. A gun that comes off walls and a
-    -- blast that throws fragments are the pilot's since decision 117, so a
-    -- line naming one describes somebody's build; the two ladders are the
-    -- hull's and are still not here, because they are nowhere on the page the
-    -- sentence sits on. Matched on whole words, so a hull that outruns
-    -- everything around it is not read as a hull with rounds.
-    local carried = nil
-    for _, line in ipairs(said) do
-        for _, word in ipairs({"gun", "guns", "bomb", "bombs", "blast",
-                               "round", "rounds", "shot", "shots", "fragment",
-                               "fragments", "repel", "burst", "rack",
-                               "bouncing", "fused"}) do
-            if line:lower():find("%f[%a]" .. word .. "%f[%A]") then
-                carried = line
-            end
-        end
-    end
-    check("and about nothing it does not fly with", carried == nil,
-          tostring(carried))
-    -- Nor about the shape, which is the drawing's job on that page.
-    local shaped = nil
-    for _, line in ipairs(said) do
-        for _, word in ipairs({"narrow", "delta", "pentagon", "square",
-                               "silhouette", "broadside"}) do
-            if line:lower():find(word) then shaped = line end
-        end
-    end
-    check("and none of them describes its shape", shaped == nil,
-          tostring(shaped))
-    -- Every line is a claim about the `flight` table, and a claim naming a
-    -- row has to name one that is drawn. The five under the drawing are
-    -- speed, thrust, turn, energy and recharge; "pool" is what this interface
-    -- calls the energy row out loud, so it counts.
-    local blank = nil
-    for _, line in ipairs(said) do
-        local names = 0
-        for _, word in ipairs({"speed", "fast", "slow", "thrust", "moves",
-                               "turn", "pool", "fill", "shallow", "deep",
-                               "thin"}) do
-            if line:lower():find(word) then names = names + 1 end
-        end
-        if names < 2 then blank = line end
-    end
-    check("and every one of them names two rows it can be checked against",
-          blank == nil, tostring(blank))
+    check("no hull carries a sentence of its own", said == nil,
+          tostring(said))
 
     -- Turning wraps at either end, and sitting out is the page past the
-    -- roster: no ship to draw, and a sentence where one would have been.
+    -- roster: a name and no ship to draw under it.
     check("the carousel wraps at either end",
           menu.hull_page(7, 1) == 0 and menu.hull_page(0, -1) == 7,
           menu.hull_page(7, 1) .. "/" .. menu.hull_page(0, -1))
     local out = menu.sect_rows(0, "body", 7)
     check("and sitting out is its last page",
-          #out == 1 and out[1].value == "spectate" and out[1].cls == nil
-          and out[1].note ~= nil, #out .. " rows")
+          #out == 1 and out[1].value == "spectate" and out[1].cls == nil,
+          #out .. " rows")
     -- A stat that steps nothing would take a credit and change nothing, so no
     -- slot is offered for one even here.
     local slots = 0

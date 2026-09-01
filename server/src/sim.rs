@@ -34,6 +34,10 @@ pub const MAX_SPECS: usize = 64;
 pub const MAX_PATTERNS: usize = 64;
 pub const MAP_TILES: usize = 1024;
 pub const TILE_PX: i32 = 16;
+/// `SIM_TILE_TURF`, the tile class a map draws a flag stand with. Read off
+/// the feature table rather than by walking tiles, which is what the table is
+/// for.
+pub const TILE_TURF: u8 = 8;
 
 pub const BTN_LEFT: u16 = 1;
 pub const BTN_RIGHT: u16 = 2;
@@ -76,6 +80,7 @@ pub const EV_WARP: u8 = 11;
 pub const EV_RICOCHET: u8 = 12;
 pub const EV_ASSIST: u8 = 13;
 pub const EV_STREAK: u8 = 14;
+pub const EV_GREEN: u8 = 15;
 
 pub const MAX_FEATURES: usize = 256;
 pub const MAP_PACK_MAX: usize = MAP_TILES * MAP_TILES * 3 + 14;
@@ -374,6 +379,23 @@ pub struct sim_settings {
     pub gravity_bombs: u8,
     pub flag_radius: i32,
     pub flag_drop_cooldown: u16,
+    /// Whether a flag leaves its stand when taken. Set is War, where a flag
+    /// is carried home; clear is Turf, where it changes hands where it
+    /// stands. See sim.h.
+    pub flag_carry: u8,
+    /// Ticks one pilot may hold a flag before it drops on its own. Zero is no
+    /// limit.
+    pub flag_carry_ticks: u16,
+    /// Greens the room keeps on the field, and zero is a zone with none.
+    pub green_target: u8,
+    pub green_life: u16,
+    pub green_every: u16,
+    /// The ring around a live ship one may appear in, Q8 px.
+    pub green_near: i32,
+    pub green_far: i32,
+    pub green_radius: i32,
+    /// How often each kit slot is rolled, against the sum of them all.
+    pub green_weight: [u8; SLOT_COUNT],
     pub max_ships: u8,
     /// Whose death this instance may conclude on its own. The server keeps
     /// both at zero, which `sim_settings_baseline` writes: every death is
@@ -454,7 +476,22 @@ pub struct sim_flag {
     pub x: i32,
     pub y: i32,
     pub cooldown: u16,
+    /// Ticks the current carrier has had it, against `flag_carry_ticks`.
+    pub held: u16,
 }
+
+/// Mirrors `sim_green`: one prize on the ground, and the kit slot it fills.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct sim_green {
+    pub active: u8,
+    pub slot: u8,
+    pub x: i32,
+    pub y: i32,
+    pub life: u16,
+}
+
+pub const MAX_GREENS: usize = 64;
 
 pub const MAX_FLAGS: usize = 16;
 pub const TEAM_NONE: u8 = 255;
@@ -509,6 +546,16 @@ pub struct sim_state {
     pub weapons: [sim_weapon; MAX_WEAPONS],
     pub flags: [sim_flag; MAX_FLAGS],
     pub flag_count: u8,
+    pub greens: [sim_green; MAX_GREENS],
+    pub green_count: u8,
+    /// The stream the greens are rolled from, and the clock they are put out
+    /// on. Neither is packed and neither is hashed: they belong to whoever is
+    /// running the field. `rng` above is on the wire, because a client needs
+    /// it to predict a spread and a spawn, so rolling a green from it would
+    /// publish where the next one is going to land.
+    pub prize_rng: u32,
+    /// Ticks until the next green is put out.
+    pub green_at: u16,
 }
 
 #[repr(C)]
@@ -539,6 +586,7 @@ pub struct sim_events {
 
 extern "C" {
     pub fn sim_init(s: *mut sim_state, seed: u32);
+    pub fn sim_prize_seed(s: *mut sim_state, seed: u32);
     pub fn sim_spawn(
         s: *mut sim_state,
         cls: u8,
@@ -708,7 +756,7 @@ pub const PACK_MAX: usize = 64 * 1024;
 /// is worked out: every seat carrying its owner-only tail. Grows whenever that
 /// tail does, and `a_full_private_snapshot_uses_the_state_bound` below is what
 /// notices when this copy has not kept up.
-pub const STATE_PACK_MAX: usize = 62_883;
+pub const STATE_PACK_MAX: usize = 63_588;
 pub const PACK_PRIVATE_ALL: u8 = 0x01;
 pub const SETTINGS_PACK_MAX: usize = 8192;
 pub const UP_COUNT: usize = 5;
@@ -880,10 +928,16 @@ impl World {
         self.map = map;
         self.reset_settings();
         // Nothing in the old geometry survives the swap. A flag stands on a
-        // tile of a map that is gone and a round in the air was fired down a
-        // lane that no longer exists.
+        // tile of a map that is gone, a round in the air was fired down a lane
+        // that no longer exists, and a green is lying on ground that may be
+        // wall on the next map. The prize stream itself stays: it belongs to
+        // the room rather than to the ground, and a room that rerolled it on
+        // every rotation would be one a patient client could resynchronize
+        // against.
         self.state.flag_count = 0;
         self.state.weapon_count = 0;
+        self.state.green_count = 0;
+        self.state.green_at = 0;
     }
 
     /// Another simulation of the same geometry, for a second room of a zone.
@@ -986,6 +1040,20 @@ impl World {
     /// state, and the scratch and event buffers a step needs. The one place a
     /// World is assembled, so a room built here and a room built by `sibling`
     /// start from the same numbers.
+    /// The built-in arena with flag stands painted on the tiles named, for a
+    /// test that needs ground which says where its flags go. Re-indexed, so
+    /// the stands are in the feature table where `flag_stands` reads them.
+    #[cfg(test)]
+    pub fn arena_with_stands(seed: u32, tiles: &[(u16, u16)]) -> Self {
+        let mut map: Box<sim_map> = zeroed_box();
+        unsafe { sim_map_arena(&mut *map) };
+        for (tx, ty) in tiles.iter().copied() {
+            map.tile[ty as usize * MAP_TILES + tx as usize] = TILE_TURF;
+        }
+        unsafe { sim_map_index(&mut *map) };
+        Self::on_map(seed, std::sync::Arc::from(map))
+    }
+
     pub fn on_map(seed: u32, map: std::sync::Arc<sim_map>) -> Self {
         let mut cfg: Box<sim_settings> = zeroed_box();
         unsafe { sim_settings_baseline(&mut *cfg, &*map) };
@@ -998,6 +1066,18 @@ impl World {
             scratch: zeroed_box(),
             events: zeroed_box(),
         }
+    }
+
+    /// Install the private stream the greens are rolled from.
+    ///
+    /// A room that means to put greens out calls this once, with a value
+    /// nothing on the wire reveals. `sim_init` leaves it at zero and a state
+    /// with no stream sows nothing, so a zone that asks for greens and never
+    /// gets any is a room that skipped this, which is the failure this shape
+    /// was chosen for: an empty Free Roam is noticed, and greens landing where
+    /// a client could have worked out in advance are not.
+    pub fn seed_prizes(&mut self, seed: u32) {
+        unsafe { sim_prize_seed(&mut *self.state, seed) };
     }
 
     /// Where the map says a ship of this team starts, if it says anything.
@@ -1196,8 +1276,34 @@ impl World {
         Self::on_map(seed, map)
     }
 
+    /// Stand a flag on a tile, in the middle of it.
+    ///
+    /// The middle rather than the corner, which is where this used to put one:
+    /// a stand is claimed from a radius around a point, and a point on the
+    /// corner of four tiles reaches into three of them a pilot was not aiming
+    /// at. It matters more for turf than it ever did for War, since there the
+    /// point is the whole of the objective.
     pub fn add_flag(&mut self, tile_x: i32, tile_y: i32) -> i32 {
-        unsafe { sim_add_flag(&mut *self.state, tile_x * TILE_PX, tile_y * TILE_PX) }
+        unsafe {
+            sim_add_flag(
+                &mut *self.state,
+                tile_x * TILE_PX + TILE_PX / 2,
+                tile_y * TILE_PX + TILE_PX / 2,
+            )
+        }
+    }
+
+    /// Every flag stand the map names, as tiles. `SIM_TILE_TURF` is the tile
+    /// class a map draws one with, and it means the same thing in both flag
+    /// games: War carries its flags off these and Turf leaves them on them.
+    pub fn flag_stands(&self) -> Vec<(i32, i32)> {
+        self.map
+            .features
+            .iter()
+            .take(self.map.feature_count as usize)
+            .filter(|f| f.kind == TILE_TURF)
+            .map(|f| (f.tx as i32, f.ty as i32))
+            .collect()
     }
 
     pub fn flags_held(&self, team: u8) -> i32 {
@@ -1443,6 +1549,7 @@ mod layout {
             ("SIM_EV_RICOCHET", EV_RICOCHET),
             ("SIM_EV_ASSIST", EV_ASSIST),
             ("SIM_EV_STREAK", EV_STREAK),
+            ("SIM_EV_GREEN", EV_GREEN),
         ] {
             assert_eq!(
                 found.get(name).copied(),
@@ -1452,7 +1559,7 @@ mod layout {
         }
         assert_eq!(
             found.len(),
-            14,
+            15,
             "the core has an event the mirror has never heard of"
         );
     }
@@ -1524,6 +1631,8 @@ mod layout {
         for flag in &mut world.state.flags {
             flag.active = 1;
         }
+        // And the greens, which are the other thing a room can be full of.
+        world.state.green_count = MAX_GREENS as u8;
 
         let mut packed = vec![0u8; STATE_PACK_MAX];
         let len = world.pack_around(&mut packed, 0, 0, -1, 0, PACK_PRIVATE_ALL);

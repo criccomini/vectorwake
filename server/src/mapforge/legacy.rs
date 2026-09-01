@@ -122,6 +122,9 @@ impl Brief {
             allow_wormholes: self.allow_wormholes,
             wall_band: (1.5, 8.0),
             wall_target: 4.0,
+            // Version 1 is frozen: it drew the melee maps still in the
+            // catalog and draws no stands, so it asks for none.
+            stands: 0,
         }
     }
 

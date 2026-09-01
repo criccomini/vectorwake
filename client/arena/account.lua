@@ -24,11 +24,15 @@ M.account = 0
 M.name = ""
 M.claimed = false
 M.note = ""
--- The career, as the meta-layer tells it: the most-flown class's rating and
--- tier (absent while provisional), rated games across every class, and the
--- durable kill and death totals. Nil until a session has one, which is also
--- what the pilot page draws while the answer is on its way.
-M.career = nil
+-- Whether this account has ever been rated, anywhere. The session reply
+-- carries a row per zone with the games flown in each, so this is that list
+-- asked one question and then forgotten: the rows themselves belong to the
+-- site's pilot page, which reads them from the meta-layer directly.
+--
+-- Nil until a session has answered, which is not the same as false. The one
+-- reader is the guest warning, and warning somebody before you know whether
+-- they have anything to lose is the nagging it exists to avoid.
+M.rated = nil
 -- Whether the meta-layer has ever answered. It separates "waiting" from
 -- "there is nothing there", which are the same empty token and very different
 -- sentences to show somebody.
@@ -157,11 +161,16 @@ local function session(done, force)
         M.note = ""
         refreshed_at = now()
         publish_account()
-        -- The career rides every fresh session rather than waiting for the
-        -- pilot page to ask: the guest banner reads it from any tab, and a
-        -- warning that only arms after you have visited the page it points
-        -- at warns nobody.
-        M.refresh_career()
+        -- A rating per zone rides this reply, because the token carries them
+        -- and the token is built from the same rows. The guest warning wants
+        -- one bit out of that: has this pilot been rated anywhere. A zone
+        -- they have never flown says nothing about a zone they have.
+        M.rated = false
+        if type(r.ratings) == "table" then
+            for _, c in ipairs(r.ratings) do
+                if (tonumber(c.games) or 0) > 0 then M.rated = true break end
+            end
+        end
         if done then done(true) end
     end)
 end
@@ -297,31 +306,13 @@ function M.fetch_replay(id, cb)
     post("/v1/replay", {id = id}, cb)
 end
 
--- The caller's own record, for the pilot page and the guest banner. One
--- request per session plus one per pilot-page visit; the reply is small and
--- the page only moves when a match ends.
-function M.refresh_career()
-    if M.base == "" then return end
-    post("/v1/career", {secret = secret}, function(r)
-        if type(r) ~= "table" then return end
-        M.career = {
-            class = type(r.class) == "string" and r.class or nil,
-            rating = tonumber(r.rating),
-            tier = type(r.tier) == "string" and r.tier or nil,
-            games = tonumber(r.games) or 0,
-            kills = tonumber(r.kills) or 0,
-            deaths = tonumber(r.deaths) or 0,
-        }
-    end)
-end
-
 function M.logout()
     secret = ""
     M.token = ""
     M.account = 0
     M.claimed = false
     M.name = ""
-    M.career = nil
+    M.rated = nil
     save()
     if M.base ~= "" then make_guest() end
 end

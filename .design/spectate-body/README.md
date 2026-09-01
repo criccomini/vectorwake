@@ -5,8 +5,14 @@ ideas, mocked up.
 
 Ten boards, drawn against the client rather than around it. Wings shipped,
 with the banded cut of its feathers, as [decision
-128](../../docs/architecture/decisions.md); the other five are the record of
+135](../../docs/architecture/decisions.md); the other five are the record of
 what it was picked against.
+
+The boards draw the carousel as it stood when they were made, 198 points of
+row with a sentence under the name. Decision 128 has since cut it to an
+ordinary row, so the drawing ships at a third of the size these show it at.
+What they were picked on holds at either size: which drawing, and how the
+feathers are cut.
 
 Chris then asked whether the human icon, the ship with feathers, could be the
 spectate drawing as well. Two more boards for that, and it changed which one

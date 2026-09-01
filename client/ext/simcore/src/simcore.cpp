@@ -1046,6 +1046,29 @@ int FlagAt(lua_State* L) {
     return 4;
 }
 
+int GreenCount(lua_State* L) {
+    lua_pushnumber(L, g_cur->green_count);
+    return 1;
+}
+
+// One green: where it is, what it fills, and whether it is still there.
+//
+// Not interpolated, unlike a flag. A green does not move: it appears, lies
+// still, and stops existing. Blending toward the next snapshot would only
+// smear the moment one is taken, which is the moment worth drawing sharply.
+int GreenAt(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    if (i < 0 || i >= g_cur->green_count) {
+        return luaL_error(L, "green index %d out of range", i);
+    }
+    const sim_green* g = &g_cur->greens[i];
+    lua_pushnumber(L, g->x / 256.0);
+    lua_pushnumber(L, g->y / 256.0);
+    lua_pushnumber(L, g->slot);
+    lua_pushboolean(L, g->active);
+    return 4;
+}
+
 // A map arrives from the zone before anything else does, because prediction
 // runs collision locally and cannot do that against a room it has not got.
 int ApplyMap(lua_State* L) {
@@ -1318,6 +1341,8 @@ const luaL_reg kFunctions[] = {
     {"predicted_death_at", PredictedDeathAt},
     {"flag_count", FlagCount},
     {"flag_at", FlagAt},
+    {"green_count", GreenCount},
+    {"green_at", GreenAt},
     {"ship_x_raw", ShipXRaw},
     {"ship_y_raw", ShipYRaw},
     {"ship_heading_raw", ShipHeadingRaw},
@@ -1370,6 +1395,7 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_EV_FLAG_TAKE); lua_setfield(L, -2, "EV_FLAG_TAKE");
     lua_pushnumber(L, SIM_EV_FLAG_DROP); lua_setfield(L, -2, "EV_FLAG_DROP");
     lua_pushnumber(L, SIM_EV_CHARGE);    lua_setfield(L, -2, "EV_CHARGE");
+    lua_pushnumber(L, SIM_EV_GREEN);     lua_setfield(L, -2, "EV_GREEN");
     lua_pushnumber(L, SIM_UP_COUNT);     lua_setfield(L, -2, "UP_COUNT");
 
     // The kit space, so the hangar never hard-codes a layout the core is free

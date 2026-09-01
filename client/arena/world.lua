@@ -3231,6 +3231,34 @@ function M.flags(fill, glow, my_team, t)
     end
 end
 
+-- Greens: the prizes lying on the ground in a free roam zone.
+--
+-- A diamond rather than a disc, so a prize does not read as a bomb at the
+-- edge of sight, and one shape for all of them: what a green holds is not
+-- drawn, because a pilot deciding whether it is worth the trip is deciding on
+-- the trip. They turn slowly, which is what makes two dozen of them read as
+-- objects lying about rather than as marks on the terrain.
+--
+-- Culled, unlike the flags. There are two dozen of these against four of
+-- those, and everything on the glow layer competes for the same bounded
+-- geometry: a field of greens off screen must not cost a shot on it.
+function M.greens(fill, glow, t, cull)
+    local col = pal.GREEN
+    for i = 0, sim.green_count() - 1 do
+        local x, y, _, active = sim.green_at(i)
+        if active and not outside(cull, x, y) then
+            -- A slow turn, offset per green so a field of them does not
+            -- pulse in unison.
+            local a = t * 0.9 + i * 0.7
+            local c, s = math.cos(a) * 7, math.sin(a) * 7
+            local pts = {x + c, y + s, x - s, y + c, x - c, y - s, x + s, y - c}
+            fill:fan(pts, pal.a(col, 0.30))
+            glow:outline(pts, 1.2, pal.a(col, 0.85))
+            glow:halo(x, y, 13, 10, pal.a(col, 0.16))
+        end
+    end
+end
+
 -- --- events ----------------------------------------------------------------
 --
 -- The simulation reports what happened; this turns each report into light and
@@ -3376,6 +3404,13 @@ function M.events(me, sfx)
             fx.wave(x, y, 6, 30, 0.45, 5, pal.a(col, 0.55))
             fx.burst(x, y, 5, 55, 0.4, 1.4, pal.a(col, 0.8))
             sfx("flag", x, y)
+        elseif ty == sim.EV_GREEN then
+            -- On the hull rather than where the green was: by the time this
+            -- is read the green is gone from the state, and what a pilot
+            -- wants to see is their own ship taking something.
+            local x, y = sim.ship_x(a), sim.ship_y(a)
+            fx.wave(x, y, 5, 26, 0.35, 4, pal.a(pal.GREEN, 0.6))
+            sfx("prize", x, y)
         end
     end
 end

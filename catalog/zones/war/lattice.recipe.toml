@@ -1,0 +1,19 @@
+version = 2
+name = "lattice"
+seed = 5
+mode = "goal"
+theme = "maze"
+symmetry = "half_turn"
+routes = 3
+min_opening_tiles = 7
+contact_seconds_min = 6.0
+contact_seconds_max = 18.0
+allow_doors = true
+allow_wormholes = false
+expected_hash = "0f70ffd3"
+stands = 4
+
+[envelope]
+width = 160
+height = 160
+shape = "rectangle"

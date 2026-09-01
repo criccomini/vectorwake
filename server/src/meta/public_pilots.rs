@@ -2,10 +2,11 @@
 
 use deadpool_postgres::Client;
 
+use crate::catalog::Catalog;
 use crate::rating;
 use crate::token::Kind;
 
-use super::{kind_of, Throttle, DEFAULT_CLASS, KIND_HUMAN};
+use super::{kind_of, Throttle, KIND_HUMAN};
 
 type Reply = (u16, serde_json::Value);
 
@@ -13,6 +14,7 @@ type Reply = (u16, serde_json::Value);
 /// meta domain.
 pub(super) async fn route(
     throttle: &Throttle,
+    catalog: &Catalog,
     db: &Client,
     path: &str,
     body: &serde_json::Value,
@@ -115,7 +117,6 @@ pub(super) async fn route(
                         "total": total,
                         "offset": offset,
                         "limit": limit,
-                        "default_class": DEFAULT_CLASS,
                         "pilots": rows.iter().map(|row| {
                             let kind: i16 = row.get(2);
                             let score: Option<f64> = row.get(4);
@@ -128,6 +129,7 @@ pub(super) async fn route(
                                 }
                                 _ => None,
                             };
+                            let class = row.get::<_, Option<String>>(3);
                             serde_json::json!({
                                 "account": row.get::<_, i64>(0),
                                 "name": row.get::<_, String>(1),
@@ -136,7 +138,9 @@ pub(super) async fn route(
                                     Kind::HouseBot => "house bot",
                                     Kind::ThirdPartyBot => "third-party bot",
                                 },
-                                "class": row.get::<_, Option<String>>(3),
+                                "zone": class.as_deref()
+                                    .map(|c| catalog.zone_label(c).to_string()),
+                                "class": class,
                                 "rating": score,
                                 "games": games,
                                 "tier": tier,
@@ -212,7 +216,6 @@ pub(super) async fn route(
                     (
                         200,
                         serde_json::json!({
-                            "default_class": DEFAULT_CLASS,
                             "pilot": {
                                 "account": pilot.get::<_, i64>(0),
                                 "name": pilot.get::<_, String>(1),
@@ -227,8 +230,10 @@ pub(super) async fn route(
                                 "ratings": rows.iter().map(|row| {
                                     let score: f64 = row.get(1);
                                     let games: i32 = row.get(2);
+                                    let class: String = row.get(0);
                                     serde_json::json!({
-                                        "class": row.get::<_, String>(0),
+                                        "zone": catalog.zone_label(&class),
+                                        "class": class,
                                         "rating": score,
                                         "games": games,
                                         "tier": if games as u32 >= rating::PROVISIONAL_GAMES {

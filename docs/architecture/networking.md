@@ -271,7 +271,13 @@ themselves a bot from any address and be handed every ship on the map. The
 label is derived from the account a token was minted for and cannot be
 asserted, so a third-party bot is filtered exactly like the person running it.
 Flags still travel whole, being few and being objectives every pilot is
-entitled to know the state of.
+entitled to know the state of, and that now extends knowingly to the carrier:
+a carried flag reports its carrier's position map-wide, which is a disclosure
+[decision 133](decisions.md#133-carrying-the-flag-puts-you-on-the-map) makes
+deliberate and makes the client draw. Greens are the other way round, filtered
+with the ships and the rounds, because each one is put out near a live ship
+and an unfiltered field is a beacon on every pilot in the room; the same
+decision says why the two objects get opposite answers.
 
 ### Sizing the radius against what can be drawn
 
