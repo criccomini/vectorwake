@@ -838,6 +838,15 @@ typedef struct {
      * carries about where a remote hull is. Contact hits are unaffected, and
      * so are walls.
      *
+     * The green field is the third, and the widest: a deathless instance puts
+     * none out, expires none, and takes one only for its own pilot. Every
+     * other green it draws comes from a snapshot. Sowing is decision 43, where
+     * interest filtering first made a client's live count a statement about
+     * the few greens near it rather than about the room, so a client that
+     * believed the field was short seeded a phantom prize for the next
+     * snapshot to sweep. Expiry and a stranger's pickup are the same shape:
+     * both are a green the snapshot hands straight back.
+     *
      * Neither field is packed or hashed: this is a fact about who is
      * simulating, not about the world. */
     uint8_t deathless;

@@ -1742,14 +1742,30 @@ static void put_green(sim_state *s, const sim_settings *cfg) {
 }
 
 /* Age what is out, put out what is missing, and hand over what anybody
- * reached. */
+ * reached.
+ *
+ * The field is the zone's, and a prediction client only takes from it.
+ *
+ * Same rule as a death and a proximity fuse (see `deathless` in sim.h), for
+ * the same reason: a green a client puts out or expires on its own is one the
+ * next snapshot takes back. Two things made that louder here than anywhere
+ * else. Interest filtering writes an out-of-radius green inert, so a client
+ * counts the handful near it against a room-wide `green_target` and always
+ * believes the field is short; and `green_at` is state rather than wire, so
+ * every snapshot left it at zero and the next tick put one out. What a pilot
+ * saw in Free Roam was a prize blinking in and out of existence somewhere near
+ * them at snapshot rate, none of them real.
+ *
+ * Their own pickup is still predicted, so the prize and its sound land on the
+ * frame they were earned. Everyone else's arrives the way a remote death does:
+ * as a green that is no longer in the snapshot. */
 static void update_greens(sim_state *s, const sim_settings *cfg,
                           sim_events *ev) {
     int live = 0;
     for (int i = 0; i < s->green_count; i++) {
         sim_green *g = &s->greens[i];
         if (!g->active) continue;
-        if (g->life > 0 && --g->life == 0) {
+        if (!cfg->deathless && g->life > 0 && --g->life == 0) {
             g->active = 0;
             continue;
         }
@@ -1758,6 +1774,7 @@ static void update_greens(sim_state *s, const sim_settings *cfg,
         for (int k = 0; k < s->ship_count; k++) {
             sim_ship *sh = &s->ships[k];
             if (!sh->active || !sh->alive) continue;
+            if (!may_settle(cfg, k)) continue;
             if (!hull_reaches(&cfg->classes[sh->cls], sh->heading,
                               sh->x, sh->y, g->x, g->y, cfg->green_radius))
                 continue;
@@ -1773,6 +1790,7 @@ static void update_greens(sim_state *s, const sim_settings *cfg,
         }
     }
 
+    if (cfg->deathless) return;
     if (live >= cfg->green_target) return;
     if (s->green_at > 0) { s->green_at--; return; }
     s->green_at = cfg->green_every;

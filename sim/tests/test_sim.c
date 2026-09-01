@@ -4096,6 +4096,73 @@ static void test_scoring(const sim_settings *base) {
         CHECK(!s.greens[idx].active, "and it has gone out on its own");
     }
 
+    /* The field belongs to the zone, and a prediction client only takes from
+     * it. Same rule as a death and a proximity fuse, for the same reason: a
+     * green a client puts out or expires on its own is one the next snapshot
+     * takes back.
+     *
+     * The flicker this stops was worth watching. Interest filtering writes an
+     * out-of-radius green inert, so a client counts a handful live against a
+     * room-wide target and always believes the field is short; `green_at` is
+     * state rather than wire, so every snapshot left it at zero and the very
+     * next tick put a green out. At snapshot rate that is a prize blinking in
+     * and out of existence somewhere near you, twenty times a second, none of
+     * them real. */
+    {
+        sim_settings g = cfg;
+        g.green_target = 6;
+        g.green_every = 10;
+        g.green_life = 50;
+        g.green_near = 6 * SIM_TILE_PX * 256;
+        g.green_far = 28 * SIM_TILE_PX * 256;
+        g.green_radius = 18 * 256;
+        memset(g.green_weight, 0, sizeof g.green_weight);
+        g.green_weight[SIM_SLOT_STAT(SIM_UP_ENERGY)] = 1;
+
+        /* The zone first, to get a real green in a real place. */
+        static sim_state s;
+        sim_init(&s, 11);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &g);
+        sim_spawn(&s, APEX, 1, 8192 + 4096, 8192, 0, &g);
+        step_n(&s, &g, 0, 0, 20);
+        int idx = -1;
+        for (int i = 0; i < s.green_count; i++)
+            if (s.greens[i].active) { idx = i; break; }
+        CHECK(idx >= 0, "the zone has put one out");
+
+        /* Now the same world as a client holds it after a snapshot: seat zero
+         * is this pilot, and `green_at` is zero because no snapshot carries
+         * it. */
+        sim_settings c = g;
+        c.deathless = 1;
+        c.mortal_ship = 0;
+
+        static sim_state cs;
+        cs = s;
+        cs.green_at = 0;
+        uint8_t was = cs.green_count;
+        step_n(&cs, &c, 0, 0, 1);
+        CHECK(cs.green_count == was, "a client puts none out on the tick after a snapshot");
+        step_n(&cs, &c, 0, 0, 300);
+        CHECK(cs.green_count == was, "nor over three hundred ticks of being short");
+        CHECK(cs.greens[idx].active,
+              "and the one the zone put out has not expired under it");
+
+        /* A stranger flying over one takes nothing here: that pickup is the
+         * zone's to report, and it arrives as the green leaving a snapshot. */
+        cs.ships[1].x = cs.greens[idx].x;
+        cs.ships[1].y = cs.greens[idx].y;
+        step_n(&cs, &c, 0, 0, 1);
+        CHECK(cs.greens[idx].active, "a remote hull on a green does not take it");
+
+        /* This pilot's own is predicted, so the prize and its sound land on
+         * the frame they were earned rather than a round trip later. */
+        cs.ships[0].x = cs.greens[idx].x;
+        cs.ships[0].y = cs.greens[idx].y;
+        step_n(&cs, &c, 0, 0, 1);
+        CHECK(!cs.greens[idx].active, "this client's own pilot takes it");
+    }
+
     /* A zone that asks for none gets none, which is every match game we
      * ship: there a pilot flies the build they chose and nothing else. */
     {

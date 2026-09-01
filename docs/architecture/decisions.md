@@ -6846,6 +6846,25 @@ to be what a green indexed, and `sim_grant` already refuses to push a slot past
 the hull's ceiling. So a green that lands on a full slot is spent for nothing,
 which is a real cost of taking one you did not need.
 
+Who runs the field is a rule this repository had already made, and this went
+out without it. Decision 43 states it: interest filtering writes an
+out-of-radius green inert, so a client's live count says something about the
+few greens near it rather than about the room, and a client that believes the
+field is short sows a phantom prize for the next snapshot to sweep. Here it
+was louder than it had been in 43, because `green_at` is state rather than
+wire. Every snapshot left the timer at zero, so the next tick put one out, and
+what Free Roam showed a pilot was a green blinking in and out of existence
+near them at snapshot rate, none of them real. A deathless instance now puts
+none out, expires none, and takes one only for its own pilot; `sim.h` carries
+that beside the two rules of the same shape it already had.
+
+Decision 44's other half does not carry over. It had a client remove a green
+it touched while applying no grant, because back then the roll happened at the
+moment of pickup and a guessed grant would have shown a player the roll. A
+green decides what it is when it is put out now, and `slot` rides in the
+snapshot beside its position, so there is nothing left at pickup to hide and
+the client's own is predicted whole.
+
 **Cost:** `CLIENT_PROTOCOL` moves to 34 and `CFG_VERSION` to 23, and the
 determinism golden is regenerated. The state hash covers the greens now, which
 moves it even in a room that has none, and every match game we ship has none.
