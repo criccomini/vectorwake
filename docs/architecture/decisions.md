@@ -6620,3 +6620,182 @@ watch_test arm walking a socket through both benchings and both voluntary
 seats, plus a constant_drift guard holding `CLIENT_PROTOCOL` and the two reason
 codes against their Rust originals: perturbing either side fails it. luacheck
 clean.
+
+---
+
+## 128. A flag stands where the map says
+
+**Status:** accepted
+
+**What:** flags come off the map's own `SIM_TILE_TURF` tiles. A map that draws
+none is not a flag game and gets no flags. `arena.flags` becomes a cap on how
+many of them a zone plays rather than a count of how many to invent, and
+mapforge lays stands beside the spawns, so any theme can carry them.
+
+The core gets two settings to go with it. `flag_carry` decides whether taking a
+flag picks it up, which is the original's `Flag:CarryFlags` read as a yes or a
+no, and it is the whole difference between War and Turf. `flag_carry_ticks`
+puts a carried flag down on its own after a while, keeping the side that took
+it.
+
+**Why:** both paths that built a room laid four flags at tiles 472 and 552,
+which are the built-in arena's quadrants, measured on the 1024-tile ground that
+arena is. Every map a zone ships is 96 to 256 tiles, so those four flags sat
+outside the map's own wall, unreachable, and Team Battle drew a pennant apiece
+across the top of its HUD for a game it was not playing. Nothing was going to
+notice: the melee mode does not read flags, so the only symptom was four grey
+marks nobody could explain.
+
+A turf zone made the same bug the other way round. Its stands are the whole of
+where the fight happens and there was nowhere for them to come from, because
+nothing had ever read a stand off a map.
+
+The carry clock is a separate answer to a separate problem, and it is here
+because it is the same three fields. Without it the other side's only reply to
+a pilot running off with a flag is to kill them, and a hull built not to be
+killed takes a four flag round down to three that nobody can finish.
+
+**Cost:** `CFG_VERSION` moves to 22. The determinism golden did not move: no
+flag in the replay trace is carried, and the state hash of a flag with no clock
+running on it is what it always was.
+
+A zone that wants the old four-flag arena on a map with no stands cannot have
+it. That is deliberate. The alternative is a room deciding for itself where a
+game's objective goes, which is what produced the flags outside the wall.
+
+**Reconsider if:** a map wants stands somewhere a half-turn cannot put them.
+Stands are drawn in pairs, so the count is even, and a map with an odd number
+of them is refused rather than quietly given one more than it asked for.
+
+---
+
+## 129. Turf is paid, War is a match
+
+**Status:** accepted
+
+**What:** two zones off the flag mechanism above.
+
+Turf pays each side one point per stand held, every five seconds, and the match
+belongs to whoever has the most at the whistle. Its flags cannot be carried:
+flying over a stand claims it, and it then settles for the drop cooldown before
+it can change hands again.
+
+War keeps the original's round, where a side takes it by holding every flag at
+once for ten seconds, and wraps a four-minute match around the rounds. The
+match score is rounds taken.
+
+**Why:** the payout is what stops turf collapsing into one scrum. Holding two
+stands of six is not a losing position, it is two points every five seconds, so
+a side that gives up the middle and keeps its own half is playing rather than
+waiting to be beaten, and a scrum that wins one stand is paying for it with the
+four it left.
+
+The settling window is not a nicety. Two pilots of opposite sides sitting on
+one stand take it from each other every tick, a hundred times a second: the
+pennant strobes and which side the clock happens to pay is decided by the tick
+the payout lands on rather than by the fight.
+
+The match around War's rounds is ours and the original had nothing like it. A
+room that ran rounds forever had no score to show, no clock beside the deploy
+key, no ending board and no reason to change ground, which made it the one game
+in the catalog a player could not read from outside the room.
+
+**Cost:** three modes now want the same two-phase clock, so it moved out into
+one that reports which beat a tick is. Melee is the same game through it, and
+the whistle tick still belongs to the match it ended, which is what makes a
+bomb already in the air count and what lets a round completed as the clock runs
+out be a round taken.
+
+Two more zones is two more bot populations to keep honest and two more balance
+surfaces. Neither has been measured yet; both are drawing the roster Team
+Battle was tuned for.
+
+**Reconsider if:** the five second period reads as arbitrary in play. It is
+thirty-six payouts over a three minute match, which puts a stand held end to
+end at 36 and the six between them at 216, and none of that has been played.
+
+---
+
+## 130. A duel is a two-seat zone and nothing else
+
+**Status:** accepted
+
+**What:** the duel comes back as a catalog zone running the melee mode with one
+pilot a side, on maps ninety-six tiles across. No matchmaker, no rival hold, no
+per-seat card.
+
+**Why:** [decision 96](#96-duels-are-gone) took duels out and its own note on
+what would bring them back said the pieces worth keeping were the pairing rule
+at the door and the card, and that both were built around a zone whose rooms
+hold two seats. A two-seat room turns out to make the first of those free: the
+fill ladder already prefers the fullest room below its cap, which for a room of
+two means the one with somebody waiting in it, and a pilot who finds nobody
+opens a room and becomes the person the next arrival is put beside.
+
+The maps are the reason this is a zone rather than a line in the melee file.
+Two pilots searching a hundred and sixty tiles for each other is a draw, which
+is what a 1v1 on melee ground measured as. Ninety-six tiles with two routes
+between the pockets is four to six seconds home to home rather than twelve to
+fifteen.
+
+**Cost:** a zone now rates into its own name rather than its mode. Filed by
+mode, a duel's rating would have been pooled with Team Battle's, and holding
+your own against one rival in a small room has almost nothing to do with being
+useful in a four a side fight. Nothing already recorded moves: the only zone
+that has rated anybody is melee, whose key and mode are the same word.
+
+Pairing by rating stays out. It is decision 92's, it needs a band and a queue,
+and it is a decision to take on its own rather than something to slip in with a
+zone file.
+
+**Reconsider if:** the door pairs people who should not be paired. The fill
+ladder is blind to rating, so at any population above a handful the first two
+people to arrive are the fight, whoever they are.
+
+---
+
+## 131. A green raises what you fly, not what you own
+
+**Status:** accepted
+
+**What:** greens are back in the simulation core, and a free roam zone turns
+them on. A green fills a slot in the kit space; a pilot keeps it until they
+die, because a respawn deals `sim_ship::kit` again and a green never touched
+it. That is the whole death policy and it has no setting.
+
+They are put out in a ring six to twenty-eight tiles from a live ship, two
+dozen at a time, rolled against a per-zone weight table.
+
+**Why:** the zone this catalog did not have is the one the original was about.
+Every other game here is a match, and what replaces the match as a reason to
+keep flying is growth over a life.
+
+The ring is the part that was got wrong the first time and is recorded in
+[design/maps.md](../design/maps.md). Scattered by area, two hundred greens over
+a million tiles is one per five thousand against a pilot who sees sixty tiles,
+and the zone that ran that way read to its players as having none at all. Two
+dozen where the people are beats two hundred in a million tiles of nobody, and
+it also answers the bandwidth: eleven bytes a green, and every one of them near
+somebody who might take it.
+
+Filling a slot rather than granting a thing is what makes this cheap. The kit
+space is already the shape of the question, its own header records that it used
+to be what a green indexed, and `sim_grant` already refuses to push a slot past
+the hull's ceiling. So a green that lands on a full slot is spent for nothing,
+which is a real cost of taking one you did not need.
+
+**Cost:** `CFG_VERSION` moves to 23 and the determinism golden is regenerated.
+The state hash covers the greens now, which moves it even in a room that has
+none, and every match game we ship has none.
+
+The map is not mapforge's. Its envelope stops at 256 tiles and past about 300
+every theme thins below its own cover band, because the geometry is written in
+tiles rather than in fractions of the map. `mapgen` draws the 1024-tile arena
+instead, from the measurements in
+[research/map-measurements.md](../research/map-measurements.md), and the seed is
+the provenance. That leaves one map in the catalog with no `mapforge verify`
+behind it.
+
+**Reconsider if:** the weights are wrong, which they have not been played
+against. They are stats-heavy, which is what Alpha Zone's own file is, on the
+argument that growth should feel like a slope rather than a series of unlocks.

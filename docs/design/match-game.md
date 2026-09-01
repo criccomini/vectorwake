@@ -20,6 +20,13 @@
 > decision 95. Alpha did not survive this document, and greens, gunners and
 > turrets went with it.
 >
+> Greens came back, for a zone this document is not about. Free Roam is the
+> persistent game beside the match games, and growth over a life is what it has
+> instead of a clock; see [zones.md](zones.md) and
+> [decision 131](../architecture/decisions.md#131-a-green-raises-what-you-fly-not-what-you-own).
+> Nothing here changed: a match game deals the build its pilot chose and puts
+> no greens on the field, which is the setting `greens = 0` and the default.
+>
 > It replaces the six-gripe proposal that used to live at `progression.md`,
 > which was a persistent layer bolted around an untouched Alpha.
 
