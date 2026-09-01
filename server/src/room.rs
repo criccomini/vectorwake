@@ -1876,6 +1876,19 @@ impl Room {
             sh.energy = 0;
             sh.respawn_at = 0;
         }
+        // In a duel, taking a seat is the whistle. The match is between the
+        // two seats, so whoever is in them now is the fight, and the clock
+        // and the score belong to that fight rather than to the one the
+        // seat's last occupant was having. Without this an arrival was put
+        // into somebody else's match with the score already on the board:
+        // two bots hold an empty room, one is evicted for the person at the
+        // door, and the survivor's kills against it were the podium's whole
+        // story at a whistle the arrival had not earned. Only while playing;
+        // with the podium up the next match opens on its own, and a wait of
+        // at most an intermission beats cutting a podium short.
+        if self.is_duel() && self.mode.match_state().is_some_and(|m| m.playing) {
+            self.mode.reopen();
+        }
         self.debug_assert_member(id, &self.players[&id].presence);
         Some(id)
     }
@@ -2096,6 +2109,13 @@ impl Room {
         self.invites.clear();
     }
 
+    /// Whether this room is a duel: a zone whose every side is one person.
+    /// That is the whole of what the duel zone declares beyond its size, and
+    /// it is what a match here means: the two seats, against each other.
+    pub(crate) fn is_duel(&self) -> bool {
+        self.max_humans_per_team == 1 && self.public_teams == 2
+    }
+
     /// Who is on a side, counted apart because the caps are. `skip` leaves one
     /// ship out, which is what a pilot asking to move needs: they are about to
     /// stop being where they are.
@@ -2157,7 +2177,7 @@ impl Room {
     /// list, so an arrival founds their own side of one.
     pub(crate) fn seat_team(&mut self, joining: u8, seat: &Seat) -> u8 {
         let bot = seat.bot;
-        let mut best: Option<(u8, u16)> = None;
+        let mut best: Option<(u8, (u16, u16))> = None;
         for t in 0..self.public_teams {
             if !self.team_has_room(t, bot, Some(joining)) {
                 continue;
@@ -2166,10 +2186,19 @@ impl Room {
             // caps measure and the one an arrival cares about. Counting heads
             // of both kinds together put six bots on one side of a two-team
             // room: every side held no humans, so the first one always won.
+            //
+            // Heads of both kinds break a tie, so an arrival lands across
+            // from whoever is already here rather than beside them. The duel
+            // is where it showed: a person at the door of a room two bots
+            // held took one bot's seat, found no humans on either side, and
+            // was put on the first side, next to the bot they had come to
+            // fight, until the ballast rule moved it across a few seconds
+            // later with its kills.
             let (humans, bots) = self.team_census(t, Some(joining));
             let n = if bot { bots } else { humans };
-            if best.is_none_or(|(_, best_n)| n < best_n) {
-                best = Some((t, n));
+            let key = (n, humans + bots);
+            if best.is_none_or(|(_, best_key)| key < best_key) {
+                best = Some((t, key));
             }
         }
         if let Some((t, _)) = best {

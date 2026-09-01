@@ -138,6 +138,20 @@ impl Clock {
         self.playing
     }
 
+    /// Start a fresh match on the next tick, whatever this one is doing.
+    ///
+    /// The same path a room's first tick takes: the next beat is an
+    /// `Opening`, the clock is put back to a whole match, and the room is
+    /// asked to put everybody home. A room that has not opened yet is
+    /// unchanged by this, which is what makes it safe to ask at the door.
+    ///
+    /// A duel asks for it. The match there is between the two seats, so a
+    /// seat changing hands is a new match rather than a late arrival into
+    /// somebody else's; see `Room::join_on`.
+    pub fn reopen(&mut self) {
+        self.opened = false;
+    }
+
     /// Whole seconds left in this phase, rounded up so a clock reads 1 for
     /// the last second rather than sitting on 0 while there is still a second
     /// to play in.
@@ -256,6 +270,9 @@ pub trait Mode: Send {
     fn match_state(&self) -> Option<MatchState> {
         None
     }
+    /// Start a fresh match on the next tick. A mode with no clock has
+    /// nothing to reopen and ignores it.
+    fn reopen(&mut self) {}
 }
 
 /// The default arena: everybody against everybody, forever.
@@ -354,6 +371,10 @@ impl Mode for Melee {
         "melee"
     }
 
+    fn reopen(&mut self) {
+        self.clock.reopen();
+    }
+
     fn match_state(&self) -> Option<MatchState> {
         Some(MatchState {
             playing: self.clock.playing(),
@@ -440,6 +461,10 @@ impl Mode for Turf {
     #[cfg(test)]
     fn name(&self) -> &'static str {
         "turf"
+    }
+
+    fn reopen(&mut self) {
+        self.clock.reopen();
     }
 
     fn match_state(&self) -> Option<MatchState> {
@@ -558,6 +583,10 @@ impl Mode for Warzone {
     #[cfg(test)]
     fn name(&self) -> &'static str {
         "warzone"
+    }
+
+    fn reopen(&mut self) {
+        self.clock.reopen();
     }
 
     fn match_state(&self) -> Option<MatchState> {
@@ -706,6 +735,31 @@ mod melee_tests {
         assert!(!c.open_match, "nothing opens at the door");
         assert_eq!(m.match_state().unwrap().seconds_left, 2, "the same clock");
         assert_eq!(m.match_state().unwrap().score, vec![3, 1], "and score");
+    }
+
+    /// Unless the mode is told the door is the whistle, which is what a duel
+    /// does: the next tick opens a fresh match, whole clock and nothing on
+    /// the board.
+    #[test]
+    fn a_reopened_match_starts_from_nothing_on_the_next_tick() {
+        let names = sides();
+        let mut w = world_with(&[(0, 3), (1, 1)]);
+        let mut m = Melee::new(2, 300, 100);
+        for _ in 0..175 {
+            let mut c = ctx(&mut w, &names);
+            m.tick(&mut c);
+        }
+        assert_eq!(m.match_state().unwrap().score, vec![3, 1]);
+
+        m.reopen();
+        let mut c = ctx(&mut w, &names);
+        m.tick(&mut c);
+        assert!(c.open_match, "the room is asked to put everybody home");
+        assert!(!c.close_match, "and no podium goes up on the way");
+        let state = m.match_state().unwrap();
+        assert!(state.playing);
+        assert_eq!(state.seconds_left, 3, "a whole clock again");
+        assert_eq!(state.score, vec![0, 0], "and nothing on the board");
     }
 
     /// Three minutes, a podium, and another three minutes, with the room asked

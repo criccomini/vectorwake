@@ -121,6 +121,14 @@ what a 1v1 on melee ground measured as. These are four to six seconds home to
 home rather than twelve to fifteen, so the fight starts at the whistle and
 restarts after every death.
 
+The match is between the two seats, so a seat changing hands is a new match:
+whole clock, nothing on the board, both pilots home. An arrival lands across
+from whoever is already there. This is
+[decision 138](../architecture/decisions.md#138-in-a-duel-the-door-is-the-whistle),
+and it is the one place a zone's rule reaches into the melee's clock. Without
+it a person at the door was put into the match the room's bots were having,
+and shown its score at the whistle.
+
 Pairing by rating is not here. That needs a band and a queue and is a decision
 to take on its own.
 

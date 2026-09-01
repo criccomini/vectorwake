@@ -829,17 +829,27 @@ local function on_match(s)
         local hi = u32(string.byte(s, at + 4, at + 7))
         artifact = lo + hi * 4294967296
     end
-    local was = M.match and M.match.playing
+    local prev = M.match
+    local was = prev and prev.playing
+    local playing = flags % 2 == 1
+    local left = string.byte(s, 3)
+    -- A clock that goes back up inside a match is the room starting it over,
+    -- which a duel does when a seat changes hands. The arena's clock only
+    -- ever counts down otherwise, so the jump is the whole of the signal.
+    -- Kept on the message until `clock_says` has heard it, since the frame
+    -- loop reads the newest message rather than every one.
+    local reopened = playing and was and left > prev.left
     M.match = {
-        playing = flags % 2 == 1,
-        left = string.byte(s, 3),
+        playing = playing,
+        left = left,
         score = score,
         artifact = artifact,
+        fresh = (reopened or (prev and prev.fresh)) and true or nil,
     }
     -- The whistle that starts one, which is where the ratings are latched.
     -- On the edge rather than on every message: this arrives four times a
     -- second and a latch taken every time would be a latch of nothing.
-    if M.match.playing and not was then
+    if playing and (not was or reopened) then
         M.rated_from = {}
         for ship, rating in pairs(M.ratings) do
             M.rated_from[ship] = rating
@@ -1946,6 +1956,13 @@ function M.clock_says(said, playing)
     -- runs during a match too and a clock that ticks back up would otherwise
     -- blow the whistle in the middle of one.
     local what = (now and playing == false) and "start" or nil
+    -- Or a match started over inside one, which `on_match` marks on the
+    -- message. The mark is the message's and is spent here, so a restart
+    -- is said once and a clock that merely repeats says nothing.
+    if now and m.fresh then
+        what = "start"
+        m.fresh = nil
+    end
     local left = m.left
     if left and left <= 5 and left >= 1 then
         if said ~= left then

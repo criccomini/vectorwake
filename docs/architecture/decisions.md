@@ -7208,3 +7208,73 @@ settling it here.
 **Reconsider if:** counsel wants the operating party and the rights holder to
 be the same name on the page, or wants a different entity to hold the game
 separately from the code.
+
+---
+
+## 138. In a duel, the door is the whistle
+
+**Status:** accepted, extending
+[decision 131](#131-a-duel-is-a-two-seat-zone-and-nothing-else).
+
+**What:** a duel room opens a fresh match whenever a seat changes hands while
+one is being played: whole clock, nothing on the board, both pilots home.
+An arrival lands on the side across from whoever is already in the room.
+
+**Why:** a player joined a duel and was shown a 5 to 0 loss at a whistle they
+had done nothing to earn, with the bot they had been paired against listed on
+their own side for the first few seconds. Every part of that was the melee's
+rules doing what they say in a room they were not written for.
+
+The duel zone fills to two bots, so an empty room is two bots fighting each
+other on the match clock, and a person at the door takes one bot's seat in the
+middle of that match. The seating rule puts an arrival on the emptiest side by
+humans, and with none on either side the tie went to the first side, which was
+as likely as not the surviving bot's. Then the ballast rule saw two heads
+against none and moved the bot across once its bar was full, and the melee
+score is a tally of the kills on the field by the side each ship is on now, so
+the bot's five kills against the bot it had replaced crossed with it. The
+clock ran out a minute later and the podium said what the tally said.
+
+Landing the arrival across from the bot fixes the side, and it is a rule the
+melee wanted anyway: heads of both kinds now break the tie that humans alone
+cannot, so a person joining one bot lands opposite it rather than beside it
+until the ballast moves. It does not fix the match. Whoever was in the room
+before has been scoring against a seat that is now somebody else's, and in a
+room whose whole match is those two seats, that score is about a fight that
+is over. So the room starts the match again. The mode's clock learned to
+reopen, which is the path a fresh room's first tick already takes, and a duel
+room asks for it from the join.
+
+Two limits. It is the duel's rule and nobody else's, decided by the shape the
+zone file declares: one human a side on two sides. Team Battle keeps letting a
+late arrival into the match being played, since eight seats are not two and a
+match that restarted every time a seat changed hands there would never
+finish. And it happens only while playing. With the podium up the next match
+opens on its own inside fifteen seconds, and an arrival joins the wait as
+everybody else does.
+
+The client hears it. Its whistle hung on the edge from a podium into a match,
+so a match started over mid-play would have moved the clock to three minutes
+in silence and the ending would have read the pilot's rating from a latch two
+fights old. The arena's clock never goes back up inside a match otherwise, so
+that jump is the signal: the match message marks itself, the clock rule blows
+the whistle once and spends the mark, and the ratings latch again.
+
+**Cost:** a pilot whose rival quits keeps a lead over nobody until the bot
+arrives, and loses it when the bot does, because that arrival is a seat
+changing hands too. Their kills are already rated; what goes is a podium
+against an empty chair. Bot on bot in an empty duel room goes on as before,
+and a room's first person still evicts one; that is harmless now that the
+match they walk into is their own.
+
+**Verified:** server tests for the clock reopening from a running score, for
+the arrival landing across from the bot that stays whichever bot is evicted,
+for the fresh match a duel opens on a join with every tally at zero and a
+whole clock, for an arrival during the podium waiting for the next match, and
+for a melee arrival landing opposite a lone bot. Client tests for the whistle
+on a marked message, once, and for the wire latching ratings again when the
+clock goes back up.
+
+**Reconsider if:** the restart is what players wait on rather than what they
+came for: a rival who leaves and returns restarts the match twice, and a room
+that sees that often wants a grace period rather than a whistle.
