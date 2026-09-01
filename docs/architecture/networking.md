@@ -362,6 +362,16 @@ which is the honest statement rather than a workaround, since the client is
 being told it does not know what the round is tracking and the fuse was always
 the server's to resolve.
 
+Contact went the same way later, for bombs (decision 140). A deathless core
+lands a thrown round on its own pilot's hull and on walls and flies it through
+the coasted guess of anybody else, so a direct hit on somebody else reaches
+the client as the round leaving a snapshot, and the client draws the blast
+where the round was on that snapshot's tick. What names a round across
+snapshots is the `id` the core dealt it at the spawn, carried in every
+record; the client used to work a name out of the owner, the spec and the
+life left, and a repel handing a round its whole life back renamed it under
+the client's feet.
+
 One operator-facing number had to change with it. `bw/seat` divided the whole
 process's snapshot bytes by every seat, and a room seats fifty-one house bots
 against a handful of people. Those bots are on loopback and are sent the whole

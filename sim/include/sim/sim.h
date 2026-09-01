@@ -831,12 +831,20 @@ typedef struct {
      * so a remote death only ever arrives as a snapshot state change, which the
      * client already turns into light and sound (decision 40).
      *
-     * A proximity fuse follows the same rule, for the same reason and one
-     * step further out: a deathless instance arms one on its own pilot's hull
-     * and on nobody else's. Arming is where a fuse decides, it happens up to
-     * 157 px from a hull, and that is the same size as the error a client
-     * carries about where a remote hull is. Contact hits are unaffected, and
-     * so are walls.
+     * A thrown round follows the same rule, for the same reason: a deathless
+     * instance lands a bomb on its own pilot's hull and on nobody else's,
+     * whether by contact or by fuse. Arming is where a fuse decides, it
+     * happens up to 157 px from a hull, and that is the same size as the
+     * error a client carries about where a remote hull is. Contact is a
+     * smaller target and the same guess: a coasted hull is where the bomb
+     * was drawn going off while the zone flew it past, and the snapshot that
+     * handed the bomb back is what a pilot saw as a bomb surviving its own
+     * explosion. So a bomb passes through a hull it is only guessing at and
+     * its ending arrives as the round leaving a snapshot, which the client
+     * already draws (decision 140). Bullets still land on contact: a round
+     * has to reach the hull, the hit is a spark rather than a blast, and
+     * predicting it is what keeps a gun feeling immediate. Walls are
+     * unaffected too; the map is not a guess.
      *
      * The green field is the third, and the widest: a deathless instance puts
      * none out, expires none, and takes one only for its own pilot. Every
@@ -1116,6 +1124,17 @@ typedef struct {
      * throws the fragments they earned. */
     uint8_t shrap_level;
     uint8_t shrap_bounce;
+    /* Which round this is, dealt from the state's own counter at the spawn
+     * and carried on the wire. A slot in the array is not a name: the array
+     * is rebuilt from every snapshot and a client's own subset of it is in
+     * whatever order the filter left. A client used to name a round by who
+     * fired it and when, worked back from the life it had left, and that
+     * name broke the moment a repel gave the round its whole life again:
+     * the snapshot after the shove carried the same bomb under a name the
+     * client had never seen, so it drew the bomb it knew detonating where it
+     * had been and then watched that bomb fly back past the blast. Zero is
+     * no round; the counter starts at one. */
+    uint16_t id;
 } sim_weapon;
 
 typedef enum {
@@ -1186,6 +1205,10 @@ typedef struct {
     uint32_t rng;
     uint8_t ship_count;
     uint16_t weapon_count;
+    /* The last `id` dealt to a round, on the wire so a client's own spawns
+     * carry on from the zone's and never wear a name a live round already
+     * has. It wraps at sixty-five thousand; a round lives seconds. */
+    uint16_t weapon_serial;
     sim_ship ships[SIM_MAX_SHIPS];
     sim_weapon weapons[SIM_MAX_WEAPONS];
     sim_flag flags[SIM_MAX_FLAGS];

@@ -192,8 +192,11 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
      * They are 78% of the wire, so this is the whole of the bandwidth answer.
      *
      * No bitmap, because a weapon index is not identity. The array is rebuilt
-     * from the wire every snapshot, nothing refers to a round across ticks,
-     * and the count is simply how many were sent.
+     * from the wire every snapshot and the count is simply how many were
+     * sent. What does name a round across snapshots is its `id`, dealt at
+     * the spawn and carried in the record, and the counter it was dealt from
+     * travels ahead of the records so a client's own spawns continue the
+     * zone's numbering rather than reusing a name a live round holds.
      *
      * The margin is the same one the ships get and larger in practice: the
      * radius is 256 tiles, a client can draw about thirty, and the quickest
@@ -211,6 +214,7 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         sent = (uint16_t)(sent + (within(p->x, p->y, cx, cy, radius, r2)
                                   ? 1 : 0));
     }
+    w16(&w, s->weapon_serial);
     w16(&w, sent);
     for (uint16_t i = 0; i < s->weapon_count; i++) {
         const sim_weapon *p = &s->weapons[i];
@@ -251,6 +255,7 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w8(&w, p->level);
         w8(&w, p->shrap_level);
         w8(&w, p->shrap_bounce);
+        w16(&w, p->id);
     }
 
     w8(&w, s->flag_count);
@@ -406,6 +411,7 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
         }
     }
 
+    s->weapon_serial = (uint16_t)r16(&r);
     uint32_t weapons = r16(&r);
     if (weapons > SIM_MAX_WEAPONS) return -1;
     s->weapon_count = (uint16_t)weapons;
@@ -440,6 +446,7 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
         if (p->level >= SIM_MAX_RUNGS || p->shrap_level >= SIM_MAX_RUNGS
             || p->shrap_bounce > 1)
             return -1;
+        p->id = (uint16_t)r16(&r);
     }
 
 

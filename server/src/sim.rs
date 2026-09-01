@@ -533,6 +533,9 @@ pub struct sim_weapon {
     /// throw: shrapnel is bullets in the original.
     pub shrap_level: u8,
     pub shrap_bounce: u8,
+    /// Which round this is, dealt from the state's counter at the spawn and
+    /// carried on the wire: the one name a round keeps across snapshots.
+    pub id: u16,
 }
 
 #[repr(C)]
@@ -542,6 +545,9 @@ pub struct sim_state {
     pub rng: u32,
     pub ship_count: u8,
     pub weapon_count: u16,
+    /// The last `id` dealt to a round. On the wire, so a client's own
+    /// spawns continue the zone's numbering.
+    pub weapon_serial: u16,
     pub ships: [sim_ship; MAX_SHIPS],
     pub weapons: [sim_weapon; MAX_WEAPONS],
     pub flags: [sim_flag; MAX_FLAGS],
@@ -751,12 +757,14 @@ pub fn units_recharge(v: i32) -> i32 {
     unsafe { sim_units_recharge(v) }
 }
 
-pub const PACK_MAX: usize = 64 * 1024;
+/// `SIM_PACK_MAX`: sixty-six rather than sixty-four so the whole-state shape
+/// still fits a network buffer, see `a_full_private_snapshot_uses_the_state_bound`.
+pub const PACK_MAX: usize = 66 * 1024;
 /// `SIM_STATE_PACK_MAX` from sim/include/sim/pack.h, which is where the number
 /// is worked out: every seat carrying its owner-only tail. Grows whenever that
 /// tail does, and `a_full_private_snapshot_uses_the_state_bound` below is what
 /// notices when this copy has not kept up.
-pub const STATE_PACK_MAX: usize = 63_588;
+pub const STATE_PACK_MAX: usize = 65_638;
 pub const PACK_PRIVATE_ALL: u8 = 0x01;
 pub const SETTINGS_PACK_MAX: usize = 8192;
 pub const UP_COUNT: usize = 5;

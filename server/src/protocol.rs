@@ -251,7 +251,14 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// greens in it would be refused rather than misread. Every match game runs
 /// none, so on those the only difference is a zero byte; Free Roam is the zone
 /// a stale client could not join at all.
-pub(crate) const CLIENT_PROTOCOL: u8 = 34;
+///
+/// 35 names every round. A two byte counter rides ahead of the weapon
+/// records and each record ends in the name it was dealt from that counter,
+/// which is what a client uses to tell one snapshot's rounds from the next
+/// now that a repel can hand a round its whole life back. A client built for
+/// 34 would read the counter as a weapon count and the rest as records, which
+/// is a misparse, so the number moves.
+pub(crate) const CLIENT_PROTOCOL: u8 = 35;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of

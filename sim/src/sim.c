@@ -900,6 +900,10 @@ static void spawn_weapon(sim_state *s, uint8_t spec, uint8_t owner,
     w->fuse_target = 255;
     w->fuse = 0;
     w->near = 0;
+    /* Dealt before the increment so the first round is 1 and 0 stays free
+     * to mean no round. Wrapping past 65535 lands on 0 for one spawn, which
+     * is harmless: nothing reads 0 as a name and the next is 1 again. */
+    w->id = ++s->weapon_serial;
 }
 
 /* ---- add-ons ----
@@ -2750,6 +2754,14 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 const sim_ship *sh = &next->ships[i];
                 if (!sh->active || !sh->alive) continue;
                 if ((uint8_t)i == w->owner || sh->team == w->team) continue;
+                /* A thrown round lands only on a hull this instance
+                 * simulates for real. On the server that is everybody; on a
+                 * client it is the pilot's own, and a bomb flies through the
+                 * coasted guess of anybody else and ends where the zone says
+                 * it did. The fuse below had this rule first; contact got it
+                 * when a pilot filmed their own bomb going off at the muzzle
+                 * and flying on. Bullets keep landing, see the settings. */
+                if (spec->blast > 0 && !may_settle(cfg, i)) continue;
                 int64_t ddx = (int64_t)w->x - hull[i].x;
                 int64_t ddy = (int64_t)w->y - hull[i].y;
                 int64_t along = (ddx * hull[i].fx + ddy * hull[i].fy) >> 15;
@@ -2942,6 +2954,8 @@ uint64_t sim_hash(const sim_state *s) {
         h = hash_u32(h, (uint32_t)w->near);
         h = hash_u32(h, (uint32_t)(w->level | (w->shrap_level << 8)
                                    | (w->shrap_bounce << 16)));
+        h = hash_u32(h, w->id);
     }
+    h = hash_u32(h, s->weapon_serial);
     return h;
 }

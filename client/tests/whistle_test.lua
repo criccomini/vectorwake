@@ -28,13 +28,19 @@ local alive = {[0] = 1, [1] = 1, [2] = 1}
 local deaths = {[0] = 0, [1] = 0, [2] = 0}
 local next_active, next_alive, next_deaths = active, alive, deaths
 
--- What is in the air, as birth ticks. A round is named across a snapshot by
--- when it was fired, which the client works back out of the life it has left,
--- so a round that ages by a tick with the room keeps its name and a round
--- that does not is a different round every time it is looked at.
+-- What is in the air, by name. A round is named across a snapshot by the
+-- name the core dealt it at the spawn, which rides in every record, so what
+-- it has left of its life says nothing about which round it is. `life_of`
+-- is what a round answers for its life, full by default; a test that wants
+-- one on a fresh clock sets it.
 local BOMB, BOMB_LIFE = 3, 500
 local air = {1000}
 local next_air = air
+local life_of = {}
+-- Every round in the air flies east at two pixels a tick, so a test can say
+-- where a late blast should be drawn from how far the capture ran past the
+-- snapshot.
+local VX = 2
 
 local function u32(a, b, c, d)
     return (a or 0) + (b or 0) * 256 + (c or 0) * 65536
@@ -66,8 +72,8 @@ _G.sim = {
     ship_heading_raw = function() return 0 end,
     weapon_count = function() return #air end,
     weapon_at = function(i)
-        local born = air[i + 1]
-        return 100, 100, BOMB, 0, 0, 0, BOMB_LIFE - (tick - born), 0, 0, 0
+        local id = air[i + 1]
+        return 100, 100, BOMB, VX, 0, 0, life_of[id] or 300, 0, 0, 0, id
     end,
     spec_life = function() return BOMB_LIFE end,
     spec_blast = function(spec) return spec == BOMB and 40 or 0 end,
@@ -191,10 +197,37 @@ drain()
 next_air = {1016}
 deliver(snapshot(1020))
 drain()
-next_air = {}
+
+-- A repel hands a round its whole life back. The name the client used to
+-- work out of the life left changed under that, so the next snapshot
+-- carried a stranger and the bomb it knew had "ended": a blast where the
+-- bomb had been, and the same bomb flying back past it. The name is the
+-- core's now and a new clock does not move it.
+life_of[1016] = BOMB_LIFE
 deliver(snapshot(1025))
+check("a bomb a repel gave its life back to is the same bomb",
+      #net.snap_blasts == 0, "queued " .. #net.snap_blasts)
+drain()
+
+-- And where the blast is drawn when it does end: not where the capture
+-- found the round, a lead past the snapshot's tick, but where the round was
+-- on that tick, since the zone had ended it by then.
+-- The prediction runs a lead ahead of the room, which this stub does not
+-- step for itself: put the capture six ticks past the snapshot it is about
+-- to take, where a live client's would be.
+tick = 1036
+local captured_at = tick
+next_air = {}
+deliver(snapshot(1030))
 check("a bomb a snapshot vouched for still lands",
       #net.snap_blasts == 1, "queued " .. #net.snap_blasts)
+local want_x = 100 - VX * (captured_at - 1030)
+check("and is drawn where the round was on the snapshot's tick",
+      captured_at > 1030 and net.snap_blasts[1]
+          and net.snap_blasts[1].x == want_x,
+      "capture at " .. captured_at .. ", drawn at "
+          .. tostring(net.snap_blasts[1] and net.snap_blasts[1].x)
+          .. ", wanted " .. want_x)
 
 if fails > 0 then os.exit(1) end
 print("all fine")

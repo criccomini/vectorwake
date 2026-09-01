@@ -899,7 +899,8 @@ int WeaponAt(lua_State* L) {
     lua_pushnumber(L, w->owner);
     lua_pushnumber(L, w->depth);
     lua_pushnumber(L, w->level);
-    return 10;
+    lua_pushnumber(L, w->id);
+    return 11;
 }
 
 // Solid means "a wall that never moves", which is what the static terrain

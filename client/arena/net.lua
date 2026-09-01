@@ -80,7 +80,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 34
+local CLIENT_PROTOCOL = 35
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -299,11 +299,11 @@ local settings_generation = 0
 -- life that ended harmless after the transition.
 local lifecycle = 0
 local have_snapshot = false
--- The rounds the zone itself has spoken for: every key `born_key` below
--- gives a weapon in an applied snapshot body, replaced wholesale each time
--- one is applied. Taken before the replay runs, because the replay adds
--- predicted rounds and prediction vouching for itself is the hole this
--- exists to close. See `harvest_world` for what it gates.
+-- The rounds the zone itself has spoken for: the name of every weapon in an
+-- applied snapshot body, replaced wholesale each time one is applied. Taken
+-- before the replay runs, because the replay adds predicted rounds and
+-- prediction vouching for itself is the hole this exists to close. See
+-- `harvest_world` for what it gates.
 local confirmed = {}
 M.join_progress = 0
 
@@ -887,23 +887,26 @@ local function on_streak(s)
     else pending_streaks[#pending_streaks + 1] = e end
 end
 
--- What names a round on both sides of a snapshot: its owner, its spec and
--- the tick it was fired on, which is the current tick less the life it has
--- already spent. Written once because it has to agree with itself across the
--- unpack, and a formula copied four times is a formula with four chances to
--- be edited three times.
-local function born_key(tick, spec, life, owner)
-    return owner * 16777216 + spec * 65536
-        + (tick - (sim.spec_life(spec) - life)) % 65536
+-- What names a round on both sides of a snapshot is the name the core dealt
+-- it at the spawn, which rides in every record: the last value `weapon_at`
+-- hands back. This file used to work a name out for itself from the owner,
+-- the spec and the tick the round was fired on, read back from the life it
+-- had left, and a repel broke it: the shove gives a round its whole life
+-- again, so the same bomb came back from the next snapshot born seconds
+-- later than this client knew it to be, under a name this file had never
+-- seen. The old name had vanished from a snapshot that had carried it, and
+-- `harvest_world` drew that as the bomb going off where it had been, with the
+-- bomb itself flying back past the blast.
+local function round_name(i)
+    local _, _, _, _, _, _, _, _, _, _, id = sim.weapon_at(i)
+    return id
 end
 
 -- What `confirmed` above holds, read fresh from a just-applied snapshot.
 local function confirm_world()
     local seen = {}
-    local tick = sim.tick()
     for i = 0, sim.weapon_count() - 1 do
-        local _, _, spec, _, _, _, life, owner = sim.weapon_at(i)
-        seen[born_key(tick, spec, life, owner)] = true
+        seen[round_name(i)] = true
     end
     return seen
 end
@@ -924,14 +927,14 @@ local function capture_world()
         end
     end
     local flying = {}
-    local tick = sim.tick()
     for i = 0, sim.weapon_count() - 1 do
-        local wx, wy, spec, _, _, _, life, owner = sim.weapon_at(i)
-        flying[born_key(tick, spec, life, owner)] =
-            {x = wx, y = wy, spec = spec, life = life, owner = owner}
+        local wx, wy, spec, wvx, wvy, _, life, owner, _, _, id =
+            sim.weapon_at(i)
+        flying[id] = {x = wx, y = wy, vx = wvx, vy = wvy, spec = spec,
+                      life = life, owner = owner}
     end
     return {alive = alive, deaths = deaths, vx = vx, vy = vy, x = x, y = y,
-            heading = heading, flying = flying}
+            heading = heading, flying = flying, tick = sim.tick()}
 end
 
 local function measure_remote_corrections(before)
@@ -992,6 +995,18 @@ end
 -- detonation. It used to be drawn as one anyway: a blast at the muzzle while
 -- the bomb, reborn a tick away under a name this diff did not recognize,
 -- flew on to its real one.
+--
+-- This is the road every bomb ending on somebody else takes since decision
+-- 140, not only the ones the prediction mistimed: a deathless core lands a
+-- thrown round on its own pilot's hull and on walls, and flies it through
+-- the coasted guess of anybody else, so the zone's word is the first this
+-- client hears of the hit. Which is why the blast is drawn where the round
+-- was on the tick the snapshot describes rather than where the capture
+-- found it. The capture is a lead further along its flight, the zone had
+-- already ended the round by the snapshot's tick, so the furthest it can
+-- have reached is its position on that tick, walked back along its own
+-- velocity; drawn at the capture instead, a bomb that hit a hull went off a
+-- lead's flight past it.
 local function harvest_world(before)
     local benched = false
     for i = 0, sim.ship_count() - 1 do
@@ -1007,13 +1022,14 @@ local function harvest_world(before)
     end
     if benched then return end
     local flying = before.flying
-    local tick = sim.tick()
     for i = 0, sim.weapon_count() - 1 do
-        local _, _, spec, _, _, _, life, owner = sim.weapon_at(i)
-        flying[born_key(tick, spec, life, owner)] = nil
+        flying[round_name(i)] = nil
     end
+    local back = math.max(0, serial_delta(before.tick, snap_tick))
     for k, w in pairs(flying) do
         if w.life > 20 and sim.spec_blast(w.spec) > 0 and confirmed[k] then
+            w.x = w.x - w.vx * back
+            w.y = w.y - w.vy * back
             M.snap_blasts[#M.snap_blasts + 1] = w
         end
     end

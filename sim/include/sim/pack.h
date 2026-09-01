@@ -8,8 +8,11 @@ extern "C" {
 #endif
 
 
-/* Largest owner-filtered network snapshot. */
-#define SIM_PACK_MAX (64 * 1024)
+/* Largest owner-filtered network snapshot. Sixty-six rather than sixty-four
+ * so that the whole-state shape below still fits it, which the server's
+ * layout test checks: the shapes differ by one private tail per ship, and a
+ * room full of named rounds (decision 140) took the larger past 64 KB. */
+#define SIM_PACK_MAX (66 * 1024)
 
 /* Largest whole-state snapshot. Every visible ship carries its private tail,
  * so this is slightly larger than the network limit.
@@ -21,8 +24,12 @@ extern "C" {
  * buffer at all. See the build in `sim_pack`.
  *
  * Greens add SIM_MAX_GREENS * 11 + 1 on top, which is 705 bytes for a room
- * running the full field. */
-#define SIM_STATE_PACK_MAX 63588
+ * running the full field.
+ *
+ * Rounds carry a two byte name since decision 140, and the counter it is
+ * dealt from rides ahead of them: 2 + 2 * SIM_MAX_WEAPONS, which took this
+ * past 64 KB and the network limit above up with it. */
+#define SIM_STATE_PACK_MAX 65638
 
 /* A network snapshot carries one owner-only ship tail. The whole-state
  * replay path and trusted house bots ask for every tail instead.

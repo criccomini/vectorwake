@@ -7382,3 +7382,54 @@ gone out. That one is Chris's to post, not something a commit can do.
 **Reconsider if:** the landing page wants a voice in the middle again, in which
 case it is the company's and not a person's, and it does not name another game.
 
+## 140. A bomb ends where the zone says it did
+
+**Status:** accepted
+
+Chris filmed his own bomb going off the moment it left the tube and then
+flying on to where it really landed. Decision 40 had made remote deaths the
+zone's to conclude, and the fuse followed it in the client's proximity fix,
+but contact was left predicted on purpose: a round has to reach the hull, and
+the spark of a bullet landing is what makes a gun feel immediate. That was
+right about bullets and wrong about bombs. A remote hull on a client is a
+coasted guess, a bot's steering flips its buttons many times a second, and a
+bomb thrown in a close fight crosses that guess within a few ticks of leaving.
+The client's core ended the round on a hull that was not there, drew the blast
+at the muzzle, and the next snapshot handed the bomb back.
+
+So a deathless instance now lands a thrown round on its own pilot's hull and on
+walls, and flies it through anybody else: `sim_step` skips the contact test for
+a round with a blast against any hull `may_settle` refuses, the same gate the
+fuse already sat behind. Bullets keep landing on contact, for the reason the
+old test gave. The ending reaches the client as the round leaving a snapshot,
+which `harvest_world` was already turning into light and sound for the fuse
+case, so every bomb ending on somebody else takes one road now.
+
+The second half is the name a round wears on that road. The client named a
+round across snapshots by its owner, its spec and the tick it was fired on,
+worked back from the life it had left. A repel gives a round its whole life
+again, so a bomb an enemy batted back came out of the next snapshot with a
+birth seconds later than the client knew, and the old name was simply gone
+from a snapshot that had vouched for it. The harvest read that as the bomb
+detonating where it had been, and the pilot watched their bomb explode and
+then fly back past its own blast. A round carries a two byte `id` now, dealt
+from a counter in the state at the spawn, and the counter rides ahead of the
+records so a client's predicted rounds continue the zone's numbering rather
+than reusing a name a round in the snapshot holds.
+
+**Cost:** a direct hit on somebody else is drawn a snapshot late, the way a
+kill already is, and where the client can best put it rather than exactly
+where it landed. The harvest draws the blast where the round was on the tick
+the snapshot describes, walked back along its own velocity from where the
+capture found it, because the zone had ended it by then and that is the
+furthest it can have reached. That is at most a snapshot interval of flight
+past the hull, where it used to be a lead's flight past it on the fuse road.
+The wire grows two bytes a round plus two a snapshot; `CLIENT_PROTOCOL` is 35,
+the whole-state pack bound is 65638, and the golden hashes moved because the
+hash covers what the wire carries.
+
+**Reconsider if:** the late blast reads as a miss in play, in which case the
+harvest knows the last coasted position of every enemy hull and could pin the
+blast to the one the round's flight crossed, as the expire event already pins
+a landed hit to its victim. Or if bullets start drawing hits the zone takes
+back often enough to notice, which would be the same fix one weapon over.

@@ -231,7 +231,12 @@ static void random_kit(sim_ship *sh, const sim_settings *cfg, uint32_t *rng) {
  * and to a prediction client and the two answers compared. `prox` is the
  * proximity rung; with none the bomb has to actually touch the hull, which is
  * a different question and worth asking separately. */
-static int bombed(const sim_settings *c, int cls, int off, int prox) {
+/* The tick a round seat zero fires ends on a hull, or -1 if it never does.
+ * `btn` is the trigger pulled: the bomb for the fuse and contact cases, the
+ * gun for the one that says a bullet still lands where a bomb no longer
+ * does. */
+static int landed(const sim_settings *c, int cls, int off, int prox,
+                  uint16_t btn) {
     sim_state s;
     sim_init(&s, 1);
     sim_spawn(&s, (uint8_t)cls, 0, 8192, 8192, 0, c);
@@ -244,7 +249,7 @@ static int bombed(const sim_settings *c, int cls, int off, int prox) {
     for (int t = 0; t < 400; t++) {
         sim_input in[2];
         in[0].ship = 0;
-        in[0].buttons = (uint16_t)(t == 0 ? SIM_BTN_BOMB : 0);
+        in[0].buttons = (uint16_t)(t == 0 ? btn : 0);
         in[1].ship = 1;
         in[1].buttons = 0;
         sim_step(&tmp, &s, in, 2, c, &ev);
@@ -253,6 +258,10 @@ static int bombed(const sim_settings *c, int cls, int off, int prox) {
             if (ev.e[i].type == SIM_EV_EXPIRE && ev.e[i].b != 255) return t;
     }
     return -1;
+}
+
+static int bombed(const sim_settings *c, int cls, int off, int prox) {
+    return landed(c, cls, off, prox, SIM_BTN_BOMB);
 }
 
 /* A sim_state is 79 KB. Clang at -O0 gives block locals separate stack slots
@@ -1986,16 +1995,33 @@ static void test_lifecycle(sim_map *m, const sim_settings *base) {
               "on the hull it does simulate, the same fuse fires the same tick");
     }
 
-    /* Contact is untouched, which is why the fuse is singled out rather than
-     * the whole of decision 40 being widened. A round has to reach the hull,
-     * the hit reports either way so the spark still draws, and predicting it
-     * is what keeps shooting feel immediate. */
+    /* Contact followed, one report later: a pilot filmed their own bomb
+     * going off at the muzzle and then flying on to where it really landed.
+     * The coasted hull it was drawn hitting was a guess of the same kind the
+     * fuse had been arming on, only a smaller target. So a thrown round now
+     * passes through any hull a deathless instance is only guessing at, and
+     * the ending arrives as the round leaving a snapshot (decision 140). */
     {
         sim_settings dc = cfg;
         dc.deathless = 1;
         dc.mortal_ship = 255;
+        CHECK(bombed(&cfg, APEX, 0, 0) >= 0,
+              "the zone lands a bomb flown straight into somebody");
+        CHECK(bombed(&dc, APEX, 0, 0) < 0,
+              "a client lands no bomb on a hull it is only guessing at");
+        /* On the hull this instance simulates for real, contact is as
+         * immediate as it always was, which is how being bombed stays
+         * immediate for the pilot it happens to. */
+        dc.mortal_ship = 1;
         CHECK(bombed(&dc, APEX, 0, 0) == bombed(&cfg, APEX, 0, 0),
-              "a client still lands a bomb it flew into somebody");
+              "and lands it on the hull it does simulate, the same tick");
+        /* Bullets are not thrown and are not deferred: the target has to be
+         * reached, the hit is a spark rather than a blast, and predicting it
+         * is what keeps a gun feeling immediate. */
+        dc.mortal_ship = 255;
+        CHECK(landed(&dc, APEX, 0, 0, SIM_BTN_FIRE)
+                  == landed(&cfg, APEX, 0, 0, SIM_BTN_FIRE),
+              "a client still lands a bullet it flew into somebody");
     }
 
     /* The one hull named mortal still dies, which is how the client keeps
@@ -2650,6 +2676,8 @@ static void test_weapon_model(sim_map *m, const sim_settings *base) {
         int32_t before = s.weapons[0].vx;
         uint16_t life = s.weapons[0].life;
         uint8_t bullet = s.weapons[0].spec;
+        uint16_t name = s.weapons[0].id;
+        CHECK(name != 0, "a round in the air has a name");
         CHECK(before < 0, "and traveling toward the repel");
         step_n(&s, &w, SIM_BTN_FIRE, 0, 3);
         CHECK(s.weapon_count >= 1, "and survived being repelled");
@@ -2660,6 +2688,14 @@ static void test_weapon_model(sim_map *m, const sim_settings *base) {
            here, rather than whatever was left of the old clock. */
         CHECK(s.weapons[0].life >= w.specs[bullet].life - 3,
               "which is the round's own alive time, not what was left of it");
+        /* And it is the same round. A client used to name a round by its
+         * owner, its spec and the tick it worked back from the life left,
+         * and the reset above renamed the round under it: the next snapshot
+         * carried a stranger, the client drew the old name detonating and
+         * then watched the bomb fly back past it. The name is dealt at the
+         * spawn now and nothing a round meets changes it. */
+        CHECK(s.weapons[0].id == name,
+              "and a repelled round keeps the name it was fired with");
         w.map = m;
     }
 
@@ -5135,6 +5171,21 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
         CHECK(sim_hash(&back) == sim_hash(&s), "the round trip is exact");
         CHECK(back.weapons[0].link == 0xa1b2c3d4u,
               "a gun-volley link survives the snapshot");
+        /* The names too, and the counter they come from: a client's own
+         * spawns carry on from the zone's numbering, so its predicted
+         * rounds never wear a name a round in the snapshot already holds. */
+        CHECK(s.weapons[0].id != 0 && back.weapons[0].id == s.weapons[0].id,
+              "a round's name survives the snapshot");
+        CHECK(s.weapon_serial != 0 && back.weapon_serial == s.weapon_serial,
+              "and so does the counter it was dealt from");
+        {
+            int distinct = 1;
+            for (int i = 0; i < s.weapon_count && distinct; i++)
+                for (int j = i + 1; j < s.weapon_count; j++)
+                    if (s.weapons[i].id == s.weapons[j].id) distinct = 0;
+            CHECK(s.weapon_count > 1 && distinct,
+                  "no two rounds in the air share a name");
+        }
 
         /* The prize stream and its clock stay behind. This is the check that
          * keeps them off the wire: a green is rolled from `prize_rng`, so a
