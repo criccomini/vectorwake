@@ -6445,6 +6445,111 @@ mod tests {
         }
     }
 
+    /// One game, five rooms: every zone we ship flies the same ship into the
+    /// same wall, and what a zone file changes is what the room is *for*.
+    ///
+    /// That claim used to be enforced by copying twenty settings into each new
+    /// zone file and hoping the next tuning pass edited all five. It is the
+    /// baseline's now, and this is what says so: apply a zone, blank the
+    /// handful of fields a zone is allowed to differ on, and everything left
+    /// has to be identical across the catalog. A zone that quietly tunes the
+    /// gun fails here rather than in a player's hands, and a genuinely new
+    /// per-zone rule fails too, until it is named in the list below and thereby
+    /// argued for.
+    #[test]
+    fn every_shipped_zone_flies_the_same_ship() {
+        catalog::set_placeholder_identity();
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog");
+        let cat = catalog::load(dir).expect("the catalog we ship loads");
+        let mut digests: Vec<(String, Vec<u8>)> = Vec::new();
+        for name in &cat.order {
+            let mut w = sim::World::new(1);
+            Room::apply_config(&mut w, &cat.zone(name).unwrap().arena);
+            // What a zone says about its own room rather than about the game
+            // in it: how long you wait to fly again and where you arrive, the
+            // flag rules that separate Turf from War, the greens that make
+            // Free Roam persistent, and how many seats there are.
+            w.cfg.respawn_delay = 0;
+            w.cfg.spawn_radius = 0;
+            w.cfg.flag_radius = 0;
+            w.cfg.flag_drop_cooldown = 0;
+            w.cfg.flag_carry = 0;
+            w.cfg.flag_carry_ticks = 0;
+            w.cfg.green_target = 0;
+            w.cfg.green_life = 0;
+            w.cfg.green_every = 0;
+            w.cfg.green_near = 0;
+            w.cfg.green_far = 0;
+            w.cfg.green_radius = 0;
+            w.cfg.green_weight = [0; sim::SLOT_COUNT];
+            w.cfg.max_ships = 0;
+            digests.push((name.clone(), w.packed_settings()));
+        }
+        let (first, want) = &digests[0];
+        for (name, got) in &digests[1..] {
+            assert_eq!(
+                got, want,
+                "{name} and {first} disagree about the ship, the weapons or the wall"
+            );
+        }
+    }
+
+    /// The other half of that rule: a shipped zone writes a setting only where
+    /// it wants a different answer from the baseline's.
+    ///
+    /// A key that restates the baseline is not harmless. It reads as a
+    /// decision this zone made, so the next tuning pass has to work out
+    /// whether the zone meant it, and it is how the five files filled up with
+    /// twenty settings apiece in the first place. Each key gets applied on its
+    /// own here and has to move something.
+    #[test]
+    fn a_shipped_zone_writes_only_what_it_changes() {
+        catalog::set_placeholder_identity();
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog");
+        let cat = catalog::load(dir).expect("the catalog we ship loads");
+        let baseline = {
+            let w = sim::World::new(1);
+            w.packed_settings()
+        };
+        // Keys that are the room's rather than the simulation's: the mode and
+        // its clocks, how many of the map's stands to play, and the connection
+        // policy. None of them reach the settings a client is sent, so they
+        // cannot be checked this way and are not what this test is about.
+        const NOT_SETTINGS: [&str; 6] = [
+            "mode",
+            "flags",
+            "match_seconds",
+            "intermission_seconds",
+            "turf_seconds",
+            "lag",
+        ];
+        for name in &cat.order {
+            let src = std::fs::read_to_string(format!("{dir}/zones/{name}/zone.toml")).unwrap();
+            let doc: toml::Value = toml::from_str(&src).unwrap();
+            let Some(arena) = doc.get("arena").and_then(|a| a.as_table()) else {
+                continue;
+            };
+            for (key, value) in arena {
+                if NOT_SETTINGS.contains(&key.as_str()) {
+                    continue;
+                }
+                let mut one = toml::map::Map::new();
+                one.insert(key.clone(), value.clone());
+                let mut doc = toml::map::Map::new();
+                doc.insert("arena".into(), toml::Value::Table(one));
+                let doc = toml::to_string(&toml::Value::Table(doc)).unwrap();
+                let (w, warn) = tuned(&doc);
+                assert!(warn.is_empty(), "{name}: {key}: {warn:?}");
+                assert_ne!(
+                    w.packed_settings(),
+                    baseline,
+                    "{name} writes {key}, which is already what the baseline says: \
+                     delete the line rather than restating it"
+                );
+            }
+        }
+    }
+
     #[test]
     fn a_zone_prices_multifire() {
         let (w, warn) = tuned(
@@ -6471,8 +6576,8 @@ mod tests {
         );
         assert_eq!(w.cfg.mod_multi_energy, 25);
         assert_eq!(w.cfg.mod_multi_delay, 50);
-        assert_eq!(w.cfg.mod_spread, 2730, "fifteen degrees, still");
-        assert_eq!(w.cfg.bounce, 16, "and the field past the splinters");
+        assert_eq!(w.cfg.mod_spread, 910, "five degrees, still");
+        assert_eq!(w.cfg.bounce, 12, "and the field past the splinters");
     }
 
     /// `mode` and `flags` were documented keys that nobody read: the arena
@@ -7088,7 +7193,7 @@ mod tests {
 
         // Left out, each is the core's own.
         let (w, _) = tuned("[arena]\nmode = \"warzone\"\n");
-        assert_eq!(w.cfg.bounce, 16);
+        assert_eq!(w.cfg.bounce, 12);
         assert_eq!(w.cfg.door_period, 600);
         assert_eq!(w.cfg.flag_radius, 18 * 256);
     }
