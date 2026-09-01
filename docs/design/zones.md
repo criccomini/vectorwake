@@ -175,6 +175,11 @@ open item on this list.
 
 Each row in the catalog brings more than a mode:
 
+- **A ladder of its own.** A rating is filed under the zone's key, per
+  [rating.md](rating.md), so a new row in this catalog is a new ladder that
+  every pilot on the fleet starts unrated in. That is the right answer, since
+  the games measure different things, and it does mean a zone needs enough
+  traffic to get people out of provisional or its ratings say nothing.
 - **A bot population that plays the objective.** At our population a zone
   without one is a dead room.
 - **A balance surface.** Every mode is a new answer to "which hull wins here".

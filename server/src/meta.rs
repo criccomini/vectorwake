@@ -1091,7 +1091,9 @@ async fn route(
     if let Some(reply) = growth::route(&meta.catalog, &db, path, body).await {
         return reply;
     }
-    if let Some(reply) = public_pilots::route(&meta.throttle, &db, path, body, ip).await {
+    if let Some(reply) =
+        public_pilots::route(&meta.throttle, &meta.catalog, &db, path, body, ip).await
+    {
         return reply;
     }
     if let Some(reply) = maps::route(&meta.catalog, &mut db, path, body).await {
@@ -1292,6 +1294,24 @@ async fn route(
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0)
                 .clamp(0, 52) as f64;
+            // And which game. Empty is the fleet, which is what this table
+            // was until there were five zones to be on it.
+            //
+            // Unfiltered, one board mixes games that measure different
+            // things. Kills sum across all five, and the rating column is
+            // read in whichever class each pilot flew most that week, so two
+            // rows beside each other can be ratings in different zones, which
+            // is a column that does not compare. Naming a zone makes every
+            // column on the row about that zone: its kills, its deaths, its
+            // swing, and the rating kept under it.
+            //
+            // A zone the catalog does not run is refused rather than quietly
+            // widened to the fleet, because a filter that silently does
+            // nothing is worse than one that says it cannot.
+            let zone = s("zone");
+            if !zone.is_empty() && meta.catalog.zone(&zone).is_none() {
+                return (400, serde_json::json!({ "error": "no such zone" }));
+            }
             let rows = match db
                 .query(
                     "with bound as (
@@ -1306,6 +1326,7 @@ async fn route(
                          select * from pilot_events, bound
                           where not bot and at >= bound.since
                             and at < bound.until
+                            and ($3 = '' or zone = $3)
                      ),
                      sess as (
                          select name, session, max(at) - min(at) as span
@@ -1357,6 +1378,7 @@ async fn route(
                           ) party
                           where not re.bots_only
                             and re.at >= bound.since and re.at < bound.until
+                            and ($3 = '' or re.class = $3)
                      ),
                      moved as (
                          select account, sum(delta) as delta
@@ -1378,6 +1400,14 @@ async fn route(
                      -- melee has an arena rating that has never moved. The
                      -- one they were rated in most, and the fleet's default
                      -- where the week has no rated rows to say.
+                     --
+                     -- Filtered to one zone this can only ever resolve to
+                     -- that zone, since the rows it reads are that zone's.
+                     -- The zone still has to stand behind it below, for the
+                     -- pilot who flew there and was never rated: they have
+                     -- kills on the board and no rated row to name a class,
+                     -- and the fleet default would put somebody else's game
+                     -- in their rating column.
                      flew as (
                          select distinct on (account) account, class
                            from (select account, class, count(*) as n
@@ -1397,11 +1427,11 @@ async fn route(
                        left join assisted s on s.account = t.account
                        left join ratings g
                               on g.account = t.account
-                             and g.class = coalesce(f.class, $2)
+                             and g.class = coalesce(f.class, nullif($3, ''), $2)
                       where t.kills <> 0 or t.deaths > 0
                       order by t.kills desc, t.deaths asc
                       limit 200",
-                    &[&back, &DEFAULT_CLASS],
+                    &[&back, &DEFAULT_CLASS, &zone],
                 )
                 .await
             {
@@ -1465,9 +1495,34 @@ async fn route(
                 Ok(row) => row.get(0),
                 Err(error) => return database_error(error),
             };
+            // The games this board can be filtered to, so the page builds its
+            // picker from what the fleet actually runs rather than from a
+            // list it keeps in step by hand.
+            //
+            // Every catalog zone, including the ones nobody flew this week.
+            // Offering only the zones with rows would make the picker change
+            // shape week to week, and a quiet week in one game is a fact the
+            // board can state once it is asked.
+            let zones: Vec<serde_json::Value> = meta
+                .catalog
+                .zone_labels()
+                .into_iter()
+                .map(|(key, label)| serde_json::json!({ "zone": key, "label": label }))
+                .collect();
             (
                 200,
-                serde_json::json!({ "week": week, "since": since, "back": back as i64 }),
+                serde_json::json!({
+                    "week": week,
+                    "since": since,
+                    "back": back as i64,
+                    "zone": zone,
+                    "label": if zone.is_empty() {
+                        String::new()
+                    } else {
+                        meta.catalog.zone_label(&zone).to_string()
+                    },
+                    "zones": zones,
+                }),
             )
         }
 
@@ -2381,7 +2436,6 @@ async fn route(
                         // reply rather than once per row, and sent at all so that
                         // moving either one in rating.rs moves it everywhere.
                         "provisional": rating::PROVISIONAL_GAMES,
-                        "default_class": DEFAULT_CLASS,
                         "pilots": rs.iter().map(|r| {
                             let kind: i16 = r.get(2);
                             // The band, computed here rather than on the page: the
@@ -2410,6 +2464,8 @@ async fn route(
                                 "admin": r.get::<_, bool>(4),
                                 "claimed": r.get::<_, bool>(5),
                                 "last_seen": r.get::<_, String>(6),
+                                "zone": r.get::<_, Option<String>>(7)
+                                    .map(|c| meta.catalog.zone_label(&c).to_string()),
                                 "class": r.get::<_, Option<String>>(7),
                                 "rating": score,
                                 "games": games,

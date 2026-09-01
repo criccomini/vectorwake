@@ -1344,9 +1344,16 @@ function rank(p) {
 // reply for exactly that, since it is present whenever the feature is and
 // absent whenever it is not, and saying `unrated` off the back of a field the
 // server never sent would be a confident lie about somebody's standing.
+//
+// A tier is always one zone's, so the zone is always named: a rating is kept
+// per zone and every zone the fleet runs rates into its own name, so the
+// bare tier this used to print for the default class is a case that no
+// longer arrives. The name is the zone's label where the server sent one,
+// since `melee` is Team Battle on every screen a player sees, and the key
+// where it did not.
 function tier(p, r) {
   if (r.provisional == null) return "";
-  if (p.tier) return p.class === r.default_class ? p.tier : `${p.tier} (${p.class})`;
+  if (p.tier) return `${p.tier} (${p.zone || p.class})`;
   if (p.games != null) return `placing ${p.games}/${r.provisional}`;
   return "unrated";
 }

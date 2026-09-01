@@ -46,9 +46,16 @@
     return (kills / deaths).toFixed(2);
   };
 
-  const classLabel = (ratingClass, defaultClass) => {
-    if (!ratingClass || ratingClass === defaultClass) return "Overall";
-    return ratingClass.charAt(0).toUpperCase() + ratingClass.slice(1);
+  // What game a rating was earned in. A rating is kept per zone, so this
+  // names one of them and never a total: the server resolves the class key
+  // to the zone's own label, because the zone keyed "melee" is Team Battle on
+  // every other screen and "roam" is Free Roam. The key is the fallback, for
+  // a class whose zone has left the catalog and for a reply from before the
+  // label rode along.
+  const zoneLabel = (rating) => {
+    if (rating && rating.zone) return rating.zone;
+    const key = (rating && rating.class) || "";
+    return key ? key.charAt(0).toUpperCase() + key.slice(1) : "";
   };
 
   const showTableMessage = (tbody, message, columns) => {
@@ -96,9 +103,9 @@
 
         const tier = textCell(tierLabel(pilot.rating, pilot.tier), "tier-cell");
         if (pilot.class) {
-          const ratingClass = document.createElement("span");
-          ratingClass.textContent = classLabel(pilot.class, payload.default_class);
-          tier.append(ratingClass);
+          const zone = document.createElement("span");
+          zone.textContent = zoneLabel(pilot);
+          tier.append(zone);
         }
         row.append(tier);
         row.append(textCell(pilot.rating == null ? "Unrated" : number.format(Math.round(pilot.rating)), "number"));
@@ -190,8 +197,10 @@
     const scoreboard = document.querySelector("#profile-scoreboard");
     const ratingsSection = document.querySelector("#profile-ratings");
     const ratingsBody = document.querySelector("#profile-rating-rows");
+    const zoneNote = document.querySelector("#profile-zone-note");
     const cta = document.querySelector("#profile-cta");
-    if (!name || !status || !scoreboard || !ratingsSection || !ratingsBody || !cta) return;
+    if (!name || !status || !scoreboard || !ratingsSection || !ratingsBody
+      || !zoneNote || !cta) return;
 
     if (!Number.isSafeInteger(account) || account < 1) {
       name.textContent = "Pilot not found";
@@ -221,12 +230,23 @@
         document.querySelector("#profile-assists").textContent = number.format(pilot.assists);
         document.querySelector("#profile-kd").textContent = kdLabel(pilot.kills, pilot.deaths);
         document.querySelector("#profile-games").textContent = number.format(best?.games || 0);
+        // Rank, tier, rating and rated events are one zone's, the one this
+        // pilot has flown most. Unlabeled they read as a career figure, and
+        // there is no such figure: a rating is kept per zone and there is
+        // nothing that averages them. Kills, deaths and assists beside them
+        // are lifetime totals over every zone, which is why the note names
+        // the four it covers rather than sitting over the whole board.
+        const note = document.querySelector("#profile-zone-note");
+        note.textContent = best
+          ? `Rank, tier, rating and rated events are from ${zoneLabel(best)}, the zone they have flown most. Kills, deaths and assists are lifetime totals.`
+          : "This pilot has not been rated in any zone yet.";
+        note.hidden = false;
         scoreboard.hidden = false;
 
         if (ratings.length) {
           const rows = ratings.map((rating) => {
             const row = document.createElement("tr");
-            row.append(textCell(classLabel(rating.class, payload.default_class)));
+            row.append(textCell(zoneLabel(rating)));
             row.append(textCell(tierLabel(rating.rating, rating.tier), "tier-cell"));
             row.append(textCell(number.format(Math.round(rating.rating)), "number"));
             row.append(textCell(rankLabel(rating.rank), "number"));

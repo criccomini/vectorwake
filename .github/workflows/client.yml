@@ -85,11 +85,16 @@ jobs:
       - name: browser page tests
         run: for t in client/tests/*_test.js; do echo "== $t"; node "$t" || exit 1; done
 
+      # Every script the site and the admin panel serve. The two pilot-facing
+      # ones are exercised by the browser page tests above; this is the floor
+      # under the rest, which nothing loads until somebody opens the page.
       - name: admin script syntax
         run: |
           node --check deploy/admin/admin.js
           node --check deploy/admin/maps.js
           node --check deploy/site/site.js
+          node --check deploy/site/pilots.js
+          node --check deploy/site/growth.js
 
       - name: admin script interface
         run: node deploy/admin/tests/interface_test.js

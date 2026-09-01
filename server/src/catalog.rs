@@ -312,6 +312,37 @@ impl Catalog {
         self.zones.get(name)
     }
 
+    /// What a player calls the game a rating was earned in.
+    ///
+    /// A rating class is a zone key (`Arena::rating_class`), and a key is not
+    /// what anybody reads: the zone keyed `melee` is Team Battle on every
+    /// screen in the game, and `roam` is Free Roam. A page that prints the key
+    /// is naming a game that does not exist under that name anywhere else.
+    ///
+    /// A class with no zone behind it keeps its own key. That covers the
+    /// standalone arena's `arena`, and it covers a zone that has since left
+    /// the catalog while the ratings it wrote stand: neither has a label to
+    /// look up, and the key is at least true.
+    pub fn zone_label<'a>(&'a self, class: &'a str) -> &'a str {
+        match self.zones.get(class) {
+            Some(zone) => zone.label(class),
+            None => class,
+        }
+    }
+
+    /// Every zone this deployment runs, in the order the catalog declares
+    /// them, as the key a query is filtered by and the name it is offered
+    /// under. What a zone picker is built from.
+    pub fn zone_labels(&self) -> Vec<(&str, &str)> {
+        self.order
+            .iter()
+            .filter_map(|key| {
+                let zone = self.zones.get(key)?;
+                Some((key.as_str(), zone.label(key)))
+            })
+            .collect()
+    }
+
     /// Every map a zone plays, read from its own directory, in its own order,
     /// each under the name the rotation calls it by: the file's stem, which is
     /// what clients are shown. Empty if the zone names none or a file will not
@@ -920,6 +951,48 @@ mod tests {
         assert_eq!(
             read("duel").format(),
             ("1 v 1".into(), "3:00".into(), "kills".into())
+        );
+    }
+
+    #[test]
+    fn a_rating_class_reads_as_the_game_it_was_earned_in() {
+        // A rating class is a zone key, and the two zones whose key is not
+        // their name are exactly the two a profile would otherwise print
+        // wrong: `melee` is Team Battle everywhere else in the game, and
+        // `roam` is Free Roam.
+        let mut c = Catalog::default();
+        for (key, label) in [
+            ("melee", Some("Team Battle")),
+            ("roam", Some("Free Roam")),
+            ("turf", None),
+        ] {
+            c.order.push(key.into());
+            c.zones.insert(
+                key.into(),
+                ZoneDef {
+                    label: label.map(str::to_string),
+                    ..ZoneDef::default()
+                },
+            );
+        }
+        assert_eq!(c.zone_label("melee"), "Team Battle");
+        assert_eq!(c.zone_label("roam"), "Free Roam");
+        // A zone that names itself keeps its key, and so does a class with no
+        // zone behind it: the standalone arena's `arena`, and any class left
+        // standing by a zone that has since left the catalog.
+        assert_eq!(c.zone_label("turf"), "turf");
+        assert_eq!(c.zone_label("arena"), "arena");
+        assert_eq!(c.zone_label("gone"), "gone");
+
+        // The picker is built in the catalog's own order, not the map's,
+        // which has none worth relying on.
+        assert_eq!(
+            c.zone_labels(),
+            vec![
+                ("melee", "Team Battle"),
+                ("roam", "Free Roam"),
+                ("turf", "turf")
+            ]
         );
     }
 
