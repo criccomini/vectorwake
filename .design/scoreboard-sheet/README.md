@@ -1,11 +1,12 @@
 # The scoreboard sheet
 
-Round two of [one board](../one-board/README.md). Chris picked the sheet, the
-menu's own panel, and asked for four things: name it for what it is, have the
-column say which side you are on, give the menu language a section that can
-be pressed, and make it hold in every zone. And, apart from the sheet, a look
-at other shapes and places for the band it hangs off. Twenty two boards.
-Drawings of a proposal, not a plan of record. Nothing here is built.
+Rounds two and three of [one board](../one-board/README.md). Chris picked the
+sheet, the menu's own panel, and asked for four things: name it for what it
+is, have the column say which side you are on, make it hold in every zone,
+and look at other shapes and places for the band it hangs off. Then, on the
+second look, flatten it: one list with a Team column rather than sections,
+and join a side from a pilot's card. Twenty four boards. Drawings of a
+proposal, not a plan of record. Nothing here is built.
 
 ## What the sheet is
 
@@ -14,38 +15,44 @@ Drawings of a proposal, not a plan of record. Nothing here is built.
   `Watching`. The band's press and the board key open the same panel. That is
   a fifth stop, which decision 143 named as the number to watch on a short
   window's rail; the phone board carries the cost.
-- **A section per side, and the section is the press that joins it.** The
-  menu language had bands (a label between rules, not pressable) and rows
-  (pressable, one shape). This is a third thing: a row that heads a group and
-  is itself a control. A rule over it, the name spoken at 17 in the side's
-  color, the score read beside it, its stands or flags after that, seats at
-  the right end. The gutter says what a press does: the wedge on the side you
-  fly for, a ring on a side with a seat, nothing on a full side, whose reading
-  says `Full`. The ring is the pips' own mark for an empty place. Two other
-  shapes are on the language sheet, an act word at the right end and the
-  HUD's stroked key, and the ring leads because it adds no new mark and no
-  second button shape.
-- **Pilots under their side**, indented, with what the zone counts and how
-  long they have been in: `K D A Time` in the team zones, `K D Time` in the
-  duel and Free Roam. Your own row keeps its wash. Watchers close the list
-  under a band.
+- **One list.** The head names the panel and reads the clock. A line under
+  it says the sides again, each in its color with its score and, in Turf and
+  War, the stands or flags it holds, since on a phone the band is a screen
+  away. Then every pilot in one list ranked by kills, whichever side they are
+  on: the name in the side's color, the seat's mark, the side's name in the
+  Team column, then kills, deaths and assists. Your own row keeps its wash.
+  Watchers close the list under a band. Nothing in the menu language is new
+  here: rows, a head, a band, a stacked panel.
+- **A press on a pilot opens their card**, by enter, click or tap. The card
+  is a panel that stacked, with the pilot as its head, rows reading their
+  side, ship, rating and this match, and one breathing key at the foot:
+  `JOIN CAISSON`, gated as a hull change is. On a full side the key stands
+  down and the foot says `Caisson is full`. On your own side's pilot, and on
+  yourself, there is no key. That is how an invitation was sent from the
+  info box in `docs/design/teams.md`, and joining is the same shape.
 - **At the whistle** it rises on its own with the result as its head, the
-  share bar under it, the winner first, a rating column, and the MVP mark.
+  share bar under it, a rating column, and the MVP mark on the winner's best.
   The band keeps the clock.
+
+What round two had instead, and why it went: a section per side that was
+itself the press that joined it, a new thing for the menu language. Flat
+with a Team column needs no new row shape, and the card was always going to
+exist. What the flat list costs is a side with nobody on it, which has no
+row to press: in Free Roam, founding a side needs a door of its own.
 
 ## By zone
 
 - **Team Battle** counts kills. Drawn on a monitor, both phones, between
   rounds, and once named `Teams` beside the `Scoreboard` board to compare.
-- **Turf** counts turf, and each side's row carries the stands it holds as
-  pennants in its color, with the stands nobody holds dim after them.
+- **Turf** counts turf, and the line under the head carries each side's
+  stands as pennants in its color, the ones nobody holds dim.
 - **War** counts rounds and shows the four flags the same way.
-- **The duel** counts rounds. A side is one pilot, so the section is the
-  pilot, with its own figures at the right end and nothing to join. A
-  `Rounds` band under the two lists who took each round and how long it ran,
-  with the round in play reading its clock.
-- **Free Roam** has no clock and no score. Eight sides of eight, rings on the
-  ones with a seat, and the list scrolls under the pinned head.
+- **The duel** counts rounds. Its two pilots are the two rows, with no Team
+  column, and a `Rounds` band under them lists who took each and how long it
+  ran, the round in play reading its clock.
+- **Free Roam** has no clock and no score. Thirty one pilots in one ranked
+  list, where the Team column does what eight colors cannot, scrolling under
+  the pinned head.
 
 ## The name
 
@@ -80,5 +87,5 @@ chrome it carries forward: hues from `client/arena/palette.lua`, the band,
 key, stop and row measures from `client/arena/ui.lua`, the seat marks and the
 pennant, and the two faces the client carries.
 
-Rebuild with `python3 build.py`; the twenty two `.dc.html` files and
+Rebuild with `python3 build.py`; the twenty four `.dc.html` files and
 `canvas.json` beside it are what a design canvas is seeded from.

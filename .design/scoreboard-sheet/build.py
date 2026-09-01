@@ -22,6 +22,13 @@ And the band: alternatives to a 26-point instrument at top center, which
 are a thinner line in the same place and a stack in the top left corner,
 each drawn for every zone.
 
+Round three, on Chris's next note: the list is flat. Time goes and a Team
+column takes its place, every pilot in one list ranked by kills, and a
+side is joined from the pilot's own card, which a press on any row opens
+and which carries JOIN <side> as its breathing key. The selectable section
+is gone with the grouping; the card is a panel that stacked, which the
+language already had.
+
 The match is the one every ending mock has been judged against: Caisson
 takes it 20 to 17, and the viewer is DRiFT on the losing side. The design
 system is the client's: hues from client/arena/palette.lua, the band, key,
@@ -556,11 +563,11 @@ def m_band(label):
 
 
 COLS = {
-    "melee": [("K", 24), ("D", 24), ("A", 24), ("Time", 44)],
-    "turf": [("K", 24), ("D", 24), ("A", 24), ("Time", 44)],
-    "war": [("K", 24), ("D", 24), ("A", 24), ("Time", 44)],
-    "duel": [("K", 24), ("D", 24), ("Time", 44)],
-    "roam": [("K", 24), ("D", 24), ("Time", 44)],
+    "melee": [("Team", 84), ("K", 24), ("D", 24), ("A", 24)],
+    "turf": [("Team", 84), ("K", 24), ("D", 24), ("A", 24)],
+    "war": [("Team", 84), ("K", 24), ("D", 24), ("A", 24)],
+    "duel": [("K", 24), ("D", 24)],
+    "roam": [("Team", 96), ("K", 24), ("D", 24)],
 }
 
 
@@ -578,77 +585,31 @@ def m_col_heads(zone, ending=False, portrait=False):
             '</span></div>')
 
 
-def m_section(side, room, shape="ring", lit=False, joinable=None,
-              rule=True, cells=None):
-    """The selectable section: a side's row, which groups the pilots under
-    it and is itself the press that joins the side.
-
-    A rule over it, as a band has, so it reads as a group's head. The name
-    spoken at 17 in the side's color, its score read beside it, its stands
-    or flags after that. The right end reads the seats. The gutter says what
-    a press does: the wedge on the side you fly for, a ring on a side with a
-    seat, nothing on a full one, whose reading says Full.
-
-    `shape` is which of the three drawings on the language sheet: ring (the
-    gutter mark), word (an act word at the right end), key (the HUD's
-    stroked box)."""
-    if joinable is None:
-        joinable = (not side.mine) and side.humans < side.cap
-    full = (not side.mine) and not joinable
+def m_pilot(p, zone, side, ending=False, portrait=False, lit=False):
+    """A pilot's row: the name in the side's color, the seat's mark, then
+    the side's name in the Team column and the figures. Your own row keeps
+    its wash; a row under a hand lights edge to edge. A press opens the
+    pilot's card."""
+    name, human, k, d, a, _t, moved = p
+    col = side.col
+    me = name == ME
     wash = ""
     if lit:
         wash = "background:rgba(79,214,255,.18);"
-    elif side.mine:
-        wash = "background:rgba(79,214,255,.07);"
-    if side.mine:
-        left = wedge(side.col)
-    elif shape == "ring" and joinable:
-        left = ring(side.col, 8, 1 if lit else .85)
-    else:
-        left = '<span style="width:8px;flex:none"></span>'
-    score = ""
-    if side.score is not None:
-        score = (f'<span class="num" style="font-size:14px;color:{side.col}">'
-                 f'{side.score}</span>')
-    flags = pennants(side, 8, room)
-    right = ""
-    if full:
-        right = (f'<span class="mono" style="font-size:14px;color:{MUTE}">'
-                 'Full</span>')
-    elif side.mine or shape == "ring":
-        right = (f'<span class="mono" style="font-size:14px;color:{READ}">'
-                 f'{side.humans} of {side.cap}</span>')
-    elif shape == "word":
-        right = (f'<span class="row" style="gap:14px">'
-                 f'<span class="mono" style="font-size:14px;color:{READ}">'
-                 f'{side.humans} of {side.cap}</span>'
-                 f'<span style="font-size:14px;color:{FRIEND}">Join</span>'
-                 f'</span>')
-    elif shape == "key":
-        right = (f'<span class="row" style="gap:14px">'
-                 f'<span class="mono" style="font-size:14px;color:{READ}">'
-                 f'{side.humans} of {side.cap}</span>'
-                 f'<span class="key" style="height:24px;padding:0 10px;'
-                 f'font-size:11px">Join</span></span>')
-    if cells is not None:
-        # A side that is one pilot: the section is the pilot, and its own
-        # figures take the right end, since there is no seat to read.
-        right = f'<span class="row" style="gap:10px">{cells}</span>'
-    top = hrule() if rule else ""
-    return (f'{top}<div class="row" style="height:{ROW}px;gap:10px;'
-            f'padding:0 14px;{wash}">{left}'
-            f'<span style="font-size:17px;color:{side.col}">{side.name}</span>'
-            f'{score}{flags}<span style="margin-left:auto">{right}</span></div>')
-
-
-def m_cells(p, zone, ending=False, portrait=False):
-    name, human, k, d, a, t, moved = p
-    vals = {"K": k, "D": d, "A": a, "Time": t}
+    elif me:
+        wash = "background:rgba(79,214,255,.13);"
+    mark = helm(MUTE, 12) if human else bot(MUTE, 12)
     cols = list(COLS[zone])
     if portrait and len(cols) > 3:
         cols = [c for c in cols if c[0] != "A"]
-    cells = "".join(cell(vals[c], w, READ if c != "Time" else MUTE)
-                    for c, w in cols)
+    cells = ""
+    for c, w in cols:
+        if c == "Team":
+            cells += (f'<span class="mono" style="width:{w}px;text-align:right;'
+                      f'font-size:13px;color:{col};opacity:.9;'
+                      f'white-space:nowrap;overflow:hidden">{side.name}</span>')
+        else:
+            cells += cell({"K": k, "D": d, "A": a}[c], w, READ)
     if ending:
         if moved > 0:
             cells += cell(f"+{moved}", 44, PAID, .95)
@@ -656,24 +617,77 @@ def m_cells(p, zone, ending=False, portrait=False):
             cells += cell(str(moved), 44, HURT, .85)
         else:
             cells += cell("0", 44, MUTE)
-    return cells
-
-
-def m_pilot(p, zone, col, ending=False, portrait=False, indent=True):
-    name, human, k, d, a, t, moved = p
-    me = name == ME
-    wash = "background:rgba(79,214,255,.13);" if me else ""
-    mark = helm(MUTE, 12) if human else bot(MUTE, 12)
-    cells = m_cells(p, zone, ending, portrait)
     mvp = ""
     if ending and name == MVP:
         mvp = f'<span class="lbl" style="font-size:10px;color:{PAID}">MVP</span>'
     return (f'<div class="row" style="height:{ROW}px;gap:10px;'
-            f'padding:0 14px 0 {32 if indent else 14}px;{wash}">'
+            f'padding:0 14px;{wash}">'
             f'<span style="font-size:17px;color:{col};'
             f'opacity:{1 if me else .85}">{name}</span>{mvp}{mark}'
             f'<span class="row" style="margin-left:auto;gap:10px">{cells}</span>'
             '</div>')
+
+
+def score_row(room):
+    """The sides and their scores inside the sheet, one line under the head:
+    the band said again, because on a phone the band is a screen away. Each
+    side in its color with its stands or flags, the loose ones dim."""
+    if room["clock"] is None or room["unit"] is None:
+        return ""
+    l, r = room["sides"]
+
+    def side(s, right):
+        bits = [f'<span style="font-size:14px;color:{s.col}">{s.name}</span>',
+                f'<span class="num" style="font-size:14px;color:{s.col}">'
+                f'{s.score}</span>', pennants(s, 8, room)]
+        if right:
+            bits = bits[::-1]
+        return f'<span class="row" style="gap:8px">{"".join(bits)}</span>'
+    return (f'<div class="row" style="height:32px;padding:0 14px;'
+            f'justify-content:space-between">{side(l, False)}{side(r, True)}'
+            f'</div>')
+
+
+def pilot_card(p, side, room, zone="melee", w=None, note=None):
+    """The pilot's card: a panel that stacked. Its head is the pilot, its
+    rows read who they are and what they have done this match, and its
+    breathing key at the foot is the one act the card offers, joining
+    their side. No key on your own side's pilot or on yourself; a full
+    side's key stands down and says why."""
+    name, human, k, d, a, _t, _m = p
+    me = name == ME
+    rows = []
+
+    def read(label, value, col=READ, raw=False):
+        return (f'<div class="row" style="height:{ROW}px;padding:0 14px">'
+                f'<span style="font-size:17px;color:{INK}">{label}</span>'
+                f'<span class="{"" if raw else "mono"}" style="margin-left:auto;'
+                f'font-size:14px;color:{col}">{value}</span></div>')
+    rows.append(read("Team", side.name, side.col))
+    rows.append(read("Ship", "Anvil" if not me else "Apex"))
+    rows.append(read("Rating", "1480 · Ace" if human else "Bot"))
+    figures = f"{k} K · {d} D · {a} A" if zone != "duel" else f"{k} K · {d} D"
+    rows.append(read("This match", figures))
+    foot = ""
+    if not me and not side.mine:
+        if side.humans < side.cap:
+            foot = (f'<div style="padding:10px 14px 14px">'
+                    f'{commit_key("JOIN " + side.name.upper(), None, 44)}</div>')
+        else:
+            foot = (f'<div class="row" style="height:{ROW}px;padding:0 14px;'
+                    f'justify-content:center"><span class="mono" '
+                    f'style="font-size:14px;color:{MUTE}">{side.name} is full'
+                    f'</span></div>')
+    if note:
+        foot = (f'<div class="row" style="height:{ROW}px;padding:0 14px;'
+                f'justify-content:center"><span class="mono" '
+                f'style="font-size:14px;color:{MUTE}">{note}</span></div>')
+    head = (f'<div class="row" style="height:{ROW}px;gap:10px;padding:0 14px">'
+            f'{back_tri()}<span style="font-size:17px;color:{side.col}">{name}'
+            f'</span>{helm(MUTE, 12) if human else bot(MUTE, 12)}</div>'
+            f'{hrule(".6")}')
+    return (f'<div class="glass" style="{"width:" + str(w) + "px" if w else ""}">'
+            f'{head}{"".join(rows)}{foot}</div>')
 
 
 def m_watchers():
@@ -740,7 +754,8 @@ def stop(label, value, w=STOP_W, h=STOP_H, lit=False, hot=False, raw=True):
 
 
 def commit_key(word, w=STOP_W, h=STOP_H):
-    return (f'<div class="row" style="width:{w}px;height:{h}px;'
+    return (f'<div class="row" style="{"width:" + str(w) + "px;" if w else ""}'
+            f'height:{h}px;'
             f'justify-content:center;border:1px solid rgba(79,214,255,.85);'
             f'background:rgba(79,214,255,.16);font-size:14px;'
             f'font-family:var(--mono);letter-spacing:.12em;color:{FRIEND}">'
@@ -750,29 +765,28 @@ def commit_key(word, w=STOP_W, h=STOP_H):
 # --- the boards --------------------------------------------------------------
 
 
-def sheet_body(zone, state="open", portrait=False, naming="Scoreboard"):
+def sheet_body(zone, state="open", portrait=False, naming="Scoreboard",
+               lit=None):
     room = ROOMS[zone]
     ending = state == "end"
-    sides = list(room["sides"])
-    if ending:
-        sides.sort(key=lambda s: -s.score)
     body = []
     if ending:
-        winner = sides[0]
+        winner = max(room["sides"], key=lambda s: s.score)
         body.append(m_head(f"{winner.name} takes it", winner.col))
         body.append(f'<div style="padding:10px 6px 6px">{share_bar(room)}</div>')
     elif zone == "roam":
         body.append(m_head(naming, sub="31 flying"))
     else:
         body.append(m_head(naming, sub=room["clock"]))
+        body.append(score_row(room))
     body.append(m_col_heads(zone, ending, portrait))
-    for s in sides:
-        if zone == "duel":
-            body.append(m_section(s, room, cells=m_cells(s.pilots[0], zone,
-                                                          ending, portrait)))
-            continue
-        body.append(m_section(s, room))
-        body += [m_pilot(p, zone, s.col, ending, portrait) for p in s.pilots]
+    # One list, ranked by kills and then by fewer deaths, whichever side a
+    # pilot is on: the Team column and the color say the side, and the
+    # order says who is doing well, which is what a list is opened for.
+    everyone = [(p, s) for s in room["sides"] for p in s.pilots]
+    everyone.sort(key=lambda ps: (-ps[0][2], ps[0][3], ps[0][0].lower()))
+    for p, s in everyone:
+        body.append(m_pilot(p, zone, s, ending, portrait, lit=(p[0] == lit)))
     if zone == "duel":
         body.append(m_band("Rounds"))
         for n, who, t in DUEL_ROUNDS:
@@ -786,9 +800,10 @@ def sheet_body(zone, state="open", portrait=False, naming="Scoreboard"):
 
 def sheet_height(zone, state, ending_extra=60):
     room = ROOMS[zone]
-    n = sum(1 + (0 if zone == "duel" else len(s.pilots))
-            for s in room["sides"])
-    want = ROW + 1 + 24 + n * ROW + n // 2
+    n = sum(len(s.pilots) for s in room["sides"])
+    want = ROW + 1 + 24 + n * ROW
+    if room["clock"] is not None and room["unit"] is not None and state != "end":
+        want += 32
     if zone == "duel":
         want += 24 + (2 if state == "end" else 3) * ROW
     if zone != "roam":
@@ -798,7 +813,10 @@ def sheet_height(zone, state, ending_extra=60):
     return want
 
 
-def sheet(zone, form, state="open", naming="Scoreboard", band="Middle"):
+def sheet(zone, form, state="open", naming="Scoreboard", band="Middle",
+          card=None, lit=None):
+    """The sheet on the glass; with `card` the name of a pilot whose card
+    has replaced it, the way a stacked panel replaces the one under it."""
     w, h = FORMS[form]
     compact = form != "Desktop"
     portrait = form == "Portrait"
@@ -806,6 +824,13 @@ def sheet(zone, form, state="open", naming="Scoreboard", band="Middle"):
     span = w - 2 * PAD
     pw = min(PANEL_MAX, span)
     px = PAD + (span - pw) / 2
+    if card:
+        p, side = next((p, s) for s in room["sides"] for p in s.pilots
+                       if p[0] == card)
+        panel = (f'<div class="abs" style="left:{px}px;bottom:{PAD}px;'
+                 f'width:{pw}px">{pilot_card(p, side, room, zone)}</div>')
+        return chrome(w, h, room, compact, portrait, band, state,
+                      key=False) + panel
     want = sheet_height(zone, state)
     top_clear = PAD + KEY_H + (22 if room.get("stands") else 14)
     if state == "end":
@@ -821,7 +846,7 @@ def sheet(zone, form, state="open", naming="Scoreboard", band="Middle"):
                  '</div>')
     panel = (f'<div class="abs glass" style="left:{px}px;bottom:{PAD}px;'
              f'width:{pw}px;height:{ph}px;overflow:hidden">'
-             f'{sheet_body(zone, state, portrait, naming)}{thumb}</div>')
+             f'{sheet_body(zone, state, portrait, naming, lit)}{thumb}</div>')
     return chrome(w, h, room, compact, portrait, band, state, key=False) + panel
 
 
@@ -871,23 +896,23 @@ def glass(body, w=400):
 
 
 def main_sheet():
-    W, H = 1440, 900
+    W, H = 1440, 1020
     room = ROOMS["melee"]
     pylon, caisson = room["sides"]
     full = Side("Caisson", ENEMY, 20, 4, 4, CAISSON, False)
 
-    # The three shapes for a selectable section, each on the same three rows.
-    def trio(shape):
-        return glass(m_section(pylon, room, shape, rule=False)
-                     + m_section(caisson, room, shape)
-                     + m_section(full, room, shape), 400)
+    rows = glass(
+        m_head("Scoreboard", sub="2:14") + score_row(room)
+        + m_col_heads("melee")
+        + m_pilot(PYLON[0], "melee", pylon)
+        + m_pilot(CAISSON[0], "melee", caisson, lit=True)
+        + m_pilot(PYLON[3], "melee", pylon)
+        + m_watchers(), 400)
 
-    states = glass(
-        m_section(pylon, room, rule=False)
-        + m_pilot(PYLON[3], "melee", FRIEND)
-        + m_section(caisson, room, lit=True)
-        + m_pilot(CAISSON[0], "melee", ENEMY)
-        + m_section(full, room), 400)
+    cards = (f'<div style="display:flex;flex-direction:column;gap:14px">'
+             f'{pilot_card(CAISSON[0], caisson, room, w=400)}'
+             f'{pilot_card(CAISSON[0], full, room, w=400)}'
+             f'{pilot_card(PYLON[0], pylon, room, w=400)}</div>')
 
     stops_a = (f'<div style="display:flex;flex-direction:column;gap:8px">'
                f'{stop("Scoreboard", "Pylon 17")}{stop("Scoreboard", "Watching")}'
@@ -897,55 +922,30 @@ def main_sheet():
                f'{stop("Teams", "Pylon")}{stop("Teams", "Watching")}'
                f'{stop("Teams", "DRiFT")}{stop("Teams", "Anvil Watch")}</div>')
 
-    table = "".join(
-        f'<div class="row" style="height:26px;gap:10px;border-top:1px solid '
-        f'rgba(63,88,120,.35)"><span style="width:88px;font-size:13px;'
-        f'color:{INK};flex:none">{z}</span><span class="mono" style="width:52px;'
-        f'font-size:11px;color:{READ};flex:none">{unit}</span>'
-        f'<span class="mono" style="width:84px;font-size:11px;color:{READ};'
-        f'flex:none;white-space:nowrap">{cols}</span>'
-        f'<span class="mono" style="margin-left:auto;font-size:11px;'
-        f'color:{MUTE};white-space:nowrap">{extra}</span></div>'
-        for z, unit, cols, extra in (
-            ("Team Battle", "kills", "K D A Time", ""),
-            ("Turf", "turf", "K D A Time", "stands on the row"),
-            ("War", "rounds", "K D A Time", "flags on the row"),
-            ("Duel", "rounds", "K D Time", "rounds listed under"),
-            ("Free Roam", "none", "K D Time", "no clock, no score")))
-
     body = f'''
 <div style="position:relative;width:{W}px;height:{H}px;overflow:hidden;
      background-color:{BG};background-image:{starfield(W, H, 3)};padding:40px 48px">
   <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:28px">
     <div style="font-size:26px;color:{INK}">The scoreboard sheet</div>
-    {cap("The menu's panel, holding the room: a section per side that is also the press that joins it, the pilots under each with what they did and how long they have been in, and the watchers at the foot. It is a stop in the column, its answer is where you stand, and at the whistle it rises on its own with the result as its head.", 820)}
+    {cap("The menu's panel, holding the room as one list: every pilot ranked by kills, with their side in the Team column and in the color of their name, and the watchers at the foot. A press on a pilot opens their card, and the card's one key joins their side. It is a stop in the column, its answer is where you stand, and at the whistle it rises on its own with the result as its head.", 860)}
   </div>
   <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:40px">
     <div>
-      {title("A selectable section: three shapes")}
-      <div style="display:flex;flex-direction:column;gap:14px">
-        <div>{trio("ring")}<div style="margin-top:6px">{cap("<b style='color:" + INK + "'>Ring.</b> The gutter says what a press does, in marks the game already has: the wedge is the side you are on, the ring is an empty place you could take, nothing is a side that is full. The right end only reads.")}</div></div>
-        <div>{trio("word")}<div style="margin-top:6px">{cap("<b style='color:" + INK + "'>Word.</b> An act at the right end in the accent, the way a card's answers are worded. Plain, and the first row whose right end is a verb.")}</div></div>
-        <div>{trio("key")}<div style="margin-top:6px">{cap("<b style='color:" + INK + "'>Key.</b> The HUD's stroked box on a menu row. Unmissable, and a second button shape inside a panel that has one.")}</div></div>
-      </div>
+      {title("The list")}
+      {rows}
+      <div style="margin-top:8px">{cap("The head names the panel and reads the clock; the line under it says the sides again, since on a phone the band is a screen away. Then the columns: the side, kills, deaths, assists. One list, ranked, whichever side a pilot is on: the color and the Team column say the side, the order says who is doing well. Your own row keeps its wash; a row under a hand lights edge to edge, as every row does, and a press opens the pilot's card. Nothing in the language is new here.")}</div>
     </div>
     <div>
-      {title("The ring, in its states")}
-      {states}
-      <div style="margin-top:8px">{cap("A rule over a section, as a band has, so it heads a group. The name spoken at 17 in the side's color, the score read beside it, stands or flags after that, seats at the right end. The whole row lights under a hand at the cursor wash, edge to edge, like every row. Pilots indent under it. Pressing another side's row is joining it, gated as a hull change is: full bar, and a respawn.")}</div>
-      <div style="margin-top:24px">{title("What the columns are, by zone")}
-        <div style="display:flex;flex-direction:column">{table}</div>
-        <div style="margin-top:8px">{cap("Time is how long the pilot has been in the seat this match. In a duel each side is one pilot, so the section is the pilot, and the rounds are listed with their times under a band of their own.")}</div>
-      </div>
+      {title("The pilot card, in its states")}
+      {cards}
+      <div style="margin-top:8px">{cap("A panel that stacked, with the pilot as its head. Its rows read their side, their ship, their rating and this match. The breathing key at the foot is the one act: JOIN, named for the side, gated as a hull change is. On a full side the key stands down and says so. On your own side's pilot, and on yourself, there is no key.")}</div>
     </div>
     <div>
       {title("What the stop is called")}
-      <div style="display:flex;gap:16px">
-        <div>{stops_a}<div style="margin-top:8px">{cap("<b style='color:" + INK + "'>Scoreboard.</b> The answer is where you stand and how it is going. Holds in a duel, where a side is a pilot, and in Free Roam, where a side has no score. Leading.", 320)}</div></div>
-      </div>
-      <div style="display:flex;gap:16px;margin-top:20px">
-        <div>{stops_b}<div style="margin-top:8px">{cap("<b style='color:" + INK + "'>Teams.</b> Says what the sections are. Reads wrong in a duel, where the answer is your own call sign, and promises a team where Free Roam gives you a pact of one.", 320)}</div></div>
-      </div>
+      {stops_a}
+      <div style="margin-top:8px">{cap("<b style='color:" + INK + "'>Scoreboard.</b> The answer is where you stand and how it is going. Holds in a duel, where a side is a pilot, and in Free Roam, where a side has no score. Leading.", 320)}</div>
+      <div style="margin-top:20px">{stops_b}</div>
+      <div style="margin-top:8px">{cap("<b style='color:" + INK + "'>Teams.</b> Says what the sections were. Reads wrong in a duel, where the answer is your own call sign, and promises a team where Free Roam gives you a pact of one.", 320)}</div>
     </div>
   </div>
 </div>'''
@@ -1024,7 +1024,12 @@ def main():
         "ColumnDesktop": screen("Desktop", column("Desktop", "Pylon 17")),
         "ColumnPortrait": screen("Portrait",
                                  column("Portrait", "Watching", watching=True)),
-        "TeamBattle": screen("Desktop", sheet("melee", "Desktop")),
+        "TeamBattle": screen("Desktop", sheet("melee", "Desktop",
+                                              lit="Carrack")),
+        "PilotCard": screen("Desktop", sheet("melee", "Desktop",
+                                             card="Carrack")),
+        "PilotCardPortrait": screen("Portrait", sheet("melee", "Portrait",
+                                                      card="Carrack")),
         "TeamBattleTeams": screen("Desktop", sheet("melee", "Desktop",
                                                    naming="Teams")),
         "TeamBattlePortrait": screen("Portrait", sheet("melee", "Portrait")),

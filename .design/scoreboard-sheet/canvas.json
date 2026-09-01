@@ -20,14 +20,14 @@
       "x": 0,
       "y": 0,
       "w": 1440,
-      "h": 900,
+      "h": 1020,
       "page": "page-1"
     },
     {
       "file": "ColumnDesktop.dc.html",
       "title": "The column, with the stop",
       "x": 0,
-      "y": 1100,
+      "y": 1220,
       "w": 1440,
       "h": 810,
       "page": "page-1"
@@ -36,7 +36,7 @@
       "file": "ColumnPortrait.dc.html",
       "title": "The column, watching, phone",
       "x": 1520,
-      "y": 1100,
+      "y": 1220,
       "w": 390,
       "h": 844,
       "page": "page-1"
@@ -45,7 +45,16 @@
       "file": "TeamBattle.dc.html",
       "title": "Team Battle, open",
       "x": 0,
-      "y": 2100,
+      "y": 2220,
+      "w": 1440,
+      "h": 810,
+      "page": "page-1"
+    },
+    {
+      "file": "PilotCard.dc.html",
+      "title": "A pilot's card, from a press on the row",
+      "x": 1720,
+      "y": 2220,
       "w": 1440,
       "h": 810,
       "page": "page-1"
@@ -53,8 +62,8 @@
     {
       "file": "TeamBattleTeams.dc.html",
       "title": "Team Battle, named Teams",
-      "x": 1720,
-      "y": 2100,
+      "x": 3440,
+      "y": 2220,
       "w": 1440,
       "h": 810,
       "page": "page-1"
@@ -63,7 +72,16 @@
       "file": "TeamBattlePortrait.dc.html",
       "title": "Team Battle, phone",
       "x": 0,
-      "y": 3050,
+      "y": 3170,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "PilotCardPortrait.dc.html",
+      "title": "A pilot's card, phone",
+      "x": 1400,
+      "y": 3170,
       "w": 390,
       "h": 844,
       "page": "page-1"
@@ -72,7 +90,7 @@
       "file": "TeamBattleLandscape.dc.html",
       "title": "Team Battle, sideways phone",
       "x": 470,
-      "y": 3050,
+      "y": 3170,
       "w": 844,
       "h": 390,
       "page": "page-1"
@@ -81,7 +99,7 @@
       "file": "TeamBattleEnd.dc.html",
       "title": "Between rounds",
       "x": 0,
-      "y": 4050,
+      "y": 4170,
       "w": 1440,
       "h": 810,
       "page": "page-1"
@@ -90,7 +108,7 @@
       "file": "TeamBattleEndPortrait.dc.html",
       "title": "Between rounds, phone",
       "x": 1520,
-      "y": 4050,
+      "y": 4170,
       "w": 390,
       "h": 844,
       "page": "page-1"
@@ -220,7 +238,7 @@
       "y": 0,
       "w": 400,
       "page": "page-1",
-      "text": "The scoreboard sheet\n\nRound two, on the sheet. What changed from round one: it is a stop in the column and its answer says where you stand (your side and its score, or Watching); a side's row is now a defined thing in the menu language, the selectable section, drawn in three shapes with the ring leading; every pilot row carries a Time; and each zone is drawn on the next page, the duel with its rounds.\n\nOn naming: SCOREBOARD leads because its answer is where you stand in every zone, the duel and Free Roam included. TEAMS is drawn beside it on the Team Battle board to compare.\n\nThe stop is a fifth one. Decision 143 named the fifth stop as the number to watch on a short window's rail; that cost is real and drawn on the phone column."
+      "text": "The scoreboard sheet\n\nRound three, on the sheet. The list is flat: every pilot in one list ranked by kills, their side in the Team column and in the color of their name. Time is gone. A press on a pilot (enter, click or tap) opens their card, a panel that stacked, and the card's breathing key is JOIN, named for their side. So a side is joined through one of its pilots, the way an invitation was sent from the info box, and the selectable section round two needed is not needed.\n\nThe stop stays: SCOREBOARD, answering where you stand. TEAMS is drawn beside it on the Team Battle board to compare.\n\nWhat this costs: a side with nobody on it has no row to press, so it cannot be joined from here; in Free Roam, founding a side needs a door of its own."
     },
     {
       "id": "note-zones",
@@ -228,7 +246,7 @@
       "y": 0,
       "w": 400,
       "page": "page-2",
-      "text": "By zone\n\nOne sheet, five zones. Turf and War put each side's stands or flags on its row, in the side's color, with the ones nobody holds dim. The duel's sides are single pilots, so the section is the pilot, with a Rounds band under them listing who took each and how long it ran. Free Roam is eight sides of eight with no clock and no score: the rings say which you could join, and the list scrolls under the pinned head."
+      "text": "By zone\n\nOne sheet, five zones. The line under the head says the sides, with each side's stands or flags in Turf and War, the ones nobody holds dim. The duel's two pilots are the two rows, with a Rounds band under them listing who took each and how long it ran. Free Roam is one ranked list of thirty one with the Team column doing the work the colors cannot for eight sides, scrolling under the pinned head."
     },
     {
       "id": "note-band",
