@@ -393,51 +393,6 @@ button {
   margin-inline: auto;
 }
 
-.founder-letter {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  align-items: center;
-  min-height: 72svh;
-  padding-block: clamp(110px, 13vw, 190px);
-}
-
-.founder-letter-copy {
-  grid-column: 4 / span 7;
-  max-width: 780px;
-  padding-top: 34px;
-  border-top: 1px solid var(--friend);
-}
-
-.founder-letter-copy p {
-  margin: 0;
-}
-
-.founder-letter-copy > p:first-child {
-  color: #c5d2e2;
-  font-size: clamp(17px, 1.55vw, 23px);
-  line-height: 1.85;
-  letter-spacing: -0.012em;
-}
-
-.founder-letter-copy a {
-  color: var(--friend);
-  border-bottom: 1px solid rgb(79 214 255 / 0.55);
-  transition: border-color 150ms ease, color 150ms ease;
-}
-
-.founder-letter-copy a:hover {
-  border-color: var(--ink);
-  color: var(--ink);
-}
-
-.founder-letter-copy .founder-signoff {
-  margin-top: 36px;
-  color: var(--friend);
-  font-family: var(--display);
-  font-size: clamp(23px, 2.2vw, 32px);
-  line-height: 1.25;
-}
-
 .features {
   padding-block: clamp(120px, 16vw, 220px);
   border-top: 1px solid var(--line);
@@ -1079,6 +1034,11 @@ button {
   color: var(--friend);
 }
 
+.footer-copyright {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .reveal {
   opacity: 0;
   transform: translateY(28px);
@@ -1123,10 +1083,6 @@ button {
   .hero-proof {
     right: 20px;
     bottom: 28px;
-  }
-
-  .founder-letter-copy {
-    grid-column: 3 / span 8;
   }
 
   .site-footer {
@@ -1227,21 +1183,6 @@ button {
   .hero-proof {
     right: 20px;
     bottom: 22px;
-  }
-
-  .founder-letter {
-    display: block;
-    min-height: auto;
-    padding-block: 110px;
-  }
-
-  .founder-letter-copy {
-    padding-top: 28px;
-  }
-
-  .founder-letter-copy > p:first-child {
-    font-size: 17px;
-    line-height: 1.8;
   }
 
   .features {

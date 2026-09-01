@@ -7199,12 +7199,49 @@ CLA it wants needs a party for contributors to sign with, and the commercial
 release it protects needs a party to sell. Both are worse to retrofit than to
 name now, before there is a contributor or a buyer to renegotiate with.
 
-**Cost:** the site now names two parties. Loopweld LLC holds the rights and
-Chris is still the operator the terms make the agreement with, which is a
-coherent arrangement but not an obvious one to a reader.
-`docs/launch/legal-review.md` carries it as a question for counsel rather than
-settling it here.
+**Cost:** for a few hours the site named two parties, since the terms still
+made their agreement with Chris. [Decision 138](#138-the-site-speaks-as-the-company)
+closed that.
 
-**Reconsider if:** counsel wants the operating party and the rights holder to
-be the same name on the page, or wants a different entity to hold the game
-separately from the code.
+**Reconsider if:** counsel wants a different entity to hold the game separately
+from the code.
+
+---
+
+## 138. The site speaks as the company
+
+**Status:** accepted
+
+Decision 137 put the copyright on Loopweld LLC and stopped there. The terms
+still made their agreement with Chris, and the clause limiting liability still
+limited his. A company that holds the rights while a person signs the contract
+absorbs nothing, which is the one thing it was formed to do. So the operator on
+the terms page is Loopweld LLC, and the privacy notice names it as the party
+deciding what the service keeps.
+
+The privacy notice needed more than a swapped name. Its section headed "Who runs
+Vectorwake" never said who: it listed the sites the notice covers and pointed at
+support. `docs/launch/legal-review.md` measures that notice against GDPR
+Article 13, which asks first for the identity of the controller.
+
+The founder letter is gone, at Chris's ask. It was the landing page's only
+first person voice and its only mention of a person, and it named SubSpace,
+which `docs/design/identity.md` had ruled out in marketing. The launch brief
+carried that as a contradiction for counsel to settle, and removing the letter
+settles it. Every footer now carries the copyright line. No page had one, and it
+is the first place a reader looks for a holder.
+
+**Cost:** the landing page loses its middle. It is the hero, then Features,
+then the foot, and the letter's "Start playing now" was the only call to act
+between the first and the last. The hero's button and the nav still lead to the
+same places, so nothing is unreachable, but a page that used to say something in
+a human voice now only lists what the game has.
+
+Terms and privacy moved to an effective date of September 1, 2026, because
+both pages say the date changes when they change and the party you are
+contracting with is not a small change. The terms also promise to announce a
+material change before it takes effect when practical, and no announcement has
+gone out. That one is Chris's to post, not something a commit can do.
+
+**Reconsider if:** the landing page wants a voice in the middle again, in which
+case it is the company's and not a person's, and it does not name another game.
