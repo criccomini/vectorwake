@@ -50,16 +50,16 @@ return {
     {id = "reverse", name = "reverse", cat = "fly", keys = {"down"},
      what = "Drives your ship backward.",
      pad = "left thumb: double tap, and again to stop"},
-    {id = "guns", name = "guns", cat = "gun", keys = {"space"},
+    {id = "guns", name = "guns", cat = "gun", keys = {"d"},
      what = "Fires your rapid weapon.",
      pad = "the big pad on the right"},
-    {id = "bombs", name = "bombs", cat = "bomb", keys = {"tab"},
+    {id = "bombs", name = "bombs", cat = "bomb", keys = {"a"},
      what = "Fires a heavy weapon that detonates on impact.",
      pad = "the smaller pad beside the guns"},
     -- Two charge keys, and they are positions rather than weapons.
     --
     -- A kit carries two kinds of charge and the pilot chooses which, so what
-    -- Q spends is whatever they put in the first slot on the ship page. The
+    -- W spends is whatever they put in the first slot on the ship page. The
     -- keys used to be named for the weapons, on the argument that a pilot
     -- should not have to learn a second name for a thing the corner stack
     -- already calls by its own; that was true while every hull carried every
@@ -69,10 +69,10 @@ return {
     --
     -- The corner stack still says what is in each, which is where a pilot
     -- reads it in a fight, and the ship page says which key each row is on.
-    {id = "charge_1", name = "charge 1", cat = "charge", keys = {"q"},
+    {id = "charge_1", name = "charge 1", cat = "charge", keys = {"w"},
      what = "Spends the first charge on your ship.",
      pad = "tap its fixed cell above the weapons"},
-    {id = "charge_2", name = "charge 2", cat = "charge", keys = {"w"},
+    {id = "charge_2", name = "charge 2", cat = "charge", keys = {"s"},
      what = "Spends the second charge on your ship.",
      pad = "tap its fixed cell above the weapons"},
     {id = "multi", name = "multifire", cat = "multi", keys = {"tick"},
