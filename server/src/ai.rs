@@ -160,6 +160,17 @@ pub struct Own {
     pub value: u16,
     /// A carried objective makes survival more important than another duel.
     pub carrying_flag: bool,
+    /// How grown this life is: steps of stat, rung and add-on above the build
+    /// this pilot spawned on, as a share of a fully grown life. Zero
+    /// everywhere greens do not exist, since nothing else raises a slot
+    /// mid-life. Greens are the whole of it, and death takes all of it back,
+    /// which is exactly why a grown pilot flies differently: the life on the
+    /// table is worth more than the one they respawn into.
+    ///
+    /// Charges are not counted, in either direction. Ammunition spent is not
+    /// a life shrinking, and a repel picked up is a thing to throw rather
+    /// than a thing to protect.
+    pub growth: f32,
     /// Where this pilot stands, for the one judgement that is a comparison
     /// rather than an observation. Filled from the roster by whoever has one.
     pub standing: Option<Standing>,
@@ -298,6 +309,11 @@ pub struct Scan {
     /// where the roamers happened to be.
     pub company: bool,
     pub flag: Option<(f32, f32)>,
+    /// The nearest green in sight this pilot could actually wear, in a zone
+    /// that has any. Sight rather than the map, unlike a flag: a flag is an
+    /// objective every pilot is entitled to know the state of, and a green is
+    /// something you noticed on your way somewhere.
+    pub green: Option<(f32, f32)>,
     pub allies_near: u8,
     pub hostiles_near: u8,
     pub threat: Option<Threat>,
@@ -412,6 +428,7 @@ pub fn own(w: &World, ship: u8) -> Own {
         in_safe: unsafe { sim::sim_in_safe(&*w.map, me.x, me.y) } != 0,
         value: w.state.ships[ship as usize].streak,
         carrying_flag,
+        growth: growth_of(me),
         standing: None,
         charges: me.charge,
         match_left: None,
@@ -554,6 +571,7 @@ pub fn scan(w: &World, ship: u8) -> Scan {
     // that reasoning inverts: 420 px is a quarter of perception, and with the
     // flags where they were no bot ever saw one at all.
     out.flag = nearest_flag(w, mx, my, me.team, SIGHT);
+    out.green = nearest_green(w, mx, my, ship, SIGHT);
     out.threat = incoming(w, mx, my, me.team, ship);
     // The margin a whisker keeps from a wall. The box follows the heading
     // now, so the honest bound for "can I fly this way" is the hull's worst
@@ -795,6 +813,8 @@ const BURN_ARC: f32 = 0.7;
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Goal {
     Flag = 0,
+    /// In the slot an older goal vacated, so `blocked` keeps its width.
+    Green = 1,
     Foe = 2,
     Roam = 3,
     /// The quiet corner a pilot on its way out is heading for. Its own kind
@@ -861,6 +881,7 @@ enum Posture {
 #[derive(Clone, Copy)]
 enum Choice {
     Flag(f32, f32),
+    Green(f32, f32),
     Foe(Foe),
 }
 
@@ -2188,11 +2209,18 @@ impl Bot {
             .seen
             .threat
             .map_or(0.0, |t| if t.eta < 55.0 { 0.07 } else { 0.0 });
+        // The carried-upgrades term this comment has promised since it was
+        // written. A grown life is one only greens built and only death takes
+        // back, so the further into one a pilot is, the earlier they break
+        // off: that caution is what makes a grown hull something to hunt
+        // rather than a stat check, and it is worth a little less than a
+        // carried flag, which somebody else is waiting on.
         (0.30
             + self.profile.retreat_bias
             + value * 0.10
             + numbers.min(3.0) * 0.035
             + threat
+            + o.growth * 0.12
             + if o.carrying_flag { 0.14 } else { 0.0 })
         .clamp(0.18, 0.80)
     }
@@ -2424,6 +2452,22 @@ impl Bot {
                 offer(self.objective_score(d), Choice::Flag(fx, fy));
             }
         }
+        if let Some((gx, gy)) = self.seen.green.filter(|_| self.worth_trying(Goal::Green)) {
+            let d = (gx - o.x).hypot(gy - o.y);
+            let safe = o.energy > self.retreat_at(o) + 0.10
+                && self.seen.hostiles_near <= self.seen.allies_near.saturating_add(1);
+            if safe {
+                // Opportunism rather than an objective. Hunger is the
+                // complement of growth, so a fresh life wants the trip and a
+                // grown one has better things to protect, and the distance
+                // falloff is steeper than a flag's: nobody sprints the width
+                // of the radar for one prize. The ceiling sits under a
+                // fightable foe and under any flag, which is what keeps a
+                // green something collected on the way rather than instead.
+                let hunger = 1.0 - o.growth;
+                offer(0.35 + hunger * 0.75 - d / SIGHT * 0.60, Choice::Green(gx, gy));
+            }
+        }
         if let Some(foe) = selected.filter(|_| self.worth_trying(Goal::Foe)) {
             let d = (foe.x - o.x).hypot(foe.y - o.y);
             let score = 0.50
@@ -2449,6 +2493,14 @@ impl Bot {
                 let d = self.plot(o, nav, (fx, fy));
                 self.approaching(Goal::Flag, fx, fy, d, 24.0);
                 self.mode = Mode::Travel(fx, fy, 24.0, 1.2);
+                return;
+            }
+            Choice::Green(gx, gy) => {
+                let d = self.plot(o, nav, (gx, gy));
+                self.approaching(Goal::Green, gx, gy, d, 24.0);
+                // Fast through the end of the trip: taking a green is flying
+                // into it, so there is nothing to slow down for.
+                self.mode = Mode::Travel(gx, gy, 24.0, 1.5);
                 return;
             }
             Choice::Foe(foe) => foe,
@@ -2848,6 +2900,69 @@ impl Bot {
             0
         }
     }
+}
+
+/// How much of one kit slot a hull is wearing, mirroring the core's own
+/// `held`: the flat space reads across stats, rungs, add-ons and charges in
+/// that order.
+fn held_slot(sh: &sim::sim_ship, slot: usize) -> u8 {
+    if slot < sim::UP_COUNT {
+        return sh.up[slot];
+    }
+    let slot = slot - sim::UP_COUNT;
+    if slot < sim::TRIG_COUNT {
+        return sh.level[slot];
+    }
+    let slot = slot - sim::TRIG_COUNT;
+    if slot < sim::TRIG_COUNT * sim::MOD_COUNT {
+        return sim::mod_get(sh.mods[slot / sim::MOD_COUNT], slot % sim::MOD_COUNT);
+    }
+    sh.charge[slot - sim::TRIG_COUNT * sim::MOD_COUNT]
+}
+
+/// Where the charge slots start, which is where growth stops counting.
+const CHARGE_SLOTS: usize = sim::UP_COUNT + sim::TRIG_COUNT + sim::TRIG_COUNT * sim::MOD_COUNT;
+
+/// Steps of a fully grown life, for scaling `Own::growth` to 0..1. A dozen
+/// greens over a few minutes of staying alive is a life worth protecting.
+const GROWN_FULL: f32 = 12.0;
+
+/// Steps this pilot is wearing above the build they spawned on, over the
+/// stat, rung and add-on slots. A respawn deals `kit` again, so at spawn the
+/// difference is zero and only a green ever raises it.
+fn growth_of(sh: &sim::sim_ship) -> f32 {
+    let mut above = 0i32;
+    for slot in 0..CHARGE_SLOTS {
+        above += held_slot(sh, slot) as i32 - sh.kit[slot] as i32;
+    }
+    (above.max(0) as f32 / GROWN_FULL).min(1.0)
+}
+
+/// The closest green this pilot could actually wear.
+///
+/// A green whose slot this hull already has at its ceiling is skipped: the
+/// core still consumes one taken at the cap, so a pilot detouring for it
+/// collects nothing, and a player watching that reads it as a bot being a
+/// bot. What it filters against is the hull's own ceiling rather than the
+/// pilot's budget, because a green spends nothing.
+fn nearest_green(w: &World, mx: f32, my: f32, ship: u8, within: f32) -> Option<(f32, f32)> {
+    let me = &w.state.ships[ship as usize];
+    let mut best: Option<(f32, f32, f32)> = None;
+    for i in 0..w.state.green_count as usize {
+        let g = &w.state.greens[i];
+        if g.active == 0 {
+            continue;
+        }
+        if held_slot(me, g.slot as usize) >= w.slot_cap(me.cls, g.slot) {
+            continue;
+        }
+        let (gx, gy) = (g.x as f32 / 256.0, g.y as f32 / 256.0);
+        let d2 = (gx - mx) * (gx - mx) + (gy - my) * (gy - my);
+        if d2 <= within * within && best.is_none_or(|b| d2 < b.0) {
+            best = Some((d2, gx, gy));
+        }
+    }
+    best.map(|(_, x, y)| (x, y))
 }
 
 /// The closest flag this pilot's team does not already hold.

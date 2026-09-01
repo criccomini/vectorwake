@@ -6806,3 +6806,59 @@ behind it.
 **Reconsider if:** the weights are wrong, which they have not been played
 against. They are stats-heavy, which is what Alpha Zone's own file is, on the
 argument that growth should feel like a slope rather than a series of unlocks.
+
+---
+
+## 132. Carrying the flag puts you on the map
+
+**Status:** accepted; the client's side of it and the green filter are not
+built yet, and this record gains a Verified section when they are.
+
+**What:** three rulings on what the objective wire discloses, made together
+because they are one question.
+
+Flags keep traveling whole, carried flags included, to every client in the
+room. A carried flag reports its carrier's exact position, so this is a
+deliberate disclosure: pick up a flag and you are lit, map-wide, until it
+comes down. The client is taught to draw what the wire already says, so
+lawful sight matches disclosure: flags go on the map overview at their true
+positions, and a carried enemy flag outside the radar's window pins to the
+radar's edge as a bearing.
+
+Greens go behind the interest filter with the ships and the rounds,
+out-of-radius entries written inert so the format does not move.
+
+**Why:** the doctrine in [networking.md](networking.md) is "no knowledge
+beyond lawful sight", and the two entities break it in opposite directions,
+so they get opposite fixes.
+
+Flag state is the scoreboard. The pennant strip already tells every pilot who
+holds what, grounded flags stand on tiles the map file itself publishes, and
+the original showed its flags zone-wide on the big map. The one thing the
+wire said that the client did not show was the carrier's position, which made
+it a maphack: information only a modified build could render. Freezing or
+blurring the carried position was considered and rejected, because hunting
+the runner is the game War is about, and a carry clock already bounds how
+long anybody stays lit. So the fix runs the other way: widen lawful sight to
+match the wire. The overview's own rule survives intact. It draws no ships
+because a map of everybody would be a wall hack, and a flag is not a ship; a
+carried flag putting its carrier on the map is the cost of the flag, paid
+knowingly by whoever takes it.
+
+Greens have no scoreboard argument and carry a second signal flags do not:
+one is put out six to twenty-eight tiles from a live ship, so an unfiltered
+field is a beacon on every pilot in the room, including the ones far outside
+anybody's lawful sight. The honest client draws them only inside the render
+window and never on the radar, so beyond the fairness radius they are
+disclosure with no legitimate reader. The interest radius was originally
+sized "when it filtered prizes alone"; the rebuild of greens dropped that
+without noticing, and this puts it back.
+
+**Cost:** an inert green record is the same eleven bytes, so the filter buys
+disclosure and not bandwidth, and the wire format holds: no protocol move.
+The overview gives up a little of its austerity, and a pilot who wants to
+stay dark in War has one honest way to do it, which is to not pick up the
+flag.
+
+**Reconsider if:** being lit makes nobody carry. The counterweight is the
+carry clock: thirty seconds of being hunted is a shift, not a sentence.

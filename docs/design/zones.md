@@ -194,6 +194,8 @@ In rough order of what would move the needle:
    Turf and War have new answers to which hull wins, and nobody has asked.
 2. **Bots that hold a point.** `Mode::Travel` arrives at a flag and then
    re-decides, so a bot that reaches a stand has no reason to stay on it.
+   The design for this and the rest of objective play is now in
+   [ai-players.md](ai-players.md).
 3. **A green worth reading.** Every green draws as the same diamond, because a
    pilot deciding whether one is worth the trip is deciding on the trip. If
    that turns out to be the wrong call, what a green holds is already on the
