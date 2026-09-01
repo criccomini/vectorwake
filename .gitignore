@@ -49,3 +49,7 @@ client/dist/
 # client/dist above. A hand-written mock that is a page rather than a canvas
 # is small and stays, so the pattern only catches the seeded ones.
 .design/*/[a-z]*-*.html
+
+# The playtest harness's dependencies. package-lock.json is committed; this is
+# what npm ci writes from it.
+harness/node_modules/

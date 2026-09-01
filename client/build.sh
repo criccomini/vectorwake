@@ -75,6 +75,18 @@ printf '[project]\nversion = %s\n' "$STAMP" > "$STAMP_DIR/vw-stamp.settings"
 
 set -- --archive --platform "$PLATFORM" --variant "$VARIANT" \
        --settings "$STAMP_DIR/vw-stamp.settings"
+
+# One more overlay, for a build that is pointed somewhere. The playtest harness
+# uses it to bake in its own directory address, because `vectorwake.directory`
+# is compiled into game.projectc and a client that took that address from the
+# page instead would follow any link that named a catalog, including one
+# naming somebody else's meta-layer to send an account secret to. A build-time
+# override cannot be aimed by a stranger.
+if [ -n "${VW_SETTINGS:-}" ]; then
+  [ -f "$VW_SETTINGS" ] || { echo "build.sh: no such settings file: $VW_SETTINGS" >&2; exit 2; }
+  set -- "$@" --settings "$VW_SETTINGS"
+fi
+
 if [ "$TASK" = "bundle" ]; then
   set -- "$@" --bundle-output bundle/"$PLATFORM"
 fi

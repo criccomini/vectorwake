@@ -274,7 +274,26 @@ async function weekPageTest() {
     JSON.stringify(copied));
 }
 
+// The canvas has to own every gesture that lands on it.
+//
+// Without `touch-action: none` the browser treats a thumb drag as a candidate
+// scroll or pinch, and the touch events it passes on while it is making up its
+// mind are non-cancelable: the client's preventDefault is refused. Nothing
+// visibly scrolls, because the body is fixed, so the only symptom is a console
+// error and touch handling that is subtly not the client's own. It shipped
+// that way until a harness flew the game with a thumb.
+function canvasGesturesTest() {
+  const source = fs.readFileSync("client/web/engine_template.html", "utf8");
+  const rule = source.slice(source.indexOf("#canvas {"));
+  const body = rule.slice(0, rule.indexOf("}"));
+  check("the canvas takes every gesture itself",
+    /touch-action:\s*none/.test(body), body);
+  check("and refuses the overscroll the browser would add",
+    /overscroll-behavior:\s*none/.test(body), body);
+}
+
 (async () => {
+  canvasGesturesTest();
   await diagnosticsTest();
   await matchPageTest();
   await weekPageTest();

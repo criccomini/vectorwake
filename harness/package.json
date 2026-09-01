@@ -1,0 +1,16 @@
+{
+  "name": "vectorwake-harness",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Plays the shipped client against a real server, the way a person does.",
+  "bin": { "vwplay": "./bin/vwplay.mjs" },
+  "scripts": {
+    "journeys": "node bin/vwplay.mjs journeys",
+    "monkey": "node bin/vwplay.mjs monkey",
+    "player": "node bin/vwplay.mjs player"
+  },
+  "dependencies": {
+    "playwright": "1.56.1"
+  }
+}

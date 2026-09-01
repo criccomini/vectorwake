@@ -1,5 +1,7 @@
 -- The browser-facing end of a frame: pointer, DOM overlays, and handoff.
 
+local probe = require("arena.probe")
+
 local M = {}
 
 local CURSOR_HOLD = 2.0
@@ -101,6 +103,11 @@ function M.finish(self, dt, h, html5, touch, ui, menu, sfx, apply_menu)
         self.handed_over = true
         if html5 then pcall(html5.run, "window.vwReady && vwReady()") end
     end
+
+    -- Last, so what it reports is the frame as it was finally drawn. Every
+    -- panel, card and pad has published its boxes by now, and the ones that
+    -- retract theirs have retracted them.
+    probe.finish(self, dt, html5, touch, ui, menu)
 end
 
 return M

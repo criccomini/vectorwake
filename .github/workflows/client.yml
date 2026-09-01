@@ -25,6 +25,7 @@ on:
       # run the job. Nothing else here builds the panel: it is static files
       # Caddy serves, and this is the one thing about it a machine can check.
       - "deploy/admin/**"
+      - "harness/**"
       - ".github/workflows/client.yml"
   workflow_dispatch:
 
@@ -119,6 +120,86 @@ jobs:
       # build server compiles it as C++.
       - name: native client behavior
         run: make -C client/tools check
+
+  # Somebody plays the game.
+  #
+  # Everything above this line reads the client without running it: luacheck
+  # walks the source, the Lua tests run modules against a stand-in engine, and
+  # the bundle job proves it compiles. None of that can tell you whether a
+  # press joins a room. This boots the real client in a browser against a real
+  # directory, arena and bot server on loopback, and flies.
+  #
+  # It is a separate job from `bundle` because it builds a different page: the
+  # harness bakes its own directory address in, since a client takes that from
+  # game.projectc rather than from the page. See docs/architecture/playtest-harness.md.
+  playtest:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: cache bob
+        id: bob
+        uses: actions/cache@v4
+        with:
+          path: /tmp/bob.jar
+          key: bob-${{ env.BOB_VERSION }}
+      - name: fetch bob
+        if: steps.bob.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o /tmp/bob.jar \
+            "https://github.com/defold/defold/releases/download/${BOB_VERSION}/bob.jar"
+          unzip -p /tmp/bob.jar META-INF/MANIFEST.MF | grep -q 'com.dynamo.bob.Bob'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # The server is the other half of what is under test, so it is built from
+      # this commit rather than pulled.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            server/target
+          key: playtest-cargo-${{ hashFiles('server/Cargo.lock') }}
+      - name: build the server
+        run: cargo build --release --manifest-path server/Cargo.toml
+
+      - name: install the harness
+        working-directory: harness
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      # Before trusting it to judge the client: does it notice anything? A
+      # harness whose watchers have quietly stopped watching reports green.
+      # Needs no browser and no stage, so it runs first and fails in a second.
+      - name: the harness watches
+        run: node harness/test/oracles_test.mjs
+
+      # Four windows: desktop, a short desktop where the landing lies down into
+      # its rail, and a phone in both orientations. A shorter flight than a
+      # local run, because what CI is asking is whether the whole path works,
+      # not whether it survives an hour.
+      - name: play it
+        run: node harness/bin/vwplay.mjs journeys --flight 15 --verbose
+
+      # What a failure needs to be understood without running it again: the
+      # client's last account of itself, the servers' logs for the same
+      # seconds, and a picture.
+      - name: keep the evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playtest-evidence
+          path: client/dist/harness-runs/
+          retention-days: 7
 
   bundle:
     needs: lint

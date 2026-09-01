@@ -92,6 +92,15 @@
 		width: 100% !important;
 		height: 100% !important;
 		vertical-align: bottom;
+		/* Every gesture on here belongs to the game. Without this the browser
+		claims a thumb drag as a candidate scroll or pinch before deciding
+		nobody wants it, and while it is deciding, the touch events it hands
+		on are marked non-cancelable: the client's preventDefault is refused,
+		and Chrome says so in the console. Nothing visibly scrolled, because
+		the body is fixed, which is why this survived so long. The playtest
+		harness found it on its first run with a thumb. */
+		touch-action: none;
+		overscroll-behavior: none;
 	}
 
 	/* A zero-size probe wearing the safe-area insets as padding, because

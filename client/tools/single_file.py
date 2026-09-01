@@ -567,19 +567,36 @@ def check_ground(html):
 
 
 def to_fragment(html, title):
-    """Strip the document wrapper, leaving styles and body content.
+    """Strip the document wrapper, leaving styles, head scripts and body.
 
     Artifact hosts supply their own <!doctype>, <head> and <body>, so a full
     document nested inside one is invalid. Everything the page needs -- the
-    styles, the canvas, the loader -- survives; only the shell goes.
+    styles, the scripts, the canvas, the loader -- survives; only the shell
+    goes.
+
+    The head's scripts have to come too, and for a long time they did not.
+    They are where every `window.vw*` helper is defined: the install prompt,
+    the device test, the link anchors, the ask forms. Dropping them left a
+    page that booted and drew and was quietly missing all of it, and the first
+    thing to run afterwards died on `window.vwApple is not a function`, which
+    took the viewport reconciler with it. Nothing said so, because the game
+    itself came up looking right.
     """
     styles = re.findall(r"<style[^>]*>.*?</style>", html, re.S)
+    head = re.search(r"<head[^>]*>(.*?)</head>", html, re.S)
     body = re.search(r"<body[^>]*>(.*)</body>", html, re.S)
     if not body:
         sys.exit("no <body> to extract")
+    # In document order: the head's scripts ran before the body's, and some of
+    # the body's call them.
+    scripts = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>.*?</script>",
+                         head.group(1), re.S) if head else []
+    if not scripts:
+        sys.exit("no scripts in <head>; the window.vw* helpers would be lost")
     # Ours last: Defold's stylesheet paints the page white, and whoever comes
     # second wins.
-    return "\n".join(styles) + FRAME_CSS + FRAME_HEAD + body.group(1)
+    return ("\n".join(styles) + FRAME_CSS + FRAME_HEAD
+            + "\n".join(scripts) + body.group(1))
 
 
 def main():
