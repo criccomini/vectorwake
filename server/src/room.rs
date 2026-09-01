@@ -1267,7 +1267,14 @@ impl Room {
 
     pub(crate) fn with_world(world: sim::World) -> Self {
         let mut a = Room::with_world_bare(world);
-        a.mode = Box::new(modes::Warzone::new(4, a.public_teams));
+        // The built-in arena's own defaults, which a catalog zone replaces
+        // the moment it names its clocks.
+        a.mode = Box::new(modes::Warzone::new(
+            4,
+            a.public_teams,
+            240 * modes::TICKS_PER_SECOND,
+            15 * modes::TICKS_PER_SECOND,
+        ));
         a.place_flags();
         a
     }
@@ -3097,6 +3104,15 @@ impl Room {
         // Settle the sides before the restart chooses one side's starts. A
         // pilot moved afterward kept the old pocket for the opening life.
         self.rebalance();
+        // And the objective back on its stands, neutral, the way `restart`
+        // puts the pilots back on theirs. A flag game whose last match ended
+        // with the set gathered in one corner would otherwise open the next
+        // one there, which is the same match continuing under a new clock.
+        let want = self.tuning.flags;
+        self.place_flags();
+        if let Some(want) = want {
+            self.world.state.flag_count = want.min(self.world.state.flag_count);
+        }
         self.world.restart();
         face_public_teams(&mut self.world);
         // A whistle is where a hull is unlocked, so anything asked for during

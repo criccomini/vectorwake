@@ -6597,6 +6597,50 @@ mod tests {
         );
     }
 
+    /// The War zone as it ships: four flags off the map, carried by whoever
+    /// takes one, and put down on their own after the carry clock runs out.
+    #[test]
+    fn the_shipped_war_zone_carries_its_flags_and_puts_them_down() {
+        let dir = "../catalog/zones/war";
+        let toml_text = std::fs::read_to_string(format!("{dir}/zone.toml")).expect("the war zone");
+        let def: catalog::ZoneDef = toml::from_str(&toml_text).expect("it parses");
+        let map = std::fs::read(format!("{dir}/{}", def.maps[0])).expect("its first map");
+
+        let mut zone = wire_zone(1, 8, 8);
+        zone.mode = def.mode.clone();
+        zone.maps_b64 = vec![fleet::b64(&map)];
+        zone.zone_toml = toml_text;
+        let mut room = ArenaServer::build_room(&zone, None).expect("a room");
+
+        assert_eq!(room.mode.name(), "warzone");
+        assert_eq!(room.world.state.flag_count, 4, "four flags off the map");
+        assert_eq!(room.world.cfg.flag_carry, 1, "and they travel");
+        assert_eq!(
+            room.world.cfg.flag_carry_ticks, 3_000,
+            "thirty seconds of carrying"
+        );
+
+        let f = room.world.state.flags[0];
+        assert!(room.world.spawn_at(0, 0, f.x, f.y, 0) >= 0);
+        room.world.step(&[]);
+        assert_eq!(room.world.state.flags[0].carried, 1, "taken by flying over");
+        assert_eq!(room.world.state.flags[0].team, 0);
+
+        // Held, and then not. Nobody kills the carrier: the clock does it.
+        for _ in 0..2_900 {
+            room.world.step(&[]);
+        }
+        assert_eq!(room.world.state.flags[0].carried, 1, "still held at 29s");
+        for _ in 0..200 {
+            room.world.step(&[]);
+        }
+        assert_eq!(room.world.state.flags[0].carried, 0, "put down at 30s");
+        assert_eq!(
+            room.world.state.flags[0].team, 0,
+            "still owned by that side"
+        );
+    }
+
     /// A map that draws no stands is not a flag game and gets no flags. The
     /// melee zone is the one that proves it matters: it named no flag count,
     /// took the default four, and carried four unreachable pennants across

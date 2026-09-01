@@ -2851,11 +2851,18 @@ impl Bot {
 }
 
 /// The closest flag this pilot's team does not already hold.
+///
+/// A flag another side is carrying counts, and used to be skipped along with
+/// the ones already yours. Skipping it was right when a flag on a hull was
+/// unreachable, and wrong once a mode's whole round is who holds the set: the
+/// flag the other side is running off with is the one worth chasing, and a
+/// carried flag reports the carrier's own position, so a pilot steering at it
+/// is steering at them.
 fn nearest_flag(w: &World, mx: f32, my: f32, team: u8, within: f32) -> Option<(f32, f32)> {
     let mut best: Option<(f32, f32, f32)> = None;
     for i in 0..w.state.flag_count as usize {
         let f = &w.state.flags[i];
-        if f.active == 0 || f.team == team || f.carried == 1 {
+        if f.active == 0 || f.team == team {
             continue;
         }
         let (fx, fy) = (f.x as f32 / 256.0, f.y as f32 / 256.0);
@@ -2870,6 +2877,36 @@ fn nearest_flag(w: &World, mx: f32, my: f32, team: u8, within: f32) -> Option<(f
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A flag another side is running off with is a flag worth chasing. It
+    /// was skipped for being carried, which in a game whose round is who
+    /// holds the set means a pilot ignored the one flag that decided it.
+    #[test]
+    fn a_flag_the_other_side_is_carrying_is_still_worth_going_for() {
+        let mut w = World::new(4);
+        w.add_flag(500, 500);
+        w.add_flag(520, 500);
+        // Ours, and no reason to fly at it.
+        w.state.flags[0].team = 0;
+        // Theirs, and on a hull that is taking it somewhere.
+        w.state.flags[1].team = 1;
+        w.state.flags[1].carried = 1;
+
+        let me = (500.0 * 16.0, 500.0 * 16.0);
+        let found = nearest_flag(&w, me.0, me.1, 0, f32::INFINITY).expect("a flag to want");
+        assert_eq!(
+            found,
+            (
+                w.state.flags[1].x as f32 / 256.0,
+                w.state.flags[1].y as f32 / 256.0
+            ),
+            "the carried one, not ours"
+        );
+
+        // And a set entirely ours is nothing to fly at.
+        w.state.flags[1].team = 0;
+        assert!(nearest_flag(&w, me.0, me.1, 0, f32::INFINITY).is_none());
+    }
 
     fn configured(ship: u8, skill: f32, strategy: Strategy) -> Bot {
         Bot::new(

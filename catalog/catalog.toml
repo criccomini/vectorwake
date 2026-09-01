@@ -5,7 +5,7 @@
 # whole of the conflict resolution and a rollback needs a new higher number
 # rather than a reused one.
 
-version = 36
+version = 37
 name = "vectorwake"
 description = "the reference deployment"
 
@@ -66,3 +66,7 @@ name = "melee"
 # Turf is the same eight seats over six stands that pay whoever holds them.
 [[zone]]
 name = "turf"
+
+# War is the flag game: four flags, and a round to whoever holds the set.
+[[zone]]
+name = "war"
