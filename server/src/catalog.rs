@@ -907,6 +907,20 @@ mod tests {
             read("turf").format(),
             ("4 v 4".into(), "3:00".into(), "turf".into())
         );
+        // A war zone runs rounds inside its match, so what it says it scores
+        // in is flags, and the clock beside it is the match's.
+        assert_eq!(read("war").label("war"), "War");
+        assert_eq!(
+            read("war").format(),
+            ("4 v 4".into(), String::new(), "flags".into())
+        );
+        // And the duel is a melee with one pilot a side, which is a fact the
+        // strip reads off the side cap rather than being told.
+        assert_eq!(read("duel").label("duel"), "Duel");
+        assert_eq!(
+            read("duel").format(),
+            ("1 v 1".into(), "3:00".into(), "kills".into())
+        );
     }
 
     /// Every zone the catalog declares has a directory with a readable file

@@ -1905,7 +1905,7 @@ mod tests {
             "Veteran",
             vec![
                 token::ClassRating {
-                    class: "arena".into(),
+                    class: "testzone".into(),
                     rating: 1640.0,
                     games: 40,
                 },
@@ -1921,8 +1921,8 @@ mod tests {
             .expect("verifies");
         let rid = seat.rid.clone();
         z.restore_pilot(0, &seat);
-        // The zone's mode is the class, and this one is an arena.
-        assert_eq!(z.rating_class(), "arena");
+        // The zone's own name is the class it rates into.
+        assert_eq!(z.rating_class(), "testzone");
         assert_eq!(z.rooms[0].rating.rating_of(&rid), 1640.0);
         assert_eq!(
             z.rooms[0].rating.games_of(&rid),
@@ -5026,7 +5026,7 @@ mod tests {
             true,
             "Veteran",
             vec![token::ClassRating {
-                class: "arena".into(),
+                class: "testzone".into(),
                 rating: 1640.0,
                 games: 40,
             }],

@@ -675,17 +675,30 @@ impl ArenaServer {
             .unwrap_or(false)
     }
 
-    /// The class this zone rates into. One number per kind of game, per
-    /// docs/design/rating.md: a warzone and a melee measure different
-    /// skills and one number for both is a number about nothing.
+    /// The class this zone rates into: the zone's own name.
+    ///
+    /// One number per game, per docs/design/rating.md, and the mode is not a
+    /// fine enough answer to that. Two zones can run the same mode and
+    /// measure different skills, which is exactly what the duel is: a melee
+    /// with one pilot a side, where holding your own against one rival in a
+    /// small room has almost nothing to do with being useful in a four a side
+    /// fight. Filed under the mode, those two numbers were one number about
+    /// neither.
+    ///
+    /// This moves nothing already recorded. The class it replaces is the mode
+    /// name, and the one zone that has rated anybody is `melee`, whose key and
+    /// mode are the same word.
+    ///
     /// The zone definition is the authority, not the local config file: a
-    /// catalog-served arena takes its mode from the zone it was handed, and
+    /// catalog-served arena takes its name from the zone it was handed, and
     /// the file underneath it is whatever the image happened to ship.
     pub(crate) fn rating_class(&self) -> String {
-        let m = self
-            .wire_zone()
-            .map(|z| z.mode.clone())
-            .unwrap_or_else(|| self.cfg.current.arena.mode.clone());
+        if !self.zone_name.is_empty() {
+            return self.zone_name.clone();
+        }
+        // Standalone, with no zone to be named by: the mode it is running is
+        // the most this can say.
+        let m = self.cfg.current.arena.mode.clone();
         if m.is_empty() {
             meta::DEFAULT_CLASS.to_string()
         } else {

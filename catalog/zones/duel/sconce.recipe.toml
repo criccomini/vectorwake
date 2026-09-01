@@ -1,0 +1,18 @@
+version = 2
+name = "sconce"
+seed = 1
+mode = "melee"
+theme = "twin_fortresses"
+symmetry = "half_turn"
+routes = 2
+min_opening_tiles = 7
+contact_seconds_min = 2.0
+contact_seconds_max = 9.0
+allow_doors = true
+allow_wormholes = false
+expected_hash = "bfd5d25f"
+
+[envelope]
+width = 112
+height = 96
+shape = "rectangle"

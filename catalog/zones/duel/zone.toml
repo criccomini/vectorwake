@@ -1,0 +1,101 @@
+# Duel: one pilot against one, three minutes, kills.
+#
+# Decision 96 took duels out, and its own note on what would bring them back
+# said the pieces worth keeping were the pairing rule at the door and the card,
+# both of which were built around a zone whose rooms hold two seats. This is
+# that zone and none of the rest: the room is two seats, so the fill ladder
+# already does the pairing. A client prefers the fullest room below its cap,
+# which for a two seat room means the one with somebody waiting in it, and a
+# pilot who finds nobody opens a room and becomes the person the next arrival
+# is put beside. No matchmaker, no rival hold, no per-seat card.
+#
+# What is not here is pairing by rating. That was decision 92's, it needs a
+# band and a queue, and it is a decision to take on its own rather than
+# something to slip in with a zone file.
+
+label = "Duel"
+
+mode = "melee"
+
+# Small rooms, and that is the whole point of them. A duel on a melee map is
+# two pilots searching a hundred and sixty tiles for each other: measured, a
+# 1v1 on that ground draws. These are ninety-six tiles across with two routes
+# between the pockets, and home to home is four to six seconds rather than
+# twelve to fifteen, so the fight starts at the whistle and restarts after
+# every death.
+maps = [
+  "eddy.vwmap",
+  "gimbal.vwmap",
+  "sconce.vwmap",
+]
+
+# Two seats, both a person's if two people want them. The bot server holds the
+# empty one and stands down the moment somebody arrives, which is what makes a
+# duel available at this population rather than a queue nobody is in.
+max_players = 2
+max_ships = 2
+bot_fill = 1.0
+
+# A second room opens only once the first holds two people, which is the
+# concentration rule doing the pairing: an arrival lands beside whoever is
+# already waiting rather than in a room of their own.
+fill_target = 2
+
+# Twenty rooms to a process. A duel is two ships and one small map, so the
+# rooms are cheap and there will be more of them than of anything else.
+max_rooms = 20
+
+# One a side. Named for the two ends of a fight rather than for structures,
+# because in this room a side is a person.
+teams = ["Pilot", "Rival"]
+max_teams = 2
+max_humans_per_team = 1
+max_bots_per_team = 1
+
+max_watchers = 8
+
+[arena]
+# Team Battle's clock. A duel is scored the same way on the same economy, so
+# what a pilot learns in one room is worth something in the other.
+match_seconds = 180
+intermission_seconds = 15
+
+# Everything below is Team Battle's, unchanged. A rung of skill measured here
+# should be about the pilot across from you rather than a private ruleset
+# nobody sees anywhere else. See catalog/zones/melee/zone.toml.
+bounce = 12
+friction = 12
+respawn_delay = 200
+spawn_radius = 0
+safe_limit = 65535
+streak_kills = 3
+mod_spread = 5
+multi_energy = 25
+multi_delay = 50
+prox_step = 16
+prox_delay = 150
+bomb_safety = true
+bbomb_damage = 1000
+shrap_inactive = 3
+shrap_inactive_ticks = 25
+
+[arena.mod_step]
+multi = 1
+bounce = 1
+prox = 48
+
+[[arena.weapons]]
+name = "gun"
+bounces = 255
+
+[[arena.weapons]]
+name = "gun-2"
+bounces = 255
+
+[[arena.weapons]]
+name = "gun-3"
+bounces = 255
+
+[[arena.weapons]]
+name = "burst"
+damage = 515

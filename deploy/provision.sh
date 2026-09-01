@@ -112,7 +112,7 @@ if command -v ufw >/dev/null 2>&1; then
 	# exactly like opening neither: the arena binds its endpoint and reports
 	# itself listening either way, and every client quietly takes the socket.
 	# That is an evening, and it has already been spent once.
-	ufw allow 9443/udp >/dev/null 2>&1
+	ufw allow 9443:9446/udp >/dev/null 2>&1
 fi
 echo "--- ufw"; ufw status verbose 2>&1
 echo "--- iptables INPUT"; iptables -S INPUT 2>&1

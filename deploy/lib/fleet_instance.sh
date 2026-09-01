@@ -447,7 +447,7 @@ cmd_point() {
 # One UDP port per arena process. Keep this range paired with the services in
 # docker-compose.arena.yml and the ufw rule in provision.sh. This verb adds
 # only what is missing, so re-running it completes a new port range.
-FW_RULES="tcp:22 tcp:80 tcp:443 udp:9443"
+FW_RULES="tcp:22 tcp:80 tcp:443 udp:9443:9446"
 FW_LABEL=${VW_FIREWALL_LABEL:-vectorwake}
 
 # The group, created if it is not there and completed if it is half done.

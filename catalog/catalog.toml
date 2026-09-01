@@ -5,7 +5,7 @@
 # whole of the conflict resolution and a rollback needs a new higher number
 # rather than a reused one.
 
-version = 37
+version = 38
 name = "vectorwake"
 description = "the reference deployment"
 
@@ -70,3 +70,7 @@ name = "turf"
 # War is the flag game: four flags, and a round to whoever holds the set.
 [[zone]]
 name = "war"
+
+# Duel is one against one on a small map, paired by the fill ladder.
+[[zone]]
+name = "duel"
