@@ -218,38 +218,179 @@ def _mark_points(mirror=True):
     return out
 
 
-def wings(cx, cy, r, squash, col=READ):
-    """The badge at the size the carousel draws a ship, and otherwise
-    untouched: one flat color, filled hull, feathers struck at the pen the
-    mark sets for itself, which is `pen(k, 0.11) * 0.85` and scales with the
-    mark. At eleven points that stroke is one point across. Blown up to fill
-    the same circle a hull fills it is fourteen, which is what makes this an
-    emblem rather than a thing.
+# --- the feathers, worked at the size the carousel draws them ----------------
+#
+# The mark is cut for eleven points, where each feather is one point across
+# and a round cap is a rounding error. At 156 the same three strokes are
+# fourteen points across with a half circle on each end, which reads as three
+# sausages rather than three feathers. What is wrong with them is the pen,
+# not the arrangement.
+#
+# Three things to fix, in the order they matter. They are not parallel: 32.1,
+# 28.3 and 30.8 degrees, which is close enough to look like a mistake and far
+# enough to lose the even gap the roots were cut for. The caps are round. And
+# the width is constant, so a feather has no direction in it.
+#
+# Parallel costs almost nothing, which is the surprise: set all three to 30
+# degrees and run each one out to the line the current tips already sit on,
+# and the third lands within a thousandth of where it is now, the second
+# within two hundredths. The shape barely moves. It just stops wobbling.
+PICK = "blade"
+FEATHER_DEG = 30.0
+FEATHER_ROOTS = [(0.118, -0.06), (0.166, 0.06), (0.238, 0.18)]
+# The line the three tips are cut against, which is the one the current tips
+# already lie on: from the top feather's tip to the bottom one's.
+RAKE = ((0.500, -0.30), (0.389, 0.09))
+# What a feather may not do is reach past the mark's own width. Every caller
+# lays the badge out against `k` and one of them sets it beside a name, so a
+# tip corner at 0.51 is a wing that touches a call sign. The set is squeezed
+# in x until the widest point is exactly 0.5, which moves a root two
+# thousandths and keeps the three parallel, since scaling one axis does.
+FEATHER_SPREAD = 0.5
+
+
+def _line_hit(pt, u, line):
+    """How far along `u` from `pt` a line is, so a corner can be run out to
+    it. Every cut here is one of these: a tip line the feathers end on, or a
+    root line they start from."""
+    (ax, ay), (bx, by) = line
+    nx, ny = -(by - ay), (bx - ax)
+    return (nx * (ax - pt[0]) + ny * (ay - pt[1])) / (nx * u[0] + ny * u[1])
+
+
+def _feather(root, u, n, s, w, tip="butt", root_cut=None):
+    """One feather as a closed shape.
+
+    `w` is four offsets along the perpendicular: above and below the
+    centerline at the root, then at the tip. A symmetric pair either end is
+    an ordinary feather; zero above and everything below is one that grows
+    under a straight top edge.
+
+    `tip` cuts the far end square, out to the common rake line, or to a
+    point. `root_cut` does the same at the near end, so the three inner ends
+    can sit on one line the way the tips do."""
+    a0, b0, a1, b1 = w
+    rx, ry_ = root
+    tx, ty = rx + u[0] * s, ry_ + u[1] * s
+    top0 = (rx + n[0] * a0, ry_ + n[1] * a0)
+    bot0 = (rx - n[0] * b0, ry_ - n[1] * b0)
+    if root_cut:
+        top0 = (top0[0] + u[0] * _line_hit(top0, u, root_cut),
+                top0[1] + u[1] * _line_hit(top0, u, root_cut))
+        bot0 = (bot0[0] + u[0] * _line_hit(bot0, u, root_cut),
+                bot0[1] + u[1] * _line_hit(bot0, u, root_cut))
+    if tip == "point":
+        peak = 0.72
+        px_, py_ = rx + u[0] * s * peak, ry_ + u[1] * s * peak
+        return [top0, (px_ + n[0] * a1, py_ + n[1] * a1), (tx, ty),
+                (px_ - n[0] * b1, py_ - n[1] * b1), bot0]
+    top1 = (tx + n[0] * a1, ty + n[1] * a1)
+    bot1 = (tx - n[0] * b1, ty - n[1] * b1)
+    if tip == "rake":
+        top1 = (top1[0] + u[0] * _line_hit(top1, u, RAKE),
+                top1[1] + u[1] * _line_hit(top1, u, RAKE))
+        bot1 = (bot1[0] + u[0] * _line_hit(bot1, u, RAKE),
+                bot1[1] + u[1] * _line_hit(bot1, u, RAKE))
+    return [top0, top1, bot1, bot0]
+
+
+# The line the roots sit on, which is the leading edge they were cut against
+# in the first place: the top feather's root to the bottom one's.
+ROOT_LINE = (FEATHER_ROOTS[0], FEATHER_ROOTS[2])
+
+# Eight ways to cut them. The widths are (above, below) at the root and then
+# at the tip, so a rising pair is a feather with somewhere to go and a zero
+# above is one that grows under a straight edge.
+FEATHERS = {
+    "now": dict(note="as the client cuts it", stroke=True),
+    "parallel": dict(note="parallel, cut square",
+                     w=(0.040, 0.040, 0.040, 0.040)),
+    "taper": dict(note="thin at the root, square tip",
+                  w=(0.020, 0.020, 0.039, 0.039)),
+    "rake": dict(note="tapered, tips on one line",
+                 w=(0.020, 0.020, 0.039, 0.039), tip="rake"),
+    "wedge": dict(note="the same, cut harder",
+                  w=(0.012, 0.012, 0.044, 0.044), tip="rake"),
+    "banded": dict(note="both ends on a line",
+                   w=(0.020, 0.020, 0.039, 0.039), tip="rake",
+                   root_cut=ROOT_LINE),
+    "blade": dict(note="both ends on a line, cut harder",
+                  w=(0.013, 0.013, 0.045, 0.045), tip="rake",
+                  root_cut=ROOT_LINE),
+    "quill": dict(note="tapered to a point",
+                  w=(0.015, 0.015, 0.043, 0.043), tip="point"),
+    "swept": dict(note="grown under a straight top edge",
+                  w=(0.0, 0.040, 0.0, 0.078), tip="rake"),
+}
+
+
+def feather_shapes(style, k=None):
+    """Every feather of one style, both sides, in the mark's own units.
+
+    `k` is the width the mark is about to be drawn at, and all it does is put
+    a floor under the widths, the way `pen` does: nothing narrower than nine
+    tenths of a point, or a taper that is invisible at eleven points is a
+    taper that vanishes on the scoreboard."""
+    spec = FEATHERS[style]
+    if spec.get("stroke"):
+        return None
+    floor = (0.45 / k) if k else 0
+    a = math.radians(FEATHER_DEG)
+    u = (math.cos(a), -math.sin(a))
+    n = (-u[1], u[0])
+    out = []
+    for root in FEATHER_ROOTS:
+        # A feather grown under a straight top edge hangs off that edge
+        # rather than off a centerline, so its root lifts by half of what
+        # sits below it and the set still covers the ground the mark's own
+        # three do.
+        lift = spec["w"][1] / 2 if not spec["w"][0] else 0
+        base = (root[0] + n[0] * lift, root[1] + n[1] * lift)
+        w = tuple(v if v == 0 else max(v, floor) for v in spec["w"])
+        out.append(_feather(base, u, n, _line_hit(base, u, RAKE), w,
+                            spec.get("tip", "butt"), spec.get("root_cut")))
+    far = max(abs(x) for q in out for x, _ in q)
+    k = FEATHER_SPREAD / far
+    both = []
+    for q in out:
+        both.append([(x * k, y) for x, y in q])
+        both.append([(-x * k, y) for x, y in q])
+    return both
+
+
+def wings(cx, cy, r, squash, col=READ, style="blade"):
+    """The badge at the size the carousel draws a ship: `pilot_mark`'s own
+    three quads, filled, with the feathers cut whichever way `style` says.
 
     It holds still. A badge turning about its own vertical axis is a decal
     spinning, and there is nothing behind it to come into view."""
-    k = 2 * r / (2 * MARK_REACH)
     k = r / MARK_REACH
 
     def put(pts):
         return [(cx + x * k, cy + y * k) for x, y in pts]
 
-    def path(pts, close):
+    def path(pts, close=True):
         d = "M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts)
         return d + (" Z" if close else "")
 
     parts = []
     for quad in MARK_HULL:
-        parts.append(f'<path d="{path(put(quad), True)}" fill="{col}" '
+        parts.append(f'<path d="{path(put(quad))}" fill="{col}" '
                      f'fill-opacity=".92"/>')
-    line = max(0.9, k * 0.11) * 0.85
-    for f in MARK_FEATHERS:
-        for w in (1, -1):
-            a, b = put([(w * f[0][0], f[0][1]), (w * f[1][0], f[1][1])])
-            parts.append(f'<path d="M{a[0]:.1f},{a[1]:.1f} '
-                         f'L{b[0]:.1f},{b[1]:.1f}" stroke="{col}" '
-                         f'stroke-width="{line:.1f}" stroke-opacity=".92" '
-                         f'stroke-linecap="round"/>')
+    shapes = feather_shapes(style, k)
+    if shapes is None:
+        line = max(0.9, k * 0.11) * 0.85
+        for f in MARK_FEATHERS:
+            for w in (1, -1):
+                a, b = put([(w * f[0][0], f[0][1]), (w * f[1][0], f[1][1])])
+                parts.append(f'<path d="M{a[0]:.1f},{a[1]:.1f} '
+                             f'L{b[0]:.1f},{b[1]:.1f}" stroke="{col}" '
+                             f'stroke-width="{line:.1f}" stroke-opacity=".92" '
+                             f'stroke-linecap="round"/>')
+        return "".join(parts)
+    for shape in shapes:
+        parts.append(f'<path d="{path(put(shape))}" fill="{col}" '
+                     f'fill-opacity=".92" stroke-linejoin="miter"/>')
     return "".join(parts)
 
 
@@ -291,14 +432,12 @@ def wings_built(cx, cy, r, squash, col=READ):
                          f'stroke="{col}" stroke-width="1.8" '
                          f'stroke-opacity="{max(0.20, lit * lit):.2f}" '
                          f'stroke-linecap="round"/>')
-    line = max(0.9, k * 0.075)
-    for f in MARK_FEATHERS:
-        for w in (1, -1):
-            a, b = put([(w * f[0][0], f[0][1]), (w * f[1][0], f[1][1])])
-            parts.append(f'<path d="M{a[0]:.1f},{a[1]:.1f} '
-                         f'L{b[0]:.1f},{b[1]:.1f}" stroke="{col}" '
-                         f'stroke-width="{line:.1f}" stroke-opacity=".72" '
-                         f'stroke-linecap="round"/>')
+    # The same feathers the plain badge is cut with, outlined rather than
+    # filled, so the two are the same drawing at two weights.
+    for shape in feather_shapes("blade", k) or []:
+        parts.append(f'<path d="{path(put(shape), True)}" fill="{PANEL_INK}" '
+                     f'fill-opacity=".06" stroke="{col}" stroke-width="1.4" '
+                     f'stroke-opacity=".62" stroke-linejoin="miter"/>')
     canopy = [(0, -0.20), (0.038, -0.12), (0, -0.035), (-0.038, -0.12)]
     parts.append(f'<path d="{path(put(canopy), True)}" fill="{INK}" '
                  f'fill-opacity=".42" stroke="{INK}" stroke-width="0.9" '
@@ -392,14 +531,14 @@ ART = {
     "Wings": dict(
         custom=wings,
         turns=False,
-        line="The badge, as the client draws it",
+        line="The badge, feathers recut",
     ),
     # The same badge at the page's own weights, which is what it would take
     # for it to stand among seven ships rather than on top of them.
     "Wings, built": dict(
         custom=wings_built,
         turns=False,
-        line="The badge, at the page's weights",
+        line="The same, at the page's weights",
     ),
 }
 
@@ -689,6 +828,67 @@ def sheet_board():
     return wrap(w, h, [art, heads] + labels, 11)
 
 
+def feathers_board():
+    """Eight cuts of the same three feathers, each on the badge at the 156
+    points the carousel gives it, and then the two that hold up drawn at the
+    sizes the client draws this mark at everywhere else.
+
+    Nothing else moves between these. The hull is `pilot_mark`'s three quads
+    every time and the roots stay on the leading edge where the mark puts
+    them. What changes is the angle, the caps, and whether a feather has a
+    direction in it.
+
+    The strip along the bottom is the part that decides it. `pilot_mark` is
+    one function and the scoreboard sets it at eleven points, a nameplate at
+    ten: a taper cut so fine that it is a hairline there is a taper that
+    disappears from three quarters of its callers. The widths carry the same
+    floor `pen` does, nine tenths of a point, which is what holds the root
+    open at the small sizes."""
+    w, h = 1800, 1000
+    cells = list(FEATHERS.items())
+    cw, ch = w / 4, 250
+    parts, labels = [], []
+    for i, (style, spec) in enumerate(cells):
+        cx = cw * (i % 4 + 0.5)
+        cy = 168 + (i // 4) * ch
+        parts.append(wings(cx, cy, ART_R, 1.0, READ, style))
+        labels.append(
+            f'<div style="position:absolute;left:{cw * (i % 4):.0f}px;'
+            f'top:{cy + 74:.0f}px;width:{cw:.0f}px;text-align:center">'
+            f'<div style="font-size:21px;color:{FRIEND}">{style}'
+            f'{" &#183; the pick" if style == PICK else ""}</div>'
+            f'<div style="font-size:14px;color:{READ};padding:4px 30px 0">'
+            f'{spec["note"]}</div></div>')
+
+    SIZES = (10, 11, 22, 44)
+    COLS = (620, 760, 940, 1200)
+    ROWS = (("now", 720), ("rake", 810), ("banded", 900))
+    for style, cy in ROWS:
+        for mark_k, cx in zip(SIZES, COLS):
+            parts.append(wings(cx, cy, mark_k * MARK_REACH, 1.0, READ, style))
+        labels.append(
+            f'<div class="lbl" style="position:absolute;left:380px;'
+            f'top:{cy - 7:.0f}px;width:200px;text-align:right">{style}</div>')
+    for mark_k, cx in zip(SIZES, COLS):
+        labels.append(
+            f'<div class="lbl" style="position:absolute;left:{cx - 60:.0f}px;'
+            f'top:664px;width:120px;text-align:center;color:{DIM}">'
+            f'{mark_k}</div>')
+    labels.append(
+        f'<div class="lbl" style="position:absolute;left:0;right:0;top:620px;'
+        f'text-align:center">and at the sizes the rest of the client draws '
+        f'the mark, in points</div>')
+
+    art = (f'<svg width="{w}" height="{h}" style="position:absolute;inset:0">'
+           + "".join(parts) + '</svg>')
+    head_ = (f'<div style="position:absolute;left:0;right:0;top:34px;'
+             f'text-align:center" class="lbl">the badge\'s feathers, eight '
+             f'cuts, at the size the carousel draws them</div>')
+    rule_ = ('<div style="position:absolute;left:120px;right:120px;top:596px;'
+             'height:1px;background:rgba(63,88,120,.5)"></div>')
+    return wrap(w, h, [art, head_, rule_] + labels, 23)
+
+
 def phone_board():
     """362 points of glass on a 390 phone, which is the window less the
     14-point margin the panel keeps at every size. The drawing is capped by
@@ -732,9 +932,10 @@ def main():
     page("Frame", concept_board("Frame", 1.0, seed=13))
     page("Wings", concept_board("Wings", 1.0, seed=17))
     page("WingsBuilt", concept_board("Wings, built", 1.0, seed=19))
+    page("Feathers", feathers_board())
     page("Sheet", sheet_board())
     page("Phone", phone_board())
-    print("nine artboards written")
+    print("ten artboards written")
 
 
 if __name__ == "__main__":

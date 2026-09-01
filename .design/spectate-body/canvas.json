@@ -57,10 +57,18 @@
       "h": 810
     },
     {
+      "file": "Feathers.dc.html",
+      "title": "The feathers, eight cuts",
+      "x": 3120,
+      "y": 1900,
+      "w": 1800,
+      "h": 1000
+    },
+    {
       "file": "Sheet.dc.html",
       "title": "The six, broadside and turning",
       "x": 0,
-      "y": 2850,
+      "y": 3050,
       "w": 1800,
       "h": 600
     },
@@ -68,7 +76,7 @@
       "file": "Phone.dc.html",
       "title": "Lens on a 390 phone",
       "x": 1920,
-      "y": 2850,
+      "y": 3050,
       "w": 390,
       "h": 844
     }
@@ -94,6 +102,13 @@
       "y": 1900,
       "w": 260,
       "text": "Chris: what about the human icon, the ship with feathers?\n\nIt is the one mark in the game whose subject is the pilot rather than the ship, and this is the one stop whose subject is the pilot rather than the ship. Both hold still: a badge turning is a decal spinning."
+    },
+    {
+      "id": "feathers",
+      "x": 3120,
+      "y": 1740,
+      "w": 420,
+      "text": "Chris: the feathers need work at this resolution. Parallel, sharp edges, thin at the ship and thicker as they go out.\n\nAll three, plus both ends cut on a line. The strip along the bottom is the check that matters: pilot_mark is one function, and the scoreboard draws it at eleven points."
     }
   ],
   "launch": {

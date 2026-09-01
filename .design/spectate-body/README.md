@@ -3,12 +3,14 @@
 Chris's ask: come up with a ship design for spectate on the menu, a few
 ideas, mocked up.
 
-Nine boards, drawn against the client rather than around it. Not shipped:
+Ten boards, drawn against the client rather than around it. Not shipped:
 this is a set to pick from.
 
 Chris then asked whether the human icon, the ship with feathers, could be the
 spectate drawing as well. Two more boards for that, and it changed which one
-I would ship.
+I would ship. Then the feathers themselves, which do not survive being blown
+up eight times: a board of eight cuts, and what the pick costs the four
+places the mark is already drawn.
 
 Artifact: [Spectate Ship Art](https://claude.ai/code/artifact/a620110a-adb9-4014-b03c-dca169cc43ee)
 
@@ -102,22 +104,20 @@ things in the world, and a viewfinder among them reads as the menu talking
 about itself.
 
 **Wings.** The badge a seat already wears when a person is in it, at the size
-the carousel draws a ship and otherwise untouched: `pilot_mark`'s own three
-quads and six struck feathers, in one flat color, holding still.
+the carousel draws a ship: `pilot_mark`'s own three quads, in one flat color,
+holding still, with the feathers recut. See below.
 
 It is the boldest drawing on the sheet and the only one a player has already
-learned to read, which is the whole argument for it. Against it: at eleven
-points the feathers are a point across, and scaled to fill a hull's circle
-they are fourteen, so this is the one drawing here that is solid where the
-identity document asks for thin bright outlines over a darker fill. It is an
-emblem in a place where everything else is an object.
+learned to read, which is the whole argument for it. Against it: this is the
+one drawing here that is solid where the identity document asks for thin
+bright outlines over a darker fill. It is an emblem in a place where
+everything else is an object.
 
 **Wings, built.** The same badge at the weights the rest of the page is drawn
 in. The hull is outlined and washed rather than filled, lit off its nose the
-way a silhouette is, with a canopy where every hull carries one; the feathers
-come down from the mark's fourteen-point pen to something a panel line's
-weight. It still reads as the badge at a glance and stops shouting over the
-line art around it.
+way a silhouette is, with a canopy where every hull carries one, and the
+feathers are the same shapes outlined rather than filled. It still reads as
+the badge at a glance and stops shouting over the line art around it.
 
 Both hold still. A badge turning about its own vertical axis is a decal
 spinning, and there is nothing behind one to come into view.
@@ -159,15 +159,71 @@ The line under the name stays what it is on any of the six. "Watch the room
 from nobody's cockpit" is doing the work no drawing can, and a drawing that
 needs the sentence changed to explain it is the wrong drawing.
 
+## The feathers
+
+`pilot_mark` is cut for eleven points. There a feather is a stroke one point
+across and a round cap is a rounding error. At the 156 the carousel gives it
+the same three strokes are fourteen points across with a half circle on each
+end, which is three sausages rather than three feathers. What is wrong with
+them is the pen, not the arrangement.
+
+Three things, and the first is nearly free. They are not parallel: 32.1, 28.3
+and 30.8 degrees, close enough to look like a mistake and far enough to lose
+the even gap the roots were cut for. Set all three to 30 and run each one out
+to the line the current tips already sit on, and the bottom feather lands
+within a thousandth of where it is now and the middle one within two
+hundredths. The shape barely moves. It stops wobbling.
+
+Then the ends. Both are cut on a line rather than squared off per feather:
+the tips on the line the current three tips already lie on, the roots on the
+line through the top and bottom roots, which is the hull's own leading edge
+and the thing the comment in `ui.lua` says the roots were placed against. So
+the wing is one swept band split in three, with a clean edge either side of
+it and the same gap behind every feather.
+
+Then the taper. Half widths run 0.013 of the mark at the root to 0.045 at the
+tip, so a feather has a direction in it and the eye finds the gaps. Drawn as
+closed shapes rather than strokes, which is how the hull in the middle of the
+badge is already drawn, so the corners are sharp for free and no new drawing
+primitive is involved: `F.layer:quad` is in `pilot_mark` twice already.
+
+Eight cuts are on the Feathers board, including the two that were tried and
+lost. Quill comes to a point, which reads as a knife rather than a feather.
+Swept grows everything under a straight top edge, which is what a real
+feather does and what makes three of them merge into one wing at this size.
+
+Two constraints hold whatever is picked.
+
+**The spread stays exactly the mark's width.** Every caller lays the badge
+out against `k` and one of them sets it beside a call sign, so a tip corner
+at 0.51 is a wing that touches a name. The set is squeezed in x until the
+widest corner is 0.5, which moves a root two thousandths and keeps the three
+parallel, since scaling one axis does.
+
+**It has to survive eleven points.** `pilot_mark` is one function and this is
+the carousel's fourth caller: the scoreboard draws it at eleven, a nameplate
+at ten, the room's population count at eleven. A taper cut so fine that it is
+a hairline there would disappear from three quarters of its callers. So the
+widths carry the same floor `pen` puts under a stroke, nine tenths of a
+point, and the bottom strip of the Feathers board is that check: rasterized
+at one to one and magnified, the recut mark at 10 and 11 points is
+indistinguishable from the one shipping now, and from 22 up it reads. The
+small callers lose nothing and gain nothing, which is the right answer for a
+change made for a drawing eight times their size.
+
 ## Building the one that wins
 
 The two badges are the cheap ones. `pilot_mark` is a local in `ui.lua`
 declared three thousand lines above `land_row`, and it already takes a
 center, a color and the width to draw at, which is everything the carousel
 has to hand. The plain one is a call. The built one is that function given a
-second way to draw itself, or a sibling beside it, and no new geometry either
-way: the quads and the feather roots are the numbers already in the file, and
-the comment above them warns what happens when they are set wrong.
+second way to draw itself, or a sibling beside it.
+
+The recut feathers are six `seg` calls becoming six `quad` calls in that
+function, plus the two lines and the two widths they are cut against. That
+part is not the carousel's: it changes the mark everywhere it is drawn, which
+is the scoreboard, the nameplates and the population count, and the strip on
+the Feathers board is there to show that none of them moves.
 
 The other four want a table shaped like a hull's, because `hull_art` reads
 `world.HULLS[cls + 1]`. That table does not want to live in `M.HULLS`: the
