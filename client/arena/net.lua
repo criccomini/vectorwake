@@ -294,6 +294,9 @@ M.settings_epoch = 0
 -- local caches; this one orders settings against snapshots from independent
 -- WebTransport lanes.
 local settings_generation = 0
+-- A map has landed and the settings behind it have not. Those are the map's
+-- own whatever generation they name; see the settings handler.
+local map_wants_settings = false
 -- Every move between flying and watching starts another life on this socket.
 -- Inputs and snapshots carry the same number, which makes packets from the
 -- life that ended harmless after the transition.
@@ -829,17 +832,27 @@ local function on_match(s)
         local hi = u32(string.byte(s, at + 4, at + 7))
         artifact = lo + hi * 4294967296
     end
-    local was = M.match and M.match.playing
+    local prev = M.match
+    local was = prev and prev.playing
+    local playing = flags % 2 == 1
+    local left = string.byte(s, 3)
+    -- A clock that goes back up inside a match is the room starting it over,
+    -- which a duel does when a seat changes hands. The arena's clock only
+    -- ever counts down otherwise, so the jump is the whole of the signal.
+    -- Kept on the message until `clock_says` has heard it, since the frame
+    -- loop reads the newest message rather than every one.
+    local reopened = playing and was and left > prev.left
     M.match = {
-        playing = flags % 2 == 1,
-        left = string.byte(s, 3),
+        playing = playing,
+        left = left,
         score = score,
         artifact = artifact,
+        fresh = (reopened or (prev and prev.fresh)) and true or nil,
     }
     -- The whistle that starts one, which is where the ratings are latched.
     -- On the edge rather than on every message: this arrives four times a
     -- second and a latch taken every time would be a latch of nothing.
-    if M.match.playing and not was then
+    if playing and (not was or reopened) then
         M.rated_from = {}
         for ship, rating in pairs(M.ratings) do
             M.rated_from[ship] = rating
@@ -997,7 +1010,7 @@ end
 -- flew on to its real one.
 --
 -- This is the road every bomb ending on somebody else takes since decision
--- 140, not only the ones the prediction mistimed: a deathless core lands a
+-- 144, not only the ones the prediction mistimed: a deathless core lands a
 -- thrown round on its own pilot's hull and on walls, and flies it through
 -- the coasted guess of anybody else, so the zone's word is the first this
 -- client hears of the hit. Which is why the blast is drawn where the round
@@ -1389,6 +1402,7 @@ local function on_message(s)
         local r = sim.apply_map(string.sub(s, 2))
         if r == 0 then
             M.map_epoch = M.map_epoch + 1
+            map_wants_settings = true
         else
             -- -2 is a hash mismatch, which means the zone and this client
             -- disagree about the room. Better to say so than to spend a match
@@ -1401,16 +1415,30 @@ local function on_message(s)
         -- them would mean predicting a different game, so a message we
         -- cannot read is worth losing the connection over -- the same call
         -- the map makes, for the same reason.
+        --
+        -- An older generation on its own is refused: it cannot roll the
+        -- tuning backward. The settings that follow a map are taken whatever
+        -- they name, because they are that map's. Applying a map puts the
+        -- core's numbers back to the baseline, so the pack behind it is the
+        -- only thing standing between the pilot and predicting on defaults,
+        -- and it is older on purpose exactly once: a pilot who sits out is
+        -- handed the copy the stands are holding, five seconds behind the
+        -- room, beside the ground it belongs to. Refusing that left the old
+        -- map under the new generation after a whistle inside the window,
+        -- every frame the stands then served refused, and a seat taken back
+        -- before the channel caught up flown on the wrong walls.
         if #s < 5 then return end
         local epoch = u32(string.byte(s, 2), string.byte(s, 3),
                           string.byte(s, 4), string.byte(s, 5))
-        if settings_generation ~= 0 and epoch ~= settings_generation
+        if not map_wants_settings and settings_generation ~= 0
+            and epoch ~= settings_generation
             and not serial_after(epoch, settings_generation) then
             return
         end
         if sim.apply_settings(string.sub(s, 6)) ~= 0 then
             lost("the zone sent settings this client cannot read")
         else
+            map_wants_settings = false
             settings_generation = epoch
             M.settings_epoch = M.settings_epoch + 1
             -- Spec numbers can move with the settings, and these keys carry
@@ -1701,6 +1729,7 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room, instance)
     snap_tick = 0
     lifecycle = 0
     settings_generation = 0
+    map_wants_settings = false
     have_snapshot = false
     M.join_progress = 0
     net_clock, last_snap_at = 0, nil
@@ -1962,6 +1991,13 @@ function M.clock_says(said, playing)
     -- runs during a match too and a clock that ticks back up would otherwise
     -- blow the whistle in the middle of one.
     local what = (now and playing == false) and "start" or nil
+    -- Or a match started over inside one, which `on_match` marks on the
+    -- message. The mark is the message's and is spent here, so a restart
+    -- is said once and a clock that merely repeats says nothing.
+    if now and m.fresh then
+        what = "start"
+        m.fresh = nil
+    end
     local left = m.left
     if left and left <= 5 and left >= 1 then
         if said ~= left then

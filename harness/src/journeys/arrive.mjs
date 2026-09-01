@@ -20,13 +20,13 @@ export async function arrive (pilot, { log = () => {} } = {}) {
 
   await pilot.wake()
 
-  // The landing is PLAY NOW over three stops, and PLAY NOW is the whole of
-  // joining: one press and you are in a room. Wait for it to actually take a
-  // press before making one, because until the client has heard from the
-  // directory there is no game behind it.
-  log('waiting for PLAY NOW to be live')
-  await pilot.until('a live PLAY NOW',
-    s => s.boxes.some(b => b.hits === 'play_now'),
+  // The landing is the menu's own column, four stops over one key, and that
+  // key is the whole of joining: one press and you are in a room. Wait for it
+  // to actually take a press before making one, because until the client has
+  // heard from the directory there is no game behind it.
+  log('waiting for the column key to be live')
+  await pilot.until('a live key',
+    s => s.boxes.some(b => b.hits === 'menu_go'),
     { timeout: 45000 })
 
   // Each hand on its own path. The desktop's keyboard walk and the phone's
@@ -34,15 +34,15 @@ export async function arrive (pilot, { log = () => {} } = {}) {
   // the keyboard untested on the profile that is all keyboard.
   if (pilot.profile.input === 'keyboard') {
     const at = await pilot.read()
-    if (at.cursor.go !== 'play_now') {
+    if (at.cursor.go !== 'menu_go') {
       throw new Error(
-        `the landing's cursor fires ${at.cursor.go || 'nothing'}, not play_now`)
+        `the landing's cursor fires ${at.cursor.go || 'nothing'}, not menu_go`)
     }
-    log('pressing enter on PLAY NOW')
+    log('pressing enter on the key')
     await pilot.press('select')
   } else {
-    log('tapping PLAY NOW')
-    await pilot.tap('play_now')
+    log('tapping the key')
+    await pilot.tap('menu_go')
   }
 
   log('waiting to be in a room')

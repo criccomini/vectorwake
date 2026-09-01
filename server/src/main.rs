@@ -2671,8 +2671,10 @@ mod tests {
             "arrivals alternate rather than piling up"
         );
 
-        // And a side already thick with bots is still the thin one, because
-        // what an arrival is weighed against is the humans on it.
+        // And a side already thick with bots is not the full one, because
+        // what an arrival is weighed against is the humans on it. Heads only
+        // break a tie: the first person lands across from the bots, and the
+        // second lands beside them, on the side with fewer people.
         let mut b = room_with_teams("teams = [\"Pylon\", \"Caisson\"]\n");
         for i in 0..3 {
             let (tx, rx) = mpsc::channel(OUT_QUEUE);
@@ -2683,9 +2685,14 @@ mod tests {
             let ship = b.players[&id].ship;
             b.join_team(ship, 0);
         }
-        let human = seat_human(&mut b, "person");
+        let first = seat_human(&mut b, "person");
         assert_eq!(
-            b.world.state.ships[human as usize].team, 0,
+            b.world.state.ships[first as usize].team, 1,
+            "across from the bots rather than beside them"
+        );
+        let second = seat_human(&mut b, "another");
+        assert_eq!(
+            b.world.state.ships[second as usize].team, 0,
             "three bots on a side do not make it the full one"
         );
     }
@@ -2815,6 +2822,281 @@ mod tests {
             .join(Seat::guest(name.to_string(), false), 0, 32, tx)
             .expect("a seat");
         a.players[&id].ship
+    }
+
+    /// A duel room as the catalog shapes one: two seats, a side each, the
+    /// melee clock. The match is short so a test can run it out.
+    fn duel_room(match_seconds: u16) -> Room {
+        let mut def = wire_zone(1, 2, 2);
+        def.mode = "melee".into();
+        def.max_ships = 2;
+        def.bot_fill = 1.0;
+        def.zone_toml = format!(
+            "max_ships = 2\nteams = [\"Pilot\", \"Rival\"]\nmax_humans_per_team = 1\n\
+             max_bots_per_team = 1\n[arena]\nmatch_seconds = {match_seconds}\n\
+             intermission_seconds = 1\n"
+        );
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
+        z.serve_zone(&def).expect("a room");
+        let mut a = z.rooms.remove(0);
+        assert!(a.is_duel(), "one a side on two sides is a duel");
+        assert_eq!(a.world.cfg.max_ships, 2, "two seats");
+        // The first tick opens the match, as it would for a fresh room.
+        a.tick();
+        a
+    }
+
+    /// A duel room as the catalog serves one, running the duel mode.
+    fn duel_mode_room(first_to: u16) -> Room {
+        let mut def = wire_zone(1, 2, 2);
+        def.mode = "duel".into();
+        def.max_ships = 2;
+        def.zone_toml = format!(
+            "max_ships = 2\nteams = [\"Pilot\", \"Rival\"]\n\
+             max_humans_per_team = 1\nmax_bots_per_team = 1\n\
+             [arena]\nfirst_to = {first_to}\nmatch_seconds = 180\n\
+             intermission_seconds = 15\nrespawn_delay = 200\n"
+        );
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
+        z.serve_zone(&def).expect("a room");
+        let mut a = z.rooms.remove(0);
+        a.tick();
+        a
+    }
+
+    /// The round reset puts both pilots back on the ground with everything a
+    /// round is entitled to, and leaves the score alone. That last part is
+    /// the whole reason it is not `open_match`.
+    #[test]
+    fn a_duel_round_resets_the_arena_without_touching_the_score() {
+        let mut a = duel_mode_room(2);
+        let pilot = seat_human(&mut a, "pilot");
+        let rival = seat_human(&mut a, "rival");
+        assert_ne!(
+            a.world.state.ships[pilot as usize].team, a.world.state.ships[rival as usize].team,
+            "a side each"
+        );
+        a.tick();
+
+        // A round already taken, and a rack already spent.
+        a.world.state.ships[rival as usize].deaths = 1;
+        a.world.state.ships[pilot as usize].kills = 1;
+        let racked: Vec<u8> = a.world.state.ships[pilot as usize].charge.to_vec();
+        assert!(racked.iter().any(|n| *n > 0), "a rack to spend");
+        for sh in a.world.state.ships.iter_mut() {
+            sh.charge = [0; sim::MAX_CHARGES];
+        }
+        // And the loser hurt, somewhere out on the map, with a bomb still up.
+        a.world.state.ships[rival as usize].energy = 1;
+        a.world.state.ships[rival as usize].x = 40 * 256;
+        a.world.state.weapon_count = 1;
+        let before = a.round_no;
+
+        a.open_round();
+        assert_eq!(a.round_no, before + 1);
+        assert_eq!(a.world.state.weapon_count, 0, "nothing left in the air");
+        for ship in [pilot, rival] {
+            let sh = a.world.state.ships[ship as usize];
+            assert_eq!(sh.alive, 0, "down for the tick between rounds");
+            assert_eq!(sh.energy, 0, "which the snapshot wire requires");
+            assert_eq!(sh.respawn_at, 1, "and back on the next one");
+            assert_eq!(
+                sh.charge.to_vec(),
+                racked,
+                "with the rack a round is entitled to"
+            );
+        }
+        assert_eq!(
+            a.world.state.ships[rival as usize].deaths, 1,
+            "the rounds already taken are the score and survive the reset"
+        );
+        assert_eq!(a.world.state.ships[pilot as usize].kills, 1);
+
+        // One tick, and the core's own spawn puts them back at a full bar on
+        // a start, which is what makes a round open like a match does.
+        a.tick();
+        for ship in [pilot, rival] {
+            let full = a.world.eff_max_energy(ship as usize);
+            let sh = a.world.state.ships[ship as usize];
+            assert_eq!(sh.alive, 1, "flying again");
+            assert_eq!(sh.energy, full, "at a full bar");
+        }
+    }
+
+    /// End to end through the room: a death, the two second window, a fresh
+    /// round, and the second round taking the match into a podium.
+    #[test]
+    fn a_duel_is_played_in_rounds_and_two_of_them_take_it() {
+        let mut a = duel_mode_room(2);
+        let pilot = seat_human(&mut a, "pilot");
+        let rival = seat_human(&mut a, "rival");
+        a.tick();
+        let (mine, theirs) = (
+            a.world.state.ships[pilot as usize].team as usize,
+            a.world.state.ships[rival as usize].team as usize,
+        );
+
+        // The room reads the score off the ships, so a death written here is
+        // a death as far as the mode is concerned.
+        for round in 1..=2 {
+            a.world.state.ships[rival as usize].deaths += 1;
+            let mut ctx = modes::ModeCtx {
+                world: &mut a.world,
+                team_names: &["Pilot".to_string(), "Rival".to_string()],
+                banner: String::new(),
+                finished: false,
+                open_match: false,
+                round_reset: false,
+                close_match: false,
+            };
+            a.mode.on_death(&mut ctx, rival, pilot);
+            drop(ctx);
+            assert_eq!(
+                a.mode.match_state().unwrap().score[mine],
+                round,
+                "the round is the other side's death"
+            );
+
+            let before = a.round_no;
+            for _ in 0..modes::ROUND_CLOSE_TICKS + 2 {
+                a.tick();
+            }
+            if round == 1 {
+                assert_eq!(a.round_no, before + 1, "a fresh round opened");
+                assert!(a.mode.match_state().unwrap().playing);
+            }
+        }
+
+        let state = a.mode.match_state().unwrap();
+        assert!(!state.playing, "two rounds and a lead is the match");
+        assert_eq!(state.score[mine], 2);
+        assert_eq!(state.score[theirs], 0);
+        assert_eq!(
+            a.world.state.ships[pilot as usize].alive, 0,
+            "everybody benched for the podium"
+        );
+    }
+
+    #[test]
+    fn a_duel_arrival_lands_across_from_the_bot_that_stays() {
+        // Two bots hold an empty duel room. The person at the door takes one
+        // bot's seat, and used to be put beside the other: no humans on either
+        // side, so the tie went to the first side, which was as likely as not
+        // the one the surviving bot was on. Then the ballast rule moved the
+        // bot across a few seconds later, kills and all.
+        for evicted_first in [false, true] {
+            let mut a = duel_room(180);
+            let bots = seat_bots(&mut a, 2);
+            assert_ne!(
+                a.world.state.ships[bots[0] as usize].team,
+                a.world.state.ships[bots[1] as usize].team,
+                "a bot a side"
+            );
+            // Kill the bot the room should evict, so the test picks which one
+            // stays rather than the eviction order.
+            let (goes, stays) = if evicted_first {
+                (bots[0], bots[1])
+            } else {
+                (bots[1], bots[0])
+            };
+            a.world.state.ships[goes as usize].alive = 0;
+            a.world.state.ships[goes as usize].energy = 0;
+
+            let (tx, rx) = mpsc::channel(OUT_QUEUE);
+            std::mem::forget(rx);
+            let id = a
+                .join(Seat::guest("pilot", false), 0, 2, tx)
+                .expect("a seat, taken back from a bot");
+            let pilot = a.players[&id].ship;
+            assert_eq!(pilot, goes, "the dead bot's seat");
+            assert_eq!(a.bot_count(), 1);
+            assert_ne!(
+                a.world.state.ships[pilot as usize].team, a.world.state.ships[stays as usize].team,
+                "and the side across from the bot that stayed"
+            );
+        }
+    }
+
+    #[test]
+    fn a_duel_opens_a_fresh_match_when_a_seat_changes_hands() {
+        let mut a = duel_room(180);
+        let bots = seat_bots(&mut a, 2);
+        for _ in 0..500 {
+            a.tick();
+        }
+        // The bots have been at it: one of them is well ahead.
+        a.world.state.ships[bots[0] as usize].kills = 5;
+        a.world.state.ships[bots[1] as usize].deaths = 5;
+        a.tick();
+        let before = a.mode.match_state().unwrap();
+        assert_eq!(before.score.iter().sum::<u16>(), 5);
+        assert!(before.seconds_left < 180, "and the clock has run");
+        let match_no = a.match_no;
+
+        let pilot = seat_human(&mut a, "pilot");
+        a.tick();
+        let after = a.mode.match_state().unwrap();
+        assert!(after.playing);
+        assert_eq!(after.seconds_left, 180, "a whole clock");
+        assert_eq!(after.score, vec![0, 0], "nothing on the board");
+        assert_eq!(a.match_no, match_no + 1, "a match of its own");
+        for sh in a.world.state.ships.iter().filter(|s| s.active != 0) {
+            assert_eq!((sh.kills, sh.deaths), (0, 0), "nobody carries a tally in");
+            assert_eq!(sh.alive, 1, "and everybody is flying");
+        }
+        assert!(a.names.contains_key(&pilot));
+    }
+
+    #[test]
+    fn a_duel_arrival_during_the_podium_waits_for_the_next_match() {
+        // Two seconds of match, one of podium. With the podium up the next
+        // match opens on its own, and the arrival joins that rather than
+        // cutting the podium short.
+        let mut a = duel_room(2);
+        seat_bots(&mut a, 2);
+        for _ in 0..250 {
+            a.tick();
+        }
+        assert!(!a.mode.match_state().unwrap().playing, "the podium is up");
+        let match_no = a.match_no;
+
+        let pilot = seat_human(&mut a, "pilot");
+        a.tick();
+        assert!(!a.mode.match_state().unwrap().playing, "and stays up");
+        assert_eq!(
+            a.world.state.ships[pilot as usize].alive, 0,
+            "benched with everybody"
+        );
+        for _ in 0..100 {
+            a.tick();
+        }
+        let state = a.mode.match_state().unwrap();
+        assert!(state.playing, "the intermission ran out");
+        assert_eq!(a.match_no, match_no + 1, "into the next match, once");
+        assert_eq!(a.world.state.ships[pilot as usize].alive, 1);
+    }
+
+    #[test]
+    fn a_melee_arrival_lands_across_from_the_bots_rather_than_beside_them() {
+        // The same tie, in a wide room: a person arriving to one bot on the
+        // first side lands on the second, where before they shared a side
+        // until the ballast moved.
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
+        let bot = seat_bots(&mut a, 1)[0];
+        let pilot = seat_human(&mut a, "pilot");
+        assert_ne!(
+            a.world.state.ships[pilot as usize].team,
+            a.world.state.ships[bot as usize].team,
+        );
+        // And the human count still comes first: a second person lands
+        // beside the bot, across from the first person, whatever the heads.
+        let second = seat_human(&mut a, "second");
+        assert_eq!(
+            a.world.state.ships[second as usize].team,
+            a.world.state.ships[bot as usize].team,
+        );
     }
 
     /// The melee maps have to be a place the design describes, and the two
@@ -4360,6 +4642,85 @@ mod tests {
         }
         assert!(rotations > 0, "the ground changed while they watched");
         assert!(frames > 0, "and they were served frames across it");
+    }
+
+    #[test]
+    fn a_seat_taken_from_the_stands_comes_with_the_ground_the_room_is_on() {
+        // The landing joins by watching the channel and then asking for a
+        // hull on the same socket, and the channel runs CHANNEL_DELAY behind
+        // the room. A whistle inside that window changed the map and the
+        // generation for everybody in a hull while the stands were still
+        // being shown the last match. The seat used to come with a welcome
+        // and nothing else, so a pilot who pressed deploy in those seconds
+        // held the old ground and flew the new match on its walls.
+        let mut a = match_room(60, 4);
+        seat_human(&mut a, "pilot");
+        let (tx, mut rx) = mpsc::channel(OUT_QUEUE);
+        let wid = a
+            .watch_join(Seat::guest("deploy", false), tx)
+            .expect("a place in the stands");
+        a.lag_policy.spectate_silence_ticks = u32::MAX;
+
+        // Long enough for the stands to hold a served copy of the ground.
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        for _ in 0..(CHANNEL_DELAY / SNAPSHOT_EVERY * 2) {
+            for _ in 0..SNAPSHOT_EVERY {
+                a.tick();
+            }
+            a.broadcast_snapshot(&mut buf);
+            drain(&mut rx);
+        }
+
+        let stale_map = a.map_msg();
+        let stale_generation = a.settings_generation;
+        a.close_match();
+        assert_ne!(a.map_msg(), stale_map, "the whistle changed the ground");
+        assert_ne!(
+            a.settings_generation, stale_generation,
+            "and the generation"
+        );
+
+        // One frame into the window: the stands are still shown the old match.
+        for _ in 0..SNAPSHOT_EVERY {
+            a.tick();
+        }
+        a.broadcast_snapshot(&mut buf);
+        let shown = drain(&mut rx);
+        assert!(
+            !shown.iter().any(|m| m.first() == Some(&S2C_MAP)),
+            "the channel has not served the new ground yet"
+        );
+
+        a.fly(wid, 0, 8).expect("a seat on the field");
+        let got = drain(&mut rx);
+        let map_at = got
+            .iter()
+            .position(|m| m.first() == Some(&S2C_MAP))
+            .expect("the seat comes with the map");
+        assert_eq!(got[map_at], a.map_msg(), "and it is the map the room is on");
+        assert!(
+            got.iter()
+                .any(|m| m.first() == Some(&protocol::S2C_MAPNAME)),
+            "with its name"
+        );
+        let settings_at = got
+            .iter()
+            .position(|m| m.first() == Some(&S2C_SETTINGS))
+            .expect("and the rules");
+        let generation =
+            u32::from_le_bytes(got[settings_at][1..5].try_into().expect("a generation"));
+        assert_eq!(
+            generation, a.settings_generation,
+            "under the generation the frames to come are packed under"
+        );
+        let welcome_at = got
+            .iter()
+            .position(|m| m.first() == Some(&S2C_WELCOME))
+            .expect("a welcome");
+        assert!(
+            map_at < welcome_at && settings_at < welcome_at,
+            "ground and rules before the welcome, the way the door hands them out"
+        );
     }
 
     #[test]
@@ -6445,6 +6806,113 @@ mod tests {
         }
     }
 
+    /// One game, five rooms: every zone we ship flies the same ship into the
+    /// same wall, and what a zone file changes is what the room is *for*.
+    ///
+    /// That claim used to be enforced by copying twenty settings into each new
+    /// zone file and hoping the next tuning pass edited all five. It is the
+    /// baseline's now, and this is what says so: apply a zone, blank the
+    /// handful of fields a zone is allowed to differ on, and everything left
+    /// has to be identical across the catalog. A zone that quietly tunes the
+    /// gun fails here rather than in a player's hands, and a genuinely new
+    /// per-zone rule fails too, until it is named in the list below and thereby
+    /// argued for.
+    #[test]
+    fn every_shipped_zone_flies_the_same_ship() {
+        catalog::set_placeholder_identity();
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog");
+        let cat = catalog::load(dir).expect("the catalog we ship loads");
+        let mut digests: Vec<(String, Vec<u8>)> = Vec::new();
+        for name in &cat.order {
+            let mut w = sim::World::new(1);
+            Room::apply_config(&mut w, &cat.zone(name).unwrap().arena);
+            // What a zone says about its own room rather than about the game
+            // in it: how long you wait to fly again and where you arrive, the
+            // flag rules that separate Turf from War, the greens that make
+            // Free Roam persistent, and how many seats there are.
+            w.cfg.respawn_delay = 0;
+            w.cfg.spawn_radius = 0;
+            w.cfg.flag_radius = 0;
+            w.cfg.flag_drop_cooldown = 0;
+            w.cfg.flag_carry = 0;
+            w.cfg.flag_carry_ticks = 0;
+            w.cfg.green_target = 0;
+            w.cfg.green_life = 0;
+            w.cfg.green_every = 0;
+            w.cfg.green_near = 0;
+            w.cfg.green_far = 0;
+            w.cfg.green_radius = 0;
+            w.cfg.green_weight = [0; sim::SLOT_COUNT];
+            w.cfg.max_ships = 0;
+            digests.push((name.clone(), w.packed_settings()));
+        }
+        let (first, want) = &digests[0];
+        for (name, got) in &digests[1..] {
+            assert_eq!(
+                got, want,
+                "{name} and {first} disagree about the ship, the weapons or the wall"
+            );
+        }
+    }
+
+    /// The other half of that rule: a shipped zone writes a setting only where
+    /// it wants a different answer from the baseline's.
+    ///
+    /// A key that restates the baseline is not harmless. It reads as a
+    /// decision this zone made, so the next tuning pass has to work out
+    /// whether the zone meant it, and it is how the five files filled up with
+    /// twenty settings apiece in the first place. Each key gets applied on its
+    /// own here and has to move something.
+    #[test]
+    fn a_shipped_zone_writes_only_what_it_changes() {
+        catalog::set_placeholder_identity();
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog");
+        let cat = catalog::load(dir).expect("the catalog we ship loads");
+        let baseline = {
+            let w = sim::World::new(1);
+            w.packed_settings()
+        };
+        // Keys that are the room's rather than the simulation's: the mode,
+        // its clocks, the rounds that take a duel, how many of the map's
+        // stands to play, and the connection policy. None of them reach the
+        // settings a client is sent, so they cannot be checked this way and
+        // are not what this test is about.
+        const NOT_SETTINGS: [&str; 7] = [
+            "mode",
+            "flags",
+            "match_seconds",
+            "intermission_seconds",
+            "turf_seconds",
+            "first_to",
+            "lag",
+        ];
+        for name in &cat.order {
+            let src = std::fs::read_to_string(format!("{dir}/zones/{name}/zone.toml")).unwrap();
+            let doc: toml::Value = toml::from_str(&src).unwrap();
+            let Some(arena) = doc.get("arena").and_then(|a| a.as_table()) else {
+                continue;
+            };
+            for (key, value) in arena {
+                if NOT_SETTINGS.contains(&key.as_str()) {
+                    continue;
+                }
+                let mut one = toml::map::Map::new();
+                one.insert(key.clone(), value.clone());
+                let mut doc = toml::map::Map::new();
+                doc.insert("arena".into(), toml::Value::Table(one));
+                let doc = toml::to_string(&toml::Value::Table(doc)).unwrap();
+                let (w, warn) = tuned(&doc);
+                assert!(warn.is_empty(), "{name}: {key}: {warn:?}");
+                assert_ne!(
+                    w.packed_settings(),
+                    baseline,
+                    "{name} writes {key}, which is already what the baseline says: \
+                     delete the line rather than restating it"
+                );
+            }
+        }
+    }
+
     #[test]
     fn a_zone_prices_multifire() {
         let (w, warn) = tuned(
@@ -6471,8 +6939,8 @@ mod tests {
         );
         assert_eq!(w.cfg.mod_multi_energy, 25);
         assert_eq!(w.cfg.mod_multi_delay, 50);
-        assert_eq!(w.cfg.mod_spread, 2730, "fifteen degrees, still");
-        assert_eq!(w.cfg.bounce, 16, "and the field past the splinters");
+        assert_eq!(w.cfg.mod_spread, 910, "five degrees, still");
+        assert_eq!(w.cfg.bounce, 12, "and the field past the splinters");
     }
 
     /// `mode` and `flags` were documented keys that nobody read: the arena
@@ -6579,6 +7047,7 @@ mod tests {
                 banner: String::new(),
                 finished: false,
                 open_match: false,
+                round_reset: false,
                 close_match: false,
             };
             room.mode.tick(&mut ctx);
@@ -7088,7 +7557,7 @@ mod tests {
 
         // Left out, each is the core's own.
         let (w, _) = tuned("[arena]\nmode = \"warzone\"\n");
-        assert_eq!(w.cfg.bounce, 16);
+        assert_eq!(w.cfg.bounce, 12);
         assert_eq!(w.cfg.door_period, 600);
         assert_eq!(w.cfg.flag_radius, 18 * 256);
     }

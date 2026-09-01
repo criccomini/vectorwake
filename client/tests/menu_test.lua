@@ -177,22 +177,16 @@ local function labels()
     return table.concat(out, ", ")
 end
 
--- --- the column's stops, and which of them a room offers -------------------
+-- --- the column's stops --------------------------------------------------
 --
--- Where you are, what you fly, the machine, and which side you are on, top
--- down in that order. ZONE is farthest from the key that resumes on purpose:
--- the press that can end a match should not be the neighbor of the press that
--- ends the menu.
+-- Who you are, where you are, what you fly, and the machine, top down in that
+-- order, and the same four wherever the column is standing. There is one menu
+-- (decision 143): the landing and the in-match column were the same drawing
+-- off two models, each carrying the stop the other lacked, so the settings
+-- lived only in a match and the account only on the front page.
 --
--- LEAVE stood where ZONE does and had two answers: benched it left the room
--- for the stands, flying it handed the seat back and left you watching the
--- room you were in. The second is gone with decision 136, and what replaces
--- the stop is the games list the landing already opens: leaving is choosing
--- where to be instead.
---
--- There is no rail and no tab row here to grow a stop and lose one. A stop a
--- room cannot offer is not in the list, and the list is the whole of the
--- navigation.
+-- SIDE is not here. Crossing to another team is about the room rather than
+-- about you, and it comes back with the scoreboard and the room list.
 
 menu.open = true
 menu.home = false
@@ -202,14 +196,14 @@ menu.class = 0
 menu.stack = {}
 net.teams = {}
 
-check("a pilot in a hull gets where they are, what they fly and the machine",
-      stop_names() == "zone/ship/settings", stop_names())
+check("the column is the same four stops wherever it stands",
+      stop_names() == "account/zone/ship/settings", stop_names())
 
 -- The answer on a stop is a name rather than a sentence about the stop, which
--- is the grammar every stop in this column speaks and the landing's speak
--- too: the label asks and the answer names. So the zone stop answers with the
--- game you are in, in the words the games list has for it, and the ship stop
--- with the hull you are flying.
+-- is the grammar every stop in this column speaks: the label asks and the
+-- answer names. So the zone stop answers with the game you are in, in the
+-- words the games list has for it, and the ship stop with the hull you are
+-- flying.
 local zone_stop = stop_of("zone")
 check("the zone stop opens the games and says which one you are in",
       zone_stop.go == "zone" and zone_stop.value == "Chaos"
@@ -224,7 +218,18 @@ check("the ship stop opens a panel and says what you fly",
 
 menu.watching = true
 check("and the column is the same stops from the bench",
-      stop_names() == "zone/ship/settings", stop_names())
+      stop_names() == "account/zone/ship/settings", stop_names())
+menu.home = true
+check("and the same four at home",
+      stop_names() == "account/zone/ship/settings", stop_names())
+menu.home, menu.watching = false, false
+
+-- Who you are, which the front page used to be the only screen to carry. It
+-- opens the account acts as a page of the tree like any other.
+local who = stop_of("account")
+check("the account stop says the call sign and opens the acts",
+      who.go == "account" and who.value == menu.name and who.named == true,
+      tostring(who.value))
 
 -- Settings is a page rather than a value, so it is the one stop here with
 -- nothing to say in the slot the others put an answer in.
@@ -239,22 +244,6 @@ check("and carries no answer and no mark",
       machine.value == nil and machine.mark == nil,
       tostring(machine.mark))
 
--- The sides arrive on the roster broadcast rather than in the join, so this
--- stop appears a frame or two after the rest of the column. It is last for
--- that reason: appearing at the foot shuffles nothing already under a thumb.
-check("a room that has not named its sides carries no side stop",
-      stop_of("side") == nil, stop_names())
-net.teams = {{team = 1, name = "Pylon", humans = 3, bots = 1},
-             {team = 2, name = "Caisson", humans = 4, bots = 0}}
-net.my_team = 1
-net.my_team_name = function() return "Pylon" end
-check("and one that has puts it last, under the other three",
-      stop_names() == "zone/ship/settings/side", stop_names())
-local side = stop_of("side")
-check("the side stop says which side you fly for, in its own name",
-      side.value == "Pylon" and side.named == true and side.go == "side",
-      tostring(side.value))
-
 -- The view carries the same four, and says which one is holding a page open.
 -- That is the whole of "where am I" now: a lit stop with its panel climbing
 -- off it. The drawer answered it five ways at once, with a rail, a stage, a
@@ -262,15 +251,27 @@ check("the side stop says which side you fly for, in its own name",
 open()
 local v = menu.view()
 check("the view carries the stops the column is drawn from",
-      #v.stops == 4 and v.stops[1].stop == "zone"
-      and v.stops[4].stop == "side", #v.stops .. " stops")
+      #v.stops == 4 and v.stops[1].stop == "account"
+      and v.stops[4].stop == "settings", #v.stops .. " stops")
+-- And what the one key does, which is the one thing on the column that reads
+-- where this client is sitting rather than setting it.
+check("a pilot with a seat is offered the stands",
+      v.key == "spectate", tostring(v.key))
+menu.watching = true
+check("and a bench is offered a seat instead",
+      menu.view().key == "play", tostring(menu.view().key))
+menu.watching = false
+menu.home = true
+check("and so is the front page, which holds no seat at all",
+      menu.view().key == "play", tostring(menu.view().key))
+menu.home = false
 check("and none of them is open over the bare column",
       not v.stops[1].open and not v.stops[2].open and not v.stops[3].open)
 open("settings")
 v = menu.view()
 check("the stop whose page is up is the lit one",
-      v.stops[3].open == true and v.stops[1].open == false,
-      tostring(v.stops[3].open))
+      v.stops[4].open == true and v.stops[1].open == false,
+      tostring(v.stops[4].open))
 check("and the view still names who is reading, for the pages that need it",
       v.pilot ~= nil and v.pilot.name == menu.name,
       tostring(v.pilot and v.pilot.name))
@@ -287,7 +288,7 @@ menu.stack = {"settings", "controls"}
 check("the key raises the column", menu.toggle() == true and menu.open)
 -- It comes up on its bare stops every time, whatever was open last. A menu
 -- that reopens where it was left is a menu that reopens on the controls board
--- a fortnight later, and the three stops are one press from anywhere anyway.
+-- a fortnight later, and the four stops are one press from anywhere anyway.
 check("and always on its bare stops", #menu.stack == 0 and menu.at() == nil,
       table.concat(menu.stack, "/"))
 check("and the same key puts it away", menu.toggle() == false and not menu.open)
@@ -298,7 +299,7 @@ check("pressing a stop opens its page",
       select(2, menu.press_stop("settings")) == true
       and menu.stop_open() == "settings", table.concat(menu.stack, "/"))
 -- Pressing the one already open shuts it, which is what the caret on the stop
--- draws and what the landing's own stops do.
+-- draws.
 check("and opening the open one shuts it",
       menu.open_stop("settings") == nil and #menu.stack == 0)
 check("a stop the room is not offering answers nothing",
@@ -383,57 +384,34 @@ check("escape answers the question instead of shutting the menu",
       act == nil and moved and menu.ask == nil and menu.open,
       tostring(act) .. ", open " .. tostring(menu.open))
 
--- --- the sides, which are the one page that arrives over the wire ----------
+-- A game the fleet is not serving is on the list all the same, and says two
+-- things about itself. It cannot be flown to, which is what dims it, and it is
+-- still being looked for, which is the dial the drawing puts at the end of the
+-- row: the directory is asked again every three seconds and an arena can come
+-- back to a game at any of them.
 --
--- A room says what sides it has, and until it does there are none to stand on.
--- The stop hides itself until they land, which is checked up with the stops;
--- what is checked here is the list a press on it opens.
---
--- A list rather than a value stepped left and right, which is what the side
--- row was while a room held two. Arrows walk: in a zone holding three,
--- reaching the third means crossing the second, and a pilot who wanted the
--- third has joined the second on the way.
-
-net.teams = {{team = 1, name = "Pylon", humans = 3, bots = 1},
-             {team = 2, name = "Caisson", humans = 4, bots = 0},
-             {team = 3, name = "Meridian", humans = 0, bots = 0}}
-net.my_team = 1
-net.may_found = false
-open()
-menu.press_stop("side")
-check("the side stop opens the room's own sides",
-      menu.stop_open() == "side" and #rows() == 3, labels())
-check("in the room's own words",
-      rows()[1].label == "Pylon" and rows()[3].label == "Meridian",
-      labels())
-check("said as somebody named them rather than as this interface speaks",
-      rows()[1].named == true)
-check("with the one you fly for marked",
-      rows()[1].mark == true and rows()[2].mark == false)
--- People and AI apart, because the caps are, and because "four and eleven
--- bots" is a different room from "fifteen".
-check("and the count says people and AI apart",
-      rows()[1].detail == "3 + 1 AI" and rows()[2].detail == "4",
-      tostring(rows()[1].detail) .. " / " .. tostring(rows()[2].detail))
--- Each side is one press, however many there are.
-menu.pending = nil
-act, moved = menu.press_row(3)
-check("picking one asks the room for it",
-      act == "team" and moved and menu.pending == 3,
-      tostring(act) .. "/" .. tostring(menu.pending))
-
--- A side of your own, when the room may hold another. A zone whose max_teams
--- is the count of its own sides never offers this, which is how a flag round
--- says there is no third side to be.
-check("a room that will hold no more sides offers no way to found one",
-      row_at("new team") == nil, labels())
-net.may_found = true
-check("and one that will offers it under the sides it has",
-      row_at("new team") == 4, labels())
-act, moved = menu.press_row(4)
-check("and founding is an act the arena carries out",
-      act == "found" and moved, tostring(act))
-net.may_found = false
+-- One list draws these rows wherever the column stands, so what is checked
+-- here is the field the drawing reads: a row that only dimmed would be the
+-- client saying it had given up when it has not.
+do
+    local dir = package.loaded["arena.directory"]
+    dir.rows[#dir.rows + 1] = {zone = "war", name = "War", teams = "4v4",
+                               count = "", players = 0, bots = 0,
+                               live = false}
+    open("zone")
+    local up, down = row_named("Chaos"), row_named("War")
+    check("a game with no arena behind it is still a row on the list",
+          down ~= nil, labels())
+    if up and down then
+        check("and is dim, because it cannot be flown to",
+              down.dim == true and not up.dim)
+        check("and is being looked for, which is not the same thing",
+              down.waiting == true and not up.waiting)
+        check("while still saying what the game is",
+              down.note == "4v4", tostring(down.note))
+    end
+    dir.rows[#dir.rows] = nil
+end
 
 -- --- settings, which are values rather than destinations -------------------
 --
@@ -976,13 +954,12 @@ do
     _G.html5 = nil
 end
 
--- --- the account, which is a list the landing opens -----------------------
+-- --- the account, which is the column's first stop ------------------------
 --
--- These acts left the drawer with the pilot page: the account is a stop on the
--- landing now, its rows are `menu.account_rows`, and pressing one runs
--- `menu.activate_act` with the same act name the drawer's rows carried. What
--- they do is unchanged, and it is all still this file's, so it is read here.
--- See decision 99.
+-- These acts left the drawer with the pilot page (decision 99) and stood on
+-- the landing alone until the menus were unified (decision 143). They are a
+-- page of the tree now, pressed by index like every other row here, and what
+-- they do is unchanged.
 
 menu.ask = nil
 menu.home = true
@@ -997,9 +974,13 @@ local function account_labels()
     end
     return table.concat(out, ", ")
 end
+-- Pressed the way the interface presses one: the account page open on the
+-- column, and a row of it named by where it stands in the list the frame
+-- drew.
 local function account_act(label)
-    for _, r in ipairs(menu.account_rows()) do
-        if r.label == label then return menu.activate_act(r.act) end
+    open("account")
+    for i, r in ipairs(menu.account_rows()) do
+        if r.label == label then return (menu.press_row(i)) end
     end
     return nil
 end
@@ -1364,17 +1345,16 @@ check("and leaving the page lets go of it",
       menu.arming == nil and menu.foot == nil,
       tostring(menu.arming) .. "/" .. tostring(menu.foot))
 
--- A stop the column no longer carries is a page you are no longer in. The
--- sides are the one that comes and goes: a room names them on the roster
--- broadcast, and a disconnect takes them away under a pilot standing in the
--- list.
-menu.home, menu.watching = false, true
-net.teams = {{team = 1, name = "Pylon", humans = 3, bots = 1}}
-open("side")
+-- A stop the column no longer carries is a page you are no longer in. All
+-- four are unconditional now, so nothing arrives or leaves under a hand; what
+-- this holds is that a stack pointed at a page the column does not draw is not
+-- a menu somebody can be stranded in.
+menu.home, menu.watching = false, false
+open("zone")
 menu.tick(0.1)
 check("a page whose stop is still offered stays open",
-      menu.stop_open() == "side", table.concat(menu.stack, "/"))
-net.teams = {}
+      menu.stop_open() == "zone", table.concat(menu.stack, "/"))
+menu.stack = {"nowhere"}
 menu.tick(0.1)
 check("and one whose stop has gone is dropped",
       menu.stop_open() == nil and #menu.stack == 0,
@@ -1382,23 +1362,27 @@ check("and one whose stop has gone is dropped",
 
 -- --- is there still a row there -------------------------------------------
 --
--- A press is tested against hit boxes the previous frame published, and some of
--- these lists are rebuilt underneath them: a side can leave the roster between
--- the drawing and the press. The cursor itself is ui.lua's, standing on a box
--- that was actually drawn; this is the one question about a row that only the
--- file holding the rows can answer.
+-- A press is tested against hit boxes the previous frame published, and some
+-- of these lists are rebuilt underneath them: a zone can leave the directory
+-- between the drawing and the press. The cursor itself is ui.lua's, standing
+-- on a box that was actually drawn; this is the one question about a row that
+-- only the file holding the rows can answer.
 
-net.teams = {{team = 1, name = "Pylon", humans = 3, bots = 1},
-             {team = 2, name = "Caisson", humans = 4, bots = 0}}
-open("side")
+local dir = package.loaded["arena.directory"]
+local all_zones = dir.rows
+dir.rows = {
+    {zone = "chaos", name = "Chaos", live = true},
+    {zone = "duel", name = "Duel", live = true},
+}
+open("zone")
 check("a row that is there is there", menu.has_row(2) == true)
-net.teams = {{team = 1, name = "Pylon", humans = 3, bots = 1}}
+dir.rows = {{zone = "chaos", name = "Chaos", live = true}}
 check("and one the wire has taken away is not", menu.has_row(2) == false)
 check("and a press on the row that went answers nothing",
       select(2, menu.press_row(2)) == false)
 open()
 check("a bare column holds no rows at all", menu.has_row(1) == false)
-net.teams = {}
+dir.rows = all_zones
 
 -- --- the ship panel, which is the landing's rather than the column's -------
 --

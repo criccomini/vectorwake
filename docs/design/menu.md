@@ -1,4 +1,30 @@
-# Landing, and the menu
+# The menu
+
+> **There is one menu.** The landing and the in-match column were the same
+> drawing off two models, and this note is where they stop being two. The
+> column is `ACCOUNT`, `ZONE`, `SHIP`, `SETTINGS` over one key, and it is the
+> same four stops in the same order wherever it stands. Everything below that
+> says "the landing's stops" or "the in-match column" is describing one half of
+> a thing that is now whole.
+>
+> The key reads where this client is sitting. No seat anywhere, on the front
+> page or on a bench, and it says `PLAY` and is the way into one; a seat of
+> your own and it says `SPECTATE`, hands the hull back and leaves you watching
+> the room you were in from its own gallery. It is gated exactly as a ship
+> change is, because it is the same act of standing a ship down, and a wounded
+> pilot keeps their hull and is told why.
+>
+> `RESUME` is gone with it. Escape, the menu key, or a press on the glass
+> beside the column are what put it away in a match, which is what a press
+> beside a panel means everywhere else in this interface. At home it cannot be
+> put away at all: out there the column is the screen rather than something
+> over one, so it carries the lockup, washes nothing, and escape walks out of
+> whatever is open and then stops.
+>
+> `SIDE` is gone from the column. Crossing to another team is a thing you do
+> about the room you are in rather than about yourself, and it comes back with
+> the scoreboard and the room list. See
+> [decision 143](../architecture/decisions.md).
 
 > **The ship stop is in a room too, and LEAVE SEAT is gone.** The panel the
 > landing opens is the panel the in-match column opens: the same five parts

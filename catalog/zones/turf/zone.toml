@@ -51,53 +51,16 @@ flag_carry = false
 # reading.
 turf_seconds = 5
 
-# A stand settles for two seconds after changing hands. Without it two pilots
-# of opposite sides sitting on one stand take it from each other a hundred
-# times a second, the pennant strobes, and which side the clock happens to pay
-# is decided by the tick the payout lands on rather than by the fight.
-flag_drop_cooldown = 200
+# Two more flag numbers matter here and neither is written, because both are
+# already the baseline's. A stand settles for two seconds after changing hands
+# (`flag_drop_cooldown`), without which two pilots of opposite sides sitting on
+# one stand take it from each other a hundred times a second, the pennant
+# strobes, and which side the clock happens to pay is decided by the tick the
+# payout lands on rather than by the fight. And a stand is claimed from
+# eighteen pixels past the hull's own edge (`flag_radius`), which is the whole
+# of how precisely you have to fly over one.
 
-# Eighteen pixels past the hull's own edge, the baseline's. A stand is claimed
-# by flying over it, so this is the whole of how precisely you have to.
-flag_radius = 18
-
-# Everything below is Team Battle's, unchanged, and deliberately so. A pilot
-# moving between the two games should find the same ship, the same wall and
-# the same economy; what differs is what the room is for. See
-# catalog/zones/melee/zone.toml for the argument behind each number.
-bounce = 12
-friction = 12
-respawn_delay = 200
-spawn_radius = 0
-safe_limit = 65535
-streak_kills = 3
-mod_spread = 5
-multi_energy = 25
-multi_delay = 50
-prox_step = 16
-prox_delay = 150
-bomb_safety = true
-bbomb_damage = 1000
-shrap_inactive = 3
-shrap_inactive_ticks = 25
-
-[arena.mod_step]
-multi = 1
-bounce = 1
-prox = 48
-
-[[arena.weapons]]
-name = "gun"
-bounces = 255
-
-[[arena.weapons]]
-name = "gun-2"
-bounces = 255
-
-[[arena.weapons]]
-name = "gun-3"
-bounces = 255
-
-[[arena.weapons]]
-name = "burst"
-damage = 515
+# Nothing else, and deliberately so. A pilot moving between this game and Team
+# Battle should find the same ship, the same wall and the same economy; what
+# differs is what the room is for. All of it is the baseline's, in
+# `sim/src/baseline.c`, which is the one place any of it is written.

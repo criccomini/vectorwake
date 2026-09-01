@@ -61,13 +61,14 @@ end
 local ui = harness.install()
 local pal = require("arena.palette")
 
--- The three stops the column carries, as `menu.view` hands them over. Which
+-- The four stops the column carries, as `menu.view` hands them over. Which
 -- one is holding a page open is the only thing that changes between the pages
 -- below.
 local STOPS = {
-    {stop = "leave", label = "leave", value = "to the stands"},
-    {stop = "settings", label = "settings", mark = "settings"},
-    {stop = "side", label = "side", value = "Pylon", named = true},
+    {stop = "account", label = "account", value = "deSoto 412", named = true},
+    {stop = "zone", label = "zone", value = "Chaos", named = true},
+    {stop = "ship", label = "ship", value = "Apex", named = true},
+    {stop = "settings", label = "settings"},
 }
 
 local function column(open_stop, page, rows)
@@ -165,7 +166,7 @@ end
 -- Each page of the settings stop as the menu is handed it, with a cursor
 -- somewhere in the list and a row that is already yours.
 --
--- No shipped page marks a settings row today; the sides are where "where you
+-- No shipped page marks a settings row today; the games are where "where you
 -- already are" lives, and they open a list rather than a page. The mark is
 -- still the row vocabulary rather than one page's trick, and it is `stage_row`
 -- that answers it, so the pages here ask for it: what is being measured is the
@@ -497,24 +498,23 @@ end
 
 -- --- and a stop that opens a list keeps the same two weights ---------------
 --
--- The sides are the one stop whose answer is a list rather than a page. Same
--- extent and same two weights: a walk from the settings page onto the side
--- list should not change what "here" and "under the cursor" look like, and
--- for a while it did, because a page lit its rows at the type column and a
--- list lit them at the glass.
+-- The games are a list rather than a page. Same extent and same two weights:
+-- a walk from the settings page onto the zone list should not change what
+-- "here" and "under the cursor" look like, and for a while it did, because a
+-- page lit its rows at the type column and a list lit them at the glass.
 
 do
-    local function sides()
-        return column("side", nil, {
-            {label = "Pylon", index = 1, detail = "8", tint = 0, mark = true,
+    local function games()
+        return column("zone", nil, {
+            {label = "Chaos", index = 1, note = "4v4", mark = true,
              named = true, pick = true},
-            {label = "Caisson", index = 2, detail = "7", tint = 1,
-             named = true, pick = true},
-            {label = "Meridian", index = 3, detail = "6", tint = 2,
-             named = true, pick = true},
+            {label = "Duel", index = 2, note = "1v1", named = true,
+             pick = true},
+            {label = "Turf", index = 3, note = "4v4", named = true,
+             pick = true},
         })
     end
-    draw(sides(), 2, "menu_pick")
+    draw(games(), 2, "menu_pick")
     -- Everything the column held went out through the bottom edge when the
     -- panel came up, key included, so the fields at the panel's own span are
     -- the list and nothing else: there is no breathing key left up here to
@@ -522,7 +522,7 @@ do
     -- the point of the section: one extent, whether a stop opens a list or a
     -- page.
     local lit = row_fields()
-    check("the side list lights the row you fly for and the one under the "
+    check("the games list lights the one you are in and the one under the "
           .. "cursor", #lit == 2, #lit .. " fields")
     if #lit == 2 then
         local hi = math.max(lit[1].col[4], lit[2].col[4])

@@ -188,7 +188,8 @@ Three drivers share the stage and the probe, in increasing looseness. The
 first is built.
 
 Journeys are scripted walks, sharing an `arrive` prologue: boot, find the
-fleet, press PLAY NOW with whichever hand the profile has, take a seat.
+fleet, press the column's key with whichever hand the profile has, take
+a seat.
 
 `boot-to-match` then flies, and fails if the ship never gets a tile from where
 it started. `ship-change` opens the menu mid-match, opens the ship stop, turns

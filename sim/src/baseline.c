@@ -1,8 +1,16 @@
-/* Baseline settings: the neutral tuning a zone starts from and overrides.
+/* Baseline settings: the tuning a zone starts from and overrides.
  *
- * These numbers are ours (see docs/design/identity.md). They exist so the
- * flight model has a reference feel to tune against, and they are
- * placeholders until a playtest replaces them.
+ * These numbers are ours (see docs/design/identity.md), and they are what the
+ * fleet plays rather than a neutral reference nobody flies. That is the whole
+ * of how five zones share one game: a zone file states what makes it that
+ * zone, and everything it leaves out lands here.
+ *
+ * It used to be a translation of the original's settings file, with each of
+ * the five zones then restating the same overrides on top. Most of what they
+ * restated was already this file's own value, and the rest was Team Battle's
+ * tuning copied four times, so the arrangement was one edit away from a
+ * catalog whose zones quietly disagreed about the wall. Where a number here
+ * is no longer the original's, the comment beside it says what that one was.
  *
  * Class order matches docs/design/ships.md.
  */
@@ -343,30 +351,43 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * prediction client overrides both after every baseline (decision 40). */
     cfg->deathless = 0;
     cfg->mortal_ship = 255;
-    /* Misc:BounceFactor, where 16 is the whole of the speed given back. Walls
-     * are elastic, as the original's are: nothing in that model takes energy
-     * out of a ship except a wall, and its wall takes none, so a shot that
-     * carries you into one carries you out again at the speed you arrived.
+    /* Misc:BounceFactor out of sixteen: how much of the speed that hit a wall
+     * the wall gives back. Twelve, so a wall keeps a quarter of it.
      *
-     * This was 10, on the argument that clipping a wall should hurt and that
-     * paying for it is what makes tight flying a skill. What it actually
-     * bought was a brake that a pilot who never touches anything is not
-     * paying, which is a difficulty knob rather than a rule about the world.
+     * Sixteen is the original's and is lossless, on the reasoning that nothing
+     * in that model takes energy out of a ship except a wall and its wall
+     * takes none: a shot that carries you into one carries you out again at
+     * the speed you arrived. Alpha Zone's own file runs 22, which gives back
+     * more than arrived.
+     *
+     * Twelve is what every zone in this catalog has played since the open
+     * arena, and it is written here rather than in five zone files because
+     * the fleet flies one wall.
+     *
+     * It was 10 before that, on the argument that clipping a wall should hurt
+     * and that paying for it is what makes tight flying a skill. What it
+     * actually bought was a brake that a pilot who never touches anything is
+     * not paying, which is a difficulty knob rather than a rule about the
+     * world.
      *
      * `friction` is the speed kept along the face, and the original has no
      * term for it at all: a wall there reverses what hit it and leaves the
-     * slide alone. Ours still scrubs an eighth of it, so a wall is lossless
-     * head on and not quite lossless at an angle. */
-    cfg->bounce = 16;
-    cfg->friction = 14;
-    /* Four seconds dead, which is longer than the three this was and longer
-     * than the original's own EnterDelay. The extra second is not a difficulty
-     * knob: the wait carries a card explaining a thing in the arena, and the
-     * longest of them runs to three rows, which is not readable in the time it
-     * took to read DESTROYED and nothing else. A death is the one moment a
-     * player has nothing to fly and a reason to care, and buying that moment
-     * costs a second of a respawn nobody enjoyed anyway. */
-    cfg->respawn_delay = 400; /* 4 s */
+     * slide alone. Twelve here as well, so a wall costs the same quarter
+     * whether you meet it head on or slide along it. */
+    cfg->bounce = 12;
+    cfg->friction = 12;
+    /* Two seconds dead, which is the match game's number and so the fleet's:
+     * four of the five zones play to a clock, and four seconds of staring at a
+     * card is a fortieth of a three-minute match. What the wait costs a pilot
+     * there is the walk home, not the card.
+     *
+     * Four is right where a room is a thousand tiles wide and you respawn
+     * into the same fight rather than into a pocket, which is Free Roam, and
+     * that zone sets it back. It was also right when the wait carried a card
+     * explaining a thing in the arena, since the longest of those ran to
+     * three rows and was not readable in the time it took to read DESTROYED
+     * and nothing else. The original's own EnterDelay is shorter than both. */
+    cfg->respawn_delay = 200; /* 2 s */
     /* Spawn on the map's own tiles. Every map we ship carries them, and a
      * baseline that scattered ships round the middle instead would be the
      * baseline overruling the map. A zone that wants the scatter sets a
@@ -378,10 +399,17 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     /* And a client marks those tiles, because a pilot who cannot see where
      * they are about to arrive cannot decide anything about it. */
     cfg->show_spawns = 1;
-    /* No limit on sitting in a safe zone. The baseline is a translation of a
-     * settings file that has no such rule, and a room that empties its own
-     * stands is a deployment decision: a zone that wants one sets it. */
-    cfg->safe_limit = 0;
+    /* The longest sit a safe zone allows, in ticks, and 65535 is as long as
+     * this field goes: `safe_limit` is a uint16_t, so ten minutes and
+     * fifty-five seconds is the longest wait the game can express. Alpha
+     * Zone's SafetyLimit is 90000, which is fifteen minutes.
+     *
+     * Zero, which was here, is no limit at all. Neither number is ever
+     * reached in a three-minute match and no map in the catalog draws a safe
+     * tile, so this costs the fleet nothing today. It is set because the zone
+     * that eventually draws one should not also have to remember the line:
+     * a safe pocket is where a leading side goes to stall out a clock. */
+    cfg->safe_limit = 65535;
     /* A hull takes a flag once it reaches eighteen pixels past its own edge. */
     cfg->flag_radius = 18 * 256;
     /* A dropped flag stays put for two seconds before another hull can take it. */
@@ -510,7 +538,14 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->mod_step[SIM_MOD_SHRAPNEL] = 0;           /* a pattern, not a number */
     cfg->mod_step[SIM_MOD_FREEZE] = 50;            /* half a second without recharge */
     cfg->mod_step[SIM_MOD_PUSH] = sim_units_speed(1200);
-    cfg->mod_spread = 65536 / 24;                  /* fifteen degrees */
+    /* Degrees a spray of three or more fans to. Five, which is 65536/72.
+     *
+     * Fifteen was here, and between tunings it was the one setting that moved
+     * the most: measured over the drill, a 15-degree fan was worth +5 win
+     * points and a 5-degree one +29, because a fan nobody can land is not a
+     * weapon. What two abreast means is `mod_pair_spread` below and tighter
+     * still. */
+    cfg->mod_spread = 65536 / 72;                  /* five degrees */
     /* What one more round costs, as a percentage of the shot's own energy and
      * cooldown.
      *
@@ -521,7 +556,21 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * it and the ladder above it keeps climbing at the same rate rather than
      * at a rate invented for the top of it. Six rounds is two and a quarter
      * times the energy and three and a half times the wait, which is a build
-     * rather than an upgrade. */
+     * rather than an upgrade.
+     *
+     * A hundred stood here for a while and it was right for what it was
+     * written against, which is worth keeping because it says what these
+     * numbers have to avoid. Spray was a rung on a shelf then, and at
+     * twenty-five the two costs cancelled: a pull at spray three charged 1.75
+     * times the energy over 1.75 times the cooldown, so the drain per second
+     * never moved and the rounds per second went up by 2.3. That is not a
+     * trade, it is a free upgrade nobody can decline, and the room played
+     * like it. A hundred made a rung buy the volley and never the rate, and
+     * over forty matches on drydock it took the rounds in the air from 88 to
+     * 63, the deaths from 2.0 a pilot-minute to 1.3, and the roster's
+     * accuracy from the low thirties into the high forties. What put these
+     * back to the original's was the credit: spray is bought a rung at a time
+     * out of seven now rather than found on a shelf. */
     cfg->mod_multi_energy = 25;
     cfg->mod_multi_delay = 50;
     cfg->mod_pair_spread = BARREL_SPREAD;
@@ -628,11 +677,15 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
 
         sim_weapon_spec bs;
         memset(&bs, 0, sizeof bs);
-        /* BurstShrapnel=24 at BurstSpeed=3000 and BurstDamageLevel=700,
-         * which its help calls the damage of a single burst bullet. Alive
-         * time is the bullet clock again. This is a great deal more burst
-         * than the sixteen rounds at 180 that were here, and it is meant to
-         * be: in the original a burst at close range ends somebody. */
+        /* BurstShrapnel=24 at BurstSpeed=3000, and BurstDamageLevel, which
+         * the original's help calls the damage of a single burst bullet.
+         * Alive time is the bullet clock again. This is a great deal more
+         * burst than the sixteen rounds at 180 that were here, and it is
+         * meant to be: in the original a burst at close range ends somebody.
+         *
+         * 515 rather than the template's 700, because that is Alpha Zone's
+         * own number and a zone that ran for years shipped it. It was read as
+         * a deviation of ours once and put back to 700; it was not one. */
         bs.speed = sim_units_speed(3000);
         bs.life = 550;
         /* And they bounce, for the same reason shrapnel does and more so. A
@@ -645,7 +698,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
          * you cornered rather than the thing you cannot use there. */
         bs.on_wall = SIM_WALL_BOUNCE;
         bs.bounces = 255;
-        bs.damage = sim_units_energy(700);
+        bs.damage = sim_units_energy(515);
         bs.splinter = SIM_NO_PATTERN;
         sim_fire_pattern bf;
         memset(&bf, 0, sizeof bf);
@@ -674,9 +727,26 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         bolt.speed = sim_units_speed(2000);
         bolt.life = BULLET_LIFE;
         bolt.on_wall = SIM_WALL_END;
-        /* The add-on buys one wall, as its single rung says. Infinite
-         * ricochets made that one point dominate whole corridors. */
-        bolt.bounces = 0;
+        /* Bullets ricochet without limit once the add-on lifts them off the
+         * wall, which is what the original's BouncingBullets prize buys and
+         * what Alpha Zone ran. This was one wall, on a reading that infinite
+         * ricochets made the credit dominate whole corridors, and every zone
+         * in the catalog has overridden it back to 255 since Team Battle took
+         * Alpha's numbers. The count comes home rather than being written out
+         * five times.
+         *
+         * Two things keep it honest. It is read only once `on_wall` says
+         * bounce, which is what the add-on sets, so until a pilot spends the
+         * credit these rounds still end on the first wall they touch. And a
+         * bullet cannot spend 255: one lives 550 ticks and covers 69 tiles,
+         * so it would need a wall every four pixels. Unlimited in the only
+         * sense a five-second round can mean it.
+         *
+         * The count is the bullet's own rather than a rung under `mod_step`
+         * because the step is shared with the bomb, and a bomb that survived
+         * 255 walls over a sixty-second life would still be rattling around a
+         * melee map when the next match started. */
+        bolt.bounces = 255;
         /* BulletDamageLevel plus what a level adds. */
         bolt.damage = sim_units_energy(GUN_DAMAGE + r * GUN_DAMAGE_UP);
         bolt.splinter = SIM_NO_PATTERN;

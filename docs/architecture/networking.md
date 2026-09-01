@@ -362,7 +362,7 @@ which is the honest statement rather than a workaround, since the client is
 being told it does not know what the round is tracking and the fuse was always
 the server's to resolve.
 
-Contact went the same way later, for bombs (decision 140). A deathless core
+Contact went the same way later, for bombs (decision 144). A deathless core
 lands a thrown round on its own pilot's hull and on walls and flies it through
 the coasted guess of anybody else, so a direct hit on somebody else reaches
 the client as the round leaving a snapshot, and the client draws the blast

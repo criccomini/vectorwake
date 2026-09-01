@@ -159,6 +159,10 @@ pub struct ArenaConfig {
     /// a bad one is nearly over. Only a match game reads them.
     pub match_seconds: Option<u16>,
     pub intermission_seconds: Option<u16>,
+    /// Rounds that take a duel. Two by default: a match is then three rounds
+    /// at most, and losing the opening exchange leaves a pilot one round from
+    /// level rather than watching out a decided fight. Only Duel reads it.
+    pub first_to: Option<u16>,
     /// Seconds between two turf payouts, each paying a side one point per
     /// stand it holds. Five by default, which over a three minute match makes
     /// a stand held end to end worth 36 and a match worth arguing about.

@@ -841,7 +841,7 @@ typedef struct {
      * handed the bomb back is what a pilot saw as a bomb surviving its own
      * explosion. So a bomb passes through a hull it is only guessing at and
      * its ending arrives as the round leaving a snapshot, which the client
-     * already draws (decision 140). Bullets still land on contact: a round
+     * already draws (decision 144). Bullets still land on contact: a round
      * has to reach the hull, the hit is a spark rather than a blast, and
      * predicting it is what keeps a gun feeling immediate. Walls are
      * unaffected too; the map is not a guess.

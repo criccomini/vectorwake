@@ -1,19 +1,23 @@
--- The landing: the game itself, with the name, the stops and one key over
+-- The landing: the game itself, with the name, the column and one key over
 -- the foot.
 --
 --     lua5.1 client/tests/landing_test.lua
 --
 -- Opening the client puts you in the stands of a real room, so the front end
 -- is the watcher's HUD rather than a panel describing a game. What is added
--- to it is a lockup, three stops (account, zone, ship) and a PLAY NOW key,
--- in that order up the screen, and what is taken away is the TAKE SEAT chip,
--- because PLAY NOW is that key. All three stops open lists in place. Account
--- was a door into the drawer's pilot page until decision 99, and that page is
--- gone: what it held is a list like the other two.
+-- to it is a lockup, the four stops of the column (account, zone, ship,
+-- settings) and the one key, in that order up the screen, and what is taken
+-- away is the TAKE SEAT chip, because the key is that key.
 --
--- These run the real `M.hud` against a stubbed engine on four windows. The
--- questions are the ones a hand at a mouse would ask: can I press it, is it on
--- the screen, is the name over it, and is the room still readable behind it.
+-- It is the same column a player raises mid-match, drawn by the same function
+-- off the same view (decision 143). What is checked here is the home arm of
+-- it: the lockup over the stops, the rail it lies down into on a short window,
+-- and the room still being readable behind the lot.
+--
+-- These run the real `M.hud` and `M.menu` against a stubbed engine on four
+-- windows. The questions are the ones a hand at a mouse would ask: can I
+-- press it, is it on the screen, is the name over it, and is the room still
+-- readable behind it.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -32,10 +36,20 @@ end
 local layer = {n = 0}
 local function noop(self) self.n = self.n + 1 end
 for _, name in ipairs({"arc", "flush", "reset",
-                       "ring", "seg_fade", "seg_flat", "skirt", "tri",
+                       "seg_fade", "seg_flat", "skirt", "tri",
                        "tri_fade", "fan", "seg_glow", "glow_band", "halo",
                        "ring_fade"}) do
     layer[name] = noop
+end
+
+-- Rings are kept, because the one instrument out here is made of them: the
+-- dial that says a game is being looked for is range rings with a hand
+-- sweeping round inside them, and where it lands and how wide it came out is
+-- the whole question about it.
+local rings = {}
+layer.ring = function(self, x, y, r)
+    self.n = self.n + 1
+    rings[#rings + 1] = {x = x, y = y, r = r}
 end
 
 -- Closed runs, corners kept. The other drawing on the carousel is made of
@@ -165,17 +179,22 @@ local state = package.loaded["arena.state"]
 -- flip filed type into the space hit boxes are published in.
 local H
 
--- What the arena hands the landing's stops: the pilot, the games with their
--- one-line formats, and the builds with sitting out as the last row.
+-- The games the zone stop opens, with their one-line formats, as
+-- `menu.view()` flattens them: a name said as its owner wrote it, the format
+-- under it, and a mark on the one the stands are showing.
+local ZONES = {
+    {label = "Team Battle", named = true, note = "4v4", mark = true,
+     index = 1},
+    {label = "Chaos", named = true, note = "1v1", index = 2},
+}
+
+-- What the arena hands the column at home: the four stops with their answers,
+-- and whichever page one of them is holding open.
 local LAND = {
     name = "deSoto 412",
     zone = "Team Battle",
     ship = "Gunner",
-    zones = {
-        {label = "Team Battle", zone = "melee", live = true,
-         format = "4v4", here = true},
-        {label = "Chaos", zone = "chaos", live = true, format = "1v1"},
-    },
+    zones = ZONES,
     -- The ship stop's own menu, as `menu.ship_panel(nil)` builds it: five
     -- parts of a ship over the credits they are bought with, the hull's
     -- flight under the row that names it, and the reset under a rule.
@@ -196,15 +215,15 @@ local LAND = {
             {kind = "reset", label = "Reset", on = true},
         },
     },
-    -- A guest's account list, as `menu.account_rows` builds it: the offer
-    -- with what it buys, the reroll, a rule, and the way onto an account
-    -- that already exists.
+    -- A guest's account page, as `menu.account_rows` builds it and
+    -- `menu.view` flattens it: the offer with what it buys, the reroll, a
+    -- rule, and the way onto an account that already exists.
     account = {
-        {label = "sign up", act = "claim", offer = true,
-         note = "keep your points"},
-        {label = "new name", act = "reroll"},
-        {rule = true},
-        {label = "log in", act = "enter_login"},
+        {label = "sign up", offer = true, note = "keep your points",
+         index = 1},
+        {label = "new name", index = 2},
+        {rule = true, index = 3},
+        {label = "log in", index = 4},
     },
 }
 
@@ -262,20 +281,47 @@ end
 local ROOMS = {{n = 1, players = 3, bots = 20},
                {n = 2, players = 0, bots = 51}}
 
+-- The column as the arena hands it over: four stops, whichever one is open,
+-- and the rows or the panel behind it. `menu.view()` builds this for real off
+-- `menu.stops()`; here the answers come from the fixture so the layout checks
+-- have names of known length to measure.
+local function view(land, o)
+    local open = o.col_open
+    local rows = {}
+    if open == "zone" then rows = land.zones or {}
+    elseif open == "account" then rows = land.account or {} end
+    return {
+        home = true, open = true, key = o.key or "play",
+        pilot = {name = land.name},
+        stops = {
+            {stop = "account", label = "account", value = land.name,
+             named = true, warn = land.warn, open = open == "account"},
+            {stop = "zone", label = "zone", value = land.zone, named = true,
+             open = open == "zone"},
+            {stop = "ship", label = "ship", value = land.ship, named = true,
+             open = open == "ship"},
+            {stop = "settings", label = "settings",
+             open = open == "settings"},
+        },
+        rows = rows,
+        panel = open == "ship" and land.panel or nil,
+        foot = open == "ship" and o.foot or nil,
+    }
+end
+
 -- One frame of the landing, or of an ordinary watch when `o.landing` is false:
 -- the two differ in exactly the two things this file is about.
 local function frame(w, h, o)
     o = o or {}
     H = h
     boxes, rects, discs = {}, {}, {}
+    rings = {}
     quads = {}
     frosted = {}
     state.n = 0
     -- The scoreboard is off unless a check asks for it, the way it is off
     -- until a player presses PLAYERS.
     ui.details = o.details or false
-    -- Which stop's list is down, the way the arena leaves it between frames.
-    ui.col_open = o.col_open or nil
     -- And where the cursor is standing, which both hands write: the pointer
     -- through `land_hover` in arena.script, the arrows through `col_step`.
     -- `keep` is for the checks that walk it and then look at what was drawn.
@@ -291,7 +337,7 @@ local function frame(w, h, o)
         -- A watcher's HUD: the camera stands behind a hull that is not yours.
         watch = {subject = 0},
         landing = o.landing ~= false or nil,
-        land = (o.landing ~= false) and (o.land or LAND) or nil,
+        panel = o.col_open ~= nil,
         side = 0,
         viewer_name = "you",
         menu_open = o.menu_open or false,
@@ -312,7 +358,21 @@ local function frame(w, h, o)
         rooms = o.rooms, room = o.room,
         fps = 60, frame_ms = 16.7, rx_rate = 0, tx_rate = 0,
     })
+    -- And the column over it, which the arena draws after the HUD because the
+    -- ending washes the whole window and a key laid down first would spend
+    -- the twenty five seconds between matches buried under it.
+    if o.landing ~= false then ui.menu(view(o.land or LAND, o)) end
     ui.finish()
+end
+
+-- One stop of the column, by name. Every stop publishes the same action and
+-- is told from the next by the value it carries, which is what the arena
+-- hands back to `menu.press_stop`.
+local function stop(name)
+    for _, r in ipairs(ui.hits) do
+        if r.action == "menu_stop" and r.value == name then return r end
+    end
+    return nil
 end
 
 local function box(action)
@@ -370,9 +430,11 @@ local function washed(w, h)
 end
 
 -- What a press at this point reaches, through the same rule `on_input` uses.
+-- The value comes back with it, because every stop of the column publishes one
+-- action and is told from the next by what it carries.
 local function press(x, y)
     local r = ui.pick(x, y)
-    if r then return r.action end
+    if r then return r.action, r.value end
     return nil
 end
 
@@ -393,9 +455,9 @@ local SHAPES = {
 for _, s in ipairs(SHAPES) do
     local w, h, shape, rail = s[1], s[2], s[3], s.rail
     frame(w, h)
-    local key = box("play_now")
+    local key = box("menu_go")
     check(shape .. " publishes one key to press",
-          key ~= nil, "no play_now box")
+          key ~= nil, "no key box")
     if key then
         check(shape .. " keeps the key on the screen",
               key.x >= 0 and key.y >= 0
@@ -406,7 +468,7 @@ for _, s in ipairs(SHAPES) do
         check(shape .. " gives the key a thumb to land on",
               key.h >= 44, string.format("%.0f tall", key.h))
         check(shape .. " presses the key where it is drawn",
-              press(key.x + key.w / 2, key.y + key.h / 2) == "play_now")
+              press(key.x + key.w / 2, key.y + key.h / 2) == "menu_go")
     end
     local name = word("vectorwake")
     check(shape .. " says what the game is", name ~= nil, "no wordmark")
@@ -419,44 +481,61 @@ for _, s in ipairs(SHAPES) do
               name.y < key.y,
               string.format("name at %.0f, key top %.0f", name.y, key.y))
     end
-    -- The three stops, in the order you would say them: who you are, where
-    -- you are going, what you arrive as, then the key that commits.
-    local acct, zone, ship =
-        box("land_account"), box("land_zone"), box("land_ship")
-    check(shape .. " publishes the three stops",
-          acct ~= nil and zone ~= nil and ship ~= nil, "a stop is missing")
-    if key and acct and zone and ship then
+    -- The four stops, in the order you would say them: who you are, where
+    -- you are going, what you arrive as, and the machine you are on.
+    local acct, zone, ship, mach =
+        stop("account"), stop("zone"), stop("ship"), stop("settings")
+    check(shape .. " publishes the four stops",
+          acct ~= nil and zone ~= nil and ship ~= nil and mach ~= nil,
+          "a stop is missing")
+    local cells = {acct, zone, ship, mach}
+    if key and acct and zone and ship and mach then
         if rail then
             -- Lying down: the stops run left to right in the same order and
             -- the key ends the line, so the whole front end is one band along
             -- the foot.
-            check(shape .. " lays the stops along one line in saying order",
-                  acct.x < zone.x and zone.x < ship.x
-                  and math.abs(acct.y - zone.y) < 1
-                  and math.abs(zone.y - ship.y) < 1,
+            -- Lying down: the stops read left to right and then down, the
+            -- way anything in a grid reads, and the key is clear of the lot.
+            -- One line where the window can hold four cells at a readable
+            -- width, and two by two where it cannot: four cells cut to
+            -- whatever a 320 point window has left are 67 points each, which
+            -- holds neither a call sign nor a game's name.
+            local order = true
+            for i = 2, #cells do
+                local a, b = cells[i - 1], cells[i]
+                if not (b.y > a.y + 1
+                        or (math.abs(b.y - a.y) < 1 and b.x > a.x)) then
+                    order = false
+                end
+            end
+            check(shape .. " lays the stops out in saying order", order,
                   string.format("account %.0f,%.0f zone %.0f,%.0f "
-                                .. "ship %.0f,%.0f", acct.x, acct.y,
-                                zone.x, zone.y, ship.x, ship.y))
-            for _, b in ipairs({acct, zone, ship}) do
+                                .. "ship %.0f,%.0f settings %.0f,%.0f",
+                                acct.x, acct.y, zone.x, zone.y,
+                                ship.x, ship.y, mach.x, mach.y))
+            for _, b in ipairs(cells) do
                 check(shape .. " gives every cell the same measure",
                       math.abs(b.w - acct.w) < 1
                           and math.abs(b.h - acct.h) < 1,
                       string.format("%.0fx%.0f against %.0fx%.0f",
                                     b.w, b.h, acct.w, acct.h))
+                check(shape .. " keeps a cell wide enough to read",
+                      b.w >= 96, string.format("%.0f wide", b.w))
             end
             check(shape .. " keeps the key clear of the cells",
-                  ship.x + ship.w <= key.x + 1
-                  or ship.y + ship.h <= key.y + 1,
-                  string.format("ship ends %.0f,%.0f, key at %.0f,%.0f",
-                                ship.x + ship.w, ship.y + ship.h,
+                  mach.x + mach.w <= key.x + 1
+                  or mach.y + mach.h <= key.y + 1,
+                  string.format("settings ends %.0f,%.0f, key at %.0f,%.0f",
+                                mach.x + mach.w, mach.y + mach.h,
                                 key.x, key.y))
         else
             check(shape .. " stacks the stops over the key in saying order",
-                  acct.y < zone.y and zone.y < ship.y
-                  and ship.y + ship.h <= key.y + 1,
-                  string.format("account %.0f zone %.0f ship %.0f key %.0f",
-                                acct.y, zone.y, ship.y, key.y))
-            for _, b in ipairs({acct, zone, ship}) do
+                  acct.y < zone.y and zone.y < ship.y and ship.y < mach.y
+                  and mach.y + mach.h <= key.y + 1,
+                  string.format("account %.0f zone %.0f ship %.0f "
+                                .. "settings %.0f key %.0f",
+                                acct.y, zone.y, ship.y, mach.y, key.y))
+            for _, b in ipairs(cells) do
                 check(shape .. " gives a stop the key's own width",
                       math.abs(b.w - key.w) < 1 and math.abs(b.x - key.x) < 1,
                       string.format("%.0f wide at %.0f against %.0f at %.0f",
@@ -475,8 +554,11 @@ for _, s in ipairs(SHAPES) do
         end
         -- Whichever way it lies, the block is centered on the window and the
         -- name heads it.
-        local left = math.min(acct.x, key.x)
-        local right = math.max(ship.x + ship.w, key.x + key.w)
+        local left, right = key.x, key.x + key.w
+        for _, b in ipairs(cells) do
+            if b.x < left then left = b.x end
+            if b.x + b.w > right then right = b.x + b.w end
+        end
         check(shape .. " centers the block it draws",
               math.abs((left + right) / 2 - w / 2) < 1.5,
               string.format("%.0f..%.0f of %d", left, right, w))
@@ -490,8 +572,11 @@ for _, s in ipairs(SHAPES) do
                   string.format("name at %.0f, stops at %.0f, key at %.0f",
                                 name.y, acct.y, key.y))
         end
+        local hit_act, hit_val =
+            press(zone.x + zone.w / 2, zone.y + zone.h / 2)
         check(shape .. " presses a stop where it is drawn",
-              press(zone.x + zone.w / 2, zone.y + zone.h / 2) == "land_zone")
+              hit_act == "menu_stop" and hit_val == "zone",
+              tostring(hit_act) .. "/" .. tostring(hit_val))
         -- The one thing this whole layout exists for. The camera stands
         -- behind the hull the stands are watching, so the middle of the
         -- screen is that hull, and nothing the landing draws may reach it.
@@ -580,7 +665,7 @@ check("and no ending board when the match behind it is settled",
 check("and the band still counts to the next one",
       word("NEXT MATCH IN") ~= nil)
 check("and the way in is still the way in",
-      box("play_now") ~= nil and word("vectorwake") ~= nil)
+      box("menu_go") ~= nil and word("vectorwake") ~= nil)
 -- A pilot in the room gets it, which is the half of the rule that has to keep
 -- working: the ending is theirs to read.
 frame(1440, 810, {landing = false, match = ENDED})
@@ -606,20 +691,21 @@ do
         check(shape .. " offers no way into the menu", box("open") == nil,
               "a key on the front page")
         check(shape .. " does not say MENU", word("MENU") == nil)
-        -- And PLAY NOW takes the strip back. The column was lifted clear of
-        -- the key, and a landing that keeps the lift with nothing in it ends
-        -- on a gap where a reader expects the screen to.
-        local play = box("play_now")
-        check(shape .. " stands PLAY NOW on the bottom margin",
+        -- And the key takes the strip back. The column was lifted clear of
+        -- it, and a landing that keeps the lift with nothing in it ends on a
+        -- gap where a reader expects the screen to.
+        local play = box("menu_go")
+        check(shape .. " stands the key on the bottom margin",
               play ~= nil and play.y + play.h > h - 34,
-              play and string.format("play ends %.0f of %d",
+              play and string.format("key ends %.0f of %d",
                                      play.y + play.h, h)
-                  or "no play_now box")
+                  or "no key box")
     end
 end
 
--- The one thing a landing takes away. PLAY NOW is the way into a hull here,
--- and a chip in the corner offering the same act is the offer made twice.
+-- The one thing a landing takes away. The column's key is the way into a hull
+-- here, and a chip in the corner offering the same act is the offer made
+-- twice.
 check("the landing carries no TAKE SEAT chip",
       box("take_seat") == nil)
 
@@ -636,14 +722,18 @@ do
     for _, s in ipairs(SHAPES) do
         local w, h, shape = s[1], s[2], s[3]
         frame(w, h)
-        for _, action in ipairs({"land_account", "land_zone", "land_ship",
-                                 "play_now"}) do
-            local b = box(action)
-            check(shape .. " frosts " .. action,
+        for _, name in ipairs({"account", "zone", "ship", "settings"}) do
+            local b = stop(name)
+            check(shape .. " frosts the " .. name .. " stop",
                   b ~= nil and glazed(b),
                   b and string.format("%.0f,%.0f %.0fx%.0f is not glass",
                                       b.x, b.y, b.w, b.h) or "no box")
         end
+        local b = box("menu_go")
+        check(shape .. " frosts the key",
+              b ~= nil and glazed(b),
+              b and string.format("%.0f,%.0f %.0fx%.0f is not glass",
+                                  b.x, b.y, b.w, b.h) or "no box")
     end
     -- A watcher who deployed has no landing and no glass: the HUD's own
     -- instruments are read against the fight rather than through it.
@@ -663,7 +753,7 @@ do
     frame(1440, 810, {col_open = "zone"})
     local pick
     for _, r in ipairs(ui.hits) do
-        if r.action == "land_pick_zone" and r.value == "chaos" then
+        if r.action == "menu_pick" and r.value == 2 then
             pick = r
         end
     end
@@ -680,15 +770,15 @@ do
     -- The head says which stop you are in, in the same register the stop said
     -- it in, and takes the press that steps back out of it.
     check("the panel names the stop it came from", word("ZONE") ~= nil)
-    check("and carries the way back", box("land_back") ~= nil)
+    check("and carries the way back", box("menu_back") ~= nil)
     if pick then
         check("a press on the row is the pick",
-              press(pick.x + 5, pick.y + pick.h / 2) == "land_pick_zone")
+              press(pick.x + 5, pick.y + pick.h / 2) == "menu_pick")
         -- The column went with the panel's arrival, so there is nothing of it
         -- left to press: the panel is the screen while it stands.
-        check("the key went out with the column", box("play_now") == nil)
-        check("and so did the stops", box("land_zone") == nil
-              and box("land_account") == nil and box("land_ship") == nil)
+        check("the key went out with the column", box("menu_go") == nil)
+        check("and so did the stops", stop("zone") == nil
+              and stop("account") == nil and stop("ship") == nil)
         -- The glass swallows a press that missed a row, so a thumb landing
         -- between two rows does not dismiss the thing it was aiming at.
         local hold = box("panel_hold")
@@ -700,34 +790,34 @@ do
         end
         -- And the margin beside it still is one.
         check("the margin beside the glass puts the panel away",
-              press(4, 300) == "land_shut",
+              press(4, 300) == "menu_shut",
               "landed on " .. tostring(press(4, 300)))
     end
 
     -- The cap: wider than the stop it came from and well short of the window,
     -- centered on the same middle the column stands on.
     frame(1440, 810, {})
-    local stop = box("land_zone")
+    local from = stop("zone")
     frame(1440, 810, {col_open = "zone"})
     local row = nil
     for _, r in ipairs(ui.hits) do
-        if r.action == "land_pick_zone" then row = row or r end
+        if r.action == "menu_pick" then row = row or r end
     end
     check("the panel is wider than the stop it came from",
-          stop and row and row.w > stop.w,
-          stop and row and (stop.w .. " against " .. row.w) or "missing")
+          from and row and row.w > from.w,
+          from and row and (from.w .. " against " .. row.w) or "missing")
     check("and capped well short of a wide window",
           row and row.w <= 560 and row.w < 1440 * 0.5,
           row and tostring(row.w) or "missing")
     check("and centered on the column's own middle",
-          stop and row
-          and math.abs((stop.x + stop.w / 2) - (row.x + row.w / 2)) < 2)
+          from and row
+          and math.abs((from.x + from.w / 2) - (row.x + row.w / 2)) < 2)
     -- On a phone the cap never binds: the panel is the window less its margin,
     -- which is what "the whole screen" means where there is no width to spare.
     frame(390, 844, {col_open = "zone"})
     local narrow = nil
     for _, r in ipairs(ui.hits) do
-        if r.action == "land_pick_zone" then narrow = narrow or r end
+        if r.action == "menu_pick" then narrow = narrow or r end
     end
     check("and takes the whole width of a phone", narrow and narrow.w > 340,
           narrow and tostring(narrow.w) or "missing")
@@ -953,6 +1043,83 @@ do
     frame(1440, 810, {col_open = "ship"})
 end
 
+-- --- a game with no arena is still being looked for --------------------------
+--
+-- A zone the fleet is not serving is a row, not a gap: a player is better off
+-- seeing that War exists and is down than wondering whether they misread the
+-- list. Two things are true of that row and it says both. It cannot be
+-- pressed, which is what dims it and what keeps a box off it. And something
+-- is still looking for it, which is the dial at the right end: the directory
+-- is asked again every three seconds and an arena can come back at any of
+-- them, so a row that simply sat there dim would be the client saying it had
+-- given up when it has not.
+--
+-- What the row reads is read either way. The format of a game is what the
+-- game is, and it is true whether or not anybody is running one.
+do
+    local DOWN = {}
+    for k, v in pairs(LAND) do DOWN[k] = v end
+    -- The two formats are written differently on purpose: the one below
+    -- asks whether the dead row still reads, and a string both rows carried
+    -- would come back from the live one.
+    DOWN.zones = {
+        {label = "Team Battle", named = true, note = "4v4 \194\183 3:00",
+         mark = true, index = 1},
+        {label = "War", named = true, note = "4v4", dim = true,
+         waiting = true, index = 2},
+    }
+
+    frame(1440, 810, {land = DOWN, col_open = "zone"})
+    check("a game nobody is serving is still on the list", word("War") ~= nil)
+    local pressable = {}
+    for _, r in ipairs(ui.hits) do
+        if r.action == "menu_pick" then pressable[r.value] = true end
+    end
+    check("and the row for it takes no press",
+          pressable[1] and not pressable[2],
+          "the dead game published a box")
+    -- Two range rings at this size, a hand and its trail inside them. Three
+    -- rings across twenty two points would be five apart, which is closer
+    -- than the stroke drawing them, so the small dial keeps two.
+    check("and wears the dial that is looking for one", #rings == 2,
+          #rings .. " rings on screen, wanted 2")
+    local row = nil
+    for _, r in ipairs(ui.hits) do
+        if r.action == "menu_pick" and r.value == 1 then row = r end
+    end
+    if row and #rings == 2 then
+        -- Rows are one height, so the dead one is the row under the live one:
+        -- the box the live row published, moved down by its own height. Hit
+        -- boxes count down from the top of the window and the mesh counts up
+        -- from the bottom of it, so the dial's own y is flipped to meet them.
+        local want = row.y + row.h
+        local cy = 810 - rings[1].y
+        local widest = 0
+        for _, g in ipairs(rings) do widest = math.max(widest, g.r) end
+        check("standing in the row it belongs to",
+              cy > want and cy < want + row.h,
+              string.format("%.0f against %.0f..%.0f", cy, want, want + row.h))
+        check("and inside the row's own height",
+              2 * widest < row.h,
+              string.format("%.0f across a row of %.0f", 2 * widest, row.h))
+        check("at the end of the row rather than the middle of it",
+              rings[1].x > row.x + row.w * 0.8,
+              string.format("%.0f across a row from %.0f to %.0f",
+                            rings[1].x, row.x, row.x + row.w))
+    end
+    -- And what the game is is still said, because that is true of a game
+    -- whether or not there is an arena running it.
+    check("a game that is down still says what it is",
+          word("4v4") ~= nil)
+
+    -- A fleet with everything up draws no dial at all. The instrument means
+    -- "still looking", and a list where nothing is being looked for that
+    -- carried one would be saying so about games it had already found.
+    frame(1440, 810, {col_open = "zone"})
+    check("and a list with every game up wears none", #rings == 0,
+          #rings .. " rings over a fleet that is entirely up")
+end
+
 -- --- the account stop opens the same kind of list ---------------------------
 --
 -- It was a door: a press opened the drawer on the pilot page, which carried
@@ -965,7 +1132,7 @@ do
     frame(1440, 810, {col_open = "account"})
     local rows = {}
     for _, r in ipairs(ui.hits) do
-        if r.action == "land_pick_account" then rows[#rows + 1] = r end
+        if r.action == "menu_pick" then rows[#rows + 1] = r end
     end
     -- Four rows in the list and three of them pressable: the rule is drawn
     -- rather than published, because it is not a thing to press.
@@ -988,9 +1155,9 @@ do
     if first then
         check("a press on the row is the pick",
               press(first.x + 5, first.y + first.h / 2)
-                  == "land_pick_account")
+                  == "menu_pick")
         check("the margin beside the glass puts the panel away",
-              press(4, 300) == "land_shut",
+              press(4, 300) == "menu_shut",
               "landed on " .. tostring(press(4, 300)))
     end
     -- It opens the same panel the other two do, named the same way, and the
@@ -998,8 +1165,8 @@ do
     -- it nothing any more, because none of them stays.
     check("and the panel names itself", word("ACCOUNT") ~= nil)
     check("and the whole column went out under it",
-          box("land_zone") == nil and box("land_ship") == nil
-          and box("land_account") == nil and box("play_now") == nil)
+          stop("zone") == nil and stop("ship") == nil
+          and stop("account") == nil and box("menu_go") == nil)
 
     -- The guest warning: a dot on the stop wherever a lost account would
     -- cost this guest a rated game. The drawer says the same thing in words
@@ -1009,15 +1176,15 @@ do
         for k, v in pairs(LAND) do land[k] = v end
         land.warn = warn
         frame(1440, 810, {land = land})
-        local stop = box("land_account")
-        if not stop then return nil end
+        local at = stop("account")
+        if not at then return nil end
         local n = 0
         for _, d in ipairs(discs) do
             -- The layer counts up from the bottom and hit boxes count down
             -- from the top, so the mark is flipped into the box's space.
             local y = H - d.y
-            if d.r < 4 and d.x >= stop.x and d.x <= stop.x + stop.w
-               and y >= stop.y and y <= stop.y + stop.h then
+            if d.r < 4 and d.x >= at.x and d.x <= at.x + at.w
+               and y >= at.y and y <= at.y + at.h then
                 n = n + 1
             end
         end
@@ -1040,16 +1207,16 @@ do
         land.warn = true
         land.name = name
         frame(1440, 810, {land = land})
-        local stop = box("land_account")
-        if not stop then return nil end
+        local at = stop("account")
+        if not at then return nil end
         for _, d in ipairs(discs) do
             local y = H - d.y
-            if d.r < 4 and d.x >= stop.x and d.x <= stop.x + stop.w
-               and y >= stop.y and y <= stop.y + stop.h then
-                return d.x, stop
+            if d.r < 4 and d.x >= at.x and d.x <= at.x + at.w
+               and y >= at.y and y <= at.y + at.h then
+                return d.x, at
             end
         end
-        return nil, stop
+        return nil, at
     end
     local short_dot, acct = dot_x("Ro 1")
     local long_dot = dot_x("deSoto 4127777")
@@ -1071,7 +1238,7 @@ do
         land.warn = true
         return land
     end)()})
-    local rail_stop = box("land_account")
+    local rail_stop = stop("account")
     local inside = rail_stop ~= nil
     local on_the_name = false
     for _, d in ipairs(discs) do
@@ -1176,7 +1343,7 @@ end
 do
     frame(1440, 810)
     check("the landing publishes its key with no card up",
-          box("play_now") ~= nil)
+          box("menu_go") ~= nil)
     ui.land_card({head = "Sign up.", sel = 1,
                   note = "keep your points and log in on other devices",
                   fields = {{label = "password", value = "", mask = true}},
@@ -1184,8 +1351,8 @@ do
                           {label = "cancel"}}})
     ui.finish()
     check("and none of it once a card is up",
-          box("play_now") == nil and box("land_account") == nil
-              and box("land_zone") == nil,
+          box("menu_go") == nil and stop("account") == nil
+              and stop("zone") == nil,
           "the landing is still pressable under the card")
     local answers = 0
     for _, r in ipairs(ui.hits) do
@@ -1207,7 +1374,7 @@ do
     ui.land_card(nil)
     ui.finish()
     check("no card, no wash, and the key answers again",
-          box("play_now") ~= nil)
+          box("menu_go") ~= nil)
 end
 
 -- --- the pointer lights what it is resting on -------------------------------
@@ -1243,40 +1410,39 @@ do
 
     frame(1440, 810)
     check("nothing is lit with the pointer off the stops",
-          not lit(box("land_zone"), CURSOR)
-          and not lit(box("land_account"), CURSOR))
+          not lit(stop("zone"), CURSOR)
+          and not lit(stop("account"), CURSOR))
 
-    frame(1440, 810, {sel = "land_zone"})
+    frame(1440, 810, {sel = "menu_stop", sel_value = "zone"})
     check("the stop under the pointer wears the menu's own field",
-          lit(box("land_zone"), CURSOR))
+          lit(stop("zone"), CURSOR))
     check("and its neighbors do not",
-          not lit(box("land_account"), CURSOR)
-          and not lit(box("land_ship"), CURSOR))
+          not lit(stop("account"), CURSOR)
+          and not lit(stop("ship"), CURSOR))
 
     -- The key is lit already and breathing on its own clock, so holding it
     -- still says nothing on its own: it wears the cursor's field over that
     -- ground, which is what says "a press lands here" everywhere else.
-    frame(1440, 810, {sel = "play_now"})
+    frame(1440, 810, {sel = "menu_go"})
     check("the key stands still and lit under the pointer",
-          lit(box("play_now"), CURSOR))
+          lit(box("menu_go"), CURSOR))
 
     -- A row of an open list, told from its neighbors by the value its box
     -- carries: two rows publish the same action and only one of them is under
     -- the pointer.
-    frame(1440, 810, {col_open = "zone", sel = "land_pick_zone",
-                      sel_value = "chaos"})
+    frame(1440, 810, {col_open = "zone", sel = "menu_pick", sel_value = 2})
     local rows = {}
     for _, r in ipairs(ui.hits) do
-        if r.action == "land_pick_zone" then rows[r.value] = r end
+        if r.action == "menu_pick" then rows[r.value] = r end
     end
     -- At the same weight in the same shape a stop wears it in. A row used to
     -- take the menu's wash, which is a flat field plus a skirt against the
     -- panel's left rule; a panel is outlined all the way round and has no such
     -- rule, so the field is flat everywhere and one check answers both.
     check("a row of an open list lights under the pointer",
-          lit(rows.chaos, CURSOR), "the second game did not light")
+          lit(rows[2], CURSOR), "the second game did not light")
     check("and the row above it does not",
-          not lit(rows.melee, CURSOR))
+          not lit(rows[1], CURSOR))
 
     -- --- and the arrows put it in the same place --------------------------
     --
@@ -1285,12 +1451,12 @@ do
     -- it lights.
     frame(1440, 810)
     ui.col_sel, ui.col_sel_value = nil, nil
-    ui.col_step(1)
-    ui.col_step(1)
+    for _ = 1, 3 do ui.col_step(1) end
     frame(1440, 810, {keep = true})
     check("a walk to the zone stop lights what a hover on it lights",
-          lit(box("land_zone"), CURSOR),
-          "walked to " .. tostring(ui.col_sel))
+          lit(stop("zone"), CURSOR),
+          "walked to " .. tostring(ui.col_sel) .. "/"
+              .. tostring(ui.col_sel_value))
 
     -- --- and the carousel stays lit as it turns ---------------------------
     --
@@ -1328,7 +1494,7 @@ do
           fields() == 0, fields() .. " fields")
     -- Walked onto rather than placed, so the cursor carries whatever the box
     -- published, which is the half that was wrong.
-    ui.col_sel, ui.col_sel_value = "land_back", nil
+    ui.col_sel, ui.col_sel_value = "menu_back", nil
     ui.col_step(1)
     frame(1440, 810, {land = land_in(BODY), col_open = "ship", keep = true})
     check("a walk off the head lands on the carousel",
@@ -1346,9 +1512,9 @@ do
     -- the cursor on a control that is no longer on the screen. `land_act`
     -- puts it here; this is the half that says it can be seen.
     for _, open in ipairs({"account", "zone", "ship"}) do
-        frame(1440, 810, {col_open = open, sel = "land_back"})
+        frame(1440, 810, {col_open = open, sel = "menu_back"})
         check("the " .. open .. " panel lights its way back",
-              lit(box("land_back"), CURSOR))
+              lit(box("menu_back"), CURSOR))
     end
 end
 
@@ -1359,84 +1525,93 @@ end
 -- is read off the boxes the frame published, so what it can reach is what is
 -- on the screen.
 do
+    -- Every stop publishes one action, so what tells them apart in the walk
+    -- is the value each carries. A row of an open list is the same: the
+    -- action names the list and the value is where the row stands in it.
     local function walk_of()
         local out = {}
-        for i, r in ipairs(ui.col_walk()) do out[i] = r.action end
+        for i, r in ipairs(ui.col_walk()) do
+            out[i] = r.action .. (r.value ~= nil
+                                  and (":" .. tostring(r.value)) or "")
+        end
         return table.concat(out, " ")
     end
     local function step(dir, n)
         for _ = 1, (n or 1) do ui.col_step(dir) end
-        return ui.col_sel
+        return ui.col_sel .. (ui.col_sel_value ~= nil
+                              and (":" .. tostring(ui.col_sel_value)) or "")
     end
 
     for _, shape in ipairs({{1440, 810, "desktop"}, {844, 390, "sideways"}}) do
         frame(shape[1], shape[2])
         check(shape[3] .. " walks the stops in the order they are said",
-              walk_of() == "land_account land_zone land_ship play_now",
+              walk_of() == "menu_go menu_stop:account menu_stop:zone "
+                  .. "menu_stop:ship menu_stop:settings",
               walk_of())
     end
 
     -- A first press lands on the end the arrow came from, and the ends wrap,
-    -- so nothing out here is more than two presses away.
+    -- so nothing out here is more than two presses away. The key is published
+    -- before the stops that stand over it, so it is the first of the walk and
+    -- the top stop is the second.
     frame(1440, 810)
     ui.col_sel, ui.col_sel_value = nil, nil
-    check("down with nothing lit lands on the first stop",
-          step(1) == "land_account")
-    check("and walks the column", step(1) == "land_zone")
-    check("down to the key", step(1, 2) == "play_now")
-    check("and off the end back to the top", step(1) == "land_account")
+    check("down with nothing lit lands on the key", step(1) == "menu_go")
+    check("and walks the column", step(1) == "menu_stop:account")
+    check("down through the stops", step(1, 3) == "menu_stop:settings")
+    check("and off the end back to the top", step(1) == "menu_go")
     ui.col_sel, ui.col_sel_value = nil, nil
-    check("up with nothing lit lands on the key",
-          step(-1) == "play_now")
+    check("up with nothing lit lands on the last stop",
+          step(-1) == "menu_stop:settings")
 
     -- Enter presses what the cursor is on, and the key when nothing is lit:
     -- there is one thing this screen exists for and a keyboard that had to
     -- walk to it would be a front page nobody can start the game from.
     ui.col_sel, ui.col_sel_value = nil, nil
-    check("enter with nothing lit is the key", ui.col_go() == "play_now")
-    step(1, 2)
-    check("and otherwise is whatever is lit", ui.col_go() == "land_zone")
+    check("enter with nothing lit is the key", ui.col_go() == "menu_go")
+    step(1, 3)
+    check("and otherwise is whatever is lit",
+          select(2, ui.col_go()) == "zone", tostring(ui.col_sel_value))
 
-    -- A game the fleet is not serving is not a stop the walk can land on. It
+    -- A game the fleet is not serving is not a row the walk can land on. It
     -- publishes no box, because it cannot be pressed either.
     frame(1440, 810, {col_open = "zone", land = {
         name = LAND.name, zone = LAND.zone, ship = LAND.ship,
-        ships = LAND.ships,
         zones = {
-            {label = "Team Battle", zone = "melee", live = true, here = true},
-            {label = "Chaos", zone = "chaos", live = true},
-            {label = "Gauntlet", zone = "gauntlet", live = false},
+            {label = "Team Battle", named = true, mark = true, index = 1},
+            {label = "Chaos", named = true, index = 2},
+            {label = "Gauntlet", named = true, dim = true, index = 3},
         }}})
     check("a dark game is not walked onto",
-          walk_of() == "land_back land_pick_zone land_pick_zone",
-          walk_of())
+          walk_of() == "menu_back menu_pick:1 menu_pick:2", walk_of())
 
     -- Inside an open panel the walk is that panel: the way back on its head,
     -- and then its rows. The stop it came from is off the bottom of the screen
     -- and out of the walk with it, which is why the head carries the way out.
     frame(1440, 810, {col_open = "zone"})
     check("an open panel is the whole of the walk",
-          walk_of() == "land_back land_pick_zone land_pick_zone",
-          walk_of())
-    ui.col_sel, ui.col_sel_value = "land_back", nil
+          walk_of() == "menu_back menu_pick:1 menu_pick:2", walk_of())
+    ui.col_sel, ui.col_sel_value = "menu_back", nil
     step(1)
     check("down off the head goes into the rows",
-          ui.col_sel == "land_pick_zone" and ui.col_sel_value == "melee",
+          ui.col_sel == "menu_pick" and ui.col_sel_value == 1,
           tostring(ui.col_sel) .. " " .. tostring(ui.col_sel_value))
     step(1)
-    check("and along them", ui.col_sel_value == "chaos")
+    check("and along them", ui.col_sel_value == 2)
     local act, value = ui.col_go()
     check("enter on a row picks that game",
-          act == "land_pick_zone" and value == "chaos",
+          act == "menu_pick" and value == 2,
           tostring(act) .. " " .. tostring(value))
     step(-1, 2)
     check("and up off the first row is the head again",
-          ui.col_sel == "land_back")
-    check("where enter steps back out", ui.col_go() == "land_back")
+          ui.col_sel == "menu_back")
+    check("where enter steps back out", ui.col_go() == "menu_back")
 
     -- The one case where falling back to the key would be wrong: a press
-    -- meant for a row would deploy instead of picking one.
-    ui.col_sel, ui.col_sel_value = "land_account", nil
+    -- meant for a row would deploy instead of picking one. The key is not on
+    -- the screen with a panel up, so the walk cannot reach it and neither can
+    -- the fallback.
+    ui.col_sel, ui.col_sel_value = "menu_stop", "account"
     check("enter in an open list never reaches the key",
           ui.col_go() == nil, tostring(ui.col_go()))
 
@@ -1444,8 +1619,9 @@ do
     -- reset. The arrows either side of a value are not stops of their own.
     frame(1440, 810, {col_open = "ship"})
     check("the ship menu walks the way back and its five parts",
-          walk_of() == "land_back land_sect land_sect land_sect land_sect "
-          .. "land_sect land_kit_reset", walk_of())
+          walk_of() == "menu_back land_sect:body land_sect:guns "
+          .. "land_sect:bombs land_sect:specials land_sect:flair "
+          .. "land_kit_reset", walk_of())
     -- Nothing pages any more, so a part answers nothing to an arrow: it is a
     -- press, and enter is what presses it.
     ui.col_sel, ui.col_sel_value = "land_sect", "body"
@@ -1480,7 +1656,7 @@ end
 
 -- --- and both hands arrive at the same place --------------------------------
 --
--- `ui.col_go` names an action and `land_act` in arena.script is what runs
+-- `ui.col_go` names an action and `menu_act` in arena.script is what runs
 -- it, so an action this screen publishes that the arena has no branch for is
 -- enter pressing nothing at all, silently, on the one screen that has to
 -- work. That file is a Defold script and cannot be loaded here, so this reads
@@ -1491,17 +1667,19 @@ do
     local src = f:read("*a")
     f:close()
     -- The function's own body, ending at the one `end` in the first column.
-    local body = src:match("function land_act%(self, action, value%)(.-)\nend\n")
-    check("the arena has a landing handler to read", body ~= nil)
+    local body = src:match("function menu_act%(self, action, value%)(.-)\nend\n")
+    check("the arena has a menu handler to read", body ~= nil)
 
-    -- Every action the landing publishes, over the three screens it has: no
-    -- list, and each of the two open. Named off what was drawn rather than
-    -- written down twice.
+    -- Every action the column publishes, over the screens it has: the bare
+    -- stops, and each of the pages one of them opens. Named off what was
+    -- drawn rather than written down twice.
     local acts = {}
-    for _, o in ipairs({{}, {col_open = "zone"}, {col_open = "ship"}}) do
+    for _, o in ipairs({{}, {col_open = "zone"}, {col_open = "ship"},
+                        {col_open = "account"}}) do
         frame(1440, 810, o)
         for _, r in ipairs(ui.hits) do
-            if r.action == "play_now" or r.action:sub(1, 5) == "land_" then
+            if r.action:sub(1, 5) == "menu_" or r.action:sub(1, 5) == "land_"
+            then
                 acts[r.action] = true
             end
         end
@@ -1513,41 +1691,51 @@ do
         end
     end
     table.sort(missing)
-    check("and it answers every control the landing publishes",
+    check("and it answers every control the column publishes",
           #missing == 0, "no branch for " .. table.concat(missing, ", "))
 
-    -- Escape is the other way into the menu, and it has to answer the same
-    -- rule the drawing does: no key on the front page means no menu there,
-    -- and a keyboard that opens one anyway is the absence worked around.
-    -- Pulled out of the same file and run rather than read, so what is
-    -- checked is what the branch does and not how it is spelled.
+    -- Escape walks back out of the column a level at a time, and at the last
+    -- level it closes: `menu.close` is what refuses that at home, where there
+    -- is nothing behind the column to close on to. Pulled out of the same file
+    -- and run rather than read, so what is checked is what the branch does and
+    -- not how it is spelled.
     local esc = src:match("menu = function%(%)(.-)\n    end,")
     check("the arena has an escape handler to run", esc ~= nil)
     if esc then
         local rang = {}
         local env = {
-            menu = {open = false, home = true,
-                    page_back = function() return false end,
+            menu = {open = true, home = true, stack = {"zone"},
+                    page_back = function() return rang.paged end,
                     close = function() rang.close = true end},
             ui = {},
             sfx = {ui = function() end},
+            ship_sect_back = function() return false end,
+            menu_cursor = function() rang.cursor = true end,
             toggle_menu = function() rang.menu = true end,
             toggle_details = function() rang.details = true end,
-            land_shut = function() rang.shut = true end,
         }
         local chunk = assert(loadstring(
             "return function()" .. esc .. "\nend", "escape"))
         setfenv(chunk, env)
         local handler = chunk()
+        rang.paged = true
         local answered = handler()
-        check("escape opens no menu on the front page", rang.menu == nil,
-              "the menu came up where its key is not drawn")
+        check("escape walks a page off the column before anything else",
+              rang.cursor == true and rang.close == nil, tostring(rang.close))
         check("and takes the press rather than leaving it to fall through",
               answered == true, tostring(answered))
-        env.menu.home = false
+        -- With no page left it asks the menu to close, which is where home
+        -- and a match part company: `menu.close` keeps the column standing at
+        -- home and puts it away in a room. That rule is the menu's, and it is
+        -- checked in menu_test.
+        rang.paged, rang.close = false, nil
         handler()
-        check("and opens it in a room, which is what it is for",
-              rang.menu == true)
+        check("and asks it to close once there is no page left",
+              rang.close == true)
+        -- And with the column down, it is the key that raises one.
+        env.menu.open, rang.menu = false, nil
+        handler()
+        check("with the column down it raises one", rang.menu == true)
     end
 
     -- Turning the carousel is the whole of choosing a ship. There is no
@@ -1596,10 +1784,7 @@ do
     -- column, so a panel that opened with the cursor still on that stop
     -- opened with nothing on it lit: the first arrow had to find the top of a
     -- page already on the screen, and a pointer had nothing saying which
-    -- level of the stack it was reading. Both the branch and the helper it
-    -- calls are the file's own, pulled out and run.
-    local head = src:match("local function land_open%(%)(.-)\nend\n")
-    check("the arena has a land_open to run", head ~= nil)
+    -- level of the stack it was reading.
     local function branch(pattern, env)
         local part = src:match(pattern)
         if not part then return nil end
@@ -1609,41 +1794,48 @@ do
         setfenv(chunk, env)
         return chunk()
     end
-    if head then
+    do
         local ui_stub = {}
+        local opened = {}
         local env = {ui = ui_stub, sfx = {ui = function() end},
                      menu = {panel_home = function() return 0 end,
-                             -- Which column the section is opening in: the
-                             -- landing's, unless a test says otherwise.
-                             stop_open = function() return ui_stub.stop end},
-                     menu_cursor = function() ui_stub.col_sel = "menu_back" end,
-                     land_shut = function() ui_stub.shut = true end}
-        local on_head = loadstring("return function()" .. head .. "\nend",
-                                   "head")
-        setfenv(on_head, env)
-        env.land_open = on_head()
+                             stack = {},
+                             page_back = function() return false end,
+                             stop_open = function() return opened.at end,
+                             press_stop = function(name)
+                                 if opened.at == name then
+                                     opened.at = nil
+                                 else
+                                     opened.at = name
+                                 end
+                                 return nil, true
+                             end},
+                     apply_menu = function() end,
+                     menu_cursor = function()
+                         ui_stub.col_sel, ui_stub.col_sel_value =
+                             "menu_back", nil
+                     end}
 
         -- A stop, opening its panel.
         local stops = branch(
-            '(\n    if action == "land_account" or action == "land_zone".-'
-            .. '\n    end\n)', env)
-        check("the arena has a branch for the landing's stops", stops ~= nil)
+            '(\n    if action == "menu_stop" then.-\n    end\n)', env)
+        check("the arena has a branch for the column's stops", stops ~= nil)
         if stops then
-            for _, open in ipairs({"account", "zone", "ship"}) do
-                ui_stub.col_open = nil
-                ui_stub.col_sel, ui_stub.col_sel_value = "land_" .. open, nil
-                stops(nil, "land_" .. open, nil)
+            for _, open in ipairs({"account", "zone", "ship", "settings"}) do
+                opened.at = nil
+                ui_stub.col_sel, ui_stub.col_sel_value = "menu_stop", open
+                stops(nil, "menu_stop", open)
                 check("the " .. open .. " stop opens on the way back",
-                      ui_stub.col_open == open
-                      and ui_stub.col_sel == "land_back"
+                      opened.at == open
+                      and ui_stub.col_sel == "menu_back"
                       and ui_stub.col_sel_value == nil,
                       tostring(ui_stub.col_sel))
             end
             -- And the same press again puts it away, which leaves the cursor
             -- on the stop rather than on a head that has gone.
-            ui_stub.col_open, ui_stub.shut = "zone", nil
-            stops(nil, "land_zone", nil)
-            check("while the same stop again shuts it", ui_stub.shut == true)
+            opened.at = "zone"
+            stops(nil, "menu_stop", "zone")
+            check("while the same stop again shuts it", opened.at == nil)
         end
 
         -- One of the ship's five parts, opened over the menu that names it:
@@ -1652,35 +1844,31 @@ do
                             .. '\n    end\n)', env)
         check("the arena has a branch for a ship's parts", sect ~= nil)
         if sect then
+            opened.at = "ship"
             ui_stub.col_sel, ui_stub.col_sel_value = "land_sect", "guns"
             sect(nil, "land_sect", "guns")
             check("a section opens on the way back too",
                   ui_stub.col_sect == "guns"
-                  and ui_stub.col_sel == "land_back",
-                  tostring(ui_stub.col_sel))
-            -- And the same section opened from the in-match column stands on
-            -- that column's own way back, which is named differently because
-            -- its levels are a stack rather than a panel over a panel.
-            ui_stub.stop = "ship"
-            ui_stub.col_sel, ui_stub.col_sel_value = "land_sect", "bombs"
-            sect(nil, "land_sect", "bombs")
-            check("and on the menu column's way back in a match",
-                  ui_stub.col_sect == "bombs"
                   and ui_stub.col_sel == "menu_back",
                   tostring(ui_stub.col_sel))
-            ui_stub.stop = nil
         end
 
         -- And out of one, which leaves the cursor on the part it was opened
         -- from: what took the panel's place on the screen is what is lit.
+        env.ship_sect_back = function()
+            if opened.at ~= "ship" or not ui_stub.col_sect then return false end
+            ui_stub.col_sel, ui_stub.col_sel_value = "land_sect",
+                                                     ui_stub.col_sect
+            ui_stub.col_sect = nil
+            return true
+        end
         local back = branch(
-            '(\n    if action == "land_back" or action == "land_shut" then.-'
-            .. '\n    end\n)', env)
+            '(\n    if action == "menu_back" then.-\n    end\n)', env)
         check("the arena has a branch for the way back", back ~= nil)
         if back then
-            ui_stub.col_open, ui_stub.col_sect = "ship", "guns"
-            ui_stub.col_sel, ui_stub.col_sel_value = "land_back", nil
-            back(nil, "land_back", nil)
+            opened.at, ui_stub.col_sect = "ship", "guns"
+            ui_stub.col_sel, ui_stub.col_sel_value = "menu_back", nil
+            back(nil, "menu_back", nil)
             check("out of a section stands on the part it came from",
                   ui_stub.col_sect == nil
                   and ui_stub.col_sel == "land_sect"
@@ -1702,14 +1890,14 @@ do
     local arrows = src:match("local LAND_ARROW = {(.-)\n}\n")
     check("the arena has a table of arrows to run", arrows ~= nil)
     if hover and arrows then
-        local under, under_value = "land_account", nil
+        local under, under_value = "menu_stop", "account"
         local ui_stub = {pick = function()
             return {action = under, value = under_value}
         end}
         local env = {
             ui = ui_stub, touch = {used = false}, land_over = {},
-            LAND_HOT = {land_account = true, land_back = true,
-                        land_pick_account = true, land_kit_row = true},
+            LAND_HOT = {menu_stop = true, menu_back = true,
+                        menu_pick = true, land_kit_row = true},
             LAND_ARROW = assert(loadstring(
                 "return {" .. arrows .. "\n}", "arrows"))(),
             -- The branch reads what an arrow carries, so the stub needs the
@@ -1723,16 +1911,16 @@ do
 
         check("the pointer takes the cursor where it lands",
               handler(100, 200, 810) == true
-              and ui_stub.col_sel == "land_account")
+              and ui_stub.col_sel == "menu_stop")
         -- The stop is gone and a panel row is under the same pixels now.
-        under = "land_pick_account"
+        under, under_value = "menu_pick", 1
         check("a hand lying still does not answer for the screen moving",
               handler(100, 200, 810) == false
-              and ui_stub.col_sel == "land_account",
+              and ui_stub.col_sel == "menu_stop",
               tostring(ui_stub.col_sel))
         check("and moving it takes the cursor again",
               handler(101, 200, 810) == true
-              and ui_stub.col_sel == "land_pick_account",
+              and ui_stub.col_sel == "menu_pick",
               tostring(ui_stub.col_sel))
 
         -- Except for the wheel, which is the one thing that puts a different
@@ -1743,14 +1931,14 @@ do
             local chunk2 = assert(loadstring(
                 "return function()" .. slid .. "\nend", "slid"))
             setfenv(chunk2, env)
-            under = "land_back"
+            under = "menu_back"
             check("a notch of the wheel does not move the cursor by itself",
                   handler(101, 200, 810) == false
-                  and ui_stub.col_sel == "land_pick_account")
+                  and ui_stub.col_sel == "menu_pick")
             chunk2()()
             check("but it does ask again where the hand is",
                   handler(101, 200, 810) == true
-                  and ui_stub.col_sel == "land_back",
+                  and ui_stub.col_sel == "menu_back",
                   tostring(ui_stub.col_sel))
         end
 
@@ -1843,11 +2031,11 @@ do
     -- sections bought.
     check("with the credits still over them", word("BUILD CREDITS") ~= nil)
     check("the rail went out under it like the column does",
-          box("land_account") == nil and box("land_zone") == nil
-          and box("play_now") == nil)
+          stop("account") == nil and stop("zone") == nil
+          and box("menu_go") == nil)
     -- Open sky is whatever the panel does not cover, which is the margin it
     -- keeps from the window's own edge.
-    check("and open sky still puts it away", press(4, 100) == "land_shut")
+    check("and open sky still puts it away", press(4, 100) == "menu_shut")
 
     -- Walking the panel scrolls it, which is the half a scrollbar cannot do
     -- on its own: a row lit under the fold is a row nobody can see
@@ -1958,7 +2146,7 @@ frame(1440, 810, {landing = false})
 check("a benched pilot still gets TAKE SEAT",
       box("take_seat") ~= nil)
 check("and no key that would join a room they are already in",
-      box("play_now") == nil)
+      box("menu_go") == nil)
 check("and no name over the fight they are already in",
       word("vectorwake") == nil)
 -- And the two instruments the landing goes without. Watching is joining: the
@@ -1991,7 +2179,7 @@ do
         frame(w, h)
         local landed = word("vectorwake")
 
-        boxes, rects = {}, {}
+        boxes, rects, rings = {}, {}, {}
         state.n = 0
         H = h
         ui.begin(layer, w, h, 1, false, 0)
@@ -2020,7 +2208,7 @@ do
         -- And nothing that needs a room: no key into one, and none of the
         -- instruments that describe one.
         check(shape .. " waiting offers no key to a room it has not found",
-              box("play_now") == nil)
+              box("menu_go") == nil)
         check(shape .. " waiting draws no roster key", box("details") == nil)
         check(shape .. " waiting draws no radar", box("map") == nil)
         -- The name, and nothing beside it, on every window. The count was two
@@ -2030,13 +2218,50 @@ do
         check(shape .. " waiting says nothing while it is only waiting",
               #words() == 1,
               #words() .. " words on screen, wanted 1")
+        -- It does not say nothing at all, though. The dial that looks for a
+        -- game stands in the middle of the window, which is where the hull
+        -- the stands are watching stands and why the column above keeps clear
+        -- of that band: while this screen is up there is no hull there, and
+        -- the instrument looking for one takes the place until it arrives.
+        --
+        -- Three range rings where there is room for three, and two where
+        -- there is not: three across a face of twenty two points would be
+        -- five apart, which is closer than the stroke drawing them. The
+        -- smallest window is the one that gets two, because the lockup on it
+        -- comes up to meet the dial and the dial is what gives way.
+        local widest_ring = 0
+        for _, g in ipairs(rings) do
+            widest_ring = math.max(widest_ring, g.r)
+        end
+        check(shape .. " waiting looks for the room it has not found",
+              #rings == (widest_ring > 24 and 3 or 2),
+              #rings .. " rings across " .. string.format("%.0f", widest_ring))
+        if #rings >= 2 and waiting then
+            local widest = widest_ring
+            -- The mesh counts up from the bottom and everything read back
+            -- here counts down from the top, so the dial is flipped to meet
+            -- the name.
+            local cy = h - rings[1].y
+            check(shape .. " and stands it in the middle of the window",
+                  math.abs(rings[1].x - w / 2) < 1
+                  and math.abs(cy - h / 2) < 1,
+                  string.format("%.0f,%.0f against %.0f,%.0f",
+                                rings[1].x, cy, w / 2, h / 2))
+            -- And clear of the name, which does not move for it: the whole
+            -- rule of this screen is that nothing already on it shifts when
+            -- the room arrives.
+            check(shape .. " and clear of the name under it",
+                  cy + widest < waiting.y - 8,
+                  string.format("%.0f against a name at %.0f",
+                                cy + widest, waiting.y))
+        end
     end
 
     -- A fleet that is down does say so, in the slot the key will take. A
     -- client that has finished looking and found nothing must not look like
     -- one that is still trying.
     frame(1440, 810)
-    local key = box("play_now")
+    local key = box("menu_go")
     boxes, rects = {}, {}
     state.n = 0
     H = 810
@@ -2070,12 +2295,12 @@ do
     local ended = {playing = false, left = 15, artifact = 7,
                    score = {[0] = 3, [1] = 5}}
     frame(1440, 810, {match = ended})
-    local key = box("play_now")
+    local key = box("menu_go")
     check("the key survives a whistle", key ~= nil)
     check("and the name with it", word("vectorwake") ~= nil)
     if key then
         check("and is still what a press there reaches",
-              press(key.x + key.w / 2, key.y + key.h / 2) == "play_now")
+              press(key.x + key.w / 2, key.y + key.h / 2) == "menu_go")
         -- And the window it stands in is not darkened for a card nobody is
         -- being shown. The podium's wash was the one thing that ever laid a
         -- rectangle over the whole of this screen.
@@ -2084,20 +2309,18 @@ do
     end
 end
 
--- --- the menu takes the screen ---------------------------------------------
+-- --- a panel takes the screen ----------------------------------------------
 
--- A column over this screen draws its panel across all of it, so nothing
--- underneath may still be pressable: a press through a panel is a press nobody
--- aimed. The arena no longer puts the two together, since the menu is not
--- reachable from the front page, so what this pins is `M.hud`'s own rule
--- rather than a screen a player can get to: whoever sets `menu_open` gets the
--- landing stood down with it.
-frame(1440, 810, {menu_open = true})
-check("an open menu takes the key off the landing",
-      box("play_now") == nil)
+-- A panel over this screen draws across all of it, so nothing underneath may
+-- still be pressable: a press through a panel is a press nobody aimed. The
+-- column sends its own stops and its key out through the bottom edge when one
+-- of them opens, and the boxes go with them.
+frame(1440, 810, {col_open = "zone"})
+check("an open panel takes the key off the screen",
+      box("menu_go") == nil)
 check("and the stops with it",
-      box("land_account") == nil and box("land_zone") == nil
-      and box("land_ship") == nil)
+      stop("account") == nil and stop("zone") == nil
+      and stop("ship") == nil and stop("settings") == nil)
 
 -- --- the field of play is still the trigger ---------------------------------
 
@@ -2105,7 +2328,7 @@ check("and the stops with it",
 -- anywhere else. Everything above the key stays what it was: a fight, with the
 -- trigger under the pointer.
 frame(1440, 810)
-local key = box("play_now")
+local key = box("menu_go")
 local free = 0
 for _, at in ipairs({{720, 300}, {400, 500}, {1000, 420}}) do
     if key and at[2] > key.y - 80 then
@@ -2141,7 +2364,7 @@ do
     end
     local function at(now, open)
         frame(1440, 810, {col_open = open, now = now})
-        return said_y("PLAY NOW"), said_y("Chaos")
+        return said_y("PLAY"), said_y("Chaos")
     end
 
     -- The frame the press lands on: nothing has moved yet.
@@ -2164,7 +2387,7 @@ do
           late_row and rest_row and late_row < rest_row - 1,
           tostring(late_row) .. " against " .. tostring(rest_row))
     check("and at rest the column has gone and the panel stands",
-          rest_key == nil and box("land_pick_zone") ~= nil,
+          rest_key == nil and box("menu_pick") ~= nil,
           tostring(rest_key))
     -- The lockup goes with the stops rather than hanging over the panel: the
     -- column is one object, and a wordmark left standing over an open panel is
@@ -2174,10 +2397,41 @@ do
     -- And back the other way.
     at(9, nil)
     check("the frame back is pressed on has not moved either",
-          box("play_now") == nil)
+          box("menu_go") == nil)
     at(9.06, nil)
-    check("and then the column comes home", box("play_now") ~= nil
-          and box("land_zone") ~= nil)
+    check("and then the column comes home", box("menu_go") ~= nil
+          and stop("zone") ~= nil)
+    ui.panel_shut()
+end
+
+-- --- and the column leaves when the seat is taken --------------------------
+--
+-- The front page's column sinks out through the bottom edge as a pilot drops
+-- into the room they pressed for. It has to be asked, rather than pinned up
+-- because it is the landing's: the drawing was told once that a home column is
+-- always fully up, and the effect was the whole front page still standing at
+-- full height over the match it had just joined. What keeps it up out there is
+-- `menu.close` refusing to close it.
+do
+    ui.column_shut()
+    local function at(now, open)
+        boxes, rects, discs = {}, {}, {}
+        state.n = 0
+        ui.begin(layer, 1440, 810, 1, false, now, glass)
+        local v = view(LAND, {})
+        v.open = open
+        ui.menu(v)
+        ui.finish()
+        return box("menu_go")
+    end
+    local up = at(1, true)
+    check("the column stands while the menu is open", up ~= nil)
+    local going = at(1.06, false)
+    check("and a column on its way out answers no press", going == nil)
+    at(9, false)
+    check("and is gone once it has left", box("menu_go") == nil
+          and stop("account") == nil)
+    ui.column_shut()
     ui.panel_shut()
 end
 

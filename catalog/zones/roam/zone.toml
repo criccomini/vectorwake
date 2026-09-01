@@ -65,20 +65,18 @@ max_watchers = 16
 # two hundred in a million tiles of nobody.
 greens = 24
 
-# Six to twenty-eight tiles from whoever they appeared for. Outside the first
-# so a green is a trip rather than a gift; inside the second so it lands on
-# their radar and is a decision rather than a discovery.
-green_near_tiles = 6
-green_far_tiles = 28
-
-# A minute lying there, and one put out every second and a half, which fills
-# the field in about half a minute from empty and keeps it topped up as fast
-# as a busy room can clear it.
-green_seconds = 60
+# One put out every two seconds, which fills the field in under a minute from
+# empty and keeps it topped up as fast as a busy room can clear it. The
+# baseline's own rate is half a second quicker, which is a rate for a room
+# smaller than a thousand tiles square.
 green_every_seconds = 2
 
-# The same reach a flag is taken from. Both are "fly into it".
-green_radius = 18
+# The rest of the field is the baseline's, which was written for this zone
+# because it is the only one that has greens at all: a minute lying there, a
+# ring six to twenty-eight tiles from whoever it appeared for, and the same
+# reach a flag is taken from. Outside the near edge so a green is a trip
+# rather than a gift, inside the far one so it lands on their radar and is a
+# decision rather than a discovery.
 
 # Sixty tiles of scatter around whichever start a pilot is given, which is
 # Alpha's own number. The map marks sixteen starts across two side variants
@@ -87,30 +85,14 @@ green_radius = 18
 # arrivals spread over the middle of the map.
 spawn_radius = 60
 
-# Ten minutes and fifty-five seconds is the longest sit the core can express,
-# `safe_limit` being a uint16_t. Alpha's SafetyLimit is fifteen minutes, so
-# this is as close as the field goes and far longer than anybody waits.
-safe_limit = 65535
-
-# Four seconds dead. Longer than a match game's two, because here the walk
-# back is short: you respawn into the same fight rather than into a pocket
-# sixty tiles from anybody.
+# Four seconds dead. Longer than the baseline's two, which is a match game's
+# number: here the walk back is short, because you respawn into the same fight
+# rather than into a pocket sixty tiles from anybody.
 respawn_delay = 400
 
-# Team Battle's economy otherwise, so a pilot moving between the two games
-# finds the same ship and the same wall. See catalog/zones/melee/zone.toml.
-bounce = 12
-friction = 12
-streak_kills = 3
-mod_spread = 5
-multi_energy = 25
-multi_delay = 50
-prox_step = 16
-prox_delay = 150
-bomb_safety = true
-bbomb_damage = 1000
-shrap_inactive = 3
-shrap_inactive_ticks = 25
+# The ship, the wall and the economy are the baseline's otherwise, so a pilot
+# moving between this and a match game finds the same hull under them. See
+# `sim/src/baseline.c`.
 
 # What a green may be. Weights are relative and sum to whatever they sum to.
 #
@@ -139,23 +121,3 @@ bomb = 6
 repel = 8
 burst = 5
 
-[arena.mod_step]
-multi = 1
-bounce = 1
-prox = 48
-
-[[arena.weapons]]
-name = "gun"
-bounces = 255
-
-[[arena.weapons]]
-name = "gun-2"
-bounces = 255
-
-[[arena.weapons]]
-name = "gun-3"
-bounces = 255
-
-[[arena.weapons]]
-name = "burst"
-damage = 515

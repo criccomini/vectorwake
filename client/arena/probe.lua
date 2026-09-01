@@ -275,8 +275,9 @@ local function reading(self, dt, html5, touch, ui, menu)
             flying = menu.flying(),
             menu_open = menu.open and true or false,
             column_up = ui.column_up(),
-            -- The landing's panel, and the page inside the in-match column.
-            panel = ui.col_open,
+            -- Which stop of the column has a panel open, and how deep inside
+            -- it a hand has walked.
+            panel = menu.stop_open(),
             section = ui.col_sect,
             hull_shown = ui.col_hull,
             page = menu.at(),

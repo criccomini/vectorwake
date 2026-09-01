@@ -1,4 +1,4 @@
-# Duel: one pilot against one, three minutes, kills.
+# Duel: one pilot against one, played in rounds, first to two.
 #
 # Decision 96 took duels out, and its own note on what would bring them back
 # said the pieces worth keeping were the pairing rule at the door and the card,
@@ -15,7 +15,10 @@
 
 label = "Duel"
 
-mode = "melee"
+# Rounds rather than melee's tally, which is decision 142. A death ends the
+# round and two seconds later both pilots are back on their starts; the
+# scoring, the reset and the trade window are all in `modes::Duel`.
+mode = "duel"
 
 # Small rooms, and that is the whole point of them. A duel on a melee map is
 # two pilots searching a hundred and sixty tiles for each other: measured, a
@@ -55,47 +58,21 @@ max_bots_per_team = 1
 max_watchers = 8
 
 [arena]
-# Team Battle's clock. A duel is scored the same way on the same economy, so
-# what a pilot learns in one room is worth something in the other.
+# Rounds, and two of them take the match. A death ends a round rather than
+# the match, and two seconds later both pilots are back on their own starts
+# with a full bar and a full rack. Level at two plays on, so a match is three
+# rounds at most and losing the opening exchange leaves you one round from
+# level rather than watching out a fight that is already decided.
+first_to = 2
+
+# The clock is the backstop rather than the referee: whoever leads at the
+# whistle takes it and level is a draw. Team Battle's three minutes, because
+# a duel is flown on the same economy and what a pilot learns in one room
+# should be worth something in the other.
 match_seconds = 180
 intermission_seconds = 15
 
-# Everything below is Team Battle's, unchanged. A rung of skill measured here
-# should be about the pilot across from you rather than a private ruleset
-# nobody sees anywhere else. See catalog/zones/melee/zone.toml.
-bounce = 12
-friction = 12
-respawn_delay = 200
-spawn_radius = 0
-safe_limit = 65535
-streak_kills = 3
-mod_spread = 5
-multi_energy = 25
-multi_delay = 50
-prox_step = 16
-prox_delay = 150
-bomb_safety = true
-bbomb_damage = 1000
-shrap_inactive = 3
-shrap_inactive_ticks = 25
-
-[arena.mod_step]
-multi = 1
-bounce = 1
-prox = 48
-
-[[arena.weapons]]
-name = "gun"
-bounces = 255
-
-[[arena.weapons]]
-name = "gun-2"
-bounces = 255
-
-[[arena.weapons]]
-name = "gun-3"
-bounces = 255
-
-[[arena.weapons]]
-name = "burst"
-damage = 515
+# Nothing else. The ship, the wall and the economy are the baseline's, which is
+# what Team Battle plays: a rung of skill measured here should be about the
+# pilot across from you rather than a private ruleset nobody sees anywhere
+# else. See `sim/src/baseline.c`.

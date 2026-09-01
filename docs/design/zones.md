@@ -7,7 +7,7 @@ Five games, in one catalog, on one engine.
 | Team Battle | Three minute 4v4 melee | 8 seats, 5 maps | kills |
 | Turf | Six stands that pay whoever holds them | 8 seats, 3 maps | turf |
 | War | Four flags, a round to whoever holds the set | 8 seats, 3 maps | flags |
-| Duel | One against one on small ground | 2 seats, 3 maps | kills |
+| Duel | One against one on small ground | 2 seats, 3 maps | rounds |
 | Free Roam | A thousand tiles, no clock, greens | 64 seats, 1 map | nothing |
 
 Team Battle is [match-game.md](match-game.md)'s and came first. The other four
@@ -46,7 +46,11 @@ tested:
    closes.
 
 Every zone below decomposes along that split, and building four of them added
-two modes, five settings and one entity to the core. Nothing needed a new
+two modes, five settings and one entity to the core. The duel took a third
+mode afterwards, per
+[decision 142](../architecture/decisions.md#142-a-duel-is-rounds-and-two-of-them-take-it),
+which is still meaning in the mode layer rather than anything the core had to
+learn. Nothing needed a new
 layer, and [decision 6](../architecture/decisions.md#6-zone-modules-are-sandboxed)'s
 sandboxed module runtime stays superseded.
 
@@ -106,7 +110,7 @@ catalog a player could not read from outside the room.
 
 ## Duel
 
-One pilot against one, three minutes, kills, on ground ninety-six tiles across.
+One pilot against one, first to two rounds, on ground ninety-six tiles across.
 
 The rooms hold two seats and that is what does the matchmaking. A client
 prefers the fullest room below its cap, which for a room of two means the one
@@ -126,6 +130,27 @@ their own start, which on ground this small is a way out of the only fight in
 the room, and its thirty-eight tile field covers most of a ninety-six tile map
 besides. See
 [decision 138](../architecture/decisions.md#138-a-duel-is-too-small-to-hold-a-wormhole).
+
+It is played in rounds. A death ends the round, and two seconds later both
+pilots are back on their own starts with a full bar and a full rack. Two
+rounds take the match, level at two plays on, and the three minute clock is
+the backstop: the leader takes it and level is a draw. That two second window
+is the trade rule, and it is also the respawn delay, so a bomb thrown by a
+pilot who is already dead still lands and the round goes to both of them.
+
+Rounds are what the word promises, and they buy the thing a tally cannot: a
+pilot who loses the opening exchange is one round from level rather than
+watching out a fight that is already decided. The score is rounds taken, read
+off the other side's deaths, so flying into a wall hands the round across the
+arena instead of taking a point off your own. See
+[decision 142](../architecture/decisions.md#142-a-duel-is-rounds-and-two-of-them-take-it).
+
+The match is between the two seats, so a seat changing hands is a new match:
+whole clock, nothing on the board, both pilots home. An arrival lands across
+from whoever is already there. That is
+[decision 141](../architecture/decisions.md#141-in-a-duel-the-door-is-the-whistle).
+Without it a person at the door was put into the match the room's bots were
+having, and shown its score at the whistle.
 
 Pairing by rating is not here. That needs a band and a queue and is a decision
 to take on its own.
@@ -161,7 +186,8 @@ something a new arrival cannot fight.
 ## What we did not build
 
 **A module runtime.** Four games needed two modes and five settings between
-them, which is no argument for an ABI, an authoring system and a sandbox.
+them, and rounds took a third mode later. That is no argument for an ABI, an
+authoring system and a sandbox.
 
 **A mode-aware client.** The client reads the catalog's format strip, draws
 pennants and greens off the wire, and gets the match clock from `match_state`.
@@ -189,8 +215,10 @@ Each row in the catalog brings more than a mode:
 - **A bot population that plays the objective.** At our population a zone
   without one is a dead room.
 - **A balance surface.** Every mode is a new answer to "which hull wins here".
-  Turf, War, Duel and Free Roam are all flying the roster Team Battle was
-  tuned for, and none has been measured.
+  Turf, War, Duel and Free Roam are all flying the roster Team Battle was tuned
+  for, and none has been measured. They fly it because the tuning is the
+  core's: a zone file says what makes it that zone and nothing else, so a room
+  that wants a different ship has to say so and be seen saying it.
 - **An arena process.** One per declared zone, which is now five, with the
   services, routes and firewall ports that go with them.
 
