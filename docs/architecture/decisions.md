@@ -6858,12 +6858,28 @@ near them at snapshot rate, none of them real. A deathless instance now puts
 none out, expires none, and takes one only for its own pilot; `sim.h` carries
 that beside the two rules of the same shape it already had.
 
-Decision 44's other half does not carry over. It had a client remove a green
-it touched while applying no grant, because back then the roll happened at the
-moment of pickup and a guessed grant would have shown a player the roll. A
-green decides what it is when it is put out now, and `slot` rides in the
-snapshot beside its position, so there is nothing left at pickup to hide and
-the client's own is predicted whole.
+Decision 44's private prize generator was lost the same way, and is back. A
+green was being rolled from `sim_state::rng`, which every snapshot carries
+because a client needs it to predict a scattergun's spread and a spawn. A
+client could advance it and work out where the next green would land and what
+it would be, then go and wait there. The greens now roll from `prize_rng`,
+which no snapshot carries and which `sim_prize_seed` installs: the arena gives
+each room a value out of its own entropy, and the shipped client never calls
+it. The stream and its clock are out of `sim_hash` as well as off the wire,
+which is one rule rather than two exceptions, because what the hash covers is
+what a snapshot carries and a pack round trip is checked by comparing hashes.
+
+Zero means no stream and a state with no stream sows nothing. That is the loud
+failure on purpose: a room that skips the seeding is a Free Roam with no
+prizes in it, which somebody notices within a minute, where greens landing
+somewhere a client could have named in advance is a thing nobody sees at all.
+
+44's other half does not carry over. It had a client remove a green it touched
+while applying no grant, because back then the roll happened at the moment of
+pickup and a guessed grant would have shown a player the roll. A green decides
+what it is when it is put out now, and `slot` rides in the snapshot beside its
+position, so there is nothing left at pickup to hide and the client's own is
+predicted whole.
 
 **Cost:** `CLIENT_PROTOCOL` moves to 34 and `CFG_VERSION` to 23, and the
 determinism golden is regenerated. The state hash covers the greens now, which

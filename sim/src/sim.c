@@ -260,6 +260,10 @@ void sim_init(sim_state *s, uint32_t seed) {
     s->rng = seed ? seed : 1u;
 }
 
+void sim_prize_seed(sim_state *s, uint32_t seed) {
+    s->prize_rng = seed;
+}
+
 static void clear_hurt(sim_ship *sh);
 
 void sim_deal_kit(sim_ship *sh, const sim_settings *cfg, int ammunition) {
@@ -1681,6 +1685,11 @@ static int roll_green(const sim_settings *cfg, uint32_t *rng) {
  * that is the right failure: the alternative is walking the map looking for
  * ground, once a tick, forever. */
 static void put_green(sim_state *s, const sim_settings *cfg) {
+    /* No private stream, no field. See `prize_rng`: rolling a green off the
+     * generator every snapshot publishes would put the next one's position on
+     * the wire in advance. */
+    if (s->prize_rng == 0) return;
+
     /* Somebody to put it near. A room with nobody alive in it gets none,
      * which is also what stops an empty room filling up with prizes nobody
      * ever came for. */
@@ -1689,8 +1698,8 @@ static void put_green(sim_state *s, const sim_settings *cfg) {
         if (s->ships[i].active && s->ships[i].alive) alive++;
     if (alive == 0) return;
 
-    s->rng = xorshift32(s->rng);
-    int nth = (int)((s->rng >> 8) % (uint32_t)alive);
+    s->prize_rng = xorshift32(s->prize_rng);
+    int nth = (int)((s->prize_rng >> 8) % (uint32_t)alive);
     int host = -1;
     for (int i = 0; i < s->ship_count; i++) {
         if (!s->ships[i].active || !s->ships[i].alive) continue;
@@ -1698,17 +1707,18 @@ static void put_green(sim_state *s, const sim_settings *cfg) {
     }
     if (host < 0) return;
 
-    int slot = roll_green(cfg, &s->rng);
+    int slot = roll_green(cfg, &s->prize_rng);
     if (slot < 0) return;
 
     int32_t span = cfg->green_far - cfg->green_near;
     if (span < 0) span = 0;
     for (int n = 0; n < 16; n++) {
-        s->rng = xorshift32(s->rng);
-        uint16_t heading = (uint16_t)(s->rng >> 16);
-        s->rng = xorshift32(s->rng);
+        s->prize_rng = xorshift32(s->prize_rng);
+        uint16_t heading = (uint16_t)(s->prize_rng >> 16);
+        s->prize_rng = xorshift32(s->prize_rng);
         int32_t reach = cfg->green_near
-                        + (span ? (int32_t)((s->rng >> 8) % (uint32_t)span) : 0);
+                        + (span ? (int32_t)((s->prize_rng >> 8)
+                                            % (uint32_t)span) : 0);
         int32_t dx, dy;
         heading_dir(heading, &dx, &dy);
         int32_t x = s->ships[host].x + (int32_t)(((int64_t)dx * reach) >> 15);
@@ -2894,7 +2904,11 @@ uint64_t sim_hash(const sim_state *s) {
         h = hash_u32(h, (uint32_t)f->y);
         h = hash_u32(h, (uint32_t)f->cooldown | ((uint32_t)f->held << 16));
     }
-    h = hash_u32(h, (uint32_t)s->green_count | ((uint32_t)s->green_at << 8));
+    /* The count and not the clock: `green_at` and `prize_rng` are the
+     * authority's, no snapshot carries either, and this hash is what a pack
+     * round trip is checked against. A divergence in the clock shows up
+     * anyway, in the greens it puts out, which are hashed below. */
+    h = hash_u32(h, s->green_count);
     for (int i = 0; i < s->green_count; i++) {
         const sim_green *g = &s->greens[i];
         h = hash_u32(h, (uint32_t)g->active | ((uint32_t)g->slot << 8)

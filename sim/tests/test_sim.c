@@ -4015,6 +4015,9 @@ static void test_scoring(const sim_settings *base) {
 
         static sim_state s;
         sim_init(&s, 7);
+        /* The field is the authority's and does not sow without a stream of
+         * its own; see `prize_rng`. A test is the authority here. */
+        sim_prize_seed(&s, 0xc0ffeeu);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &g);
         int live = 0;
         for (int t = 0; t < 400 && live < 6; t++) {
@@ -4086,6 +4089,7 @@ static void test_scoring(const sim_settings *base) {
 
         static sim_state s;
         sim_init(&s, 3);
+        sim_prize_seed(&s, 0xbeef01u);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &g);
         step_n(&s, &g, 0, 0, 5);
         int idx = -1;
@@ -4122,6 +4126,7 @@ static void test_scoring(const sim_settings *base) {
         /* The zone first, to get a real green in a real place. */
         static sim_state s;
         sim_init(&s, 11);
+        sim_prize_seed(&s, 0xd0d0d0u);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &g);
         sim_spawn(&s, APEX, 1, 8192 + 4096, 8192, 0, &g);
         step_n(&s, &g, 0, 0, 20);
@@ -4164,13 +4169,43 @@ static void test_scoring(const sim_settings *base) {
     }
 
     /* A zone that asks for none gets none, which is every match game we
-     * ship: there a pilot flies the build they chose and nothing else. */
+     * ship: there a pilot flies the build they chose and nothing else. The
+     * stream is installed here so what is being tested is `green_target` and
+     * not the absence of one. */
     {
         static sim_state s;
         sim_init(&s, 5);
+        sim_prize_seed(&s, 0x515151u);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         step_n(&s, &cfg, 0, 0, 500);
         CHECK(s.green_count == 0, "the baseline puts out no greens");
+    }
+
+    /* And a room with no stream of its own sows nothing whatever the zone
+     * asked for. Loud rather than quiet: a field nobody seeded is empty, and
+     * an empty Free Roam is noticed in a minute, where greens landing where a
+     * client could have worked out in advance would not be noticed at all. */
+    {
+        sim_settings g = cfg;
+        g.green_target = 6;
+        g.green_every = 10;
+        g.green_life = 2000;
+        g.green_near = 6 * SIM_TILE_PX * 256;
+        g.green_far = 28 * SIM_TILE_PX * 256;
+        g.green_radius = 18 * 256;
+        memset(g.green_weight, 0, sizeof g.green_weight);
+        g.green_weight[SIM_SLOT_STAT(SIM_UP_ENERGY)] = 1;
+
+        static sim_state s;
+        sim_init(&s, 7);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &g);
+        step_n(&s, &g, 0, 0, 500);
+        CHECK(s.green_count == 0, "an unseeded field puts out nothing");
+
+        /* Seeded, the same room fills. */
+        sim_prize_seed(&s, 0x9e3779b9u);
+        step_n(&s, &g, 0, 0, 500);
+        CHECK(s.green_count > 0, "and fills once the zone installs one");
     }
 
     /* A carry clock puts a flag down on its own, keeping the side that took
@@ -5061,6 +5096,26 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
         CHECK(sim_hash(&back) == sim_hash(&s), "the round trip is exact");
         CHECK(back.weapons[0].link == 0xa1b2c3d4u,
               "a gun-volley link survives the snapshot");
+
+        /* The prize stream and its clock stay behind. This is the check that
+         * keeps them off the wire: a green is rolled from `prize_rng`, so a
+         * snapshot carrying it would tell every client in the room where the
+         * next one is going to land. `sim_hash` is the other half, because
+         * the round trip above is asserted by comparing hashes, and a field
+         * that is hashed but not packed would break that instead of this. */
+        {
+            static sim_state seeded, seeded_back;
+            seeded = s;
+            sim_prize_seed(&seeded, 0x1234abcdu);
+            seeded.green_at = 77;
+            CHECK(sim_hash(&seeded) == sim_hash(&s),
+                  "the private stream is not in the hash");
+            int m = sim_pack(&seeded, buf, sizeof buf);
+            CHECK(m == n, "nor does it cost the snapshot a byte");
+            CHECK(sim_unpack(&seeded_back, buf, m) == 0, "and it unpacks");
+            CHECK(seeded_back.prize_rng == 0 && seeded_back.green_at == 0,
+                  "and neither reaches the far end");
+        }
 
         /* A message longer than this build knows how to read is refused.
          *

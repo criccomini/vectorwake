@@ -1192,6 +1192,24 @@ typedef struct {
     uint8_t flag_count;
     sim_green greens[SIM_MAX_GREENS];
     uint8_t green_count;
+    /* The prize stream, and the clock it runs on.
+     *
+     * Neither is packed and neither is hashed, which is one rule rather than
+     * two exceptions: what `sim_hash` covers is what a snapshot carries, and
+     * `sim_pack` round trips are checked by comparing hashes. Both of these
+     * belong to whoever is running the field.
+     *
+     * The stream is separate from `rng` because `rng` is on the wire. A client
+     * needs it to predict a scattergun's spread and a spawn, so every snapshot
+     * publishes it, and rolling the greens from it would let a client work out
+     * where the next one is going to land and go and stand there. Decision 44
+     * is the rule; decision 132 brought the greens back without it.
+     *
+     * Zero is no stream, and a state with no stream puts out no greens at all.
+     * Deliberately loud: a zone that means to sow has to say so through
+     * `sim_prize_seed`, and one that forgets gets an empty map rather than a
+     * predictable one. */
+    uint32_t prize_rng;
     /* Ticks until the next green is put out. See `green_every`. */
     uint16_t green_at;
 } sim_state;
@@ -1303,6 +1321,14 @@ int sim_set_ship_team(sim_state *s, const sim_settings *cfg, uint8_t i,
 
 void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
               uint16_t input_count, const sim_settings *cfg, sim_events *ev);
+
+/* Install the private stream the greens are rolled from. The authority calls
+ * this once, with a value nothing on the wire reveals; a prediction client
+ * never calls it and never sows. Zero puts the field back to sowing nothing.
+ *
+ * Kept out of `sim_init` because the core has no entropy of its own and must
+ * not: the seed there is a public constant in the shipped client. */
+void sim_prize_seed(sim_state *s, uint32_t seed);
 
 uint64_t sim_hash(const sim_state *s);
 

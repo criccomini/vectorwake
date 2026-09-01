@@ -6641,6 +6641,39 @@ mod tests {
         );
     }
 
+    /// Every room this server builds gets a prize stream of its own, and no
+    /// two rooms get the same one.
+    ///
+    /// The core sows nothing without one, so the room that skipped this would
+    /// be a Free Roam with no greens in it. The failure this guards against is
+    /// the other one: rolling them from `sim_state::rng`, which is a public
+    /// constant at `sim_init` and rides in every snapshot after, so a client
+    /// could work out where the next green was going to land and go and stand
+    /// there. Decision 44.
+    #[test]
+    fn every_room_rolls_its_greens_from_a_stream_of_its_own() {
+        let dir = "../catalog/zones/roam";
+        let toml_text = std::fs::read_to_string(format!("{dir}/zone.toml")).expect("the roam zone");
+        let def: catalog::ZoneDef = toml::from_str(&toml_text).expect("it parses");
+        let map = std::fs::read(format!("{dir}/{}", def.maps[0])).expect("its map");
+        let mut zone = wire_zone(1, 64, 64);
+        zone.mode = def.mode.clone();
+        zone.maps_b64 = vec![fleet::b64(&map)];
+        zone.zone_toml = toml_text;
+
+        let a = ArenaServer::build_room(&zone, None).expect("a room");
+        let b = ArenaServer::build_room(&zone, None).expect("another room");
+        assert_ne!(a.world.state.prize_rng, 0, "a room is given a stream");
+        assert_ne!(
+            a.world.state.prize_rng, b.world.state.prize_rng,
+            "and it is not the same one twice"
+        );
+        assert_ne!(
+            a.world.state.prize_rng, a.world.state.rng,
+            "nor the one every snapshot publishes"
+        );
+    }
+
     /// The free roam zone as it ships: greens appear near the pilot they were
     /// put out for, and flying into one raises what that pilot is flying.
     #[test]

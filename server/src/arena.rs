@@ -765,7 +765,14 @@ impl ArenaServer {
             }
         };
         let first = maps.first().ok_or("the zone names no maps")?;
-        let world = sim::World::on_map(0x5eed, std::sync::Arc::clone(first));
+        let mut world = sim::World::on_map(0x5eed, std::sync::Arc::clone(first));
+        // The stream the greens are rolled from, which is this process's and
+        // never leaves it. 0x5eed above is a public constant: the shipped
+        // client passes the same one to `sim_init`, and `rng` rides in every
+        // snapshot besides, so anything a green was rolled from there would be
+        // a green a client could go and wait for. Zero is the core's "no
+        // stream, sow nothing", so it is the one value this may not hand over.
+        world.seed_prizes(rand::random::<u32>().max(1));
         let def: catalog::ZoneDef =
             toml::from_str(&z.zone_toml).map_err(|e| format!("zone.toml: {e}"))?;
         let mut room = Room::with_world_bare(world);

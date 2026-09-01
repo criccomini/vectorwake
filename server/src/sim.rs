@@ -548,6 +548,12 @@ pub struct sim_state {
     pub flag_count: u8,
     pub greens: [sim_green; MAX_GREENS],
     pub green_count: u8,
+    /// The stream the greens are rolled from, and the clock they are put out
+    /// on. Neither is packed and neither is hashed: they belong to whoever is
+    /// running the field. `rng` above is on the wire, because a client needs
+    /// it to predict a spread and a spawn, so rolling a green from it would
+    /// publish where the next one is going to land.
+    pub prize_rng: u32,
     /// Ticks until the next green is put out.
     pub green_at: u16,
 }
@@ -580,6 +586,7 @@ pub struct sim_events {
 
 extern "C" {
     pub fn sim_init(s: *mut sim_state, seed: u32);
+    pub fn sim_prize_seed(s: *mut sim_state, seed: u32);
     pub fn sim_spawn(
         s: *mut sim_state,
         cls: u8,
@@ -1053,6 +1060,18 @@ impl World {
             scratch: zeroed_box(),
             events: zeroed_box(),
         }
+    }
+
+    /// Install the private stream the greens are rolled from.
+    ///
+    /// A room that means to put greens out calls this once, with a value
+    /// nothing on the wire reveals. `sim_init` leaves it at zero and a state
+    /// with no stream sows nothing, so a zone that asks for greens and never
+    /// gets any is a room that skipped this, which is the failure this shape
+    /// was chosen for: an empty Free Roam is noticed, and greens landing where
+    /// a client could have worked out in advance are not.
+    pub fn seed_prizes(&mut self, seed: u32) {
+        unsafe { sim_prize_seed(&mut *self.state, seed) };
     }
 
     /// Where the map says a ship of this team starts, if it says anything.
