@@ -519,7 +519,7 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
  * linear falloff to the pull one tile out of an inverse square one, which is
  * exactly the kind of change a version exists to refuse: the bytes still line
  * up and the flight does not. */
-#define CFG_VERSION 21
+#define CFG_VERSION 22
 
 static int settings_valid(const sim_settings *cfg) {
     if (cfg->class_count == 0 || cfg->class_count > SIM_MAX_CLASSES
@@ -652,6 +652,8 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     w8(&w, cfg->gravity_bombs);
     w32(&w, (uint32_t)cfg->flag_radius);
     w16(&w, cfg->flag_drop_cooldown);
+    w8(&w, cfg->flag_carry);
+    w16(&w, cfg->flag_carry_ticks);
     w8(&w, cfg->max_ships);
 
     return w.overflow ? -1 : (int)(w.p - out);
@@ -764,6 +766,8 @@ int sim_settings_unpack(sim_settings *out, const uint8_t *in, int len) {
     cfg->gravity_bombs = (uint8_t)r8(&r);
     cfg->flag_radius = (int32_t)r32(&r);
     cfg->flag_drop_cooldown = (uint16_t)r16(&r);
+    cfg->flag_carry = (uint8_t)r8(&r);
+    cfg->flag_carry_ticks = (uint16_t)r16(&r);
     cfg->max_ships = r8(&r);
 
     /* Read short is as wrong as read long.

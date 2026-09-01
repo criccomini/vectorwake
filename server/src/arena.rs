@@ -772,9 +772,14 @@ impl ArenaServer {
             room.world.cfg.max_ships = m;
         }
         room.set_teams(&def);
-        if z.mode == "warzone" {
-            room.add_default_flags();
-            room.world.state.flag_count = def.arena.flags.min(room.world.state.flag_count);
+        // Where the flags stand is the map's, whatever game is played on it.
+        // This asked the mode instead and laid the built-in arena's four
+        // quadrant tiles for a warzone, which on a zone map is four flags out
+        // past its own wall; a turf zone got none at all, since nothing here
+        // had ever read a stand off the ground.
+        room.place_flags();
+        if let Some(want) = def.arena.flags {
+            room.world.state.flag_count = want.min(room.world.state.flag_count);
         }
         room.mode = modes::build(&z.mode, &room.mode_setup(&def.arena));
         room.bot_fill = def.bot_fill();

@@ -1435,6 +1435,7 @@ int sim_add_flag(sim_state *s, int32_t x_px, int32_t y_px) {
     f->x = x_px * 256;
     f->y = y_px * 256;
     f->cooldown = 0;
+    f->held = 0;
     return i;
 }
 
@@ -1445,31 +1446,44 @@ int sim_flags_held(const sim_state *s, uint8_t team) {
     return n;
 }
 
-/* Drop every flag a ship is carrying where it died, keeping the team that
- * held it: a dropped flag stays yours until somebody takes it back. */
+/* Put one carried flag down where its carrier is, keeping the team that held
+ * it: a dropped flag stays yours until somebody takes it back.
+ *
+ * Both ways a flag comes down land here, a carrier dying and a carry clock
+ * running out, because the part that is easy to get wrong is the same for
+ * both: where it ends up. */
+static void put_flag_down(sim_state *s, const sim_settings *cfg, int i,
+                          sim_events *ev) {
+    sim_flag *f = &s->flags[i];
+    const sim_ship *sh = &s->ships[f->carrier];
+    f->carried = 0;
+    f->carrier = 0;
+    f->held = 0;
+    f->x = sh->x;
+    f->y = sh->y;
+    /* Where they fell, unless the map is going to close over it. A carrier
+     * killed in an open door left the flag inside the door, and a flag
+     * nobody can reach is a round nobody can finish. Only then is it moved,
+     * so an ordinary drop still lands exactly where the hull was. */
+    if (!ground(cfg->map, f->x / (SIM_TILE_PX * 256),
+                f->y / (SIM_TILE_PX * 256))) {
+        int32_t tx = f->x / (SIM_TILE_PX * 256);
+        int32_t ty = f->y / (SIM_TILE_PX * 256);
+        nearest_ground(cfg->map, &tx, &ty);
+        f->x = tile_mid(tx);
+        f->y = tile_mid(ty);
+    }
+    f->cooldown = cfg->flag_drop_cooldown;
+    emit(ev, SIM_EV_FLAG_DROP, (uint8_t)i, f->team, 0);
+}
+
+/* Drop every flag a ship is carrying where it died. */
 static void drop_flags(sim_state *s, const sim_settings *cfg, uint8_t ship,
                        sim_events *ev) {
     for (int i = 0; i < s->flag_count; i++) {
         sim_flag *f = &s->flags[i];
         if (!f->active || !f->carried || f->carrier != ship) continue;
-        f->carried = 0;
-        f->carrier = 0;
-        f->x = s->ships[ship].x;
-        f->y = s->ships[ship].y;
-        /* Where they fell, unless the map is going to close over it. A carrier
-         * killed in an open door left the flag inside the door, and a flag
-         * nobody can reach is a round nobody can finish. Only then is it moved,
-         * so an ordinary drop still lands exactly where the hull was. */
-        if (!ground(cfg->map, f->x / (SIM_TILE_PX * 256),
-                    f->y / (SIM_TILE_PX * 256))) {
-            int32_t tx = f->x / (SIM_TILE_PX * 256);
-            int32_t ty = f->y / (SIM_TILE_PX * 256);
-            nearest_ground(cfg->map, &tx, &ty);
-            f->x = tile_mid(tx);
-            f->y = tile_mid(ty);
-        }
-        f->cooldown = cfg->flag_drop_cooldown;
-        emit(ev, SIM_EV_FLAG_DROP, (uint8_t)i, f->team, 0);
+        put_flag_down(s, cfg, i, ev);
     }
 }
 
@@ -1585,7 +1599,16 @@ static void update_flags(sim_state *s, const sim_settings *cfg, sim_events *ev) 
                 /* The carrier stopped existing without dying properly. */
                 f->carried = 0;
                 f->carrier = 0;
+                f->held = 0;
                 f->cooldown = cfg->flag_drop_cooldown;
+                continue;
+            }
+            /* The carry clock, when the zone runs one. Counted before the
+             * move so a flag whose time is up is put down at the tile its
+             * carrier reached rather than a tick further on. */
+            if (cfg->flag_carry_ticks &&
+                ++f->held >= cfg->flag_carry_ticks) {
+                put_flag_down(s, cfg, i, ev);
                 continue;
             }
             f->x = sh->x;
@@ -1602,11 +1625,26 @@ static void update_flags(sim_state *s, const sim_settings *cfg, sim_events *ev) 
             if (!hull_reaches(&cfg->classes[sh->cls], sh->heading,
                               sh->x, sh->y, f->x, f->y, cfg->flag_radius))
                 continue;
-            f->carried = 1;
-            f->carrier = (uint8_t)k;
             f->team = sh->team;
-            f->x = sh->x;
-            f->y = sh->y;
+            /* A stand that cannot be carried changes hands where it stands,
+             * and that is the whole of a turf claim.
+             *
+             * It then settles for the same window a dropped flag does. Two
+             * pilots of opposite sides sitting on one stand would otherwise
+             * take it from each other every tick, a hundred times a second:
+             * the pennant strobes, and which side the clock happens to pay is
+             * decided by the tick the payout lands on rather than by the
+             * fight. With the window, a contested stand changes hands at a
+             * rate a person can read and a payout means something. */
+            if (cfg->flag_carry) {
+                f->carried = 1;
+                f->carrier = (uint8_t)k;
+                f->held = 0;
+                f->x = sh->x;
+                f->y = sh->y;
+            } else {
+                f->cooldown = cfg->flag_drop_cooldown;
+            }
             emit(ev, SIM_EV_FLAG_TAKE, (uint8_t)k, (uint8_t)i, 0);
             break;
         }
@@ -2707,7 +2745,7 @@ uint64_t sim_hash(const sim_state *s) {
                             | ((uint32_t)f->team << 24));
         h = hash_u32(h, (uint32_t)f->x);
         h = hash_u32(h, (uint32_t)f->y);
-        h = hash_u32(h, f->cooldown);
+        h = hash_u32(h, (uint32_t)f->cooldown | ((uint32_t)f->held << 16));
     }
     for (uint16_t i = 0; i < s->weapon_count; i++) {
         const sim_weapon *w = &s->weapons[i];

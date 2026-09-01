@@ -463,6 +463,57 @@ impl Canvas {
         self.reserve_disk(x, y, 6);
         self.reserve_disk(self.w - 1 - x, self.h - 1 - y, 6);
     }
+
+    /// A flag stand, and its half-turn twin. Reserved wider than a spawn:
+    /// a stand is a place a fight happens around, so the room it needs is
+    /// the room to circle it in rather than the room to leave it by.
+    pub fn stand_pair(&mut self, x: i32, y: i32) {
+        self.pair(x, y, tile(TURF, 0));
+        self.reserve_disk(x, y, 8);
+        self.reserve_disk(self.w - 1 - x, self.h - 1 - y, 8);
+    }
+}
+
+/// Where a flag game's stands go.
+///
+/// Stands are laid here rather than by a theme, for the same reason spawns
+/// are: they are the mode's furniture, not the geometry's, so any theme can
+/// carry them and a stand does not have to be redrawn five times. They are
+/// laid before the theme's pattern, so its walls part around them.
+///
+/// The arrangement is the same in both flag games and only the count
+/// differs. Stands sit on the long axis between the two homes, spread evenly
+/// and never in one: a stand inside a pocket is a stand its owners never have
+/// to leave home to hold, which is a fight nobody has.
+///
+/// The count is even because every stand is drawn as a pair, which is what
+/// makes the two sides face the same ground. There is no odd arrangement to
+/// fall back on: an even-sided map has no center tile that is its own
+/// half-turn twin, so a stand in the middle is two stands, and `Brief::check`
+/// refuses an odd count rather than quietly drawing one more than was asked
+/// for.
+pub(crate) fn add_stands(c: &mut Canvas, graph: &LayoutGraph, count: u8) {
+    let pairs = (count / 2) as i32;
+    if pairs == 0 {
+        return;
+    }
+    let (a, b) = (&graph.nodes[0], &graph.nodes[1]);
+    let (cx, cy) = ((a.x + b.x) / 2, (a.y + b.y) / 2);
+    // The span stops short of a home's own radius so the furthest stand is
+    // still ground both sides cross rather than one side's doorstep.
+    let along = if c.w >= c.h { b.x - cx } else { b.y - cy };
+    let reach = along - a.radius - 8;
+    for i in 0..pairs {
+        let step = reach * (i + 1) / pairs;
+        // A cross-axis stagger, so stands on one line do not make the map a
+        // corridor with beads on it.
+        let off = if i % 2 == 0 { 9 } else { -9 };
+        if c.w >= c.h {
+            c.stand_pair(cx + step, cy + off);
+        } else {
+            c.stand_pair(cx + off, cy + step);
+        }
+    }
 }
 
 pub(crate) fn add_spawns(c: &mut Canvas, graph: &LayoutGraph) {
@@ -829,6 +880,9 @@ pub(crate) struct Gauge {
     pub allow_wormholes: bool,
     pub wall_band: (f64, f64),
     pub wall_target: f64,
+    /// Flag stands the brief calls for, checked against what survived the
+    /// theme's walls.
+    pub stands: u8,
 }
 
 pub(crate) fn assess(
@@ -943,6 +997,15 @@ pub(crate) fn assess(
     if gauge.mode == Mode::Melee && (material.safe + material.goals + material.turf != 0) {
         gates.push("melee maps cannot contain safe, goal, or turf tiles".into());
     }
+    // A stand the theme's walls closed over is a flag nobody can reach, and
+    // the count is what a zone's flag game is played for, so it is checked
+    // against what the brief asked for rather than merely being nonzero.
+    if material.turf != gauge.stands as usize {
+        gates.push(format!(
+            "the brief calls for {} flag stands and the map draws {}",
+            gauge.stands, material.turf
+        ));
+    }
     if !gauge.allow_doors && material.doors != 0 {
         gates.push("the brief does not call for doors".into());
     }
@@ -1048,6 +1111,10 @@ fn svg(map: &sim::sim_map, metrics: &MapMetrics) -> String {
                 (UNDER, _) => "#1d2838",
                 (SPAWN, 0) => "#4fd6ff",
                 (SPAWN, _) => "#ffa552",
+                // A stand is nobody's, which is what the ink it is drawn in
+                // means everywhere else the game shows a loose flag.
+                (TURF, _) => "#e6e8ee",
+                (GOAL, _) => "#ffd166",
                 _ => continue,
             };
             out.push_str(&format!(

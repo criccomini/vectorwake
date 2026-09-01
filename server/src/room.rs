@@ -807,6 +807,12 @@ impl Room {
         if let Some(v) = c.flag_drop_cooldown {
             world.cfg.flag_drop_cooldown = v;
         }
+        if let Some(v) = c.flag_carry {
+            world.cfg.flag_carry = u8::from(v);
+        }
+        if let Some(v) = c.flag_carry_seconds {
+            world.cfg.flag_carry_ticks = v.saturating_mul(modes::TICKS_PER_SECOND as u16);
+        }
         if let Some(v) = c.door_period {
             world.cfg.door_period = v;
         }
@@ -1028,6 +1034,7 @@ impl Room {
             teams: self.public_teams,
             match_ticks: c.match_seconds.unwrap_or(180) as u32 * 100,
             intermission_ticks: c.intermission_seconds.unwrap_or(25) as u32 * 100,
+            turf_period: c.turf_seconds.unwrap_or(5) as u32 * 100,
         }
     }
 
@@ -1192,13 +1199,12 @@ impl Room {
         // the built-in arena puts four in the four quadrants. A zone asking
         // for more is told so rather than quietly given four.
         let placed = a.world.state.flag_count;
-        if cfg.arena.flags > placed {
-            println!(
-                "zone: this map places {placed} flags and the file asks for {}",
-                cfg.arena.flags
-            );
+        if let Some(want) = cfg.arena.flags {
+            if want > placed {
+                println!("zone: this map places {placed} flags and the file asks for {want}");
+            }
+            a.world.state.flag_count = want.min(placed);
         }
-        a.world.state.flag_count = cfg.arena.flags.min(placed);
         a.mode = modes::build(&cfg.arena.mode, &a.mode_setup(&cfg.arena));
         for w in a.retune(&cfg.arena) {
             println!("zone: {w}");
@@ -1246,14 +1252,23 @@ impl Room {
         room
     }
 
+    /// The built-in arena, which is the room a process holds when it has no
+    /// zone to serve and the ground every warzone test flies.
+    ///
+    /// Its four flags are put here rather than in `with_world` because they
+    /// are this arena's: 1024 tiles wide, with the stands forty tiles out
+    /// from the middle. A zone map that draws no stands has said it is not a
+    /// flag game and gets none.
     pub(crate) fn new() -> Self {
-        Self::with_world(sim::World::new(0x5eed))
+        let mut a = Self::with_world(sim::World::new(0x5eed));
+        a.add_default_flags();
+        a
     }
 
     pub(crate) fn with_world(world: sim::World) -> Self {
         let mut a = Room::with_world_bare(world);
         a.mode = Box::new(modes::Warzone::new(4, a.public_teams));
-        a.add_default_flags();
+        a.place_flags();
         a
     }
 
@@ -1447,6 +1462,32 @@ impl Room {
     /// scrum in one room; this is between the two, not a return to it.
     pub(crate) fn add_default_flags(&mut self) {
         for (tx, ty) in [(472, 472), (552, 472), (472, 552), (552, 552)] {
+            self.world.add_flag(tx, ty);
+        }
+    }
+
+    /// Stand this room's flags where the map wants them.
+    ///
+    /// A map that draws flag stands owns where they are, which is the rule
+    /// both flag games need and neither had: War's ground was four tiles
+    /// hardcoded in this file for the built-in arena, and a turf map has
+    /// nowhere else its stands could come from. The quadrants stay as the
+    /// fallback for a map that names none, since that is the arena those
+    /// numbers were measured on.
+    ///
+    /// Called again whenever the ground changes, because a rotation onto a
+    /// map with its stands somewhere else would otherwise keep flying the
+    /// last map's objective.
+    ///
+    /// A map that draws no stands gets no flags. The four quadrants below are
+    /// the built-in arena's, measured on the 1024-tile ground that arena is,
+    /// and they sit off the edge of every map a zone actually ships: a melee
+    /// room carried four of them, unreachable, out past its own wall, and
+    /// drew a pennant apiece across the top of the HUD for a game it was not
+    /// playing.
+    pub(crate) fn place_flags(&mut self) {
+        self.world.state.flag_count = 0;
+        for (tx, ty) in self.world.flag_stands() {
             self.world.add_flag(tx, ty);
         }
     }
@@ -3001,6 +3042,15 @@ impl Room {
                 println!("room {}: {w}", self.number);
             }
             self.world.cfg.max_ships = seats;
+            // New ground, new stands. A flag game that rotated maps kept the
+            // last one's objective: on a turf map the stands are the whole of
+            // where the fight happens, so flags left at the old map's
+            // coordinates are a match played over nothing.
+            let want = self.tuning.flags;
+            self.place_flags();
+            if let Some(want) = want {
+                self.world.state.flag_count = want.min(self.world.state.flag_count);
+            }
             self.settings_generation = crate::delivery::next_nonzero(self.settings_generation);
             self.broadcast_map();
             self.broadcast_settings();

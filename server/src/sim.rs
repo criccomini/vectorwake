@@ -34,6 +34,10 @@ pub const MAX_SPECS: usize = 64;
 pub const MAX_PATTERNS: usize = 64;
 pub const MAP_TILES: usize = 1024;
 pub const TILE_PX: i32 = 16;
+/// `SIM_TILE_TURF`, the tile class a map draws a flag stand with. Read off
+/// the feature table rather than by walking tiles, which is what the table is
+/// for.
+pub const TILE_TURF: u8 = 8;
 
 pub const BTN_LEFT: u16 = 1;
 pub const BTN_RIGHT: u16 = 2;
@@ -374,6 +378,13 @@ pub struct sim_settings {
     pub gravity_bombs: u8,
     pub flag_radius: i32,
     pub flag_drop_cooldown: u16,
+    /// Whether a flag leaves its stand when taken. Set is War, where a flag
+    /// is carried home; clear is Turf, where it changes hands where it
+    /// stands. See sim.h.
+    pub flag_carry: u8,
+    /// Ticks one pilot may hold a flag before it drops on its own. Zero is no
+    /// limit.
+    pub flag_carry_ticks: u16,
     pub max_ships: u8,
     /// Whose death this instance may conclude on its own. The server keeps
     /// both at zero, which `sim_settings_baseline` writes: every death is
@@ -454,6 +465,8 @@ pub struct sim_flag {
     pub x: i32,
     pub y: i32,
     pub cooldown: u16,
+    /// Ticks the current carrier has had it, against `flag_carry_ticks`.
+    pub held: u16,
 }
 
 pub const MAX_FLAGS: usize = 16;
@@ -986,6 +999,20 @@ impl World {
     /// state, and the scratch and event buffers a step needs. The one place a
     /// World is assembled, so a room built here and a room built by `sibling`
     /// start from the same numbers.
+    /// The built-in arena with flag stands painted on the tiles named, for a
+    /// test that needs ground which says where its flags go. Re-indexed, so
+    /// the stands are in the feature table where `flag_stands` reads them.
+    #[cfg(test)]
+    pub fn arena_with_stands(seed: u32, tiles: &[(u16, u16)]) -> Self {
+        let mut map: Box<sim_map> = zeroed_box();
+        unsafe { sim_map_arena(&mut *map) };
+        for (tx, ty) in tiles.iter().copied() {
+            map.tile[ty as usize * MAP_TILES + tx as usize] = TILE_TURF;
+        }
+        unsafe { sim_map_index(&mut *map) };
+        Self::on_map(seed, std::sync::Arc::from(map))
+    }
+
     pub fn on_map(seed: u32, map: std::sync::Arc<sim_map>) -> Self {
         let mut cfg: Box<sim_settings> = zeroed_box();
         unsafe { sim_settings_baseline(&mut *cfg, &*map) };
@@ -1196,8 +1223,34 @@ impl World {
         Self::on_map(seed, map)
     }
 
+    /// Stand a flag on a tile, in the middle of it.
+    ///
+    /// The middle rather than the corner, which is where this used to put one:
+    /// a stand is claimed from a radius around a point, and a point on the
+    /// corner of four tiles reaches into three of them a pilot was not aiming
+    /// at. It matters more for turf than it ever did for War, since there the
+    /// point is the whole of the objective.
     pub fn add_flag(&mut self, tile_x: i32, tile_y: i32) -> i32 {
-        unsafe { sim_add_flag(&mut *self.state, tile_x * TILE_PX, tile_y * TILE_PX) }
+        unsafe {
+            sim_add_flag(
+                &mut *self.state,
+                tile_x * TILE_PX + TILE_PX / 2,
+                tile_y * TILE_PX + TILE_PX / 2,
+            )
+        }
+    }
+
+    /// Every flag stand the map names, as tiles. `SIM_TILE_TURF` is the tile
+    /// class a map draws one with, and it means the same thing in both flag
+    /// games: War carries its flags off these and Turf leaves them on them.
+    pub fn flag_stands(&self) -> Vec<(i32, i32)> {
+        self.map
+            .features
+            .iter()
+            .take(self.map.feature_count as usize)
+            .filter(|f| f.kind == TILE_TURF)
+            .map(|f| (f.tx as i32, f.ty as i32))
+            .collect()
     }
 
     pub fn flags_held(&self, team: u8) -> i32 {

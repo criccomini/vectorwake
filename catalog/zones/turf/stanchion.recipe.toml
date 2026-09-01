@@ -1,0 +1,19 @@
+version = 2
+name = "stanchion"
+seed = 1
+mode = "turf"
+theme = "station_yard"
+symmetry = "half_turn"
+routes = 3
+min_opening_tiles = 7
+contact_seconds_min = 6.0
+contact_seconds_max = 16.0
+allow_doors = true
+allow_wormholes = false
+expected_hash = "ea65b89d"
+stands = 6
+
+[envelope]
+width = 192
+height = 144
+shape = "rectangle"

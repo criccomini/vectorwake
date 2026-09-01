@@ -6497,14 +6497,119 @@ mod tests {
 
     #[test]
     fn a_catalog_room_uses_the_configured_number_of_flags() {
+        let stands = [(500u16, 500), (520, 500), (500, 520), (520, 520)];
         let mut zone = wire_zone(1, 6, 16);
         zone.mode = "warzone".into();
+        zone.maps_b64 = vec![fleet::b64(
+            &sim::World::arena_with_stands(1, &stands).packed_map(),
+        )];
         zone.zone_toml = "teams = [\"Keel\", \"Vantage\"]\n[arena]\nflags = 2\n".into();
 
         let room = ArenaServer::build_room(&zone, None).expect("room");
 
         assert_eq!(room.mode.name(), "warzone");
-        assert_eq!(room.world.state.flag_count, 2);
+        assert_eq!(room.world.state.flag_count, 2, "two of the four it draws");
+    }
+
+    /// Where the flags stand is the map's. This built the arena's own four
+    /// quadrant tiles for any warzone, whatever ground it was on, which put
+    /// four flags out past the wall of every zone map we ship; and it laid
+    /// none at all for a game whose flags are the map's whole objective.
+    #[test]
+    fn a_catalog_room_stands_its_flags_where_the_map_draws_them() {
+        let stands = [(480u16, 512), (544, 512), (512, 480)];
+        let mut zone = wire_zone(1, 6, 16);
+        zone.mode = "turf".into();
+        zone.maps_b64 = vec![fleet::b64(
+            &sim::World::arena_with_stands(1, &stands).packed_map(),
+        )];
+        zone.zone_toml = "teams = [\"Keel\", \"Vantage\"]\n[arena]\nflag_carry = false\n".into();
+
+        let room = ArenaServer::build_room(&zone, None).expect("room");
+
+        assert_eq!(room.mode.name(), "turf");
+        assert_eq!(room.world.state.flag_count, 3, "one per stand, and no more");
+        let mut where_they_are: Vec<(i32, i32)> = (0..3)
+            .map(|i| {
+                let f = room.world.state.flags[i];
+                (f.x / (16 * 256), f.y / (16 * 256))
+            })
+            .collect();
+        where_they_are.sort();
+        assert_eq!(where_they_are, vec![(480, 512), (512, 480), (544, 512)]);
+    }
+
+    /// The turf zone as it ships, played: stands off the map, claimed by
+    /// flying over one, and a clock that pays whoever is holding them.
+    ///
+    /// End to end on purpose. Every piece of this was tested on its own and
+    /// the pieces are in four files, so what is under test here is that the
+    /// zone file, the map, the mode and the core agree about what game is
+    /// being played.
+    #[test]
+    fn the_shipped_turf_zone_plays_turf() {
+        let dir = "../catalog/zones/turf";
+        let def: catalog::ZoneDef = toml::from_str(
+            &std::fs::read_to_string(format!("{dir}/zone.toml")).expect("the turf zone"),
+        )
+        .expect("it parses");
+        let map = std::fs::read(format!("{dir}/{}", def.maps[0])).expect("its first map");
+
+        let mut zone = wire_zone(1, 8, 8);
+        zone.mode = def.mode.clone();
+        zone.maps_b64 = vec![fleet::b64(&map)];
+        zone.zone_toml = std::fs::read_to_string(format!("{dir}/zone.toml")).unwrap();
+        let mut room = ArenaServer::build_room(&zone, None).expect("a room");
+
+        assert_eq!(room.mode.name(), "turf");
+        assert_eq!(room.world.state.flag_count, 6, "six stands off the map");
+        assert_eq!(room.world.cfg.flag_carry, 0, "and none of them travel");
+
+        // A pilot of each side, put on a stand apiece. Standing on it is the
+        // whole of the input: turf is claimed by being there.
+        let (a, b) = (room.world.state.flags[0], room.world.state.flags[1]);
+        assert!(room.world.spawn_at(0, 0, a.x, a.y, 0) >= 0);
+        assert!(room.world.spawn_at(0, 1, b.x, b.y, 0) >= 0);
+
+        for _ in 0..1_000 {
+            room.world.step(&[]);
+            let mut ctx = modes::ModeCtx {
+                world: &mut room.world,
+                team_names: &[String::from("Keel"), String::from("Vantage")],
+                banner: String::new(),
+                finished: false,
+                open_match: false,
+                close_match: false,
+            };
+            room.mode.tick(&mut ctx);
+        }
+
+        assert_eq!(room.world.state.flags[0].team, 0, "one side has its stand");
+        assert_eq!(room.world.state.flags[1].team, 1, "and the other has its");
+        for f in 0..2 {
+            assert_eq!(room.world.state.flags[f].carried, 0, "carried by nobody");
+        }
+        let score = room.mode.match_state().expect("turf has a clock").score;
+        assert_eq!(
+            score,
+            vec![2, 2],
+            "ten seconds of a five second period, one stand each"
+        );
+    }
+
+    /// A map that draws no stands is not a flag game and gets no flags. The
+    /// melee zone is the one that proves it matters: it named no flag count,
+    /// took the default four, and carried four unreachable pennants across
+    /// the top of its HUD for a game it was not playing.
+    #[test]
+    fn a_map_with_no_stands_has_no_flags() {
+        let mut zone = wire_zone(1, 6, 16);
+        zone.mode = "melee".into();
+        zone.zone_toml = "teams = [\"Keel\", \"Vantage\"]\n".into();
+
+        let room = ArenaServer::build_room(&zone, None).expect("room");
+
+        assert_eq!(room.world.state.flag_count, 0);
     }
 
     #[test]

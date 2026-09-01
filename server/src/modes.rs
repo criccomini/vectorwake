@@ -71,7 +71,7 @@ impl ModeCtx<'_> {
 /// Every mode a zone may name. The catalog checks against this rather than
 /// falling back to warzone, which is exactly how `arena.mode` came to be a key
 /// that parsed and did nothing for months.
-pub const NAMES: [&str; 3] = ["arena", "warzone", "melee"];
+pub const NAMES: [&str; 4] = ["arena", "warzone", "melee", "turf"];
 
 pub fn exists(name: &str) -> bool {
     NAMES.contains(&name)
@@ -87,6 +87,8 @@ pub struct Setup {
     /// match game reads these.
     pub match_ticks: u32,
     pub intermission_ticks: u32,
+    /// Ticks between two turf payouts. Only Turf reads it.
+    pub turf_period: u32,
 }
 
 /// Build the mode a zone asked for.
@@ -98,6 +100,12 @@ pub fn build(name: &str, s: &Setup) -> Box<dyn Mode> {
             teams,
             s.match_ticks.max(1),
             s.intermission_ticks.max(1),
+        )),
+        "turf" => Box::new(Turf::new(
+            teams,
+            s.match_ticks.max(1),
+            s.intermission_ticks.max(1),
+            s.turf_period.max(1),
         )),
         // An unknown name gets a free-for-all rather than a refusal, because
         // the catalog has already accepted the name and a running room beats
@@ -279,6 +287,148 @@ impl Mode for Melee {
             playing: self.playing,
             // Rounded up, so a clock reads 1 for the last second rather than
             // sitting on 0 while there is still a second to play in.
+            seconds_left: self.left.div_ceil(TICKS_PER_SECOND).min(255) as u8,
+            score: self.score.clone(),
+        })
+    }
+}
+
+/// Turf: the stands pay whoever is holding them, over and over.
+///
+/// A turf flag cannot be carried, so there is nothing to bring home and no
+/// arrangement of them to complete. What there is instead is a clock: every
+/// `period` ticks each side is paid one point per stand it holds, and the
+/// match is won by whoever has the most when time runs out. Holding two of
+/// five is not a losing position, it is two points a period, which is the
+/// whole reason the game spreads a fight over the map rather than collapsing
+/// it onto one contested room.
+///
+/// It is a match game and reuses Melee's shape: three minutes, a podium, the
+/// room opening a fresh one at each whistle. What it does not reuse is the
+/// score, which is paid rather than tallied off the ships, so it is kept here.
+pub struct Turf {
+    teams: u8,
+    match_ticks: u32,
+    intermission_ticks: u32,
+    /// Ticks between payouts, and the count down to the next one.
+    period: u32,
+    until_pay: u32,
+    left: u32,
+    playing: bool,
+    score: Vec<u16>,
+    opened: bool,
+}
+
+impl Turf {
+    pub fn new(teams: u8, match_ticks: u32, intermission_ticks: u32, period: u32) -> Self {
+        Turf {
+            teams,
+            match_ticks,
+            intermission_ticks,
+            period,
+            until_pay: period,
+            left: match_ticks,
+            playing: true,
+            score: vec![0; teams as usize],
+            opened: false,
+        }
+    }
+
+    /// Stands held, per side. Saturating, because a long match on a wide map
+    /// can pay a lot of periods and a side's total is a u16 on the wire.
+    fn pay(&mut self, ctx: &ModeCtx) {
+        for team in 0..self.teams {
+            let held = ctx.world.flags_held(team) as u16;
+            if let Some(n) = self.score.get_mut(team as usize) {
+                *n = n.saturating_add(held);
+            }
+        }
+    }
+
+    fn start(&mut self) {
+        self.left = self.match_ticks;
+        self.until_pay = self.period;
+        self.playing = true;
+        self.score = vec![0; self.teams as usize];
+    }
+
+    /// Who is ahead, and `None` for a tie at the top.
+    fn winner(&self) -> Option<u8> {
+        let best = *self.score.iter().max()?;
+        let mut who = None;
+        for (t, n) in self.score.iter().enumerate() {
+            if *n == best {
+                if who.is_some() {
+                    return None;
+                }
+                who = Some(t as u8);
+            }
+        }
+        who
+    }
+}
+
+impl Mode for Turf {
+    fn tick(&mut self, ctx: &mut ModeCtx) {
+        if !self.opened {
+            self.opened = true;
+            self.start();
+            ctx.open_match = true;
+        }
+        // The payout clock runs on the same ticks the match clock does,
+        // opening tick included, so a three minute match on a five second
+        // period pays exactly thirty-six times whatever else happens.
+        if self.playing {
+            self.until_pay = self.until_pay.saturating_sub(1);
+            if self.until_pay == 0 {
+                self.pay(ctx);
+                self.until_pay = self.period;
+            }
+        }
+
+        self.left = self.left.saturating_sub(1);
+        if self.left == 0 {
+            self.playing = !self.playing;
+            if self.playing {
+                self.start();
+                ctx.open_match = true;
+            } else {
+                self.left = self.intermission_ticks.max(1);
+                ctx.close_match = true;
+            }
+        }
+
+        // The pennants say who holds what, so the banner says the one thing
+        // they cannot: that the clock is about to pay, and to whom. During
+        // the podium it says who took it.
+        ctx.banner = if self.playing {
+            String::new()
+        } else {
+            match self.winner() {
+                Some(t) => format!(
+                    "{} takes it, {}",
+                    ctx.team_name(t),
+                    self.score
+                        .iter()
+                        .map(|n| n.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" to ")
+                ),
+                None => "a draw".to_string(),
+            }
+        };
+    }
+
+    fn on_death(&mut self, _ctx: &mut ModeCtx, _victim: u8, _killer: u8) {}
+
+    #[cfg(test)]
+    fn name(&self) -> &'static str {
+        "turf"
+    }
+
+    fn match_state(&self) -> Option<MatchState> {
+        Some(MatchState {
+            playing: self.playing,
             seconds_left: self.left.div_ceil(TICKS_PER_SECOND).min(255) as u8,
             score: self.score.clone(),
         })
@@ -582,11 +732,159 @@ mod melee_tests {
             teams: 2,
             match_ticks: 18_000,
             intermission_ticks: 2_500,
+            turf_period: 500,
         };
         assert_eq!(build("melee", &setup).name(), "melee");
         assert_eq!(build("warzone", &setup).name(), "warzone");
+        assert_eq!(build("turf", &setup).name(), "turf");
         assert_eq!(build("arena", &setup).name(), "arena");
         assert!(exists("melee"), "and the catalog will accept the name");
+        assert!(exists("turf"));
+    }
+}
+
+#[cfg(test)]
+mod turf_tests {
+    use super::*;
+
+    /// A room with `n` stands in it, owned by nobody yet.
+    fn stands(n: usize) -> World {
+        let mut w = World::new(5);
+        for i in 0..n {
+            w.add_flag(500 + i as i32 * 8, 512);
+        }
+        w
+    }
+
+    fn ctx<'a>(world: &'a mut World, names: &'a [String]) -> ModeCtx<'a> {
+        ModeCtx {
+            world,
+            team_names: names,
+            banner: String::new(),
+            finished: false,
+            open_match: false,
+            close_match: false,
+        }
+    }
+
+    fn sides() -> Vec<String> {
+        vec!["Keel".into(), "Vantage".into()]
+    }
+
+    /// The clock pays a point per stand held, every period. Holding two of
+    /// four is not a losing position, it is two points a period, which is
+    /// what spreads a turf fight over the map.
+    #[test]
+    fn every_period_pays_a_point_for_each_stand_held() {
+        let names = sides();
+        let mut w = stands(4);
+        w.state.flags[0].team = 0;
+        w.state.flags[1].team = 0;
+        w.state.flags[2].team = 1;
+        // The fourth is loose, and pays nobody.
+        let mut m = Turf::new(2, 10_000, 500, 100);
+
+        for _ in 0..100 {
+            m.tick(&mut ctx(&mut w, &names));
+        }
+        assert_eq!(m.match_state().unwrap().score, vec![2, 1], "one period");
+
+        for _ in 0..200 {
+            m.tick(&mut ctx(&mut w, &names));
+        }
+        assert_eq!(m.match_state().unwrap().score, vec![6, 3], "three of them");
+    }
+
+    /// Taking a stand off the other side is worth two points a period: one
+    /// they stop earning and one you start.
+    #[test]
+    fn taking_a_stand_moves_what_the_next_period_pays() {
+        let names = sides();
+        let mut w = stands(2);
+        w.state.flags[0].team = 0;
+        w.state.flags[1].team = 0;
+        let mut m = Turf::new(2, 10_000, 500, 100);
+        for _ in 0..100 {
+            m.tick(&mut ctx(&mut w, &names));
+        }
+        assert_eq!(m.match_state().unwrap().score, vec![2, 0]);
+
+        w.state.flags[1].team = 1;
+        for _ in 0..100 {
+            m.tick(&mut ctx(&mut w, &names));
+        }
+        assert_eq!(m.match_state().unwrap().score, vec![3, 1]);
+    }
+
+    /// The podium is not a live scoreboard. A stand still held while nobody
+    /// is flying must not keep paying under the result.
+    #[test]
+    fn the_clock_stops_paying_at_the_whistle() {
+        let names = sides();
+        let mut w = stands(1);
+        w.state.flags[0].team = 0;
+        let mut m = Turf::new(2, 250, 500, 100);
+        for _ in 0..250 {
+            m.tick(&mut ctx(&mut w, &names));
+        }
+        let at_whistle = m.match_state().unwrap();
+        assert!(!at_whistle.playing, "the podium is up");
+        assert_eq!(at_whistle.score, vec![2, 0]);
+
+        for _ in 0..300 {
+            m.tick(&mut ctx(&mut w, &names));
+        }
+        assert_eq!(m.match_state().unwrap().score, vec![2, 0], "and it holds");
+    }
+
+    /// A fresh match, on the whistle out of the podium, starts at nothing.
+    #[test]
+    fn the_next_match_starts_from_zero() {
+        let names = sides();
+        let mut w = stands(1);
+        w.state.flags[0].team = 1;
+        let mut m = Turf::new(2, 200, 100, 100);
+        let mut opens = 0;
+        for _ in 0..301 {
+            let mut c = ctx(&mut w, &names);
+            m.tick(&mut c);
+            if c.open_match {
+                opens += 1;
+            }
+        }
+        assert_eq!(opens, 2, "one at the start and one at the whistle");
+        let s = m.match_state().unwrap();
+        assert!(s.playing);
+        assert_eq!(s.score, vec![0, 0]);
+    }
+
+    #[test]
+    fn the_banner_names_who_took_it_and_calls_a_tie_a_draw() {
+        let names = sides();
+        let mut w = stands(2);
+        w.state.flags[0].team = 1;
+        w.state.flags[1].team = 1;
+        let mut m = Turf::new(2, 200, 500, 100);
+        let mut banner = String::new();
+        for _ in 0..201 {
+            let mut c = ctx(&mut w, &names);
+            m.tick(&mut c);
+            banner = c.banner;
+        }
+        assert!(banner.contains("Vantage"), "who won: {banner:?}");
+        assert!(banner.contains("0 to 4"), "and by what: {banner:?}");
+
+        let mut w = stands(2);
+        w.state.flags[0].team = 0;
+        w.state.flags[1].team = 1;
+        let mut m = Turf::new(2, 200, 500, 100);
+        let mut banner = String::new();
+        for _ in 0..201 {
+            let mut c = ctx(&mut w, &names);
+            m.tick(&mut c);
+            banner = c.banner;
+        }
+        assert_eq!(banner, "a draw");
     }
 }
 

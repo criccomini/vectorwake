@@ -774,6 +774,24 @@ typedef struct {
     uint8_t gravity_bombs;
     int32_t flag_radius;    /* Q8 px, pickup distance */
     uint16_t flag_drop_cooldown; /* ticks a dropped flag is untouchable */
+    /* Whether a flag leaves its stand when somebody takes it, which is the
+     * original's Flag:CarryFlags read as a yes or a no.
+     *
+     * Set, a flag rides its taker and drops where they die: that is War, and
+     * the flag is a thing you carry home. Clear, the stand keeps its ground
+     * and only ever changes hands, so flying over one is the whole of
+     * claiming it: that is Turf, where the flag is a place rather than an
+     * object. Both games are the same three fields underneath, which is why
+     * this is a setting and not a second entity. */
+    uint8_t flag_carry;
+    /* Ticks one pilot may hold a flag before it drops on its own, keeping the
+     * side that took it. Zero is no limit.
+     *
+     * A carrying zone wants a number here. Without one, a hull fast enough to
+     * stay alive takes a flag out of the game for as long as it can keep
+     * flying, and the other side has no answer that is not killing them. The
+     * drop is the answer: hold it long enough and the map gets it back. */
+    uint16_t flag_carry_ticks;
     /* Ships this room will hold, which is a rule about the game rather than
      * about memory: the array is always SIM_MAX_SHIPS long. Clamped to that on
      * the way in, so a zone asking for more gets the ceiling instead of an
@@ -993,6 +1011,7 @@ typedef struct {
     uint8_t team;         /* owning team, or SIM_TEAM_NONE */
     int32_t x, y;         /* Q8 px; tracks the carrier while carried */
     uint16_t cooldown;    /* ticks before it may be picked up again */
+    uint16_t held;        /* ticks this carrier has had it; see flag_carry_ticks */
 } sim_flag;
 
 typedef struct {

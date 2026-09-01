@@ -386,6 +386,12 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->flag_radius = 18 * 256;
     /* A dropped flag stays put for two seconds before another hull can take it. */
     cfg->flag_drop_cooldown = 200;
+    /* Flags are carried, and held for as long as their carrier lives. Both
+     * are the original's defaults and both are what a War zone wants; a turf
+     * zone clears the first and a zone that thinks a carrier should have to
+     * work sets the second. */
+    cfg->flag_carry = 1;
+    cfg->flag_carry_ticks = 0;
     /* Sixty-four is four times what the original aimed a public room at:
      * General:DesiredPlaying defaults to 15 playing pilots and its whole job is
      * deciding when to open another arena. So this is the room size we think

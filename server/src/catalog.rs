@@ -160,21 +160,24 @@ impl ZoneDef {
     /// live and a client should read them rather than know them. A mode this
     /// has no words for sends empty strings and the row draws no strip.
     pub fn format(&self) -> (String, String, String) {
+        // Only what the zone actually states. A game without a per-side cap
+        // or a clock has no honest number to print, and an empty stack beats
+        // an invented one.
+        let teams = || match (self.max_humans_per_team, self.teams.len()) {
+            (Some(h), 2) => format!("{h} v {h}"),
+            _ => String::new(),
+        };
+        let time = || match self.arena.match_seconds {
+            Some(s) if s > 0 => format!("{}:{:02}", s / 60, s % 60),
+            _ => String::new(),
+        };
         match self.mode.as_str() {
-            "melee" => {
-                // Only what the zone actually states. A melee without a
-                // per-side cap or a clock has no honest number to print,
-                // and an empty stack beats an invented one.
-                let teams = match (self.max_humans_per_team, self.teams.len()) {
-                    (Some(h), 2) => format!("{h} v {h}"),
-                    _ => String::new(),
-                };
-                let time = match self.arena.match_seconds {
-                    Some(s) if s > 0 => format!("{}:{:02}", s / 60, s % 60),
-                    _ => String::new(),
-                };
-                (teams, time, "kills".into())
-            }
+            "melee" => (teams(), time(), "kills".into()),
+            "turf" => (teams(), time(), "turf".into()),
+            // A warzone runs rounds rather than a clock, so it states the
+            // sides and what wins and leaves the time blank rather than
+            // printing a number it does not have.
+            "warzone" => (teams(), String::new(), "flags".into()),
             _ => (String::new(), String::new(), String::new()),
         }
     }
@@ -899,6 +902,43 @@ mod tests {
             read("melee").format(),
             ("4 v 4".into(), "3:00".into(), "kills".into())
         );
+        assert_eq!(read("turf").label("turf"), "Turf");
+        assert_eq!(
+            read("turf").format(),
+            ("4 v 4".into(), "3:00".into(), "turf".into())
+        );
+    }
+
+    /// Every zone the catalog declares has a directory with a readable file
+    /// in it, naming a mode that exists and maps that are on disk. A zone
+    /// listed and not shipped is a row in the games list that refuses every
+    /// join, which the fleet finds out about and the author does not.
+    #[test]
+    fn every_declared_zone_ships_what_it_names() {
+        let text = std::fs::read_to_string("../catalog/catalog.toml").expect("the catalog");
+        let cat: toml::Value = toml::from_str(&text).expect("the catalog parses");
+        let zones = cat["zone"].as_array().expect("a zone list");
+        assert!(!zones.is_empty());
+        for z in zones {
+            let name = z["name"].as_str().expect("a zone name");
+            let dir = format!("../catalog/zones/{name}");
+            let path = format!("{dir}/zone.toml");
+            let def: ZoneDef =
+                toml::from_str(&std::fs::read_to_string(&path).expect(&path)).expect(&path);
+            assert!(
+                crate::modes::exists(&def.mode),
+                "zone {name} names mode {:?}, which has no implementation",
+                def.mode
+            );
+            assert!(!def.maps.is_empty(), "zone {name} names no maps");
+            for m in &def.maps {
+                let map = format!("{dir}/{m}");
+                assert!(
+                    std::path::Path::new(&map).exists(),
+                    "zone {name} names {m}, which is not there"
+                );
+            }
+        }
     }
 
     #[test]

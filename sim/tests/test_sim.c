@@ -3964,7 +3964,73 @@ static void test_scoring(const sim_settings *base) {
             CHECK(!s.flags[f].carried, "and both flags are on the ground");
     }
 
+    /* A stand a zone will not let anybody carry changes hands where it
+     * stands, which is the whole of a turf claim: fly over it and it is
+     * yours, and the next pilot of another side to cross it takes it back. */
+    {
+        sim_settings turf = cfg;
+        turf.flag_carry = 0;
+        turf.flag_drop_cooldown = 100;
 
+        static sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &turf);
+        sim_spawn(&s, APEX, 1, 8192, 8192, 0, &turf);
+        int f = sim_add_flag(&s, 8192, 8192);
+        int32_t was_x = s.flags[f].x, was_y = s.flags[f].y;
+
+        step_n(&s, &turf, 0, 0, 1);
+        CHECK(s.flags[f].team == 0, "the first hull over it claims it");
+        CHECK(!s.flags[f].carried, "without picking it up");
+        CHECK(s.flags[f].held == 0, "so no carry clock is running");
+        CHECK(s.flags[f].x == was_x && s.flags[f].y == was_y,
+              "and the stand has not moved");
+
+        /* A rival is sitting on the same stand. Without the settling window
+         * the two of them would take it from each other every tick. */
+        step_n(&s, &turf, 0, 0, 98);
+        CHECK(s.flags[f].team == 0, "and it holds while the window runs");
+
+        step_n(&s, &turf, 0, 0, 4);
+        CHECK(s.flags[f].team == 1, "then the rival on it takes it");
+        CHECK(s.flags[f].x == was_x && s.flags[f].y == was_y, "still put");
+    }
+
+    /* A carry clock puts a flag down on its own, keeping the side that took
+     * it. Without one, a hull that can stay alive takes a flag out of the
+     * game for as long as it keeps flying. */
+    {
+        sim_settings timed = cfg;
+        timed.flag_carry = 1;
+        timed.flag_carry_ticks = 300;
+        timed.flag_drop_cooldown = 50;
+
+        static sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &timed);
+        int f = sim_add_flag(&s, 8192, 8192);
+
+        step_n(&s, &timed, 0, 0, 2);
+        CHECK(s.flags[f].carried && s.flags[f].carrier == 0,
+              "a carrying zone still picks it up");
+        CHECK(s.flags[f].team == 0, "for the side that took it");
+
+        step_n(&s, &timed, SIM_BTN_THRUST, 0, 250);
+        CHECK(s.flags[f].carried, "and it is still held before the clock is up");
+        CHECK(s.flags[f].held > 0, "with a clock running on it");
+
+        /* One tick at a time from here, so the checks land on the tick the
+         * flag comes down rather than a hundred ticks after it. */
+        int dropped_on = -1;
+        for (int t = 0; t < 100 && dropped_on < 0; t++) {
+            step_n(&s, &timed, SIM_BTN_THRUST, 0, 1);
+            if (!s.flags[f].carried) dropped_on = t;
+        }
+        CHECK(dropped_on >= 0, "the clock puts it down");
+        CHECK(s.flags[f].team == 0, "still owned by the side that had it");
+        CHECK(s.flags[f].held == 0, "with the clock wound back");
+        CHECK(s.flags[f].cooldown > 0, "and untouchable for a moment");
+    }
 }
 
 static void test_physics_and_wire(sim_map *m, const sim_settings *base) {
