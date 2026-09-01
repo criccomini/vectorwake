@@ -1,11 +1,11 @@
 {
   "name": "gimbal",
-  "hash": "b154cc93",
+  "hash": "0ccc10ed",
   "width": 96,
   "height": 96,
   "accepted": true,
   "gates": [],
-  "quality": 83.75485779691927,
+  "quality": 81.75485779691927,
   "core": {
     "regions": 1,
     "regions_shut": 1,
@@ -41,7 +41,7 @@
   "dead_ends": 4,
   "wall_percent": 4.158057851239669,
   "thick_generic_wall_tiles": 0,
-  "landmark_count": 2,
+  "landmark_count": 0,
   "cover_quadrants_percent": [
     4.390495867768595,
     4.390495867768595,
@@ -49,7 +49,7 @@
     4.390495867768595
   ],
   "symmetry_mismatches": 0,
-  "theme_fidelity": 0.6683333333333333,
+  "theme_fidelity": 0.5683333333333334,
   "materials": {
     "wall": 322,
     "rocks": 0,
@@ -57,7 +57,7 @@
     "scenery": 0,
     "slopes": 0,
     "doors": 18,
-    "wormholes": 2,
+    "wormholes": 0,
     "safe": 0,
     "goals": 0,
     "turf": 0

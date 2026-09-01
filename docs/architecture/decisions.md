@@ -7105,6 +7105,8 @@ The shipped cut was read back out of the client through the test harness and
 checked against the board Chris picked from: the angle, both end widths and
 all three lengths agree to a thousandth of a mark unit. luacheck clean.
 
+---
+
 ## 136. A ship is one thing, and changing it costs a respawn
 
 **Status:** accepted
@@ -7208,3 +7210,66 @@ settling it here.
 **Reconsider if:** counsel wants the operating party and the rights holder to
 be the same name on the page, or wants a different entity to hold the game
 separately from the code.
+
+---
+
+## 138. A duel is too small to hold a wormhole
+
+**Status:** accepted
+
+**What:** `allow_wormholes` in a map brief is an instruction and not only a
+check. A brief that refuses one gets its theme's pattern with the mouth left
+out and everything else on the tile it was already on. Eddy and gimbal are
+regenerated that way, so no map in the duel rotation warps.
+
+**Why:** a wormhole sends the ship that touches it back to its own start, and
+its field reaches thirty-eight tiles. That reach was set against the match
+maps, which are a hundred and sixty tiles across. The duel's are ninety-six.
+Eddy's mouth sits on the middle of the map and half its tiles are inside the
+field; gimbal has two mouths fifty-five tiles apart, and nearly three quarters
+of its tiles are. A well that covers the room is weather rather than somewhere
+a pilot chooses to go, which is the reading
+[decision 125](#125-a-wormhole-you-can-still-fly-out-of) cut the pull to get
+away from.
+
+What the warp does to the game is worse than what it does to the ground. This
+zone exists because two pilots on melee ground spend the round looking for each
+other, and ninety-six tiles is close enough that the fight starts at the
+whistle and restarts after every death. Touching a warp puts you back on your
+own start with the map between you again. On a melee map that costs part of a
+twelve to fifteen second crossing; here it undoes the one thing the small map
+was for.
+
+**Cost:** both maps score lower against their own theme, and the score is right
+to say so. A fifth of the nebula's fidelity mark rides on its wormholes and a
+tenth of the rings', so eddy falls from 96 to 92 and gimbal from 84 to 82. Eddy
+is a spiral nebula with nothing at the middle of it now, and the rock collar
+drawn to give the mouth four approaches is a ring around an empty pocket. It is
+still the middle of the map, which is most of what it was worth to a fight.
+
+Nothing else moves. The refusal is taken at the mouth rather than by choosing
+another theme or another seed, and a mouth's clearing is reserved whether or
+not the mouth is laid, so every rock, wall, door and star on both maps is on
+the tile it was on. Both hashes move and both recipes are re-pinned.
+
+Doors are still checked rather than obeyed. A brief that refuses them on a
+theme that draws them is rejected at the gate, because nothing has wanted the
+other answer yet.
+
+**Reconsider if:** a duel map is drawn big enough that a well is a landmark
+again. Nothing about the format stops one; the flag is per map, and sconce
+already refused a warp before this by being drawn from a theme that has none.
+
+**Verified:** `mapforge verify` on all twenty recipes in the catalog: the two
+regenerated maps against their new hashes, and the other eighteen unmoved.
+Read out of the packed files rather than out of the generator's own report,
+eddy and gimbal each differ from the map they shipped as in exactly two tiles,
+both of them a wormhole that is now empty, and sconce in none. Their metrics
+move only where that can move them: the hash, the landmark count, and the
+fidelity term the missing mouths were worth.
+
+485 server tests. One is new and holds that a theme's warp is left out for a
+brief that refuses one while every other tile stays where it was, and the
+rotation test now pins all fourteen version 2 maps in the catalog rather than
+the five in melee, so the turf and war rooms are held to their recipes too.
+clippy and fmt.
