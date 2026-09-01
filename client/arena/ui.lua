@@ -4741,8 +4741,21 @@ end
 -- under the test harness, which holds every one of these still.
 local HULL_TURN = 11
 
--- How large a hull is drawn, as the radius of the circle that holds it.
-local HULL_ART_R = 78
+-- How large a hull is drawn: the radius of the circle that holds it, the clear
+-- air around that circle, and the line of name under it.
+--
+-- Three numbers rather than one, because between them they are the whole
+-- height of the carousel row and `land_row_h` adds them up. It used to carry
+-- 198, which is what they come to at a radius of 78, and nothing anywhere
+-- said so: a radius changed on its own would have left the ship floating in a
+-- row still tall enough for the old one.
+--
+-- Sixteen points came off that radius. At 78 the drawing stood 168 points
+-- tall where the five flight bars under it take 130 between them, so the
+-- section a pilot picks a hull on was mostly ship.
+local HULL_ART_R = 62
+local HULL_ART_PAD = 6
+local HULL_NAME_H = 30
 
 -- The hull's own line, broken to the glass it is drawn on, and never nothing:
 -- the height and the drawing both count these, so an absent sentence is an
@@ -4921,12 +4934,12 @@ local function land_row(kx, kw, y, h, r)
         -- running off it: at a phone's measure the longest of them is wider
         -- than the panel, and a centred run has no edge to be cut against.
         local lines = art_lines(r.note, kw)
-        local nameh = 30 * F.scale
+        local nameh = HULL_NAME_H * F.scale
         local noteh = #lines * pages.NOTE_LINE * F.scale
         local mid = y + (h - nameh - noteh) / 2
         if r.cls then
             hull_art(kx + kw / 2, mid, r.cls,
-                     math.min((h - nameh - noteh) / 2 - 6 * F.scale,
+                     math.min((h - nameh - noteh) / 2 - HULL_ART_PAD * F.scale,
                               HULL_ART_R * F.scale), col, a)
         end
         txt(r.label, kx + kw / 2, y + h - noteh - nameh / 2,
@@ -5029,8 +5042,8 @@ end
 -- the rule the account list already draws between its two groups.
 function pages.land_row_h(r, drh)
     if r.kind == "art" then
-        return (198 + #art_lines(r.note, panel_width()) * pages.NOTE_LINE)
-            * F.scale
+        return (2 * (HULL_ART_R + HULL_ART_PAD) + HULL_NAME_H
+            + #art_lines(r.note, panel_width()) * pages.NOTE_LINE) * F.scale
     end
     if r.kind == "stat" then return 26 * F.scale end
     if r.kind == "rule" then return 9 * F.scale end
