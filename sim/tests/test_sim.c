@@ -3314,9 +3314,14 @@ static void test_tech_tree(const sim_settings *base) {
     }
 
     {
-        /* One bounce rung buys one wall on either weapon. The visible ladder
-         * and the physics now make the same promise; the old bullet spec gave
-         * that one point 255 walls. */
+        /* What one bounce rung buys, which is not the same round on both
+         * triggers. The rung lifts either weapon off the wall; how many walls
+         * it then survives is the weapon's own count, and the bullet's is 255.
+         * That is the original's BouncingBullets prize, and a bullet cannot
+         * spend it: 550 ticks of life over 69 tiles would need a wall every
+         * four pixels. The bomb's count is zero and the rung's step is one, so
+         * a bomb gets exactly one, which is the whole reason the count sits on
+         * the spec rather than on the shared step. */
         const int LATTICE = 6;
         sim_settings w = cfg;
 
@@ -3326,8 +3331,8 @@ static void test_tech_tree(const sim_settings *base) {
         s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_BOUNCE, 1);
         step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
         CHECK(s.weapon_count == 1, "a bullet away");
-        CHECK(s.weapons[0].left == 1,
-              "and its one rung buys exactly one wall");
+        CHECK(s.weapons[0].left == 255,
+              "and its one rung ricochets without limit");
 
         sim_init(&s, 1);
         sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &w);

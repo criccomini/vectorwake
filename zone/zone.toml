@@ -36,11 +36,16 @@ bans = []
 mode = "warzone"
 flags = 4
 
-# Misc:BounceFactor: the speed a hit gives back, out of 16, and 16 is the
-# original's, so a wall costs a ship nothing head on. friction is the speed
-# retained along the face, which the original has no setting for.
-bounce = 16
-friction = 14
+# Misc:BounceFactor: the speed a hit gives back, out of 16, against `friction`
+# for the speed retained along the face, which the original has no setting for.
+# Both are 12 in the baseline, so a wall keeps a quarter of whatever hits it.
+# Sixteen is the original's and costs a ship nothing head on:
+#
+#   bounce = 16
+#   friction = 16
+#
+# Left out here, because a zone that runs the game as shipped should feel like
+# the game as shipped.
 
 # Pilots the room holds at once, bots included. 255 is the ceiling and not a
 # preference: a ship index is one byte everywhere it appears, and 255 is already
@@ -51,6 +56,8 @@ friction = 14
 # stay near 64 is how the game plays, not what it costs.
 max_ships = 64
 
+# Four seconds dead rather than the baseline's two, which is a match game's
+# number: this zone has no clock, so the wait is not a fortieth of anything.
 respawn_delay = 400   # ticks, so four seconds
 
 # How precisely a ship lands on the map's spawn point for its side.

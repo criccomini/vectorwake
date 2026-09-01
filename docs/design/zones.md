@@ -189,8 +189,10 @@ Each row in the catalog brings more than a mode:
 - **A bot population that plays the objective.** At our population a zone
   without one is a dead room.
 - **A balance surface.** Every mode is a new answer to "which hull wins here".
-  Turf, War, Duel and Free Roam are all flying the roster Team Battle was
-  tuned for, and none has been measured.
+  Turf, War, Duel and Free Roam are all flying the roster Team Battle was tuned
+  for, and none has been measured. They fly it because the tuning is the
+  core's: a zone file says what makes it that zone and nothing else, so a room
+  that wants a different ship has to say so and be seen saying it.
 - **An arena process.** One per declared zone, which is now five, with the
   services, routes and firewall ports that go with them.
 

@@ -7382,3 +7382,54 @@ gone out. That one is Chris's to post, not something a commit can do.
 **Reconsider if:** the landing page wants a voice in the middle again, in which
 case it is the company's and not a person's, and it does not name another game.
 
+---
+
+## 140. The baseline is what the fleet plays
+
+**Status:** accepted
+
+Five zone files each carried an `[arena]` block of about twenty settings, and
+the four newest were Team Battle's copied across. Reading them against
+`sim_settings_baseline` showed most of the copying bought nothing: ten of the
+keys and the whole `[arena.mod_step]` table were already the core's own value,
+restated. Only seven numbers ever differed from it, and every zone differed in
+the same direction.
+
+So the core baseline carries those seven now, and a zone file states what makes
+it that zone. `bounce` and `friction` are 12, `respawn_delay` is 200,
+`safe_limit` is 65535, `mod_spread` is five degrees, a bullet's spec holds 255
+walls, and a burst does 515. What that leaves in the catalog is short: Duel is a
+room shape, a map list and the clock, Turf and War add their flag rules, and
+Free Roam, being the one game that is not a match, is the longest at two
+overrides and its greens.
+
+The mechanism did not change and nothing new was built. `apply_config` has
+always reset to the baseline and overlaid what a file names, and
+docs/architecture/catalog.md has always said that missing values keep the core
+baseline. What changed is that the baseline is now the game rather than a
+neutral reference nobody flies.
+
+Verified rather than assumed: every one of the five zones packs byte-identical
+settings before and after, which is the whole claim. The guard against it
+drifting back is `every_shipped_zone_flies_the_same_ship`, which applies each
+shipped zone, blanks the fields a zone is allowed to differ on, and fails if
+what is left is not identical across the catalog.
+
+**Cost:** tuning the house numbers is now a C edit, a regenerated golden and a
+client rebuild, where it used to be a TOML edit that reloaded without a
+restart. That is a real loss for a live tuning session and close to nothing for
+how this fleet actually tunes, which is by commit. It also means a fork gets
+our wall as its default, which is already true of the roster: the flight rows
+in that file were solved off Team Battle measurements in decisions 123 and 126.
+
+The other half of the cost is that the reasoning moved with the numbers. The
+prose explaining why spray costs 25 and 50, why a fan is five degrees and not
+fifteen, and why a burst is 515 now lives in `sim/src/baseline.c` beside the
+values rather than in the zone file, and anybody looking for a setting's
+argument has one place to look instead of five that agree.
+
+**Reconsider if:** a zone genuinely wants a different game rather than a
+different room, and the override blocks grow back to where the shared half is
+worth pulling into a layer of its own. A defaults file under `catalog/` would
+be the shape of that, layered between the core and a zone, and it is worth
+building the day two zones disagree on tuning for a reason somebody can state.
