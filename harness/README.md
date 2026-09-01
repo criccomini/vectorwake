@@ -16,7 +16,14 @@ is the design and the argument for it. This file is how to run it.
   a class file version nobody reads the first time.
 - **A server binary.** `cargo build --release --manifest-path server/Cargo.toml`.
   A debug build is used if that is all there is.
-- **Chromium**, from `npx playwright install chromium`.
+- **Chromium**, from `npx playwright install chromium`. It has to be the
+  build the pinned playwright drives, which is why the package comes from
+  the `npm install` above and has to resolve out of the registry: a
+  container that already has playwright installed globally can end up
+  linked to that copy, which puts a path only that container has into
+  `package-lock.json`. CI installs from the lockfile and gets a dangling
+  link, and `npx` with no local playwright then fetches whatever is newest
+  and lays down a browser the harness cannot drive.
 - **python3**, for the packer that folds the bundle into one file.
 
 ## Running it
