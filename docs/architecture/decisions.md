@@ -6784,9 +6784,16 @@ to be what a green indexed, and `sim_grant` already refuses to push a slot past
 the hull's ceiling. So a green that lands on a full slot is spent for nothing,
 which is a real cost of taking one you did not need.
 
-**Cost:** `CFG_VERSION` moves to 23 and the determinism golden is regenerated.
-The state hash covers the greens now, which moves it even in a room that has
-none, and every match game we ship has none.
+**Cost:** `CLIENT_PROTOCOL` moves to 34 and `CFG_VERSION` to 23, and the
+determinism golden is regenerated. The state hash covers the greens now, which
+moves it even in a room that has none, and every match game we ship has none.
+
+The protocol bump is a real refusal rather than a courtesy. Greens go in the
+snapshot after the flags, so a client built for 33 stops reading where the
+flags end, and `sim_unpack` treats a short read as an error exactly as it
+treats a long one: every snapshot from a room with greens in it would be
+refused rather than misread. On a match game the difference is one zero byte;
+Free Roam is the zone a stale build could not have joined at all.
 
 The map is not mapforge's. Its envelope stops at 256 tiles and past about 300
 every theme thins below its own cover band, because the geometry is written in
