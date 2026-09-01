@@ -296,6 +296,27 @@ check("the whistle carries its public match film",
       net.match and net.match.artifact == artifact,
       tostring(net.match and net.match.artifact))
 
+-- A clock going back up inside a match is the room starting it over, which
+-- a duel does when a seat changes hands. The ratings latch again there, so
+-- the ending reads from the match that was actually played, and the message
+-- is marked for the whistle.
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(14, 1, 60, 2, 0, 0, 0, 0)})
+net.rated_from = {stale = 1}
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(14, 1, 59, 2, 0, 0, 0, 0)})
+check("a clock counting down is the same match",
+      net.rated_from.stale == 1 and not net.match.fresh)
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(14, 1, 180, 2, 0, 0, 0, 0)})
+check("a clock going back up is a match started over",
+      net.match.fresh == true and net.rated_from.stale == nil)
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(14, 1, 179, 2, 0, 0, 0, 0)})
+check("and the mark rides until the frame loop spends it",
+      net.match.fresh == true)
+net.match.fresh = nil
+
 local reliable_before, unreliable_before = #wt.sent, #wt.unsent
 check("focus loss can release held controls", net.release_controls())
 check("the release uses both input lanes",

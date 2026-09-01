@@ -181,7 +181,7 @@ end
 --
 -- Who you are, where you are, what you fly, and the machine, top down in that
 -- order, and the same four wherever the column is standing. There is one menu
--- (decision 141): the landing and the in-match column were the same drawing
+-- (decision 143): the landing and the in-match column were the same drawing
 -- off two models, each carrying the stop the other lacked, so the settings
 -- lived only in a match and the account only on the front page.
 --
@@ -957,7 +957,7 @@ end
 -- --- the account, which is the column's first stop ------------------------
 --
 -- These acts left the drawer with the pilot page (decision 99) and stood on
--- the landing alone until the menus were unified (decision 141). They are a
+-- the landing alone until the menus were unified (decision 143). They are a
 -- page of the tree now, pressed by index like every other row here, and what
 -- they do is unchanged.
 

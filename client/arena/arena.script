@@ -3126,7 +3126,7 @@ function menu_act(self, action, value)
     -- which is a bench: the room already has us and only owes us a hull, so
     -- the press asks for one where it stands. And a seat of our own: the press
     -- hands it back and leaves us in the stands of the same game, which is
-    -- what picking your own zone off the list already did. See decision 141.
+    -- what picking your own zone off the list already did. See decision 143.
     if action == "menu_go" then
         -- A seat of your own: hand it back and watch the room you were in
         -- from its own gallery. The connection, the map, the roster and the

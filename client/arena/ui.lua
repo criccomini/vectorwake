@@ -4314,7 +4314,7 @@ end
 -- One function, because there is one column. There were two, `landing_geom`
 -- and `menu_geom`, and the second was written as "the same stops at the same
 -- width over the same breathing key" as the first: two copies of one
--- measurement, kept in step by hand and by comment. See decision 141.
+-- measurement, kept in step by hand and by comment. See decision 143.
 --
 -- `home` is the whole difference. The front page has a name to carry above
 -- the column and a watched hull to keep off, so it measures whether the two
@@ -6801,7 +6801,7 @@ local page_followed = nil
 -- when a row was reachable, two sets of actions for one press. What a player
 -- got out of that was a front page with no settings on it and a match menu
 -- with no account, so where a thing lived depended on whether you had taken
--- a seat yet. See decision 141.
+-- a seat yet. See decision 143.
 --
 -- `home` is the one difference left, and it is about the screen rather than
 -- about the menu: out there the column is the whole front end, so it carries
@@ -6910,7 +6910,7 @@ function M.menu(v)
     -- One word, and which word is the whole of what this screen knows about
     -- where you are sitting. No seat anywhere, at home or on a bench, and it
     -- is the way into one; a seat of your own, and it is the way back out to
-    -- the stands of the same game. See decision 141.
+    -- the stands of the same game. See decision 143.
     local ky = g.ky + rise + drop
     local key_hot = M.col_sel == "menu_go"
     if at < 1 then

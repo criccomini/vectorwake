@@ -1687,7 +1687,7 @@ end
 -- the same functions off the same tables and diverged anyway, each growing
 -- the stop the other lacked, so a pilot who learned the front page arrived in
 -- a room and found the settings somewhere else and their account nowhere.
--- See decision 141.
+-- See decision 143.
 --
 -- Order is top down, the way they are drawn, and it is the order a player
 -- meets them in: who is flying, where, in what, and then everything that is

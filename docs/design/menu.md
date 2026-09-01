@@ -24,7 +24,7 @@
 > `SIDE` is gone from the column. Crossing to another team is a thing you do
 > about the room you are in rather than about yourself, and it comes back with
 > the scoreboard and the room list. See
-> [decision 141](../architecture/decisions.md).
+> [decision 143](../architecture/decisions.md).
 
 > **The ship stop is in a room too, and LEAVE SEAT is gone.** The panel the
 > landing opens is the panel the in-match column opens: the same five parts

@@ -107,6 +107,16 @@ do
     check("a clock jumping about inside a match blows none either",
           tick({playing = true, left = 30}) == nil)
 
+    -- Unless the room started the match over, which the message says: a
+    -- duel opens a fresh match when a seat changes hands, and the pilot who
+    -- was already in the room hears the whistle for it.
+    reset()
+    tick({playing = true, left = 40})
+    local again = {playing = true, left = 180, fresh = true}
+    check("a match started over blows the whistle", tick(again) == "start")
+    check("once", tick(again) == nil)
+    check("and spends the mark", again.fresh == nil)
+
     -- Somebody who joined a match already running never heard it start.
     reset()
     check("and arriving mid-match is not a start", tick({playing = true, left = 90}) == nil)

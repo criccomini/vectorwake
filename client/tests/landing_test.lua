@@ -10,7 +10,7 @@
 -- away is the TAKE SEAT chip, because the key is that key.
 --
 -- It is the same column a player raises mid-match, drawn by the same function
--- off the same view (decision 141). What is checked here is the home arm of
+-- off the same view (decision 143). What is checked here is the home arm of
 -- it: the lockup over the stops, the rail it lies down into on a short window,
 -- and the room still being readable behind the lot.
 --

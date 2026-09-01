@@ -28,6 +28,13 @@ pub struct ModeCtx<'a> {
     /// re-dealt with their ammunition. The mode says when, the room does it,
     /// because the map and the sockets are the room's.
     pub open_match: bool,
+    /// Set when a duel's round has closed and the next one is due: everybody
+    /// back on their own start with a full bar and a full rack, and nothing
+    /// left in the air. The room does it, because the arena is the room's,
+    /// and it is deliberately not `open_match`: the score is the rounds
+    /// already taken and those live on the ships, so a round may not zero a
+    /// tally the way a whistle does.
+    pub round_reset: bool,
     /// And set on the whistle the other way, when a match has just ended and
     /// the podium is going up. The room clears the arena and moves to the next
     /// map on this, so the wait happens on the ground the next match is played
@@ -138,6 +145,35 @@ impl Clock {
         self.playing
     }
 
+    /// Start a fresh match on the next tick, whatever this one is doing.
+    ///
+    /// The same path a room's first tick takes: the next beat is an
+    /// `Opening`, the clock is put back to a whole match, and the room is
+    /// asked to put everybody home. A room that has not opened yet is
+    /// unchanged by this, which is what makes it safe to ask at the door.
+    ///
+    /// A duel asks for it. The match there is between the two seats, so a
+    /// seat changing hands is a new match rather than a late arrival into
+    /// somebody else's; see `Room::join_on`.
+    pub fn reopen(&mut self) {
+        self.opened = false;
+    }
+
+    /// Blow the whistle now, with time still on the clock.
+    ///
+    /// A duel asks for this too, from the other end: a match played to a
+    /// number of rounds is over when somebody reaches it, and the clock is
+    /// the backstop rather than the referee. The podium goes up for its full
+    /// length, exactly as it does when regulation runs out.
+    pub fn finish(&mut self, ctx: &mut ModeCtx) {
+        if !self.playing {
+            return;
+        }
+        self.playing = false;
+        self.left = self.intermission_ticks;
+        ctx.close_match = true;
+    }
+
     /// Whole seconds left in this phase, rounded up so a clock reads 1 for
     /// the last second rather than sitting on 0 while there is still a second
     /// to play in.
@@ -192,7 +228,7 @@ impl ModeCtx<'_> {
 /// Every mode a zone may name. The catalog checks against this rather than
 /// falling back to warzone, which is exactly how `arena.mode` came to be a key
 /// that parsed and did nothing for months.
-pub const NAMES: [&str; 4] = ["arena", "warzone", "melee", "turf"];
+pub const NAMES: [&str; 5] = ["arena", "warzone", "melee", "turf", "duel"];
 
 pub fn exists(name: &str) -> bool {
     NAMES.contains(&name)
@@ -210,7 +246,25 @@ pub struct Setup {
     pub intermission_ticks: u32,
     /// Ticks between two turf payouts. Only Turf reads it.
     pub turf_period: u32,
+    /// Rounds that take a duel. Only Duel reads it.
+    pub first_to: u16,
 }
+
+/// Rounds a duel is played to where the zone names no number.
+///
+/// Two, so a match is three rounds at most and a pilot who loses the opening
+/// exchange is one round from level rather than watching the rest of a
+/// decided fight. See docs/design/zones.md.
+pub const DEFAULT_FIRST_TO: u16 = 2;
+
+/// Ticks a round stays open after the death that decided it.
+///
+/// Two seconds, which is a bomb's flight and is also the respawn delay every
+/// zone in the catalog runs, so the loser is still down when the round is
+/// filed. It is the whole of the trade rule: a bomb already in the air when
+/// its thrower died still lands, still kills, and the round goes to both
+/// sides rather than to whichever death the core reported first.
+pub const ROUND_CLOSE_TICKS: u32 = 2 * TICKS_PER_SECOND;
 
 /// Build the mode a zone asked for.
 pub fn build(name: &str, s: &Setup) -> Box<dyn Mode> {
@@ -232,6 +286,12 @@ pub fn build(name: &str, s: &Setup) -> Box<dyn Mode> {
             s.match_ticks.max(1),
             s.intermission_ticks.max(1),
             s.turf_period.max(1),
+        )),
+        "duel" => Box::new(Duel::new(
+            teams,
+            s.first_to,
+            s.match_ticks.max(1),
+            s.intermission_ticks.max(1),
         )),
         // An unknown name gets a free-for-all rather than a refusal, because
         // the catalog has already accepted the name and a running room beats
@@ -256,6 +316,9 @@ pub trait Mode: Send {
     fn match_state(&self) -> Option<MatchState> {
         None
     }
+    /// Start a fresh match on the next tick. A mode with no clock has
+    /// nothing to reopen and ignores it.
+    fn reopen(&mut self) {}
 }
 
 /// The default arena: everybody against everybody, forever.
@@ -354,6 +417,181 @@ impl Mode for Melee {
         "melee"
     }
 
+    fn reopen(&mut self) {
+        self.clock.reopen();
+    }
+
+    fn match_state(&self) -> Option<MatchState> {
+        Some(MatchState {
+            playing: self.clock.playing(),
+            seconds_left: self.clock.seconds_left(),
+            score: self.score.clone(),
+        })
+    }
+}
+
+/// Duel: rounds, and the match goes to the first side to take enough of them.
+///
+/// A death ends the round rather than the match. Two seconds later both
+/// pilots are back on their own starts with a full bar and a full rack, so
+/// every round opens as a fair fight instead of handing the survivor a
+/// half-hurt opponent. That window is also the trade rule, and it is
+/// `ROUND_CLOSE_TICKS` rather than anything this mode decides.
+///
+/// The score is rounds taken, read off the other side's deaths rather than
+/// off your own kills. Both of the cases a player has an opinion about come
+/// out right that way: fly into a wall and the round goes across the arena
+/// instead of coming off your own tally, and trade, and both sides take one.
+/// A kills tally answers neither, which is what melee in a two seat room was
+/// doing before this mode existed.
+///
+/// The match ends when a side reaches `first_to` with nobody level with it,
+/// or at the whistle, where the leader takes it and level is a draw. Level at
+/// the target plays on, so two rounds each is not a win for either of them.
+pub struct Duel {
+    teams: u8,
+    first_to: u16,
+    clock: Clock,
+    /// Rounds taken, live while playing and held through the intermission.
+    score: Vec<u16>,
+    /// The score the round that is closing started from, so the banner can
+    /// name who took it without asking the core what just happened.
+    from: Vec<u16>,
+    /// Ticks left in the window a death opened, and `None` between rounds.
+    closing: Option<u32>,
+}
+
+impl Duel {
+    pub fn new(teams: u8, first_to: u16, match_ticks: u32, intermission_ticks: u32) -> Self {
+        Duel {
+            teams,
+            // A duel to no rounds at all would be decided before anybody
+            // flew, so the floor is one rather than a refusal.
+            first_to: first_to.max(1),
+            clock: Clock::new(match_ticks, intermission_ticks),
+            score: vec![0; teams as usize],
+            from: vec![0; teams as usize],
+            closing: None,
+        }
+    }
+
+    /// Rounds by side, which is every other side's deaths.
+    ///
+    /// Summed unsigned, unlike melee's kills, because a death is a death:
+    /// there is no self-inflicted one that takes a round off somebody. The
+    /// worst a pilot can do to their own score here is nothing.
+    fn tally(&self, ctx: &ModeCtx) -> Vec<u16> {
+        let mut deaths = vec![0u32; self.teams as usize];
+        for sh in ctx.world.state.ships.iter() {
+            if sh.active == 0 {
+                continue;
+            }
+            if let Some(n) = deaths.get_mut(sh.team as usize) {
+                *n += sh.deaths as u32;
+            }
+        }
+        let all: u32 = deaths.iter().sum();
+        deaths
+            .into_iter()
+            .map(|mine| (all - mine).min(u16::MAX as u32) as u16)
+            .collect()
+    }
+
+    /// Whether this score ends the match: somebody has the rounds, and
+    /// nobody is level with them.
+    fn decided(&self) -> bool {
+        self.score.iter().any(|n| *n >= self.first_to) && leader(&self.score).is_some()
+    }
+
+    /// What the round that is closing did. Both sides took one where they
+    /// traded, which is the case the window is held open for.
+    fn round_banner(&self, ctx: &ModeCtx) -> String {
+        let took: Vec<u8> = (0..self.teams)
+            .filter(|t| self.score.get(*t as usize) > self.from.get(*t as usize))
+            .collect();
+        match took.len() {
+            1 => format!("{} takes the round", ctx.team_name(took[0])),
+            0 => String::new(),
+            _ => "the round is traded".to_string(),
+        }
+    }
+}
+
+impl Mode for Duel {
+    fn tick(&mut self, ctx: &mut ModeCtx) {
+        let beat = self.clock.beat(ctx);
+        match beat {
+            // A fresh match counts from nothing. `sim_restart` zeroes the
+            // deaths the score is read off, and the room runs it after this
+            // returns, so all this has to do is forget the last match.
+            Beat::Opening => {
+                self.score = vec![0; self.teams as usize];
+                self.from = vec![0; self.teams as usize];
+                self.closing = None;
+            }
+            // The whistle tick is still part of the match it ended, which is
+            // what makes a bomb already in the air count.
+            Beat::Playing | Beat::Ending => self.score = self.tally(ctx),
+            Beat::Waiting => {}
+        }
+
+        // The window a death opened, run down inside the match only. At the
+        // whistle the score already counts every death the window was being
+        // held open for, and there is no next round to put anybody back on
+        // the ground for, so it lapses rather than firing.
+        if beat == Beat::Playing {
+            if let Some(left) = self.closing.map(|n| n.saturating_sub(1)) {
+                if left > 0 {
+                    self.closing = Some(left);
+                } else {
+                    self.closing = None;
+                    if self.decided() {
+                        self.clock.finish(ctx);
+                    } else {
+                        ctx.round_reset = true;
+                        self.from = self.score.clone();
+                    }
+                }
+            }
+        }
+
+        ctx.banner = if !self.clock.playing() {
+            result_banner(ctx, &self.score)
+        } else if self.closing.is_some() {
+            self.round_banner(ctx)
+        } else {
+            // Nothing. The band over the top of the screen carries the rounds
+            // for both sides, which is the whole score in this room.
+            String::new()
+        };
+    }
+
+    /// The first death of a round opens the window. Every death after it
+    /// inside the window is part of the same round, which is what makes a
+    /// trade one round rather than two.
+    fn on_death(&mut self, ctx: &mut ModeCtx, _victim: u8, _killer: u8) {
+        if !self.clock.playing() {
+            return;
+        }
+        // Only the first death of a round opens the window. A second one
+        // inside it still scores, which is the whole of what a trade is.
+        if self.closing.is_none() {
+            self.closing = Some(ROUND_CLOSE_TICKS);
+        }
+        // Read now rather than on the next tick, so the band and the banner
+        // agree about what just happened for the whole of the window.
+        self.score = self.tally(ctx);
+    }
+
+    #[cfg(test)]
+    fn name(&self) -> &'static str {
+        "duel"
+    }
+
+    fn reopen(&mut self) {
+        self.clock.reopen();
+    }
+
     fn match_state(&self) -> Option<MatchState> {
         Some(MatchState {
             playing: self.clock.playing(),
@@ -440,6 +678,10 @@ impl Mode for Turf {
     #[cfg(test)]
     fn name(&self) -> &'static str {
         "turf"
+    }
+
+    fn reopen(&mut self) {
+        self.clock.reopen();
     }
 
     fn match_state(&self) -> Option<MatchState> {
@@ -560,6 +802,10 @@ impl Mode for Warzone {
         "warzone"
     }
 
+    fn reopen(&mut self) {
+        self.clock.reopen();
+    }
+
     fn match_state(&self) -> Option<MatchState> {
         Some(MatchState {
             playing: self.clock.playing(),
@@ -656,6 +902,7 @@ mod melee_tests {
             banner: String::new(),
             finished: false,
             open_match: false,
+            round_reset: false,
             close_match: false,
         }
     }
@@ -706,6 +953,31 @@ mod melee_tests {
         assert!(!c.open_match, "nothing opens at the door");
         assert_eq!(m.match_state().unwrap().seconds_left, 2, "the same clock");
         assert_eq!(m.match_state().unwrap().score, vec![3, 1], "and score");
+    }
+
+    /// Unless the mode is told the door is the whistle, which is what a duel
+    /// does: the next tick opens a fresh match, whole clock and nothing on
+    /// the board.
+    #[test]
+    fn a_reopened_match_starts_from_nothing_on_the_next_tick() {
+        let names = sides();
+        let mut w = world_with(&[(0, 3), (1, 1)]);
+        let mut m = Melee::new(2, 300, 100);
+        for _ in 0..175 {
+            let mut c = ctx(&mut w, &names);
+            m.tick(&mut c);
+        }
+        assert_eq!(m.match_state().unwrap().score, vec![3, 1]);
+
+        m.reopen();
+        let mut c = ctx(&mut w, &names);
+        m.tick(&mut c);
+        assert!(c.open_match, "the room is asked to put everybody home");
+        assert!(!c.close_match, "and no podium goes up on the way");
+        let state = m.match_state().unwrap();
+        assert!(state.playing);
+        assert_eq!(state.seconds_left, 3, "a whole clock again");
+        assert_eq!(state.score, vec![0, 0], "and nothing on the board");
     }
 
     /// Three minutes, a podium, and another three minutes, with the room asked
@@ -799,6 +1071,7 @@ mod melee_tests {
         assert!(Warzone::new(4, 2, 24_000, 1_500).match_state().is_some());
         assert!(Melee::new(2, 300, 100).match_state().is_some());
         assert!(Turf::new(2, 300, 100, 500).match_state().is_some());
+        assert!(Duel::new(2, 2, 300, 100).match_state().is_some());
     }
 
     #[test]
@@ -809,13 +1082,252 @@ mod melee_tests {
             match_ticks: 18_000,
             intermission_ticks: 2_500,
             turf_period: 500,
+            first_to: 2,
         };
         assert_eq!(build("melee", &setup).name(), "melee");
         assert_eq!(build("warzone", &setup).name(), "warzone");
         assert_eq!(build("turf", &setup).name(), "turf");
+        assert_eq!(build("duel", &setup).name(), "duel");
         assert_eq!(build("arena", &setup).name(), "arena");
         assert!(exists("melee"), "and the catalog will accept the name");
         assert!(exists("turf"));
+        assert!(exists("duel"));
+    }
+}
+
+#[cfg(test)]
+mod duel_tests {
+    use super::*;
+
+    /// Two seats, a side each, nobody dead yet.
+    fn arena() -> World {
+        let mut w = World::new(11);
+        for team in 0..2u8 {
+            let i = w.spawn(0, team, 400 + team as i32 * 200, 500, 0);
+            assert!(i >= 0, "a seat");
+        }
+        w
+    }
+
+    fn ctx<'a>(world: &'a mut World, names: &'a [String]) -> ModeCtx<'a> {
+        ModeCtx {
+            world,
+            team_names: names,
+            banner: String::new(),
+            finished: false,
+            open_match: false,
+            round_reset: false,
+            close_match: false,
+        }
+    }
+
+    fn sides() -> Vec<String> {
+        vec!["Pilot".into(), "Rival".into()]
+    }
+
+    /// One tick, answering what the mode asked the room for.
+    fn tick(m: &mut Duel, w: &mut World, names: &[String]) -> (bool, bool, String) {
+        let mut c = ctx(w, names);
+        m.tick(&mut c);
+        (c.round_reset, c.close_match, c.banner)
+    }
+
+    /// A death on the field, reported to the mode the way the room reports
+    /// one: the core has already written the tally.
+    fn kill(m: &mut Duel, w: &mut World, names: &[String], victim: u8) {
+        w.state.ships[victim as usize].deaths += 1;
+        w.state.ships[1 - victim as usize].kills += 1;
+        let mut c = ctx(w, names);
+        m.on_death(&mut c, victim, 1 - victim);
+    }
+
+    /// Run the window out and hand back what the closing tick asked for.
+    fn close_round(m: &mut Duel, w: &mut World, names: &[String]) -> (bool, bool) {
+        for _ in 0..=ROUND_CLOSE_TICKS {
+            let (reset, closed, _) = tick(m, w, names);
+            if reset || closed {
+                return (reset, closed);
+            }
+        }
+        panic!("the round never closed");
+    }
+
+    /// Both pilots dying inside one window, which is one round to each side.
+    fn trade(m: &mut Duel, w: &mut World, names: &[String]) {
+        kill(m, w, names, 1);
+        for _ in 0..50 {
+            tick(m, w, names);
+        }
+        kill(m, w, names, 0);
+    }
+
+    fn duel(first_to: u16) -> (Duel, World, Vec<String>) {
+        let (mut m, mut w, names) = (Duel::new(2, first_to, 18_000, 1_500), arena(), sides());
+        // The opening tick, which is the one that starts the match.
+        tick(&mut m, &mut w, &names);
+        (m, w, names)
+    }
+
+    #[test]
+    fn a_death_ends_the_round_two_seconds_later_and_the_round_goes_across() {
+        let (mut m, mut w, names) = duel(2);
+        kill(&mut m, &mut w, &names, 1);
+        assert_eq!(
+            m.match_state().unwrap().score,
+            vec![1, 0],
+            "the round is the other side's death, counted at once"
+        );
+        let (_, _, banner) = tick(&mut m, &mut w, &names);
+        assert_eq!(banner, "Pilot takes the round");
+
+        let (reset, closed) = close_round(&mut m, &mut w, &names);
+        assert!(reset, "the room is asked to put both pilots back");
+        assert!(!closed, "and the match is not over at one round");
+        assert!(m.match_state().unwrap().playing);
+    }
+
+    #[test]
+    fn a_trade_inside_the_window_gives_both_sides_the_round() {
+        let (mut m, mut w, names) = duel(2);
+        // A bomb already in the air when its thrower died, landing half a
+        // second later. The window is what makes this one round rather than
+        // a clean win for whoever the core reported first.
+        trade(&mut m, &mut w, &names);
+        assert_eq!(m.match_state().unwrap().score, vec![1, 1]);
+        let (_, _, banner) = tick(&mut m, &mut w, &names);
+        assert_eq!(banner, "the round is traded");
+
+        let (reset, closed) = close_round(&mut m, &mut w, &names);
+        assert!(reset && !closed, "level at one, so it plays on");
+    }
+
+    #[test]
+    fn the_second_round_takes_the_match() {
+        let (mut m, mut w, names) = duel(2);
+        kill(&mut m, &mut w, &names, 1);
+        let (reset, closed) = close_round(&mut m, &mut w, &names);
+        assert!(reset && !closed);
+
+        kill(&mut m, &mut w, &names, 1);
+        assert_eq!(m.match_state().unwrap().score, vec![2, 0]);
+        let (reset, closed) = close_round(&mut m, &mut w, &names);
+        assert!(closed, "two rounds and a lead is the match");
+        assert!(!reset, "so nobody is put back on the ground for another");
+        let state = m.match_state().unwrap();
+        assert!(!state.playing, "the podium is up");
+        assert_eq!(state.seconds_left, 15, "for its whole length");
+    }
+
+    #[test]
+    fn level_at_the_target_plays_on_until_somebody_leads() {
+        let (mut m, mut w, names) = duel(2);
+        // Two traded rounds reaches the target on both sides at once, which
+        // is the only way to get there without somebody leading on the way.
+        for _ in 0..2 {
+            trade(&mut m, &mut w, &names);
+            let (reset, closed) = close_round(&mut m, &mut w, &names);
+            assert!(reset && !closed, "level, so nothing is settled");
+        }
+        assert_eq!(m.match_state().unwrap().score, vec![2, 2]);
+
+        kill(&mut m, &mut w, &names, 1);
+        let (_, closed) = close_round(&mut m, &mut w, &names);
+        assert!(closed, "three to two is a lead at the target");
+        assert_eq!(m.match_state().unwrap().score, vec![3, 2]);
+    }
+
+    #[test]
+    fn the_whistle_gives_it_to_whoever_leads_and_calls_level_a_draw() {
+        // One round taken, and then a clock that runs out on the second.
+        let (mut m, mut w, names) = (Duel::new(2, 2, 400, 1_500), arena(), sides());
+        tick(&mut m, &mut w, &names);
+        kill(&mut m, &mut w, &names, 1);
+        close_round(&mut m, &mut w, &names);
+        let mut banner = String::new();
+        while m.match_state().unwrap().playing {
+            let (_, _, said) = tick(&mut m, &mut w, &names);
+            banner = said;
+        }
+        assert_eq!(m.match_state().unwrap().score, vec![1, 0]);
+        assert_eq!(banner, "Pilot takes it, 1 to 0");
+
+        // And the same clock over a match nobody scored in.
+        let (mut m, mut w, names) = (Duel::new(2, 2, 400, 1_500), arena(), sides());
+        tick(&mut m, &mut w, &names);
+        let mut banner = String::new();
+        while m.match_state().unwrap().playing {
+            let (_, _, said) = tick(&mut m, &mut w, &names);
+            banner = said;
+        }
+        assert_eq!(banner, "a draw");
+    }
+
+    /// A death landing in the last second of a match is counted, and the
+    /// window it opened does not put anybody back on the ground under the
+    /// podium that is going up.
+    #[test]
+    fn a_death_on_the_whistle_scores_and_opens_no_round() {
+        let (mut m, mut w, names) = (Duel::new(2, 5, 300, 1_500), arena(), sides());
+        tick(&mut m, &mut w, &names);
+        while m.match_state().unwrap().seconds_left > 1 {
+            tick(&mut m, &mut w, &names);
+        }
+        kill(&mut m, &mut w, &names, 1);
+        let mut reset_asked = false;
+        for _ in 0..ROUND_CLOSE_TICKS + 10 {
+            let (reset, _, _) = tick(&mut m, &mut w, &names);
+            reset_asked |= reset;
+        }
+        assert!(!reset_asked, "no round opens under a podium");
+        assert_eq!(
+            m.match_state().unwrap().score,
+            vec![1, 0],
+            "and the death still counted"
+        );
+    }
+
+    #[test]
+    fn a_fresh_match_forgets_the_rounds_and_the_window() {
+        let (mut m, mut w, names) = duel(2);
+        kill(&mut m, &mut w, &names, 1);
+        assert_eq!(m.match_state().unwrap().score, vec![1, 0]);
+
+        // What a seat changing hands does, per decision 141.
+        m.reopen();
+        // The room runs `sim_restart` after the opening tick, so the tallies
+        // the score is read off go with it.
+        for sh in w.state.ships.iter_mut() {
+            sh.kills = 0;
+            sh.deaths = 0;
+        }
+        let (reset, closed, _) = tick(&mut m, &mut w, &names);
+        assert!(!reset && !closed);
+        let state = m.match_state().unwrap();
+        assert!(state.playing);
+        assert_eq!(state.score, vec![0, 0]);
+        assert_eq!(state.seconds_left, 180, "a whole clock");
+
+        // And the window the old match's death opened does not fire into it.
+        let mut reset_asked = false;
+        for _ in 0..ROUND_CLOSE_TICKS + 10 {
+            let (reset, _, _) = tick(&mut m, &mut w, &names);
+            reset_asked |= reset;
+        }
+        assert!(!reset_asked);
+    }
+
+    /// Flying into a wall is a round for the pilot across the arena rather
+    /// than a point off your own tally, which is the case a kills score gets
+    /// backwards in a room of two.
+    #[test]
+    fn a_pilot_who_kills_themselves_hands_the_round_across() {
+        let (mut m, mut w, names) = duel(2);
+        w.state.ships[0].deaths += 1;
+        w.state.ships[0].kills -= 1;
+        let mut c = ctx(&mut w, &names);
+        m.on_death(&mut c, 0, 0);
+        drop(c);
+        assert_eq!(m.match_state().unwrap().score, vec![0, 1]);
     }
 }
 
@@ -839,6 +1351,7 @@ mod turf_tests {
             banner: String::new(),
             finished: false,
             open_match: false,
+            round_reset: false,
             close_match: false,
         }
     }
@@ -991,6 +1504,7 @@ mod warzone_tests {
             banner: String::new(),
             finished: false,
             open_match: false,
+            round_reset: false,
             close_match: false,
         }
     }
@@ -1169,6 +1683,7 @@ mod warzone_tests {
                 banner: String::new(),
                 finished: false,
                 open_match: false,
+                round_reset: false,
                 close_match: false,
             };
             m.tick(&mut c);
