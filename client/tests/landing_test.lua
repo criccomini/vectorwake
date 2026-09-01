@@ -208,9 +208,7 @@ local GUNS = {
 local BODY = {
     label = "body", class = 1, free = 2, credits = 7,
     rows = {
-        {kind = "art", label = "Wedge", value = 1, cls = 1, at = 1, pages = 8,
-         note = "A deep pool that fills slower than any, on a hull slow to "
-             .. "turn"},
+        {kind = "art", label = "Wedge", value = 1, cls = 1, at = 1, pages = 8},
         {kind = "stat", label = "speed", share = 0.2},
         {kind = "stat", label = "thrust", share = 0.14},
         {kind = "stat", label = "turn", share = 0.09},
@@ -219,13 +217,13 @@ local BODY = {
     },
 }
 
--- Sitting out is the page past the roster, and carries no ship to draw and no
--- flight to read.
+-- Sitting out is the page past the roster: a name, and no ship to draw under
+-- it and no flight to read.
 local WATCHING = {
     label = "body", class = 1, free = 2, credits = 7,
     rows = {
         {kind = "art", label = "spectate", value = "spectate", at = 7,
-         pages = 8, note = "watch the room from nobody's cockpit"},
+         pages = 8},
     },
 }
 
@@ -884,47 +882,28 @@ do
           string.format("%.0fx%.0f then %.0fx%.0f", w0, h0, w1, h1))
     frame(1440, 810, {land = land_in(BODY), col_open = "ship"})
 
-    -- The hull's own line stands under its name, and it wraps to the glass
-    -- rather than running off it: the longest of the seven is wider than a
-    -- phone's panel, and a centred run has no edge to be cut against. On the
-    -- hull that owns that line, since the page above is a Wedge and the
-    -- longest belongs to the Anvil.
-    local LONGEST = {
-        label = "body", class = 3, free = 0, credits = 7,
-        rows = {
-            {kind = "art", label = "Anvil", value = 3, cls = 3, at = 3,
-             pages = 8,
-             note = "The deepest pool and the quickest to fill it, on the "
-                 .. "slowest hull"},
-        },
-    }
-    frame(390, 844, {land = land_in(LONGEST), col_open = "ship"})
-    -- The glass is the window less its margin, capped, and the type stands
-    -- the row's own inset inside that.
-    local edge_l = 14 + 14
-    local edge_r = 390 - 14 - 14
-    local over, lines, shouted = nil, 0, nil
-    for _, t in ipairs(words()) do
-        if t.s:find("The deepest") or t.s:lower():find("slowest hull") then
-            lines = lines + 1
-            local half = #t.s * t.px * 0.3 / 2
-            if t.x - half < edge_l or t.x + half > edge_r then over = t.s end
-            -- And every line after the first is drawn raw, because the
-            -- sentence was cased once before it was broken. Cased again on
-            -- the way out, a wrapped line comes back with a capital in the
-            -- middle of the sentence.
-            if lines > 1 and t.s:sub(1, 1):match("%u") then shouted = t.s end
-        end
+    -- And it stands in a row of the panel's own, which is 44 points on a
+    -- window this size. The drawing carried a radius written down beside it
+    -- for as long as it existed, so it was sized against nothing and came out
+    -- taller than the five bars it is read against put together.
+    check("the drawing stands in one row of the panel's own",
+          h0 > 12 and h0 <= 44, string.format("%.0f tall", h0))
+
+    -- And the whole section still opens on a phone, which is the property
+    -- the height is spent on. The panel draws whole rows only, so a row that
+    -- does not fit is not drawn at all rather than cut: a section that grows
+    -- past the glass loses its last rows outright, and the bars are the thing
+    -- a pilot is choosing by.
+    frame(390, 844, {land = land_in(BODY), col_open = "ship"})
+    local missing = nil
+    for _, w in ipairs({"SPEED", "THRUST", "TURN", "ENERGY", "RECHARGE"}) do
+        if word(w) == nil then missing = w end
     end
-    check("the hull's line wraps to the glass on a phone",
-          lines > 1 and over == nil,
-          tostring(over) .. " / " .. lines .. " lines")
-    check("and the line it wrapped onto is not capitalized",
-          shouted == nil, tostring(shouted))
+    check("and a phone still opens the section on all five flight rows",
+          missing == nil and word("Wedge") ~= nil, tostring(missing))
     frame(1440, 810, {land = land_in(BODY), col_open = "ship"})
 
-    -- Sitting out is the page past the roster: no ship to draw, and the
-    -- sentence about it standing where one would have been.
+    -- Sitting out is the page past the roster: a name, and no ship under it.
     frame(1440, 810, {land = land_in(WATCHING), col_open = "ship"})
     check("sitting out is a page of the carousel",
           word("Spectate") ~= nil and box("land_pick_ship") ~= nil,

@@ -222,14 +222,18 @@ local CAPS = {{0, "display"}, {60, "60 a second"}, {30, "30 a second"}}
 -- Not the two ladders either, though those really are the hull's. They are
 -- nowhere on this page, so a line about them is one a pilot has to take on
 -- faith, and it would be sitting over five bars that say something else.
+-- The roster, in the order the carousel turns through it.
+--
+-- Names alone. Each one carried a sentence about how the hull flies, drawn
+-- under its name on the body section, and the five flight bars directly under
+-- that sentence say the same thing as bars: a line reading "the fastest hull
+-- in the game, on the thinnest pool in it" stood over a full speed bar and an
+-- almost empty energy one. The bars are the better half of that pair, since
+-- they answer "faster than what" against the rest of the roster, and the
+-- sentence was costing the page two more lines to agree with them.
 local HULLS = {
-    {"Apex", "Quick at everything that moves it, and shallow in the pool"},
-    {"Wedge", "A deep pool that fills slower than any, on a hull slow to turn"},
-    {"Chord", "Turns inside everything and outruns nothing"},
-    {"Anvil", "The deepest pool and the quickest to fill it, on the slowest hull"},
-    {"Cipher", "The fastest hull in the game, on the thinnest pool in it"},
-    {"Facet", "Second quickest into a turn, on a pool as thin as the game has"},
-    {"Lattice", "Third in speed, third in the pool, and slow to fill it back"},
+    {"Apex"}, {"Wedge"}, {"Chord"}, {"Anvil"},
+    {"Cipher"}, {"Facet"}, {"Lattice"},
 }
 
 local SAVE = sys.get_save_file("vectorwake", "pilot")
@@ -903,17 +907,10 @@ function M.sect_rows(cls, sect, at)
         if at < 0 or at > #HULLS then at = M.panel_home() end
         local h = roster[at + 1]
         if h then
-            local hull = HULLS[at + 1]
             rows[#rows + 1] = {kind = "art", label = h.label, value = h.value,
                                at = at, pages = #HULLS + 1,
                                cls = type(h.value) == "number" and h.value
-                                   or nil,
-                               -- What this hull is, in the one line the
-                               -- roster has carried since it was written.
-                               -- Nothing had ever drawn it: the page that
-                               -- named a hull was a row, and a row of a list
-                               -- has no second line to put a sentence on.
-                               note = hull and hull[2] or h.note}
+                                   or nil}
             for i, name in ipairs(FLIGHT_NAMES) do
                 if h.bars then
                     rows[#rows + 1] = {kind = "stat", label = name,
@@ -1199,8 +1196,7 @@ function M.landing_ships()
                            bars = flight_bars(i - 1)}
     end
     rows[#rows + 1] = {label = "spectate", value = "spectate",
-                       here = M.spectating(),
-                       note = "watch the room from nobody's cockpit"}
+                       here = M.spectating()}
     return rows
 end
 
