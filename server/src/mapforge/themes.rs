@@ -98,6 +98,8 @@ impl Theme {
         }
     }
 
+    /// The doors and wormholes a candidate brief for this theme asks for.
+    /// What a brief does with either is on the fields themselves.
     fn allows(self) -> (bool, bool) {
         match self {
             Self::StationYard | Self::Maze | Self::TwinFortresses => (true, false),
@@ -152,8 +154,15 @@ pub struct Brief {
     pub min_opening_tiles: u8,
     pub contact_seconds_min: f64,
     pub contact_seconds_max: f64,
+    /// Doors, checked against what the theme drew. A theme draws its doors
+    /// or it does not, so a brief refusing them on a theme that draws them
+    /// is refused rather than redrawn.
     #[serde(default)]
     pub allow_doors: bool,
+    /// Wormholes, which a brief can turn off: `Canvas::wormhole` then lays
+    /// the clearing and no mouth, leaving the rest of the pattern where it
+    /// was. The duel's maps are drawn that way, because a warp on ground
+    /// that small is a way out of the only fight in the room.
     #[serde(default)]
     pub allow_wormholes: bool,
     #[serde(default)]
@@ -331,6 +340,7 @@ impl Brief {
         self.check()?;
         let graph = self.layout();
         let mut canvas = Canvas::new(self.envelope.width, self.envelope.height);
+        canvas.allow_wormholes = self.allow_wormholes;
         canvas.reserve_graph(&graph);
         add_spawns(&mut canvas, &graph);
         add_stands(&mut canvas, &graph, self.stands());
@@ -686,13 +696,32 @@ mod tests {
         }
     }
 
-    /// The shipped rotation is the exact output of the recipes beside it, so
-    /// a change in here that moves a tile fails the build rather than the
-    /// match. Regenerating a map on purpose means re-pinning its recipe.
+    /// Every shipped version 2 map is the exact output of the recipe beside
+    /// it, so a change in here that moves a tile fails the build rather than
+    /// the match. Regenerating a map on purpose means re-pinning its recipe.
+    ///
+    /// Version 1 drew the rest of the melee rotation and `legacy` pins those
+    /// itself; the roam map comes from `sim/tools/mapgen.c` and has no brief
+    /// to pin it against.
     #[test]
     fn the_rotation_matches_its_recipes() {
-        for name in ["maelstrom", "gantry", "warren", "redoubt", "ringworks"] {
-            let base = PathBuf::from("../catalog/zones/melee");
+        for (zone, name) in [
+            ("melee", "maelstrom"),
+            ("melee", "gantry"),
+            ("melee", "warren"),
+            ("melee", "redoubt"),
+            ("melee", "ringworks"),
+            ("turf", "gyre"),
+            ("turf", "holdfast"),
+            ("turf", "stanchion"),
+            ("war", "bulwark"),
+            ("war", "lattice"),
+            ("war", "rampart"),
+            ("duel", "eddy"),
+            ("duel", "gimbal"),
+            ("duel", "sconce"),
+        ] {
+            let base = PathBuf::from(format!("../catalog/zones/{zone}"));
             let text = std::fs::read_to_string(base.join(format!("{name}.recipe.toml")))
                 .expect("a recipe");
             let brief: Brief = toml::from_str(&text).expect("a version 2 brief");
@@ -707,6 +736,39 @@ mod tests {
                 sim::pack_map(&map).expect("packed output"),
                 "{name} differs from its recipe"
             );
+        }
+    }
+
+    /// `allow_wormholes` is an instruction and not only a check. A theme that
+    /// draws a warp draws none for a brief that refuses one, and the rest of
+    /// the pattern does not move: the map is the nebula or the rings without
+    /// its well rather than some other map that happens to have neither.
+    #[test]
+    fn a_brief_can_refuse_the_wormholes_its_theme_draws() {
+        for theme in [Theme::SpiralNebula, Theme::Rings] {
+            let with = Brief::candidate(11, theme).build().expect("a map").0;
+            let mut brief = Brief::candidate(11, theme);
+            brief.allow_wormholes = false;
+            let (without, graph) = brief.build().expect("a map");
+            assert_eq!(materials(&without).wormholes, 0, "{}", theme.name());
+            for y in 0..with.h as usize {
+                for x in 0..with.w as usize {
+                    let i = y * sim::MAP_TILES + x;
+                    if with.tile[i] & 15 == WORMHOLE {
+                        assert_eq!(without.tile[i], EMPTY, "{} at {x},{y}", theme.name());
+                    } else {
+                        assert_eq!(
+                            with.tile[i],
+                            without.tile[i],
+                            "{} moved a tile at {x},{y}",
+                            theme.name()
+                        );
+                    }
+                }
+            }
+            let wrapped = super::super::Brief::V2(brief);
+            let metrics = assess_brief(&wrapped, &without, graph, false).expect("metrics");
+            assert!(metrics.accepted, "{}: {:?}", theme.name(), metrics.gates);
         }
     }
 
