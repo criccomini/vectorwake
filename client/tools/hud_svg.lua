@@ -3,7 +3,8 @@
 --     lua5.1 client/tools/hud_svg.lua <out.svg> [scenario] [root] [w] [h]
 --
 -- Scenarios: after (a match part way through), before (with the banner the
--- server used to send), ending (a room at the whistle), landing (the front
+-- server used to send), turf (a flag mode, for the pennant strip under the
+-- band), ending (a room at the whistle), landing (the front
 -- end, watched from the stands; landing-zones, landing-ships and
 -- landing-account open a stop's list, landing-login the panel an
 -- account act opens over one), waiting (what the loader hands off to
@@ -38,6 +39,10 @@ local function col_of(c)
     local function ch(v) return math.max(0, math.min(255, math.floor((v or 0) * 255 + 0.5))) end
     return string.format("rgb(%d,%d,%d)", ch(c[1]), ch(c[2]), ch(c[3])), c[4] or 1
 end
+
+-- What is on the stands, for the scenarios that have any. A row is what
+-- `sim.flag_at` answers: x, y, the team holding it, whether it is carried.
+local flags = {}
 
 local H
 local function fy(y) return H - y end
@@ -178,8 +183,11 @@ _G.sim = {
     TRIG_BOMB = 1,
     tick = function() return 4242 end,
     weapon_count = function() return 0 end,
-    flag_count = function() return 0 end,
-    flag_at = function() return 0, 0, 255 end,
+    flag_count = function() return #flags end,
+    flag_at = function(i)
+        local f = flags[i + 1]
+        return f[1], f[2], f[3], f[4]
+    end,
     map_coarse = function() return nil end,
     UP_STEPS = 8,
     BTN_FIRE = 1,
@@ -235,6 +243,20 @@ if ending then
     room.points = {[0] = 112, 214, 168, 96, 191, 155, 173, 149}
     match = {playing = false, left = 15, artifact = 1,
              score = {[0] = 17, [1] = 20}}
+end
+
+-- Turf, part way through: six stands, four of them claimed, and a score that
+-- has been paid a while. The picture is the point of it. The pennant strip was
+-- pinned above where the room's line lands rather than under the band, which
+-- put a staff through every numeral of the clock and made the score unreadable
+-- in the two zones that have flags; every string was in the right place and in
+-- the right order while it did, which is the fault this tool exists for.
+if scenario == "turf" then
+    room.count = 8
+    room.teams = {[0] = 0, 0, 0, 0, 1, 1, 1, 1}
+    match = {playing = true, left = 158, score = {[0] = 7, [1] = 16}}
+    flags = {{2990, 2990, 0, 0}, {3010, 2990, 0, 0}, {3030, 2990, 255, 0},
+             {3050, 2990, 1, 0}, {3070, 2990, 1, 0}, {3090, 2990, 255, 0}}
 end
 
 -- Four frames of the front end: the stops closed, and each of the three
@@ -439,6 +461,7 @@ ui.hud({
     match = match,
     side_names = (landing or scenario == "ending")
                  and {[0] = "Pylon", [1] = "Caisson"}
+                 or (scenario == "turf" and {[0] = "Keel", [1] = "Vantage"})
                  or {[0] = "Pilot", [1] = "Rival"},
     feed = {},
     hurt = 0,
