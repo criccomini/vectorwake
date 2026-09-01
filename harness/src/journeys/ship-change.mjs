@@ -1,6 +1,6 @@
 // Change ship in the middle of a match, through the menu, and come back in it.
 //
-// The whole of decision 128 from a player's side: the ship menu the front page
+// The whole of decision 129 from a player's side: the ship menu the front page
 // opens is the ship menu the column opens, editing it mid-match asks the room
 // for nothing until the panel closes, and closing it at a full bar puts the
 // pilot back at their start in what they built.

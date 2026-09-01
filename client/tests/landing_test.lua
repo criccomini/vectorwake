@@ -54,6 +54,14 @@ layer.outline = function(self, pts)
     end
 end
 
+-- Triangles too, because the carousel's two arrows are drawn as one each and
+-- where they sit down the row is the whole question about them.
+local tris = {}
+layer.tri = function(self, x1, y1, x2, y2, x3, y3)
+    self.n = self.n + 1
+    tris[#tris + 1] = {x1 = x1, y1 = y1, x2 = x2, y2 = y2, x3 = x3, y3 = y3}
+end
+
 -- Frames and rects are kept, because the key is a stroked box over a wash and
 -- the question is where the two of them landed. Discs too, for the one mark
 -- out here that is a mark rather than a box: the guest dot on the account
@@ -208,9 +216,7 @@ local GUNS = {
 local BODY = {
     label = "body", class = 1, free = 2, credits = 7,
     rows = {
-        {kind = "art", label = "Wedge", value = 1, cls = 1, at = 1, pages = 7,
-         note = "A deep pool that fills slower than any, on a hull slow to "
-             .. "turn"},
+        {kind = "art", label = "Wedge", value = 1, cls = 1, at = 1, pages = 7},
         {kind = "stat", label = "speed", share = 0.2},
         {kind = "stat", label = "thrust", share = 0.14},
         {kind = "stat", label = "turn", share = 0.09},
@@ -826,21 +832,50 @@ do
     frame(1440, 810, {land = land_in(BODY), col_open = "ship"})
     check("and says the five flight rows under it",
           word("SPEED") ~= nil and word("RECHARGE") ~= nil)
-    -- The arrows stand either side of the drawing rather than either side of
-    -- the row: what they turn is the ship, so that is what they are level
-    -- with. Both are the same height, and it is not the row's middle.
+    -- The arrows stand either side of the carousel and level with the middle
+    -- of it. The row is a ship over its name and the two turn together, so
+    -- the mark that turns them belongs beside the pair rather than beside the
+    -- drawing alone: level with the ship it sat in the top third of the row
+    -- with the centre line empty between the two of them.
+    --
+    -- Asked of the mark rather than of the box it publishes. A box centred on
+    -- its own mark says nothing about where either one is, and both were
+    -- centred on each other before this as well.
     if turns[-1] and turns[1] then
         local l, r2 = turns[-1], turns[1]
         local art
         for _, h in ipairs(ui.hits) do
             if h.action == "land_pick_ship" then art = h end
         end
+        -- The one triangle standing inside the box, in both directions.
+        -- The frame behind the panel is full of them, the dial and the marks
+        -- over the fight among them, and an x range alone catches those.
+        local function mark(within)
+            local found = nil
+            for _, t in ipairs(tris) do
+                local lo = math.min(t.x1, t.x2, t.x3)
+                local hi = math.max(t.x1, t.x2, t.x3)
+                -- Back into the space the boxes are in, since the layer takes
+                -- y down from the top of the window.
+                local ys = {H - t.y1, H - t.y2, H - t.y3}
+                local ylo = math.min(ys[1], ys[2], ys[3])
+                local yhi = math.max(ys[1], ys[2], ys[3])
+                if lo >= within.x and hi <= within.x + within.w
+                    and ylo >= within.y and yhi <= within.y + within.h then
+                    found = (ys[1] + ys[2] + ys[3]) / 3
+                end
+            end
+            return found
+        end
+        local ly, ry2 = mark(l), mark(r2)
         check("with the two arrows level with each other",
-              math.abs((l.y + l.h / 2) - (r2.y + r2.h / 2)) < 1)
+              ly and ry2 and math.abs(ly - ry2) < 1,
+              tostring(ly) .. " / " .. tostring(ry2))
         check("one either side of the drawing",
               l.x < art.x and r2.x + r2.w > art.x + art.w)
-        check("and above the name under it",
-              l.y + l.h / 2 < art.y + art.h - 20)
+        check("and level with the middle of the row, not the ship in it",
+              ly and math.abs(ly - (art.y + art.h / 2)) < 1,
+              tostring(ly) .. " against " .. tostring(art.y + art.h / 2))
     end
 
     -- The ship turns about the axis running up the screen, which is the bank
@@ -874,43 +909,25 @@ do
           string.format("%.0fx%.0f then %.0fx%.0f", w0, h0, w1, h1))
     frame(1440, 810, {land = land_in(BODY), col_open = "ship"})
 
-    -- The hull's own line stands under its name, and it wraps to the glass
-    -- rather than running off it: the longest of the seven is wider than a
-    -- phone's panel, and a centred run has no edge to be cut against. On the
-    -- hull that owns that line, since the page above is a Wedge and the
-    -- longest belongs to the Anvil.
-    local LONGEST = {
-        label = "body", class = 3, free = 0, credits = 7,
-        rows = {
-            {kind = "art", label = "Anvil", value = 3, cls = 3, at = 3,
-             pages = 8,
-             note = "The deepest pool and the quickest to fill it, on the "
-                 .. "slowest hull"},
-        },
-    }
-    frame(390, 844, {land = land_in(LONGEST), col_open = "ship"})
-    -- The glass is the window less its margin, capped, and the type stands
-    -- the row's own inset inside that.
-    local edge_l = 14 + 14
-    local edge_r = 390 - 14 - 14
-    local over, lines, shouted = nil, 0, nil
-    for _, t in ipairs(words()) do
-        if t.s:find("The deepest") or t.s:lower():find("slowest hull") then
-            lines = lines + 1
-            local half = #t.s * t.px * 0.3 / 2
-            if t.x - half < edge_l or t.x + half > edge_r then over = t.s end
-            -- And every line after the first is drawn raw, because the
-            -- sentence was cased once before it was broken. Cased again on
-            -- the way out, a wrapped line comes back with a capital in the
-            -- middle of the sentence.
-            if lines > 1 and t.s:sub(1, 1):match("%u") then shouted = t.s end
-        end
+    -- And it stands in a row of the panel's own, which is 44 points on a
+    -- window this size. The drawing carried a radius written down beside it
+    -- for as long as it existed, so it was sized against nothing and came out
+    -- taller than the five bars it is read against put together.
+    check("the drawing stands in one row of the panel's own",
+          h0 > 12 and h0 <= 44, string.format("%.0f tall", h0))
+
+    -- And the whole section still opens on a phone, which is the property
+    -- the height is spent on. The panel draws whole rows only, so a row that
+    -- does not fit is not drawn at all rather than cut: a section that grows
+    -- past the glass loses its last rows outright, and the bars are the thing
+    -- a pilot is choosing by.
+    frame(390, 844, {land = land_in(BODY), col_open = "ship"})
+    local missing = nil
+    for _, w in ipairs({"SPEED", "THRUST", "TURN", "ENERGY", "RECHARGE"}) do
+        if word(w) == nil then missing = w end
     end
-    check("the hull's line wraps to the glass on a phone",
-          lines > 1 and over == nil,
-          tostring(over) .. " / " .. lines .. " lines")
-    check("and the line it wrapped onto is not capitalized",
-          shouted == nil, tostring(shouted))
+    check("and a phone still opens the section on all five flight rows",
+          missing == nil and word("Wedge") ~= nil, tostring(missing))
     frame(1440, 810, {land = land_in(BODY), col_open = "ship"})
 
     -- Flair is the two rows that cost nothing, and they take a press.
@@ -1106,7 +1123,7 @@ do
     local land = {}
     for k, v in pairs(LAND) do land[k] = v end
     land.panel = {
-        at = 1, pages = 8, class = 1, label = "Wedge", mine = true,
+        at = 1, pages = 7, class = 1, label = "Wedge", mine = true,
         bars = {0.2, 0.14, 0.09, 0.71, 0.0}, free = 2, credits = 7,
         rows = {
             {kind = "sect", label = "gun"},
@@ -1552,7 +1569,7 @@ do
               flew[1] == 1 and flew.applied == "ship" and ui_stub.col_hull == 1,
               tostring(flew[1]) .. ", " .. tostring(flew.applied))
         -- And every page of it is a hull. Sitting out was the page past the
-        -- last one until decision 128, so turning one more step off the end
+        -- last one until decision 129, so turning one more step off the end
         -- of the roster handed a seat back; there is nothing on this carousel
         -- now but ships.
         ui_stub.col_hull = 6

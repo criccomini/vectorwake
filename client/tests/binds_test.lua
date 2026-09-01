@@ -197,7 +197,7 @@ end
 do
     binds.reset()
     check("it starts where controls.lua says", key_of("thrust") == "up"
-          and key_of("guns") == "space")
+          and key_of("guns") == "d")
 
     -- A free key: nothing displaced.
     local moved, ok = binds.set("thrust", {"j"})
@@ -208,17 +208,17 @@ do
     -- A taken key: the two trade, and both keep one.
     binds.reset()
     local other = binds.set("thrust", {"w"})
-    check("a taken key trades", other == "charge_2"
-          and key_of("thrust") == "w" and key_of("charge_2") == "up",
-          tostring(other) .. " / " .. tostring(key_of("charge_2")))
+    check("a taken key trades", other == "charge_1"
+          and key_of("thrust") == "w" and key_of("charge_1") == "up",
+          tostring(other) .. " / " .. tostring(key_of("charge_1")))
     check("and nothing is left unbound", nothing_unbound() == nil,
           tostring(nothing_unbound()))
 
     -- The key it is already on: nothing happens, and it says so.
     binds.reset()
-    local _, changed = binds.set("guns", {"space"})
+    local _, changed = binds.set("guns", {"d"})
     check("binding a control to the key it is on changes nothing",
-          changed == false and key_of("guns") == "space")
+          changed == false and key_of("guns") == "d")
 
     -- Escape is not anybody's to take, in either direction.
     binds.reset()
@@ -252,12 +252,12 @@ end
 do
     binds.reset()
     check("a press routes to what is on the key",
-          press(nil, "k_space") == "guns"
+          press(nil, "k_d") == "guns"
           and press(nil, "k_up") == "thrust")
     binds.set("thrust", {"w"})
     check("and follows it when it moves",
           press(nil, "k_w") == "thrust"
-          and press(nil, "k_up") == "charge_2")
+          and press(nil, "k_up") == "charge_1")
     check("a key with nothing on it routes nowhere",
           press(nil, "k_f") == nil)
     check("and so does an action that is not a key",
@@ -275,33 +275,33 @@ end
 
 do
     binds.reset()
-    binds.set("map", {"shift", "tab"})
+    binds.set("map", {"shift", "a"})
     check("a chord binds without taking the bare key",
-          key_of("map") == "shift+tab" and key_of("bombs") == "tab",
+          key_of("map") == "shift+a" and key_of("bombs") == "a",
           tostring(key_of("map")) .. " / " .. tostring(key_of("bombs")))
     check("the bare trigger is still the bomb",
-          press(nil, "k_tab") == "bombs")
+          press(nil, "k_a") == "bombs")
     check("and the chord beats it when the modifier is down",
-          press({k_shift = true}, "k_tab") == "map")
+          press({k_shift = true}, "k_a") == "map")
     check("while the modifier on its own is nobody's",
           press(nil, "k_shift") == nil)
 
     -- Order is the hand's, not the list's: the same two keys are one binding
     -- however they were typed.
-    local _, ok = binds.set("details", {"tab", "shift"})
+    local _, ok = binds.set("details", {"a", "shift"})
     check("a chord typed backwards is the same chord",
-          ok and key_of("details") == "shift+tab", tostring(key_of("details")))
+          ok and key_of("details") == "shift+a", tostring(key_of("details")))
     check("and it displaced the control that was on it",
           key_of("map") == "p", tostring(key_of("map")))
 
     -- A chord and its own trigger are different bindings, so putting one on a
     -- key the other already uses is not a conflict.
     binds.reset()
-    local moved2 = binds.set("map", {"shift", "space"})
+    local moved2 = binds.set("map", {"shift", "d"})
     check("a chord over a bare key displaces nothing", moved2 == nil
-          and key_of("guns") == "space" and key_of("map") == "shift+space")
-    check("and both still route", press(nil, "k_space") == "guns"
-          and press({k_shift = true}, "k_space") == "map")
+          and key_of("guns") == "d" and key_of("map") == "shift+d")
+    check("and both still route", press(nil, "k_d") == "guns"
+          and press({k_shift = true}, "k_d") == "map")
 end
 
 -- --- saving -----------------------------------------------------------------
@@ -316,12 +316,12 @@ do
     check("a moved key is saved",
           saved ~= nil and saved.thrust and saved.thrust[1] == "w")
     check("and so is the one it displaced",
-          saved ~= nil and saved.charge_2 and saved.charge_2[1] == "up")
+          saved ~= nil and saved.charge_1 and saved.charge_1[1] == "up")
 
     binds.reset()
     binds.load(saved)
     check("and reading it back puts them where they were",
-          key_of("thrust") == "w" and key_of("charge_2") == "up")
+          key_of("thrust") == "w" and key_of("charge_1") == "up")
 
     -- A chord survives the trip as well, which is the case a list has over a
     -- string and the reason the file holds one.

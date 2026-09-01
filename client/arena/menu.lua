@@ -210,14 +210,18 @@ local CAPS = {{0, "display"}, {60, "60 a second"}, {30, "30 a second"}}
 -- Not the two ladders either, though those really are the hull's. They are
 -- nowhere on this page, so a line about them is one a pilot has to take on
 -- faith, and it would be sitting over five bars that say something else.
+-- The roster, in the order the carousel turns through it.
+--
+-- Names alone. Each one carried a sentence about how the hull flies, drawn
+-- under its name on the body section, and the five flight bars directly under
+-- that sentence say the same thing as bars: a line reading "the fastest hull
+-- in the game, on the thinnest pool in it" stood over a full speed bar and an
+-- almost empty energy one. The bars are the better half of that pair, since
+-- they answer "faster than what" against the rest of the roster, and the
+-- sentence was costing the page two more lines to agree with them.
 local HULLS = {
-    {"Apex", "Quick at everything that moves it, and shallow in the pool"},
-    {"Wedge", "A deep pool that fills slower than any, on a hull slow to turn"},
-    {"Chord", "Turns inside everything and outruns nothing"},
-    {"Anvil", "The deepest pool and the quickest to fill it, on the slowest hull"},
-    {"Cipher", "The fastest hull in the game, on the thinnest pool in it"},
-    {"Facet", "Second quickest into a turn, on a pool as thin as the game has"},
-    {"Lattice", "Third in speed, third in the pool, and slow to fill it back"},
+    {"Apex"}, {"Wedge"}, {"Chord"}, {"Anvil"},
+    {"Cipher"}, {"Facet"}, {"Lattice"},
 }
 
 local SAVE = sys.get_save_file("vectorwake", "pilot")
@@ -915,7 +919,7 @@ end
 -- Seven pages, and it used to be eight: sitting out was the page past the
 -- roster, so turning one more step off the last hull benched you. Handing a
 -- seat back is not something a ship menu should be able to do by accident,
--- and there is nowhere left in the game that does it. See decision 128.
+-- and there is nowhere left in the game that does it. See decision 129.
 function M.hull_page(at, dir)
     local n = #HULLS - 1
     local to = (at or 0) + dir
@@ -958,17 +962,8 @@ function M.sect_rows(cls, sect, at)
         if at < 0 or at > #HULLS then at = M.panel_home() end
         local h = roster[at + 1]
         if h then
-            local hull = HULLS[at + 1]
             rows[#rows + 1] = {kind = "art", label = h.label, value = h.value,
-                               at = at, pages = #HULLS + 1,
-                               cls = type(h.value) == "number" and h.value
-                                   or nil,
-                               -- What this hull is, in the one line the
-                               -- roster has carried since it was written.
-                               -- Nothing had ever drawn it: the page that
-                               -- named a hull was a row, and a row of a list
-                               -- has no second line to put a sentence on.
-                               note = hull and hull[2] or h.note}
+                               at = at, pages = #HULLS, cls = h.value}
             for i, name in ipairs(FLIGHT_NAMES) do
                 if h.bars then
                     rows[#rows + 1] = {kind = "stat", label = name,
@@ -1229,7 +1224,7 @@ end
 -- It named a build. A build was thirty points under a name of the pilot's
 -- own, and there are none any more: what you arrive as is a ship off the
 -- roster. It also answered "spectate", which was the roster's last row until
--- decision 128 took handing a seat back off the ship menu.
+-- decision 129 took handing a seat back off the ship menu.
 function M.landing_ship()
     local h = HULLS[(M.class or 0) + 1]
     return h and h[1] or "ship"
@@ -1744,7 +1739,7 @@ end
 --
 -- LEAVE stood where ZONE does, and it had two answers: benched it left the
 -- room for the stands, flying it handed the seat back and left you watching
--- the room you were in. The second of those is gone (decision 128). Sitting
+-- the room you were in. The second of those is gone (decision 129). Sitting
 -- in the stands of a game you are seated in is a state with nothing to do in
 -- it and one key out of it, and it was reachable from two places at once,
 -- since the ship menu's roster carried the same act as its last row. What

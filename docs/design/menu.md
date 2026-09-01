@@ -22,7 +22,7 @@
 > same act again and went with it. Every note below about a leave stop, about
 > sitting out being the page past the roster, or about the ship page being
 > between matches only describes something that no longer exists. See
-> [decision 128](../architecture/decisions.md).
+> [decision 129](../architecture/decisions.md).
 
 > **The ship stop is five parts of a ship.** Body, guns, bombs, specials and
 > flair, each a row that opens the part it names, with the build credits under
@@ -405,7 +405,7 @@ in a room
 │             purse. Editing it in a match is a draft: nothing reaches the
 │             room until the panel closes, and closing it wants a full bar
 │             and pays a respawn. See
-│             [decision 128](../architecture/decisions.md)
+│             [decision 129](../architecture/decisions.md)
 ├ settings    the same page, because sound and fullscreen are needed there
 └ side        which side you are on, and the page that crosses to the other:
               one row a side, in the room's own words and colors, with the
@@ -418,7 +418,7 @@ was no ship stop in a room and no games list either, so a pilot who wanted a
 different hull three minutes in had to leave the game to get one, and getting
 to another game was leave, leave, and then pick one. Both are one stop now.
 
-`LEAVE SEAT` stood where `ZONE` does and is gone with decision 128: watching a
+`LEAVE SEAT` stood where `ZONE` does and is gone with decision 129: watching a
 room you hold a seat in is a state with nothing to do in it, and it was
 reachable from the ship menu as well, whose roster carried the same act on its
 last page.
