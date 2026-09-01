@@ -1,15 +1,17 @@
--- The in-game menu: a faint key at the foot, and the column it raises.
+-- The menu raised over a match: a faint key at the foot, and the column it
+-- raises.
 --
 --     lua5.1 client/tests/column_test.lua
 --
--- Settings live in the match and nowhere else, so this column is the whole of
--- the menu: the way out of the seat, which side you are on, and the machine.
--- It stands where the key that raised it stood, at the landing's own width,
--- with the stops over a breathing RESUME. Nothing pauses while it is up.
+-- It is the same column the front page is (decision 140), and this is the
+-- other arm of it: raised over a fight rather than standing as the screen, so
+-- it washes the glass behind it, it can be put away, and it stands where the
+-- key that raised it stood. Four stops over one key, and nothing pauses while
+-- it is up.
 --
 -- These run the real `M.hud` and `M.menu` against a stubbed engine. The
 -- questions are the ones a hand would ask: where is the way in, did the column
--- land where I pressed, can I still see the fight, and can I reach every side
+-- land where I pressed, can I still see the fight, and can I reach every row
 -- in one press.
 
 package.path = "client/?.lua;" .. package.path
@@ -104,20 +106,20 @@ local function view(o)
     o = o or {}
     local v = {
         open = o.open ~= false,
+        key = o.key or "spectate",
         stops = {
+            {stop = "account", label = "account", value = "deSoto 412",
+             named = true},
             {stop = "zone", label = "zone", value = "Chaos", named = true},
             {stop = "ship", label = "ship", value = "Apex", named = true},
-            {stop = "settings", label = "settings", mark = "settings"},
-            {stop = "side", label = "side", value = "Pylon", named = true},
+            {stop = "settings", label = "settings"},
         },
         rows = {},
     }
-    if o.stops == 3 then table.remove(v.stops) end
     for _, s in ipairs(v.stops) do s.open = (s.stop == o.at) end
     if o.at == "ship" then
-        -- The landing's own ship panel, standing in the menu's column: five
-        -- parts over the purse they are bought with, and the line on the head
-        -- that says what closing it will do.
+        -- The ship panel: five parts over the purse they are bought with,
+        -- and the line on the head that says what closing it will do.
         v.panel = {
             label = "ship", class = 0, free = 2, credits = 7,
             rows = {
@@ -142,14 +144,13 @@ local function view(o)
             {label = "Duel", index = 2, note = "1 v 1", named = true,
              pick = true},
         }
-    elseif o.at == "side" then
+    elseif o.at == "account" then
         v.rows = {
-            {label = "Pylon", index = 1, detail = "8", tint = 0, mark = true,
-             named = true, pick = true},
-            {label = "Caisson", index = 2, detail = "7", tint = 1,
-             named = true, pick = true},
-            {label = "Meridian", index = 3, detail = "6", tint = 2,
-             named = true, pick = true},
+            {label = "sign up", index = 1, offer = true,
+             note = "keep your points", pick = true},
+            {label = "new name", index = 2, pick = true},
+            {rule = true, index = 3},
+            {label = "log in", index = 4, pick = true},
         }
     elseif o.at == "settings" then
         v.page = "settings"
@@ -188,7 +189,6 @@ local function frame(w, h, o)
     boxes, rects, segs = {}, {}, {}
     state.n = 0
     ui.details = false
-    ui.col_open = nil
     if not o.keep then
         ui.col_sel, ui.col_sel_value = o.sel, o.sel_value
     end
@@ -197,7 +197,6 @@ local function frame(w, h, o)
     ui.hud({
         me = 0,
         landing = o.landing or nil,
-        land = nil,
         side = 0,
         viewer_name = "you",
         menu_open = o.open or false,
@@ -336,32 +335,29 @@ do
     check("and the key is not drawn under it", hit_of("open") == nil)
 end
 
--- Three stops over the key, in the order they are said, with LEAVE furthest
--- from the thumb that resumes. A press that ends a match should not be the
--- neighbour of the press that ends the menu.
+-- Four stops over the key, in the order they are said: who you are, where you
+-- are, what you fly, and the machine.
 do
     frame(1440, 810, {open = true})
     local stops = hits_of("menu_stop")
     check("the column carries every stop", #stops == 4, "got " .. #stops)
     local by = {}
     for _, r in ipairs(stops) do by[r.value] = r end
-    if by.zone and by.ship and by.settings and by.side then
-        check("the zone stands at the top",
-              by.zone.y < by.ship.y and by.ship.y < by.settings.y
-              and by.settings.y < by.side.y)
+    if by.account and by.zone and by.ship and by.settings then
+        check("the account stands at the top",
+              by.account.y < by.zone.y and by.zone.y < by.ship.y
+              and by.ship.y < by.settings.y)
         local go = hit_of("menu_go")
         check("and furthest from the key",
-              go and by.zone.y < by.side.y and by.side.y < go.y)
+              go and by.account.y < by.settings.y and by.settings.y < go.y)
     else
-        check("the zone stands at the top", false, "stops missing")
+        check("the account stands at the top", false, "stops missing")
         check("and furthest from the key", false, "stops missing")
     end
 end
 
--- A caret on a stop is a promise that a list is about to come up. Two of the
--- three stops keep it: settings opens a panel and side opens a list. Leaving
--- acts, so it wears none, and the count of carets is the count of stops that
--- open something.
+-- A caret on a stop is a promise that a list is about to come up. Every stop
+-- of this column keeps it, because every one of them opens something.
 do
     frame(1440, 810, {open = true})
     -- The caret is two strokes drawn near a stop's right edge and it is the
@@ -387,25 +383,31 @@ do
     -- opens something.
     check("the settings stop wears a caret", strokes_in("settings") == 2,
           tostring(strokes_in("settings")))
-    check("and so does the side stop", strokes_in("side") == 2,
-          tostring(strokes_in("side")))
+    check("and so does the account stop", strokes_in("account") == 2,
+          tostring(strokes_in("account")))
     check("and every stop here opens something, so every one wears one",
           strokes_in("zone") > 0, tostring(strokes_in("zone")))
 end
 
--- A room that has not named its sides yet gets a shorter column, and it grows
--- upward: the sides arrive on the roster broadcast, a frame or two after the
--- column could first be raised, and nothing already under a thumb should move.
+-- The column is measured off however many stops it carries rather than off a
+-- number written down beside it, so it grows upward out of the key's own
+-- strip and nothing already under a thumb moves.
 do
-    frame(1440, 810, {open = true, stops = 3})
-    local two = hit_of("menu_go")
-    local top2 = hits_of("menu_stop")
     frame(1440, 810, {open = true})
-    local three = hit_of("menu_go")
-    check("a side that has not arrived leaves three stops", #top2 == 3)
-    check("and the key does not move when it does",
-          two and three and math.abs(two.y - three.y) < 0.5,
-          two and three and (two.y .. " against " .. three.y) or "no key")
+    local go = hit_of("menu_go")
+    local stops = hits_of("menu_stop")
+    local top = go and go.y or 0
+    for _, r in ipairs(stops) do
+        if r.y < top then top = r.y end
+    end
+    check("every stop stands over the key",
+          go ~= nil and top < go.y, tostring(top))
+    frame(1440, 810)
+    local shut = hit_of("open")
+    check("and the key comes to rest on the strip the menu key had",
+          go and shut and math.abs((go.y + go.h) - (shut.y + shut.h)) < 1,
+          go and shut and ((go.y + go.h) .. " against " .. (shut.y + shut.h))
+              or "no key")
 end
 
 -- --- nothing pauses --------------------------------------------------------
@@ -435,32 +437,29 @@ do
     check("as it does with the menu down", shut ~= nil)
 end
 
--- --- the sides -------------------------------------------------------------
+-- --- the account ------------------------------------------------------------
 
--- Every side is one press, however many there are. This was a value stepped
--- left and right while a room held two: in a zone holding three, reaching the
--- third meant crossing the second, and a pilot who wanted the third had joined
--- the second on the way.
+-- Who you are, in a match. This page stood on the front end alone until the
+-- menus were unified: signing up three minutes into a game meant leaving it.
 do
-    frame(1440, 810, {open = true, at = "side"})
+    frame(1440, 810, {open = true, at = "account"})
     local picks = hits_of("menu_pick")
-    check("the side stop opens a row per side", #picks == 3,
-          "got " .. #picks)
+    check("the account stop opens its acts", #picks == 3, "got " .. #picks)
     local seen = {}
     for _, r in ipairs(picks) do seen[r.value] = true end
-    check("and each is its own press", seen[1] and seen[2] and seen[3])
-    check("the one you fly for is named", said("Pylon") ~= nil)
-    check("and so is the one you would cross to", said("Meridian") ~= nil)
-    -- No stepper. The two triangles either side of a value are what a range
-    -- wears, and a list of sides is not a range.
+    check("and each is its own press", seen[1] and seen[2] and seen[4])
+    check("the offer that keeps what a guest is carrying is there",
+          said("Sign up") ~= nil)
+    check("and the way onto an account that already exists",
+          said("Log in") ~= nil)
     check("the stop it hangs off is not drawn under its own list",
-          hit_of("menu_stop", "side") == nil)
+          hit_of("menu_stop", "account") == nil)
 end
 
 -- --- settings --------------------------------------------------------------
 
--- The settings panel climbs off its stop, the way the landing's ship panel
--- climbs off the ship stop.
+-- The settings panel climbs off its stop, the way the ship panel climbs off
+-- the ship stop.
 do
     frame(1440, 810, {open = true, at = "settings"})
     local rows = hits_of("menu_row")
@@ -623,26 +622,14 @@ end
 
 -- --- the landing -----------------------------------------------------------
 
--- The front page carries no key at all. The landing watches a live room, and
--- for a while that was taken as reason enough for a menu about it: the key
--- stood in its own strip under PLAY NOW and the column lifted to leave it one.
--- It is not a room you are in. Everything the menu holds is about the seat you
--- took, and out here the three stops over PLAY NOW are the choices that have
--- answers. What the key added was a faint fourth control under the one key the
--- screen exists for.
+-- The front page carries no menu key. There is nothing for one to raise out
+-- there: the column is already up and cannot be put away, so a faint control
+-- offering to open it would be a control that does nothing. The landing's own
+-- arm of the column is checked in landing_test.
 do
     frame(1440, 810, {landing = true})
     check("the front page carries no menu key", hit_of("open") == nil)
     check("and does not say MENU either", said("MENU") == nil)
-    local play = hit_of("play_now")
-    check("PLAY NOW is still there", play ~= nil)
-    -- And it sits on the bottom margin, with the strip the key used to have
-    -- given back. A gap under the one key the screen is for reads as
-    -- something missing.
-    if play then
-        check("and stands on the bottom margin", play.y + play.h > 810 - 30,
-              "play ends " .. (play.y + play.h) .. " of 810")
-    end
 end
 
 -- A player or a spectator inside a room gets it, which is the other half of
@@ -701,7 +688,7 @@ do
         ui.begin(layer, 1440, 810, 1, false, now, glass)
         ui.menu(v)
         ui.finish()
-        return said_y("RESUME"), said_y("Sound")
+        return said_y("SPECTATE"), said_y("Sound")
     end
 
     -- The frame the press lands on: the column is still where it was and the
@@ -770,35 +757,34 @@ do
         return false
     end
 
-    -- The three stops all publish `menu_stop` and tell themselves apart by the
-    -- value on the box. Lighting on the action alone lit all three at once,
-    -- which the landing never showed because it names its own three apart.
+    -- Every stop publishes `menu_stop` and tells itself apart by the value on
+    -- the box. Lighting on the action alone lit all four at once.
     frame(1440, 810, {open = true, sel = "menu_stop", sel_value = "settings"})
     check("the stop under the cursor lights",
           lit(hit_of("menu_stop", "settings")))
     check("and its neighbors do not",
-          not lit(hit_of("menu_stop", "leave"))
-          and not lit(hit_of("menu_stop", "side")))
+          not lit(hit_of("menu_stop", "ship"))
+          and not lit(hit_of("menu_stop", "account")))
 
-    -- Walked rather than placed, which is how the fault was found: up off
-    -- RESUME lit every stop at once because they publish one action between
+    -- Walked rather than placed, which is how the fault was found: a step off
+    -- the key lit every stop at once because they publish one action between
     -- them, and the arrow that lands on one of them is the ordinary way to
     -- get there.
     frame(1440, 810, {open = true, sel = nil})
     ui.col_sel, ui.col_sel_value = "menu_go", nil
     ui.col_step(-1)
     frame(1440, 810, {open = true, keep = true})
-    check("up off RESUME lands on the stop over it",
-          ui.col_sel == "menu_stop" and ui.col_sel_value == "side",
+    check("a step back off the key lands on the last stop",
+          ui.col_sel == "menu_stop" and ui.col_sel_value == "settings",
           tostring(ui.col_sel) .. " " .. tostring(ui.col_sel_value))
     local n = 0
-    for _, stop in ipairs({"zone", "ship", "settings", "side"}) do
+    for _, stop in ipairs({"account", "zone", "ship", "settings"}) do
         if lit(hit_of("menu_stop", stop)) then n = n + 1 end
     end
     check("and lights that one alone", n == 1, n .. " stops lit")
 
     -- And the head of the page a stop opens, which is where the cursor lands.
-    for _, at in ipairs({"settings", "side"}) do
+    for _, at in ipairs({"settings", "account"}) do
         frame(1440, 810, {open = true, at = at, sel = "menu_back"})
         check("the " .. at .. " page lights its way back",
               lit(hit_of("menu_back")))

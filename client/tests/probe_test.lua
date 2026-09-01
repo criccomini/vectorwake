@@ -113,7 +113,7 @@ local function fake_ui(hits)
 end
 
 local hits = {
-    {x = 0, y = 0, w = 400, h = 40, action = "land_back", pri = 1},
+    {x = 0, y = 0, w = 400, h = 40, action = "menu_back", pri = 1},
     {x = 0, y = 0, w = 400, h = 600, action = "panel_hold", pri = 0},
     -- Published after the glass, at the same priority: swallowed.
     {x = 20, y = 100, w = 360, h = 44, action = "land_pick_ship",
@@ -138,7 +138,7 @@ end
 
 local resolved = boxes_of(ui)
 check("the panel head takes its own press",
-      resolved.land_back == "land_back", tostring(resolved.land_back))
+      resolved.menu_back == "menu_back", tostring(resolved.menu_back))
 check("a row at the glass's priority is swallowed by the glass",
       resolved.land_pick_ship == "panel_hold",
       tostring(resolved.land_pick_ship))

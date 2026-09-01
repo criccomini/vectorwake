@@ -164,9 +164,9 @@ at the same size.
 The menu no longer scales itself. It did while it was a drawer that owned the
 whole window on a phone and a third of one on a desk: `MENU_SCALE`, 1.25, grew
 its rows, gaps, marks and column together on anything not `M.compact`. The
-column is the landing's column, laid out at the same width on every window and
-sized by the same rules, so there is nothing left to zoom. See
-[decision 102](../architecture/decisions.md).
+column is one column, laid out at the same width on every window and sized by
+the same rules wherever it stands, so there is nothing left to zoom. See
+[decisions 102 and 140](../architecture/decisions.md).
 
 ### The inks
 
@@ -342,9 +342,10 @@ The HUD has a fixed geography, and it is the prototype's. Top left: the chip
 row (TAKE SEAT, ROOM, the on-air or watching chip) and the rooms panel under
 it, all of which come and go, so in an ordinary match that corner is the fight.
 Bottom middle: the faint `MENU` key, and the column it raises, in a room you
-are in and nowhere else. Top left held MENU until decision 102 moved it to the
-foot, where the panel it opens stands; the front page carries neither, since
-the menu is about a room you have taken a seat in.
+are in. Top left held MENU until decision 102 moved it to the foot, where the
+panel it opens stands. The front page carries the column and not the key: out
+there the column is already standing and cannot be put away, so there would be
+nothing for a key to raise (decision 140).
 Top right: the radar or the map (one corner, one instrument), with the feed
 under it and, over both, the two readings that corner is asked for. The tile
 you are on sits at the instrument's left edge with POS in front of it, four

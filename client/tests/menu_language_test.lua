@@ -96,11 +96,11 @@ local LAND = {
         {label = "Duel", zone = "duel", live = true, format = "1v1"},
     },
     account = {
-        {label = "sign up", act = "claim", offer = true,
-         note = "keep your points"},
-        {label = "new name", act = "reroll"},
-        {rule = true},
-        {label = "log in", act = "enter_login"},
+        {label = "sign up", offer = true, note = "keep your points",
+         index = 1},
+        {label = "new name", index = 2},
+        {rule = true, index = 3},
+        {label = "log in", index = 4},
     },
     panel = {
         label = "guns", class = 1, free = 2, credits = 7,
@@ -134,22 +134,70 @@ local SHIP_MENU = {
 local SEATS = {[0] = {name = "you", ship = 1, team = 0, alive = true,
                       kills = 0, deaths = 0}}
 
--- One frame of the landing with `open` standing on it, or of the in-match
--- column when `menu` is given instead.
+-- The settings page, which is the one panel of the column that is neither a
+-- list nor the ship.
+local SETTINGS = {
+    {sect = "audio"},
+    {label = "Sound", choice = 2, choices = 3, detail = "half", pick = true,
+     index = 1},
+    {label = "Music", choice = 1, choices = 3, detail = "quiet", pick = true,
+     index = 2},
+}
+
+-- The column as the arena hands it over, with `open` naming whichever stop is
+-- holding a page. `home` is the front page's arm of it and a match is the
+-- other; the panels are the same object either way, which is the whole of what
+-- this file is about.
+local function view(o)
+    local open = o.open
+    local rows = {}
+    if open == "zone" then
+        rows = {
+            {label = "Team Battle", named = true, note = "4v4", mark = true,
+             index = 1},
+            {label = "Duel", named = true, note = "1v1", index = 2},
+        }
+    elseif open == "account" then
+        rows = LAND.account
+    elseif open == "settings" then
+        rows = SETTINGS
+    end
+    return {
+        open = true, home = o.home ~= false, key = "play",
+        ask = o.ask and {head = "leave the game?"} or nil,
+        page = open == "settings" and "settings" or nil,
+        pilot = {name = LAND.name},
+        stops = {
+            {stop = "account", label = "account", value = LAND.name,
+             named = true, open = open == "account"},
+            {stop = "zone", label = "zone", value = LAND.zone, named = true,
+             open = open == "zone"},
+            {stop = "ship", label = "ship", value = LAND.ship, named = true,
+             open = open == "ship"},
+            {stop = "settings", label = "settings",
+             open = open == "settings"},
+        },
+        rows = rows,
+        panel = open == "ship" and (o.panel or LAND.panel) or nil,
+    }
+end
+
+-- One frame of the column, at home unless a check asks for a match.
 local function frame(o)
     o = o or {}
     rects = {}
     state.n = 0
     ui.details = false
-    ui.col_open = o.open or nil
     ui.col_sel, ui.col_sel_value = o.sel, o.sel_value
     ui.page_scroll = 0
     ui.panel_shut()
     ui.begin(layer, W, H, 1, false, 0)
+    local home = o.home ~= false
     ui.hud({
         me = 0, watch = {subject = 0},
-        landing = not o.menu or nil, land = not o.menu and LAND or nil,
-        side = 0, viewer_name = "you", menu_open = o.menu and true or false,
+        landing = home or nil,
+        panel = o.open ~= nil,
+        side = 0, viewer_name = "you", menu_open = not home,
         pilots = SEATS, watchers = {}, teams = {},
         match = {playing = true, left = 107, score = {[0] = 3, [1] = 5}},
         side_names = {[0] = "Pylon", [1] = "Caisson"},
@@ -157,48 +205,8 @@ local function frame(o)
         half_w = W / 2, half_h = H / 2, banner = "", link_bars = 4,
         zone = "melee", room = 1,
     })
-    if o.menu then ui.menu(o.menu) end
+    ui.menu(view(o))
     ui.finish()
-end
-
-local function settings_view()
-    return {open = true, at = "settings", page = "settings",
-            stops = {{stop = "leave", label = "leave",
-                      value = "to the stands"},
-                     {stop = "settings", label = "settings",
-                      mark = "settings", open = true}},
-            rows = {{sect = "audio"},
-                    {label = "Sound", choice = 2, choices = 3,
-                     detail = "half", pick = true},
-                    {label = "Music", choice = 1, choices = 3,
-                     detail = "quiet", pick = true}}}
-end
-
--- The in-match column with nothing open on it: three stops over the key.
-local function column_view()
-    return {open = true,
-            stops = {{stop = "leave", label = "leave", value = "seat"},
-                     {stop = "settings", label = "settings"},
-                     {stop = "side", label = "side", value = "Pylon",
-                      named = true}},
-            rows = {}}
-end
-
--- The other panel the in-match column opens, and the one nothing here drove
--- until it was found standing its rows at the height decision 104 replaced.
--- It is a list rather than a page, and it is built by `M.menu` from the
--- column's own geometry rather than by the landing, which is how it kept the
--- old measure while every panel around it moved.
-local function side_view()
-    return {open = true, at = "side",
-            stops = {{stop = "leave", label = "leave", value = "seat"},
-                     {stop = "settings", label = "settings"},
-                     {stop = "side", label = "side", value = "Pylon",
-                      named = true, open = true}},
-            rows = {{label = "Pylon", detail = "4 pilots", named = true,
-                     mark = true, tint = 0, index = 0},
-                    {label = "Caisson", detail = "4 pilots", named = true,
-                     tint = 1, index = 1}}}
 end
 
 -- Where a line of type landed, and at what size and in what face.
@@ -253,7 +261,7 @@ do
           and math.abs(slot.px - ui.TYPE.ROW) < 0.001,
           slot and (tostring(slot.font) .. " " .. tostring(slot.px)) or "gone")
 
-    frame({menu = settings_view()})
+    frame({open = "settings"})
     local sound = said("Sound")
     check("and a settings row, which always did",
           sound and sound.font == "menu"
@@ -268,144 +276,152 @@ end
 -- and the settings page's own pad on top of its inset.
 
 do
-    local function name_inset(open, word, menu)
-        frame({open = open, menu = menu})
+    local function name_inset(open, word, o)
+        o = o or {}
+        o.open = open
+        frame(o)
         local t = said(word)
         if not t then return nil end
         -- The panel is what the row is inset from, and every panel on a given
         -- window stands in the same place, so its left edge is the one the
         -- back on its head is published at.
-        local head = hit_of(menu and "menu_back" or "land_back")
+        local head = hit_of("menu_back")
         if not head then return nil end
         return t.x - head.x
     end
     local zone = name_inset("zone", "Team Battle")
     local acct = name_inset("account", "Sign up")
     local ship = name_inset("ship", "Spray")
-    local sets = name_inset(nil, "Sound", settings_view())
-    local side = name_inset(nil, "Pylon", side_view())
+    local sets = name_inset("settings", "Sound")
+    -- And the same four in a match, which is the same column over a fight.
+    local in_match = name_inset("zone", "Team Battle", {home = false})
     check("every panel insets its names by the same measure",
-          zone and acct and ship and sets and side
+          zone and acct and ship and sets and in_match
           and math.abs(zone - acct) < 1 and math.abs(zone - ship) < 1
-          and math.abs(zone - sets) < 1 and math.abs(zone - side) < 1,
-          string.format("zone %s, account %s, ship %s, settings %s, side %s",
+          and math.abs(zone - sets) < 1 and math.abs(zone - in_match) < 1,
+          string.format("zone %s, account %s, ship %s, settings %s, "
+                        .. "in a match %s",
                         tostring(zone), tostring(acct), tostring(ship),
-                        tostring(sets), tostring(side)))
+                        tostring(sets), tostring(in_match)))
 
     -- And so does a stop, which is the row a panel climbs out of. It was on
     -- twelve: press a stop and the type column stepped two points sideways at
     -- the moment the panel replaced it, on both columns. Measured off the
     -- stop's own published box, since a stop is a control rather than a row
     -- inside one.
-    local function stop_inset(action, label, menu)
-        frame({menu = menu})
+    local function stop_inset(label, o)
+        frame(o or {})
         local t = said(label)
-        local box = hit_of(action)
+        local box = hit_of("menu_stop")
         if not (t and box) then return nil end
         return t.x - box.x
     end
-    local land_at = stop_inset("land_zone", "ZONE")
-    local menu_at = stop_inset("menu_stop", "LEAVE", column_view())
+    local land_at = stop_inset("ACCOUNT")
+    local menu_at = stop_inset("ACCOUNT", {home = false})
     check("and a stop insets its name by that same measure",
           land_at and menu_at and math.abs(land_at - ui.ROW_INSET) < 1
           and math.abs(menu_at - ui.ROW_INSET) < 1,
-          string.format("landing %s, menu %s, inset %s", tostring(land_at),
-                        tostring(menu_at), tostring(ui.ROW_INSET)))
+          string.format("at home %s, in a match %s, inset %s",
+                        tostring(land_at), tostring(menu_at),
+                        tostring(ui.ROW_INSET)))
 
     -- And stands them the same height apart. A games row was thirty points on
     -- a monitor against a settings row's forty four, which is the same object
     -- drawn at two sizes: walking from one panel into the other changed how
     -- far a thumb had to travel between two choices.
-    local function pitch(open, a, b, menu)
-        frame({open = open, menu = menu})
+    local function pitch(open, a, b, o)
+        o = o or {}
+        o.open = open
+        frame(o)
         local first, second = said(a), said(b)
         if not (first and second) then return nil end
         return math.abs(second.y - first.y)
     end
     local list = pitch("zone", "Team Battle", "Duel")
     local slots = pitch("ship", "Spray", "Bounce")
-    local page = pitch(nil, "Sound", "Music", settings_view())
-    -- The sides, which is the panel that was still on it. Thirty six points
-    -- on a monitor and thirty on a phone: the two numbers decision 104
-    -- replaced, kept because `M.menu` handed this list the column's stop
-    -- height instead of the row height every other panel uses.
-    local sides = pitch(nil, "Pylon", "Caisson", side_view())
+    local page = pitch("settings", "Sound", "Music")
+    local acct_pitch = pitch("account", "Sign up", "New name")
+    -- The sides were the panel that held out longest: thirty six points on a
+    -- monitor and thirty on a phone, the two numbers decision 104 replaced,
+    -- kept because `M.menu` handed that one list the column's stop height
+    -- instead of the row height every other panel uses. The stop is gone and
+    -- the lists that are left are all measured the same way.
+    local match_pitch = pitch("zone", "Team Battle", "Duel", {home = false})
     check("and stands its rows the same height apart",
-          list and slots and page and sides
+          list and slots and page and acct_pitch and match_pitch
           and math.abs(list - slots) < 1 and math.abs(list - page) < 1
-          and math.abs(list - sides) < 1,
-          string.format("list %s, slots %s, settings %s, sides %s",
+          and math.abs(list - acct_pitch) < 1
+          and math.abs(list - match_pitch) < 1,
+          string.format("list %s, slots %s, settings %s, account %s, "
+                        .. "in a match %s",
                         tostring(list), tostring(slots), tostring(page),
-                        tostring(sides)))
+                        tostring(acct_pitch), tostring(match_pitch)))
 end
 
 -- --- one strength ----------------------------------------------------------
 --
--- Both columns are the thing being read, so both are read at full strength.
+-- The column is the thing being read wherever it stands, so it is read at
+-- full strength in both places.
 --
--- They were not. `M.hud` drops every word on screen to a third while a menu
--- is up, so the instruments it stands over recede, and it returns early with
--- that still set. The landing's column is drawn inside `M.hud` before that
+-- It was not. `M.hud` drops every word on screen to a third while a menu is
+-- up, so the instruments it stands over recede, and it returns early with
+-- that still set. The landing's column was drawn inside `M.hud` before that
 -- return and came out lit; the in-match column is drawn after it and came out
 -- at 0.34 on the same rows through the same function. RESUME was grey against
--- PLAY NOW's white and a stop's answer was barely there.
---
--- This is measured on the two columns together because that is the only way
--- to see it: 0.34 looks deliberate until the identical row beside it is 1.00.
--- It is also the rule with the least chance of being noticed by a test that
--- reads positions, which is what every other check in this file does.
+-- PLAY NOW's white and a stop's answer was barely there. There is one column
+-- now, so the two readings here are the same drawing over a fight and over
+-- the stands.
 
 do
-    local function alpha(word, menu)
-        frame({menu = menu})
+    local function alpha(word, o)
+        frame(o or {})
         local t = said(word)
         if not t then return nil end
         return (t.col[4] or 1) * (t.dim or 1)
     end
-    local land_key, menu_key = alpha("PLAY NOW"), alpha("RESUME",
-                                                        column_view())
-    check("both columns light their key the same",
+    local land_key = alpha("PLAY")
+    local menu_key = alpha("PLAY", {home = false})
+    check("the column lights its key the same in both places",
           land_key and menu_key and math.abs(land_key - menu_key) < 0.01,
-          string.format("landing %s, menu %s", tostring(land_key),
+          string.format("at home %s, in a match %s", tostring(land_key),
                         tostring(menu_key)))
-    local land_lbl, menu_lbl = alpha("ZONE"), alpha("LEAVE", column_view())
+    local land_lbl = alpha("ZONE")
+    local menu_lbl = alpha("ZONE", {home = false})
     check("and their labels", land_lbl and menu_lbl
           and math.abs(land_lbl - menu_lbl) < 0.01,
-          string.format("landing %s, menu %s", tostring(land_lbl),
+          string.format("at home %s, in a match %s", tostring(land_lbl),
                         tostring(menu_lbl)))
     local land_val = alpha("Team Battle")
-    local menu_val = alpha("Pylon", column_view())
+    local menu_val = alpha("Team Battle", {home = false})
     check("and their answers", land_val and menu_val
           and math.abs(land_val - menu_val) < 0.01,
-          string.format("landing %s, menu %s", tostring(land_val),
+          string.format("at home %s, in a match %s", tostring(land_val),
                         tostring(menu_val)))
     -- And the labels down a column are one weight the whole way, whether or
     -- not the stop has an answer beside it. The settings stop had its name in
     -- ink for two decisions, on the argument that a stop with nothing at full
     -- strength reads as unpressable; what made it read that way was the dim
     -- above, and with that gone the ink left one white word in a column of
-    -- muted ones. Alpha is the same on both, so this asks the color.
-    local function ink(word, menu)
-        frame({menu = menu})
+    -- muted ones. Alpha is the same on all of them, so this asks the color.
+    local function ink(word, o)
+        frame(o or {})
         local t = said(word)
         if not t then return nil end
         return string.format("%.2f,%.2f,%.2f", t.col[1], t.col[2], t.col[3])
     end
-    local leave = ink("LEAVE", column_view())
-    local settings = ink("SETTINGS", column_view())
-    local side = ink("SIDE", column_view())
+    local acct = ink("ACCOUNT")
+    local settings = ink("SETTINGS")
+    local ship = ink("SHIP")
     local zone_lbl = ink("ZONE")
-    check("and every label down a column is the one weight",
-          leave and leave == settings and leave == side and leave == zone_lbl,
-          string.format("leave %s, settings %s, side %s, landing %s",
-                        tostring(leave), tostring(settings), tostring(side),
+    check("and every label down the column is the one weight",
+          acct and acct == settings and acct == ship and acct == zone_lbl,
+          string.format("account %s, settings %s, ship %s, zone %s",
+                        tostring(acct), tostring(settings), tostring(ship),
                         tostring(zone_lbl)))
     -- Except under a card, where the dim is meant for the column too: it is
     -- what the question is being read over, and it cannot reach back to quiet
     -- what was drawn before it.
-    local under = column_view()
-    under.ask = {head = "Leave the game?"}
-    local quiet = alpha("RESUME", under)
+    local quiet = alpha("PLAY", {home = false, ask = true})
     check("but a card over the column quiets it like everything else",
           quiet and quiet < land_key - 0.1,
           string.format("%s under a card, %s without one", tostring(quiet),
@@ -426,10 +442,10 @@ end
 -- out and nothing there to explain it.
 
 do
-    local function washed(open, weight, menu)
-        frame({open = open, menu = menu,
-               sel = open == "zone" and "land_pick_zone" or nil,
-               sel_value = open == "zone" and "duel" or nil})
+    local function washed(open, weight)
+        frame({open = open,
+               sel = open == "zone" and "menu_pick" or nil,
+               sel_value = open == "zone" and 2 or nil})
         for _, r in ipairs(rects) do
             local c = r.col
             if c and math.abs(c[1] - pal.FRIEND[1]) < 0.01
@@ -457,17 +473,16 @@ do
     --
     -- Measured against the box a press lands in rather than against a number
     -- written down here, which is the same rectangle by construction now: what
-    -- lights up is what a press lands on. The four surfaces each name the row
+    -- lights up is what a press lands on. The four panels each name the row
     -- their cursor is standing on.
     local EDGE = {
-        {open = "zone", sel = "land_pick_zone", sel_value = "duel"},
-        {open = "account", sel = "land_pick_account", sel_value = 1},
+        {open = "zone", sel = "menu_pick", sel_value = 2},
+        {open = "account", sel = "menu_pick", sel_value = 2},
         {open = "ship", sel = "land_kit_row", sel_value = 8},
-        {sel = "menu_row", sel_value = 2, menu = settings_view()},
+        {open = "settings", sel = "menu_row", sel_value = 2},
     }
     for _, s in ipairs(EDGE) do
-        frame({open = s.open, sel = s.sel, sel_value = s.sel_value,
-               menu = s.menu})
+        frame({open = s.open, sel = s.sel, sel_value = s.sel_value})
         local lit
         for _, r in ipairs(rects) do
             local c = r.col
@@ -485,8 +500,7 @@ do
                 break
             end
         end
-        local name = s.open or "settings"
-        check(name .. " lights its row the full width of the glass",
+        check(s.open .. " lights its row the full width of the glass",
               lit and box and math.abs(lit.x - box.x) < 1
               and math.abs(lit.w - box.w) < 1,
               lit and box
@@ -503,11 +517,11 @@ end
 -- roster's pager on another, which is two answers to "where am I".
 
 do
-    for _, open in ipairs({"zone", "account", "ship"}) do
+    for _, open in ipairs({"zone", "account", "ship", "settings"}) do
         frame({open = open})
         local backs = 0
         for _, r in ipairs(ui.hits) do
-            if r.action == "land_back" then backs = backs + 1 end
+            if r.action == "menu_back" then backs = backs + 1 end
         end
         check("the " .. open .. " panel heads itself exactly once",
               backs == 1, backs .. " ways back")
@@ -518,7 +532,7 @@ do
     frame({open = "ship"})
     local backs, opens = 0, 0
     for _, r in ipairs(ui.hits) do
-        if r.action == "land_back" then backs = backs + 1 end
+        if r.action == "menu_back" then backs = backs + 1 end
         if r.action == "land_sect" then opens = opens + 1 end
     end
     check("the ship menu heads itself once and opens five parts",

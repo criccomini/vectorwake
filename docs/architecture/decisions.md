@@ -7382,3 +7382,86 @@ gone out. That one is Chris's to post, not something a commit can do.
 **Reconsider if:** the landing page wants a voice in the middle again, in which
 case it is the company's and not a person's, and it does not name another game.
 
+
+---
+
+## 140. One menu
+
+**Status:** accepted
+
+**What:** the landing and the in-match column are one menu. Four stops,
+`ACCOUNT`, `ZONE`, `SHIP`, `SETTINGS`, over one key, drawn by one function off
+one view, in the same order wherever it stands. `SIDE` leaves the column.
+
+The key reads where this client is sitting rather than which screen it is on.
+No seat anywhere, on the front page or on a bench, and it says `PLAY` and is
+the way into one; a seat of your own and it says `SPECTATE`, hands the hull
+back over `C2S_WATCH`, and leaves this pilot watching the room they were in
+from its own gallery. `RESUME` is gone: escape, the menu key, or a press on
+the glass beside the column put it away in a match, which is what a press
+beside a panel means everywhere else here.
+
+`home` is the one thing left that the two places disagree about, and it is
+about the screen rather than about the menu. Out there the column is the whole
+front end, so it carries the lockup, washes nothing behind it, and cannot be
+dismissed, because dismissing it would leave somebody looking at a starfield
+with no way back. In a match it is a panel raised over a fight.
+
+**Why:** they were the same drawing already. `land_stop`, `land_list`,
+`land_panel`, `panel_frame` and `commit_key` drew both, and the second
+geometry was written as "the same stops at the same width over the same
+breathing key" as the first. What they did not share was the model, and two
+models drift: the landing grew `ACCOUNT` and the column grew `SETTINGS`, so
+where a thing lived depended on whether you had taken a seat yet. A pilot who
+learned the front page arrived in a room and found the settings somewhere else
+and their account nowhere.
+
+It cost more than a stop apiece. Two keyboard walks, one a written list of
+four named controls and the other a filter over everything published, which
+disagreed about whether a row was reachable before its list had arrived. Two
+sets of actions for one press, so eight branches in `arena.script` where four
+would do. Two pieces of state saying which stop was open, `ui.col_open` and
+`menu.stack`, kept in step by hand. `landing_test` and `column_test` each
+checking half of one object.
+
+Sitting yourself down comes back, which decision 136 removed and Chris asked
+for twice. What 136 removed was a `LEAVE SEAT` stop with two different answers
+and a `SPECTATE` row at the end of the ship roster: the same act reached two
+ways, one of them by turning a carousel one page too far. This is neither. It
+is the state the column already reports, on the one control that reports state,
+and the act it performs is the one the zone list already performed when you
+picked the game you were in. It is a better version of that act: the room, the
+map, the roster and the delayed channel all stay, where leaving for the stands
+tore the session down and dialed it again.
+
+`SIDE` goes because crossing to another team is a thing you do about the room
+you are in rather than about yourself, and the room is about to be rebuilt: the
+scoreboard and the zone and arena lists are next, and a side belongs beside
+them. `team_rows`, `NODES.side` and the `team` and `found` acts go with the
+stop rather than sitting unreachable until then.
+
+**Cost:** the fourth stop does not fit the rail. On a short window the landing
+lies its column down into cells beside the key, and four of them at 320 points
+came to 67 points each, which holds neither a call sign nor a game's name. The
+rail takes a floor now: one line where the window can hold every cell at 96
+points, and a grid of two otherwise. A landscape phone that used to get one
+band along the foot gets two rows of two.
+
+The wire is unmoved. `C2S_WATCH` has been in the protocol since before decision
+136 and the server still answers it, gate and all: a wounded pilot keeps their
+hull, a full gallery refuses, and the next welcome is the answer. Nothing in
+`sim/` moved and no golden was regenerated.
+
+**Verified:** the client's suite, with `landing_test` rewritten to drive the
+one column through `ui.menu` on all four windows, `column_test` and
+`menu_language_test` retargeted at the four stops, and `menu_test` holding the
+new model: the same stops at home, on a bench and in a seat, the key naming
+`play` or `spectate` off `menu.flying`, and the account acts pressed as rows of
+the tree. luacheck clean over 107 files. The playtest harness plays it:
+`arrive` presses `menu_go` with whichever hand the profile has, and
+`ship-change` walks the column into the ship panel and back.
+
+**Reconsider if:** the front page wants something the column cannot hold. It is
+four stops and a key at a phone's measure, and the argument for docking it
+there (decision 63) was that a phone held upright gives it the whole window.
+A fifth stop is the number to watch.

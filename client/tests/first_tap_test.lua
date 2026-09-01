@@ -15,7 +15,7 @@
 --
 -- `arena.script` is a Defold script and cannot be required here, so this reads
 -- `on_input` out of it and runs it against stubbed modules, which is what
--- landing_test does with `land_act` for the same reason. What is checked is
+-- landing_test does with `menu_act` for the same reason. What is checked is
 -- how many presses a tap makes, not how the rule is spelled.
 
 package.path = "client/?.lua;" .. package.path
@@ -43,8 +43,9 @@ if not body then
 end
 
 -- The zone stop, as the interface publishes it: one box, one action, and
--- `land_act` is what a press on it reaches.
-local STOP = {x = 0, y = 0, w = 300, h = 44, action = "land_zone"}
+-- `menu_act` is what a press on it reaches.
+local STOP = {x = 0, y = 0, w = 300, h = 44,
+               action = "menu_stop", value = "zone"}
 
 -- A session, fresh: nothing has touched the screen yet, and the stop is under
 -- wherever the tap lands. `forgiving` is the near miss, where a fingertip
@@ -73,9 +74,9 @@ local function session(forgiving)
         sfx = {ui = function() end},
         binds = {on_press = function() return nil end},
         held = {}, tapped = {}, owner = {}, lifted = {},
-        -- The landing's own handler. Whether it recognized the action is all
+        -- The menu's own handler. Whether it recognized the action is all
         -- the press path reads back; the count is the question here.
-        land_act = function(_, action, value)
+        menu_act = function(_, action, value)
             made[#made + 1] = {action = action, value = value}
             return true
         end,
@@ -121,7 +122,8 @@ do
     check("the first tap presses the stop once", #s.made == 1,
           #s.made .. " presses, so a toggle opens and shuts in one frame")
     check("and it is the stop that was tapped",
-          s.made[1] and s.made[1].action == "land_zone")
+          s.made[1] and s.made[1].action == "menu_stop"
+          and s.made[1].value == "zone")
     local taken = s.claimed()
     check("and the finger is taken, so the stick is not offered it",
           taken ~= nil and taken[7] == true)

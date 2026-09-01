@@ -248,10 +248,10 @@ local go_home
 -- and what draws, and it runs above the gate both of them read.
 local settle_ship
 local ship_foot
--- And the landing's own presses, which both hands reach: the pointer path is
+-- And the menu's own presses, which both hands reach: the pointer path is
 -- written where every other press is, a long way below the frame loop that
 -- reads the keyboard.
-local land_act
+local menu_act
 
 -- HTML5 builds run Lua 5.1, which has no bitwise operators. Every bitfield in
 -- this client is a sum of distinct powers of two, so a digit test is exact.
@@ -542,41 +542,14 @@ local function shut_panels()
     ui.help = false
     ui.rooms_open = false
     ui.room_ask = nil
-    -- The landing's open panel is a panel like the rest: the menu column coming
-    -- up stands it down rather than leaving it to reappear underneath, and the
-    -- cursor goes with it. The two columns stand in the same place, so a lit
-    -- stop under the one that replaced it is the interface drawn twice.
-    ui.col_open, ui.col_sect, ui.col_hull = nil, nil, nil
+    -- And the level the ship stop was open at, with the cursor: the column
+    -- comes up on its bare stops every time.
+    ui.col_sect, ui.col_hull = nil, nil
     ui.col_sel, ui.col_sel_value = nil, nil
     ui.page_scroll = 0
     -- And the slide with it, rather than left half up for the next panel to
     -- inherit: this is the whole screen changing hands, not a panel closing.
     ui.panel_shut()
-end
-
--- Put a stop's list away and leave the cursor on the stop it hung off.
---
--- That is where a hand walking the column is standing: the rows it was in
--- have gone and the stop is what took their place on the screen. A pointer
--- that picked a row and moved on loses the mark on its next move, since the
--- pointer gives up the cursor when it leaves a control. See `land_hover`.
-local function land_shut()
-    if ui.col_open then
-        ui.col_sel, ui.col_sel_value = "land_" .. ui.col_open, nil
-    end
-    ui.col_open, ui.col_sect, ui.col_hull = nil, nil, nil
-end
-
--- And the other way: a panel that has just opened stands on its own head.
---
--- Nothing stood on it at all. The stop a panel climbs off goes out through the
--- bottom edge with the column, so the cursor was left on a control that is no
--- longer drawn: the panel opened with none of its rows lit, a hand on the
--- arrows had to press one to find the top of a page it was already looking at,
--- and a hand on a pointer had nothing saying which level of the stack it was
--- reading. `menu_cursor` is the same rule for the column in a match.
-local function land_open()
-    ui.col_sel, ui.col_sel_value = "land_back", nil
 end
 
 -- A credit spent, or a refusal.
@@ -595,11 +568,16 @@ local function spend(moved)
     sfx.ui(moved and "ui_go" or "ui_deny")
 end
 
--- Where the cursor stands after the in-match column has changed level: on the
--- head of whatever page is open, and on the stop itself once the last page has
--- come off it. The landing splits the same rule between `land_open` and
--- `land_shut`; the column keeps it in one function because its levels are a
--- stack rather than a panel with another over it.
+-- Where the cursor stands after the column has changed level: on the head of
+-- whatever page is open, and on the stop itself once the last page has come
+-- off it.
+--
+-- Nothing stood on either at first. The stop a panel climbs off goes out
+-- through the bottom edge with the column, so the cursor was left on a control
+-- that is no longer drawn: the panel opened with none of its rows lit, a hand
+-- on the arrows had to press one to find the top of a page it was already
+-- looking at, and a hand on a pointer had nothing saying which level of the
+-- stack it was reading. This was two functions while the menu was two menus.
 --
 -- `stop` is the stop that level hangs off, which only matters where there is
 -- no page left to stand on: the stack has already been popped by then and
@@ -698,9 +676,15 @@ TUNE.PANEL_HANDLERS = {
         if menu.ask then return false end
         -- With the column up, escape walks back out of it: a page first, then
         -- the column itself. One press put it up and one press takes it down
-        -- from its own three stops, which is what the key has always meant;
+        -- from its own bare stops, which is what the key has always meant;
         -- what it does not do any more is close a page and the panel around it
         -- in the same press.
+        --
+        -- At home the last of those steps is refused rather than handled here:
+        -- `menu.close` comes back to the bare stops and leaves the column
+        -- standing, because out there there is nothing behind it to close on
+        -- to. So escape on the front page walks out of whatever is open and
+        -- then does nothing, which is what it has always done out there.
         if menu.open then
             local stop = menu.stack[1]
             if ship_sect_back() then
@@ -710,12 +694,11 @@ TUNE.PANEL_HANDLERS = {
             if menu.page_back() then
                 ui.page_scroll = 0
                 menu_cursor(stop)
-                sfx.ui("ui_move")
             else
                 menu.close()
                 ui.col_sel, ui.col_sel_value = nil, nil
-                sfx.ui("ui_move")
             end
+            sfx.ui("ui_move")
             return true
         end
         -- Escape dismisses the innermost open panel before opening the menu.
@@ -725,20 +708,11 @@ TUNE.PANEL_HANDLERS = {
             ui.inspect = nil
         elseif ui.help then
             ui.help = false
-        elseif ui.col_open then
-            land_shut()
         elseif ui.details then
             toggle_details()
         elseif ui.rooms_open then
             ui.rooms_open = false
         else
-            -- Nothing left to close, and on the front page nothing to open
-            -- either. The menu is about the room you are in, and out here you
-            -- have not taken a seat in one: the key is not drawn on that
-            -- screen, so escape must not be the way around its absence.
-            -- `menu.home` is set every frame by `frame.live` and is the same
-            -- fact `o.landing` carries into the drawing.
-            if menu.home then return true end
             toggle_menu()
             sfx.ui("ui_go")
             return true
@@ -773,7 +747,14 @@ TUNE.PANEL_HANDLERS = {
         end
     end,
     help = function(_, live)
-        if live and not menu.typing() then
+        -- In a room you are in, like the scoreboard beside it. The controls
+        -- table is a slab of text over a fight and the menu is the other one,
+        -- and the two are one at a time: at home the menu is the screen and
+        -- cannot be stood down for it, so a table raised out there would be
+        -- drawn under the thing that is supposed to shut it. The controls are
+        -- a page of the settings stop, which is one press away wherever you
+        -- are standing.
+        if in_room(live) and not menu.typing() then
             toggle_help()
             sfx.ui("ui_move")
         end
@@ -815,14 +796,12 @@ TUNE.PANEL_HANDLERS = {
 -- lit under the arrows and stayed dark under a pointer resting on them. One
 -- row, one way of being under a hand, whichever hand it is.
 local LAND_HOT = {
-    play_now = true, land_account = true, land_zone = true, land_ship = true,
-    land_pick_zone = true, land_pick_ship = true, land_back = true,
-    land_pick_account = true, land_kit_row = true, land_kit_reset = true,
-    land_sect = true, land_flair = true, land_page_ship = true,
-    -- And the menu's own column, which is the same interface with a different
-    -- set of stops on it: one cursor, one pointer, one rule for what lights.
     menu_go = true, menu_stop = true, menu_pick = true, menu_row = true,
     menu_back = true,
+    -- And the ship panel's own rows, which are the one stop with a second
+    -- level inside it.
+    land_pick_ship = true, land_kit_row = true, land_kit_reset = true,
+    land_sect = true, land_flair = true, land_page_ship = true,
 }
 
 -- The arrows either side of a value, and the row each pair belongs to.
@@ -1031,7 +1010,7 @@ local function leave_world()
     ui.help_prompt = false
     ui.map = false
     ui.room_ask = nil
-    ui.col_open, ui.col_sect, ui.col_hull = nil, nil, nil
+    ui.col_sect, ui.col_hull = nil, nil
     ui.col_sel, ui.col_sel_value = nil, nil
     ui.panel_shut()
 end
@@ -1659,12 +1638,11 @@ function update(self, dt)
     -- directory holds, and the counts on it are the whole reason somebody has
     -- it open. A panel drawn from the last answer before the join would be a
     -- list of where everybody was a minute ago.
-    -- The landing's zone stop is the games list now, so an open one is what
-    -- keeps the list fresh: a zone that comes up or goes down while somebody
-    -- is reading it changes under them rather than sitting at whatever the
-    -- first ask returned. The drawer used to hold that list too, and the gate
-    -- named its page; the menu column holds no games at all.
-    if ui.col_open == "zone" then
+    -- The zone stop is the games list, so an open one is what keeps the list
+    -- fresh: a zone that comes up or goes down while somebody is reading it
+    -- changes under them rather than sitting at whatever the first ask
+    -- returned.
+    if menu.open and menu.stop_open() == "zone" then
         directory.tick(dt)
     elseif ui.rooms_open and not menu.open then
         directory.tick(dt)
@@ -1781,18 +1759,17 @@ function update(self, dt)
         if act then apply_menu(self, act) end
     elseif menu.open or self.attract then
         -- One walk for both columns. The landing's stops and the menu's are
-        -- the same interface with different stops on it, and what is on the
-        -- screen is a fact the drawing has already decided: `ui.col_walk`
-        -- reads the boxes the last frame published rather than a second list
-        -- of controls kept beside it.
+        -- one interface, and what is on the screen is a fact the drawing has
+        -- already decided: `ui.col_walk` reads the boxes the last frame
+        -- published rather than a second list of controls kept beside it.
         --
         -- Up and down move the one cursor a pointer moves, and enter presses
-        -- what it is on, which with nothing lit is still the key: PLAY NOW out
-        -- here and RESUME in the menu. See `ui.col_step` and `ui.col_go`.
+        -- what it is on, which with nothing lit is the column's own key. See
+        -- `ui.col_step` and `ui.col_go`.
         --
         -- Left and right are read where a row holds a value: the ship panel's
-        -- credits out here, and the settings panel's ranges in the menu.
-        -- `ui.col_side` is what knows which, so this stays one branch.
+        -- credits, and the settings panel's ranges. `ui.col_side` is what
+        -- knows which, so this stays one branch.
         local dir = (tapped[hash("k_down")] and 1)
             or (tapped[hash("k_up")] and -1) or 0
         if dir ~= 0 and ui.col_step(dir) then sfx.ui("ui_move") end
@@ -1800,7 +1777,7 @@ function update(self, dt)
             or (tapped[hash("k_left")] and -1) or 0
         if side ~= 0 then
             local action, value = ui.col_side(side)
-            if action then land_act(self, action, value) end
+            if action then menu_act(self, action, value) end
         end
         -- Enter or space presses what the cursor is on. Space is a key a
         -- pilot may fly on and cannot be a second enter there, but nothing
@@ -1812,7 +1789,7 @@ function update(self, dt)
         -- sign has a space in it, and the trigger belongs to the line.
         if tapped[hash("select")] or tapped[hash("k_space")] then
             local action, value = ui.col_go()
-            if action then land_act(self, action, value) end
+            if action then menu_act(self, action, value) end
         end
     end
 
@@ -2366,40 +2343,6 @@ function update(self, dt)
         local hud_me = me
         if watching then hud_me = e end
         if hud_me and sim.ship_private and not sim.ship_private(hud_me) then hud_me = nil end
-        -- The landing's three stops: who you are, where you are going, what
-        -- you arrive as. Built only while the stands are up, from the same
-        -- places the drawer reads: the games off the directory with their
-        -- one-line formats, the builds off the account with sitting out as
-        -- the last row, the call sign off the menu.
-        local land = nil
-        if self.attract then
-            local at = self.attract_zone or menu.zone
-            local zones = {}
-            for _, zr in ipairs(directory.rows) do
-                local fmt = zr.teams or ""
-                if zr.time and zr.time ~= "" then
-                    fmt = fmt ~= "" and (fmt .. " · " .. zr.time) or zr.time
-                end
-                zones[#zones + 1] = {label = zr.name, zone = zr.zone,
-                                     live = zr.live,
-                                     format = fmt ~= "" and fmt or nil,
-                                     here = zr.zone == at}
-            end
-            land = {name = menu.name, zone = directory.label_of(at),
-                    ship = menu.landing_ship(),
-                    zones = zones,
-                    -- What the ship stop opens: five parts of a ship over
-                    -- the credits they are bought with, or whichever of the
-                    -- five is open over the same credits. `ui.col_sect` is
-                    -- which, and nil is the menu itself.
-                    panel = menu.ship_panel(ui.col_sect, ui.col_hull),
-                    -- What the account stop opens, and the dot it wears
-                    -- while this guest has a rated game a lost account would
-                    -- cost them. The drawer says the same thing in words on
-                    -- a band; out here the stop is the whole account.
-                    account = menu.account_rows(),
-                    warn = menu.guest_stakes()}
-        end
         ui.hud({
             me = hud_me,
             -- Watching, and what of: a particular hull, or the room's own
@@ -2415,10 +2358,8 @@ function update(self, dt)
             -- Whether this watch is the front end rather than a bench: no seat
             -- was ever taken here, so the screen carries the game's name and
             -- the key that gets you in, and the corner drops TAKE SEAT because
-            -- PLAY NOW is that key.
+            -- the column's own key is that key.
             landing = self.attract or nil,
-            -- What the stops say and what their lists hold, built above.
-            land = land,
             -- The call sign belongs to this connection even while the camera
             -- belongs to a watched pilot. The roster uses it to mark this
             -- watcher's own row instead of marking the camera subject as us.
@@ -2432,12 +2373,23 @@ function update(self, dt)
             -- mark that says so is the one courtesy the channel owes.
             on_air = net.on_air,
             watchers = net.watchers,
-            -- Open, or still on its way down. The column is drawn for as long
-            -- as it is on screen, and everything the menu stands over has to
-            -- stay stood down for exactly that long: a landing column that
-            -- came back the frame the menu was dismissed would appear under
-            -- the one still sliding out of the same place.
-            menu_open = menu.open or ui.column_up(),
+            -- Whether the column is standing over a room this client is in,
+            -- open or still on its way down. It is drawn for as long as it is
+            -- on screen, and the two big centered things the HUD draws, the
+            -- ending and the help table, have to stay stood down for exactly
+            -- that long.
+            --
+            -- Not true at home, where the column is the screen rather than
+            -- something over it: out there the ending goes on being drawn
+            -- behind the front page, which is what a stranger in the stands
+            -- should see happen at the end of the match they are watching.
+            menu_open = not menu.home and (menu.open or ui.column_up()),
+            -- And whether one of its stops has a panel open, which is a
+            -- different question: names scattered through the glass read as a
+            -- fault, so the plates and the phone's feed go down under a panel
+            -- wherever it stands. The bare column is four rows at the foot and
+            -- covers nothing.
+            panel = menu.open and menu.stop_open() ~= nil,
             -- And whether a question is standing over all of it, which is the
             -- one thing on screen that takes the keys off everything else.
             card = menu.ask ~= nil,
@@ -2549,10 +2501,10 @@ function update(self, dt)
     -- and where it is settled.
     --
     -- Watched here rather than hung off each press that can close it. There
-    -- are six of those: the way back on the head, the stop pressed again,
-    -- RESUME, escape, the glass beside the panel, and a socket that dropped.
-    -- A draft that outlived any one of them would be a menu holding a ship
-    -- the pilot had walked away from.
+    -- are six of those: the way back on the head, the stop pressed again, the
+    -- column's key, escape, the glass beside the panel, and a socket that
+    -- dropped. A draft that outlived any one of them would be a menu holding
+    -- a ship the pilot had walked away from.
     local ship_up = menu.open and not self.attract
         and menu.stop_open() == "ship"
     if ship_up ~= self.ship_panel_up then
@@ -2573,23 +2525,26 @@ function update(self, dt)
     -- that was there.
     if menu.open then
         self.menu_view = menu.view()
-        -- The ship stop opens a panel rather than a page of rows, and it is
-        -- the landing's panel: the same five sections over the same purse,
-        -- built here for the same reason the landing's is, because the level
-        -- it is open at is the interface's state rather than the menu's. The
-        -- head carries the line that says what closing it will do.
+        -- The ship stop opens a panel rather than a page of rows: five parts
+        -- of a ship over the credits they are bought with, built here rather
+        -- than in the menu because the level it is open at is the interface's
+        -- state. The head carries the line that says what closing it will do.
         if menu.stop_open() == "ship" then
             self.menu_view.panel = menu.ship_panel(ui.col_sect, ui.col_hull)
             self.menu_view.foot = ship_foot()
         end
     end
-    if self.menu_view and (menu.open or ui.column_up()) then
-        self.menu_view.open = menu.open
+    -- Whether the column is on the screen at all. It always is at home, where
+    -- it is the screen, except before a room has answered: out there the
+    -- waiting screen is the wordmark on a starfield and nothing else, so that
+    -- nothing moves when the stands arrive.
+    local col_up = menu.open and (not menu.home or self.attract == true)
+    if self.menu_view and (col_up or ui.column_up()) then
+        self.menu_view.open = col_up
         ui.menu(self.menu_view)
     end
-    -- The menu's own card. The account acts stand on the landing now, so
-    -- signing up from the account stop raises this over the stands with no
-    -- column behind it, and it is drawn from one place either way.
+    -- The menu's own card, raised over whichever level of the column asked
+    -- for it and drawn from one place wherever that is.
     ui.land_card(menu.ask)
     -- The question about moving room, last of everything that publishes a hit
     -- box. `ask_card` drops the ones already published, which is what makes a
@@ -2848,7 +2803,8 @@ end
 
 -- The ship that panel was drafting, settled, which happens the moment the
 -- panel stops being on screen however it went: the way back on its head, the
--- stop pressed again, RESUME, escape, or a press on the glass beside it.
+-- stop pressed again, the column's key, escape, or a press on the glass
+-- beside it.
 --
 -- One act for the whole ship. A pilot walking the carousel from an Apex to a
 -- Lattice and trading a repel on the way has changed ship once, not seven
@@ -2912,22 +2868,6 @@ function apply_menu(self, act)
             menu.class = menu.pending
             menu.save_identity()
         end
-        return
-    end
-
-    -- Crossing to another side, and founding one. The same gate a hull change
-    -- gets, for the same reason.
-    if act == "team" or act == "found" then
-        if not self.online then return end
-        if not full_bar("changing sides") then return end
-        if act == "found" then
-            net.found_team()
-        else
-            net.set_team(menu.pending)
-        end
-        -- Left open on purpose, unlike a hull change: the team list is what
-        -- answers, and closing the menu would hide the answer to the question
-        -- just asked.
         return
     end
 
@@ -3006,15 +2946,29 @@ function apply_menu(self, act)
         return
     end
 
-    -- A game picked out of the in-match column's zone stop, once the question
-    -- over it has been answered: leave this one, and put the stands down on
-    -- whichever was picked. Picking the game you are in is the plain leave
-    -- that had a stop of its own until decision 136, and it lands in the same
-    -- place, since the front page is that game watched from the stands.
+    -- A game picked off the zone stop, and what the key does when there is a
+    -- seat to hand back: leave whatever this client is in, and put the stands
+    -- down on whichever game was named. Picking the game you are in is the
+    -- plain leave that had a stop of its own until decision 136, and it lands
+    -- in the same place, since the front page is that game watched from the
+    -- stands.
     if act == "leave_for" then
         local to = menu.pending
         menu.note = nil
-        go_home(self)
+        if menu.home then
+            -- Already in the stands. Then this is turning the glass to
+            -- another game rather than leaving one: the attract loop re-dials
+            -- and nothing else moves, which is what the landing's own zone
+            -- press did before there was one list doing both jobs.
+            if self.attract then session.attract_drop(self) end
+            self.attract_wait = 0
+            menu.close()
+        else
+            -- The menu stays up across it, because at home it is the screen
+            -- and there is nothing to come back to it from. `go_home` puts it
+            -- back on its bare stops on the way.
+            go_home(self, true)
+        end
         if type(to) == "string" and to ~= "" then self.land_zone = to end
         sfx.ui("ui_go")
         return
@@ -3162,43 +3116,106 @@ end
 --
 -- Answers whether it recognized the action, so the pointer's own handler can
 -- carry on down its list of everything else on the screen.
-function land_act(self, action, value)
-    -- The menu column's own presses, first, because they are the ones that
-    -- can be up over anything.
+function menu_act(self, action, value)
+    -- The column's one key: into a seat, or out of one.
     --
-    -- RESUME hands the controls back to the ship, which never stopped flying.
-    -- The same key put the column up, and the same press puts it down.
-    if action == "menu_go" or action == "menu_shut" then
-        menu.close()
+    -- Which of the two it is comes off where this client is sitting, and the
+    -- three answers are the three states `frame.live` can leave the menu in.
+    -- No room at all, which is the front page: the press promotes the standing
+    -- connection to the stands into a real join. A room with no seat of ours,
+    -- which is a bench: the room already has us and only owes us a hull, so
+    -- the press asks for one where it stands. And a seat of our own: the press
+    -- hands it back and leaves us in the stands of the same game, which is
+    -- what picking your own zone off the list already did. See decision 140.
+    if action == "menu_go" then
+        -- A seat of your own: hand it back and watch the room you were in
+        -- from its own gallery. The connection, the map, the roster and the
+        -- delayed channel all stay; what changes is that this client has no
+        -- hull in the fight. Gated exactly as a hull change is, since it is
+        -- the same act of standing a ship down, and refused with the reason
+        -- rather than in silence.
+        if menu.flying() then
+            if not full_bar("sitting out") then
+                sfx.ui("ui_deny")
+                return true
+            end
+            net.sit_out()
+            menu.close()
+            ui.col_sel, ui.col_sel_value = nil, nil
+            sfx.ui("ui_go")
+            return true
+        end
         ui.col_sel, ui.col_sel_value = nil, nil
+        -- A bench: the room already holds this client and owes it only a
+        -- hull, so the press asks for one where it stands rather than dialing
+        -- anything. The caps answer, and a room that filled while you watched
+        -- refuses, which leaves you exactly where you were.
+        if menu.watching and self.online and not self.attract then
+            menu.pending = menu.class
+            apply_menu(self, "ship")
+            sfx.ui("ui_go")
+            return true
+        end
+        -- And the front page, where the press promotes the standing watch
+        -- into a real join. Nothing to settle first: the key had to fly
+        -- whatever the carousel was showing while turning it was only a look;
+        -- turning is the choice now, so what this pilot arrives as was decided
+        -- as they turned.
+        ui.col_sect, ui.col_hull = nil, nil
+        session.deploy(self)
+        return true
+    end
+    -- A press off the column: the glass beside an open panel, or the fight
+    -- around the bare stops. It means one level out, which is what the back on
+    -- a panel's head means and what a press beside a panel means everywhere
+    -- else in this interface. At the bare stops one level out is the column
+    -- itself, and at home there is nothing under that, so `menu.close` leaves
+    -- it standing.
+    if action == "menu_shut" then
+        local stop = menu.stack[1]
+        if ship_sect_back() then
+            sfx.ui("ui_move")
+            return true
+        end
+        if menu.page_back() then
+            ui.page_scroll = 0
+            menu_cursor(stop)
+        else
+            menu.close()
+            ui.col_sel, ui.col_sel_value = nil, nil
+        end
         sfx.ui("ui_move")
         return true
     end
-    -- One of the three stops. It opens its page, or acts where it has no page:
-    -- leaving is the one stop here that is a press rather than a door.
+    -- One of the four stops. It opens its page, or acts where it has no page
+    -- to open.
     if action == "menu_stop" then
         local act, moved = menu.press_stop(value)
         -- A stop that opened a page opens it at the top of its rows rather
         -- than wherever the last one was read to.
         ui.page_scroll = 0
-        -- And the ship stop opens on its own menu, at the ship being flown,
-        -- which is the rule the landing's ship stop follows: a stop opens
-        -- where the pilot is rather than where they last read to.
+        -- And the ship stop opens on its own menu, at the ship being flown: a
+        -- stop opens where the pilot is rather than where they last read to.
         if value == "ship" then
             ui.col_sect, ui.col_hull = nil, nil
             ui.col_scroll = 0
         end
-        -- And standing on the page's own head, the way the landing's stops
-        -- open. Pressing the stop that is already open shuts it instead, and
-        -- then the cursor belongs on the stop, which is what took the page's
-        -- place on the screen.
+        -- And standing on the page's own head. Pressing the stop that is
+        -- already open shuts it instead, and then the cursor belongs on the
+        -- stop, which is what took the page's place on the screen.
         menu_cursor(value)
         if moved then sfx.ui(act and "ui_go" or "ui_move") end
         if act then apply_menu(self, act) end
         return true
     end
-    -- A side, picked out of the list. One press, whichever side it is: the
-    -- list says them all at once, so no room is walked through on the way.
+    -- A row of an open list: a game off the zone stop, or an account act. One
+    -- press, whichever it is, since a list says them all at once and no row is
+    -- walked through on the way.
+    --
+    -- Where an act raises a card the stop stays open under it. That is the
+    -- whole of what stacking is: back steps out of the log-in panel onto the
+    -- account acts rather than all the way to the column, and the column does
+    -- not slide home behind a panel that covers it.
     if action == "menu_pick" then
         local act, moved = menu.press_row(value)
         if moved then sfx.ui("ui_go") end
@@ -3243,86 +3260,11 @@ function land_act(self, action, value)
         end
         return true
     end
-    -- The landing's one key. See session.deploy.
-    if action == "play_now" then
-        -- Nothing to settle first. The key had to fly whatever the carousel
-        -- was showing while turning it was only a look; turning is the choice
-        -- now, so what this pilot arrives as was decided as they turned.
-        ui.col_open, ui.col_sect, ui.col_hull = nil, nil, nil
-        ui.col_sel, ui.col_sel_value = nil, nil
-        session.deploy(self)
-        return true
-    end
-    -- The landing's stops. All three open their lists in place, and the same
-    -- press again puts one away, like every other toggle here. That is also
-    -- how a hand on the arrows gets out of a list it has opened: enter on the
-    -- stop it hangs off shuts it, and so does escape.
-    --
-    -- Account was a door until decision 99, opening the drawer on a pilot
-    -- page. There is no such page: what it held is `menu.account_rows`, and
-    -- this stop is where an account is edited from.
-    if action == "land_account" or action == "land_zone"
-       or action == "land_ship" then
-        local which = "account"
-        if action == "land_zone" then which = "zone"
-        elseif action == "land_ship" then which = "ship" end
-        if ui.col_open == which then
-            land_shut()
-        else
-            ui.col_open = which
-            -- A stop opens where the pilot is rather than where they last
-            -- read to: the ship stop opens on its own menu, at the top of it.
-            if which == "ship" then
-                ui.col_sect, ui.col_hull = nil, nil
-                ui.col_scroll = 0
-            end
-            -- And standing on the panel's own head. See `land_open`.
-            land_open()
-        end
-        sfx.ui("ui_move")
-        return true
-    end
-    -- The way back off the head of an open panel, and the backdrop behind it:
-    -- a press on the margin beside the glass means the same thing a press on
-    -- the back means, which is out one level. At the first level, which is the
-    -- only level there is so far, out is the column coming back.
-    if action == "land_back" or action == "land_shut" then
-        -- One level, which is what the back on a panel's head has always
-        -- meant: out of a section onto the ship menu, and out of the menu
-        -- onto the landing. The backdrop behind the glass means the same
-        -- thing, so a press on the margin walks the stack down too.
-        if ui.col_open == "ship" and ui.col_sect then
-            -- Onto the part it was opened from, which is the rule `land_shut`
-            -- follows one level further out: what took the panel's place on
-            -- the screen is what the cursor is left standing on.
-            ui.col_sel, ui.col_sel_value = "land_sect", ui.col_sect
-            ui.col_sect, ui.col_hull = nil, nil
-            ui.col_scroll = 0
-        else
-            land_shut()
-        end
-        sfx.ui("ui_move")
-        return true
-    end
     -- The panel's own glass. It swallows a press that missed a row so that one
     -- does not fall through to the backdrop and put the panel away: with the
     -- glass covering most of the window, a thumb landing between two rows
     -- would otherwise dismiss the thing it was aiming at.
     if action == "panel_hold" then return true end
-    -- A game picked from the zone stop's list. The stands re-dial to it at
-    -- once, so the fight behind the glass becomes the one the key would join;
-    -- PLAY NOW stays the press that commits.
-    if action == "land_pick_zone" then
-        land_shut()
-        if value and value ~= ""
-           and value ~= (self.attract_zone or menu.zone) then
-            self.land_zone = value
-            if self.attract then session.attract_drop(self) end
-            self.attract_wait = 0
-        end
-        sfx.ui("ui_go")
-        return true
-    end
     -- One of the five parts of a ship, opened over the menu that names it.
     -- The tray comes with it, so the purse is on screen wherever a credit is
     -- spent, and back steps out onto the menu again.
@@ -3331,14 +3273,8 @@ function land_act(self, action, value)
         -- Body opens on the ship being flown rather than wherever it was last
         -- turned to: a section opens where the pilot is.
         ui.col_hull = value == "body" and menu.panel_home() or nil
-        -- Standing on the head of what it opened, whichever column it opened
-        -- in. The two name their way back differently, because the menu's
-        -- levels are a stack and the landing's are a panel over a panel.
-        if menu.stop_open() == "ship" then
-            menu_cursor()
-        else
-            land_open()
-        end
+        -- Standing on the head of what it opened.
+        menu_cursor()
         ui.col_scroll = 0
         sfx.ui("ui_go")
         return true
@@ -3359,12 +3295,11 @@ function land_act(self, action, value)
     -- and then flew a different one until they pressed. What changes as the
     -- arrows move is what they will arrive in. See decision 118.
     --
-    -- An ask per step is free because of where this panel lives. `land` is
-    -- built only while the stands are up, so the carousel is a home screen
-    -- control and `apply_menu` takes its attract arm every time: a hull
-    -- remembered and saved, nothing sent, nothing closed. The arms that cost
-    -- a respawn and shut the panel are the drawer's roster, which is a press
-    -- and should still be one.
+    -- An ask per step is free because of what `apply_menu` does with it. At
+    -- home its attract arm remembers the hull and saves it, sending nothing
+    -- and closing nothing; in a match `menu.pick_profile` writes the draft
+    -- instead and reports nothing at all, so the whole turn costs one message
+    -- when the panel closes. See `settle_ship`.
     if action == "land_page_ship" then
         local at = menu.hull_page(ui.col_hull or menu.panel_home(), value or 1)
         ui.col_hull = at
@@ -3422,38 +3357,6 @@ function land_act(self, action, value)
     -- is what chooses. Enter on it does nothing rather than repeating a
     -- choice already made, which is the rule every value row here follows.
     if action == "land_pick_ship" then return true end
-    -- An account act from that stop's list, by its place in the list the
-    -- frame drew. The acts are the menu's own, the same ones the pilot page's
-    -- rows ran: it settles what it can settle and hands anything else back
-    -- for the arena to apply, exactly as a row of the drawer does.
-    --
-    -- The list is asked for again here rather than remembered from the draw.
-    -- Nothing about it can have changed between the two, since the account
-    -- state it is built from only moves on a reply this client has to be told
-    -- about, and re-asking is a shorter path than a copy kept in step.
-    if action == "land_pick_account" then
-        local row = menu.account_rows()[value or 0]
-        land_shut()
-        if row and row.act then
-            local act = menu.activate_act(row.act)
-            if act then apply_menu(self, act) end
-            sfx.ui("ui_go")
-        end
-        -- An act that raised a panel of its own leaves the one it was pressed
-        -- on standing under it. That is the whole of what stacking is: back
-        -- steps out of the log-in panel onto the account acts rather than all
-        -- the way to the landing, and the column does not slide home behind a
-        -- panel that covers it.
-        --
-        -- Asked after the act rather than before, because whether an act opens
-        -- anything is the menu's answer to give: `reroll` rolls a name and
-        -- returns, `claim` and `enter_login` raise a card.
-        if menu.ask then
-            ui.col_open = "account"
-            ui.col_sel, ui.col_sel_value = nil, nil
-        end
-        return true
-    end
     return false
 end
 
@@ -3506,9 +3409,9 @@ function on_input(self, action_id, action)
                 sfx.ui("ui_go")
                 return true
             end
-            -- The landing's own controls, which the keyboard reaches
-            -- through the same function. See `land_act`.
-            if land_act(self, r.action, r.value) then return true end
+            -- The menu's own controls, which the keyboard reaches through
+            -- the same function. See `menu_act`.
+            if menu_act(self, r.action, r.value) then return true end
             if r.action == "details" then
                 toggle_details()
                 sfx.ui("ui_move")
