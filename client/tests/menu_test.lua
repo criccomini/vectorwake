@@ -708,11 +708,11 @@ do
 
     -- A key somebody else is on: the two trade, and nothing is left over. That
     -- is the property that makes this safe with no confirmation on it, and a
-    -- pilot who put `map` on W would otherwise have to hunt for their burst.
+    -- pilot who put `map` on W would otherwise have to hunt for their charge.
     menu.press_row(map_at)
-    local traded = menu.bind_chord({"space"})
+    local traded = menu.bind_chord({"d"})
     check("a taken key trades", traded
-          and binds.chord_of.map[1] == "space"
+          and binds.chord_of.map[1] == "d"
           and binds.chord_of.guns[1] == "z",
           table.concat(binds.chord_of.map, "+") .. " / "
           .. table.concat(binds.chord_of.guns, "+"))

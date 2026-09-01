@@ -1776,11 +1776,11 @@ function update(self, dt)
             local action, value = ui.col_side(side)
             if action then land_act(self, action, value) end
         end
-        -- Enter or space presses what the cursor is on. Space is the guns key
-        -- in flight and cannot be a second enter there, but nothing in this
-        -- branch is flying: it runs only while a column or a panel is the
-        -- thing on screen, and space is what a hand expects to press a row
-        -- with on every other interface it has used.
+        -- Enter or space presses what the cursor is on. Space is a key a
+        -- pilot may fly on and cannot be a second enter there, but nothing
+        -- in this branch is flying: it runs only while a column or a panel
+        -- is the thing on screen, and space is what a hand expects to press
+        -- a row with on every other interface it has used.
         --
         -- Not while a card is taking type, which is the branch above: a call
         -- sign has a space in it, and the trigger belongs to the line.
