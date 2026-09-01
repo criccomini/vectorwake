@@ -4363,6 +4363,85 @@ mod tests {
     }
 
     #[test]
+    fn a_seat_taken_from_the_stands_comes_with_the_ground_the_room_is_on() {
+        // The landing joins by watching the channel and then asking for a
+        // hull on the same socket, and the channel runs CHANNEL_DELAY behind
+        // the room. A whistle inside that window changed the map and the
+        // generation for everybody in a hull while the stands were still
+        // being shown the last match. The seat used to come with a welcome
+        // and nothing else, so a pilot who pressed deploy in those seconds
+        // held the old ground and flew the new match on its walls.
+        let mut a = match_room(60, 4);
+        seat_human(&mut a, "pilot");
+        let (tx, mut rx) = mpsc::channel(OUT_QUEUE);
+        let wid = a
+            .watch_join(Seat::guest("deploy", false), tx)
+            .expect("a place in the stands");
+        a.lag_policy.spectate_silence_ticks = u32::MAX;
+
+        // Long enough for the stands to hold a served copy of the ground.
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        for _ in 0..(CHANNEL_DELAY / SNAPSHOT_EVERY * 2) {
+            for _ in 0..SNAPSHOT_EVERY {
+                a.tick();
+            }
+            a.broadcast_snapshot(&mut buf);
+            drain(&mut rx);
+        }
+
+        let stale_map = a.map_msg();
+        let stale_generation = a.settings_generation;
+        a.close_match();
+        assert_ne!(a.map_msg(), stale_map, "the whistle changed the ground");
+        assert_ne!(
+            a.settings_generation, stale_generation,
+            "and the generation"
+        );
+
+        // One frame into the window: the stands are still shown the old match.
+        for _ in 0..SNAPSHOT_EVERY {
+            a.tick();
+        }
+        a.broadcast_snapshot(&mut buf);
+        let shown = drain(&mut rx);
+        assert!(
+            !shown.iter().any(|m| m.first() == Some(&S2C_MAP)),
+            "the channel has not served the new ground yet"
+        );
+
+        a.fly(wid, 0, 8).expect("a seat on the field");
+        let got = drain(&mut rx);
+        let map_at = got
+            .iter()
+            .position(|m| m.first() == Some(&S2C_MAP))
+            .expect("the seat comes with the map");
+        assert_eq!(got[map_at], a.map_msg(), "and it is the map the room is on");
+        assert!(
+            got.iter()
+                .any(|m| m.first() == Some(&protocol::S2C_MAPNAME)),
+            "with its name"
+        );
+        let settings_at = got
+            .iter()
+            .position(|m| m.first() == Some(&S2C_SETTINGS))
+            .expect("and the rules");
+        let generation =
+            u32::from_le_bytes(got[settings_at][1..5].try_into().expect("a generation"));
+        assert_eq!(
+            generation, a.settings_generation,
+            "under the generation the frames to come are packed under"
+        );
+        let welcome_at = got
+            .iter()
+            .position(|m| m.first() == Some(&S2C_WELCOME))
+            .expect("a welcome");
+        assert!(
+            map_at < welcome_at && settings_at < welcome_at,
+            "ground and rules before the welcome, the way the door hands them out"
+        );
+    }
+
+    #[test]
     fn the_door_to_the_stands_hands_out_the_clock_the_channel_is_showing() {
         // Somebody arriving used to be set up from the live room and then
         // served a five second old picture, so their first seconds in the
