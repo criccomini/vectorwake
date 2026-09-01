@@ -65,6 +65,10 @@ HURT = "#ff505a"
 BOUNTY = "#ffe08a"
 KEY_EDGE = "#55708f"
 
+# The list's order inside each group. Chris asked for "alphabetically by
+# name desc", twice, so it is Z to A; flip this if A to Z was meant.
+DESC = True
+
 # --- the geography, from ui.lua ----------------------------------------------
 PAD = 14
 KEY_H = 26
@@ -92,6 +96,13 @@ CAISSON = [
 ME = "DRiFT"
 MVP = "Carrack"
 WATCHERS = ["Halyard", "Moss"]
+
+
+def watching():
+    """The watchers as a side: no score, no seats to take, nobody's color,
+    and zeros for figures, since a watcher has none."""
+    rows = [(n, True, 0, 0, 0, "", 0) for n in WATCHERS]
+    return Side("Watching", MUTE, None, 0, 0, rows, False)
 
 
 class Side:
@@ -152,7 +163,8 @@ def roam_room():
                          rnd.randint(0, 6), f"{rnd.randint(0, 24)}:{rnd.randint(10, 59)}", 0))
         humans = sum(1 for r in rows if r[1])
         sides.append(Side(name, col, None, humans, 8, rows, mine))
-    return dict(label="Free Roam", clock=None, unit=None, sides=sides)
+    return dict(label="Free Roam", clock=None, unit=None, sides=sides,
+                watched=False)
 
 
 ROOMS["roam"] = roam_room()
@@ -568,7 +580,7 @@ COLS = {
     "melee": [("Team", 84), ("K", 24), ("D", 24), ("A", 24)],
     "turf": [("Team", 84), ("K", 24), ("D", 24), ("A", 24)],
     "war": [("Team", 84), ("K", 24), ("D", 24), ("A", 24)],
-    "duel": [("K", 24), ("D", 24)],
+    "duel": [("Team", 84), ("K", 24), ("D", 24)],
     "roam": [("Team", 96), ("K", 24), ("D", 24)],
 }
 
@@ -592,6 +604,7 @@ def m_pilot(p, zone, side, ending=False, portrait=False, lit=False):
     pilot's card."""
     name, human, k, d, a, _t, moved = p
     col = side.col
+    watcher = side.name == "Watching"
     me = name == ME
     wash = ""
     if lit:
@@ -609,8 +622,11 @@ def m_pilot(p, zone, side, ending=False, portrait=False, lit=False):
                       f'font-size:13px;color:{col};opacity:.9;'
                       f'white-space:nowrap;overflow:hidden">{side.name}</span>')
         else:
-            cells += cell({"K": k, "D": d, "A": a}[c], w, READ)
-    if ending:
+            cells += cell({"K": k, "D": d, "A": a}[c], w,
+                          MUTE if watcher else READ)
+    if ending and watcher:
+        cells += cell("", 44, MUTE)
+    elif ending:
         if moved > 0:
             cells += cell(f"+{moved}", 44, PAID, .95)
         elif moved < 0:
@@ -622,7 +638,7 @@ def m_pilot(p, zone, side, ending=False, portrait=False, lit=False):
         mvp = f'<span class="lbl" style="font-size:10px;color:{PAID}">MVP</span>'
     return (f'<div class="row" style="height:{ROW}px;gap:10px;'
             f'padding:0 14px;{wash}">'
-            f'<span style="font-size:17px;color:{col};'
+            f'<span style="font-size:17px;color:{READ if watcher else col};'
             f'opacity:{1 if me else .85}">{name}</span>{mvp}{mark}'
             f'<span class="row" style="margin-left:auto;gap:10px">{cells}</span>'
             '</div>')
@@ -669,7 +685,9 @@ def pilot_card(p, side, room, zone="melee", w=None, note=None):
     figures = f"{k} K · {d} D · {a} A" if zone != "duel" else f"{k} K · {d} D"
     rows.append(read("This match", figures))
     foot = ""
-    if not me and not side.mine:
+    if side.name == "Watching":
+        pass
+    elif not me and not side.mine:
         if side.humans < side.cap:
             foot = (f'<div style="padding:10px 14px 14px">'
                     f'{commit_key("JOIN " + side.name.upper(), None, 44)}</div>')
@@ -688,16 +706,6 @@ def pilot_card(p, side, room, zone="melee", w=None, note=None):
             f'{hrule(".6")}')
     return (f'<div class="glass" style="{"width:" + str(w) + "px" if w else ""}">'
             f'{head}{"".join(rows)}{foot}</div>')
-
-
-def m_watchers():
-    out = [m_band("Watching")]
-    for n in WATCHERS:
-        out.append(
-            f'<div class="row" style="height:{ROW}px;gap:10px;'
-            f'padding:0 14px 0 32px"><span style="font-size:17px;'
-            f'color:{READ};opacity:.85">{n}</span>{helm(MUTE, 12)}</div>')
-    return "".join(out)
 
 
 def m_round(n, who, t, room):
@@ -765,14 +773,30 @@ def commit_key(word, w=STOP_W, h=STOP_H):
 # --- the boards --------------------------------------------------------------
 
 
-def order(room, watching=False):
-    """Your own side first, then everyone else, each run alphabetical by
-    name. A watcher has no side, so for them it is one alphabetical list.
-    The Team column and the color say the side; the order says who is with
-    you, which is what the list is opened for mid-fight."""
-    everyone = [(p, s) for s in room["sides"] for p in s.pilots]
-    return sorted(everyone, key=lambda ps: (not ps[1].mine or watching,
-                                            ps[0][0].lower()))
+def order(room, as_watcher=False):
+    """Your own side first, then everyone else, then the watchers at the
+    foot, each run by name (Z to A while DESC holds). A watcher has no side,
+    so for them the first two groups are one."""
+    groups = [(p, s) for s in room["sides"] for p in s.pilots]
+    if room.get("watched", True):
+        w = watching()
+        groups += [(p, w) for p in w.pilots]
+
+    def key(ps):
+        p, side = ps
+        rank = 2 if side.name == "Watching" else (
+            1 if (as_watcher or not side.mine) else 0)
+        return (rank, p[0].lower())
+    out = sorted(groups, key=key)
+    if DESC:
+        # Reverse the names inside each rank and keep the ranks in place.
+        by_rank = {}
+        for ps in out:
+            by_rank.setdefault(key(ps)[0], []).append(ps)
+        out = []
+        for r in sorted(by_rank):
+            out += list(reversed(by_rank[r]))
+    return out
 
 
 def sheet_body(zone, state="open", portrait=False, naming="Players",
@@ -797,19 +821,17 @@ def sheet_body(zone, state="open", portrait=False, naming="Players",
             if ending and who is None:
                 continue
             body.append(m_round(n, who, t, room))
-    if zone != "roam":
-        body.append(m_watchers())
     return "".join(body)
 
 
 def sheet_height(zone, state, ending_extra=60):
     room = ROOMS[zone]
     n = sum(len(s.pilots) for s in room["sides"])
+    if room.get("watched", True):
+        n += len(WATCHERS)
     want = ROW + 1 + 24 + n * ROW
     if zone == "duel":
         want += 24 + (2 if state == "end" else 3) * ROW
-    if zone != "roam":
-        want += 24 + 2 * ROW
     if state == "end":
         want += ending_extra
     return want
@@ -907,9 +929,9 @@ def main_sheet():
         m_head("Players", sub="2:14")
         + m_col_heads("melee")
         + m_pilot(PYLON[0], "melee", pylon)
-        + m_pilot(CAISSON[0], "melee", caisson, lit=True)
         + m_pilot(PYLON[3], "melee", pylon)
-        + m_watchers(), 400)
+        + m_pilot(CAISSON[0], "melee", caisson, lit=True)
+        + m_pilot(watching().pilots[1], "melee", watching()), 400)
 
     cards = (f'<div style="display:flex;flex-direction:column;gap:14px">'
              f'{pilot_card(CAISSON[0], caisson, room, w=400)}'
@@ -926,18 +948,18 @@ def main_sheet():
      background-color:{BG};background-image:{starfield(W, H, 3)};padding:40px 48px">
   <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:28px">
     <div style="font-size:26px;color:{INK}">The players sheet</div>
-    {cap("The menu's panel, holding the room as one list: your own side first and then everyone else, each run alphabetical, with the side in the Team column and in the color of the name, and the watchers at the foot. A press on a player opens their card, and the card's one key joins their side. It is a stop in the column, its answer is where you stand, and at the whistle it rises on its own with the result as its head.", 860)}
+    {cap("The menu's panel, holding the room as one list: your own side first, then everyone else, then the watchers, each run by name, with the side in the Team column and in the color of the name. A press on a player opens their card, and the card's one key joins their side. It is a stop in the column, its answer is where you stand, and at the whistle it rises on its own with the result as its head.", 860)}
   </div>
   <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:40px">
     <div>
       {title("The list")}
       {rows}
-      <div style="margin-top:8px">{cap("The head names the panel and reads the clock. The columns are the side, kills, deaths and assists; the band above already carries the score, so the sheet does not say it again. Your own side comes first, then everyone else, each run alphabetical: the color and the Team column say the side, the order says who is with you. A watcher has no side and reads one alphabetical list. Your own row keeps its wash; a row under a hand lights edge to edge, as every row does, and a press opens the player's card. Nothing in the language is new here.")}</div>
+      <div style="margin-top:8px">{cap("The head names the panel and reads the clock. The columns are the side, kills, deaths and assists; the band above already carries the score, so the sheet does not say it again. Your own side comes first, then everyone else, then the watchers, each run by name, Z to A: the color and the Team column say the side, the order says who is with you. A watcher is a row like any other, with Watching for a side and zeros for figures, in nobody's color. Your own row keeps its wash; a row under a hand lights edge to edge, as every row does, and a press opens the player's card. Nothing in the language is new here.")}</div>
     </div>
     <div>
       {title("The pilot card, in its states")}
       {cards}
-      <div style="margin-top:8px">{cap("A panel that stacked, with the pilot as its head. Its rows read their side, their ship, their rating and this match. The breathing key at the foot is the one act: JOIN, named for the side, gated as a hull change is. On a full side the key stands down and says so. On your own side's pilot, and on yourself, there is no key.")}</div>
+      <div style="margin-top:8px">{cap("A panel that stacked, with the player as its head. Its rows read their side, their ship, their rating and this match. The breathing key at the foot is the one act: JOIN, named for the side, gated as a hull change is. On a full side the key stands down and says so. On your own side's player, on yourself, and on a watcher, there is no key.")}</div>
     </div>
     <div>
       {title("The stop")}

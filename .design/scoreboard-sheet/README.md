@@ -19,18 +19,19 @@ built.
 - **One list.** The head names the panel and reads the clock. Under it,
   every player: the name in the side's color, the seat's mark, the side's
   name in the Team column, then kills, deaths and assists. Your own side
-  comes first and then everyone else, each run alphabetical by name; a
-  watcher has no side and reads one alphabetical list. The band above
-  carries the score, and the Team column names every side, so the sheet
-  says neither again. Your own row keeps its wash. Watchers close the list
-  under a band. Nothing in the menu language is new here: rows, a head, a
-  band, a stacked panel.
+  comes first, then everyone else, then the watchers, each run by name.
+  Chris asked for that run "desc", twice, so it is Z to A; the build has
+  one flag to flip it. A watcher is a row like any other, with `Watching`
+  for a side and zeros for figures, in nobody's color, so the list has no
+  divider. The band above carries the score, and the Team column names
+  every side, so the sheet says neither again. Your own row keeps its wash.
+  Nothing in the menu language is new here: rows, a head, a stacked panel.
 - **A press on a pilot opens their card**, by enter, click or tap. The card
   is a panel that stacked, with the pilot as its head, rows reading their
   side, ship, rating and this match, and one breathing key at the foot:
   `JOIN CAISSON`, gated as a hull change is. On a full side the key stands
-  down and the foot says `Caisson is full`. On your own side's pilot, and on
-  yourself, there is no key. That is how an invitation was sent from the
+  down and the foot says `Caisson is full`. On your own side's pilot, on
+  yourself, and on a watcher, there is no key. That is how an invitation was sent from the
   info box in `docs/design/teams.md`, and joining is the same shape.
 - **At the whistle** it rises on its own with the result as its head, the
   share bar under it, a rating column, and the MVP mark on the winner's best.
@@ -49,9 +50,9 @@ row to press: in Free Roam, founding a side needs a door of its own.
 - **Turf** counts turf, and the band carries each side's stands as pennants
   in its color, the ones nobody holds dim.
 - **War** counts rounds and shows the four flags the same way.
-- **The duel** counts rounds. Its two pilots are the two rows, with no Team
-  column, and a `Rounds` band under them lists who took each and how long it
-  ran, the round in play reading its clock.
+- **The duel** counts rounds. Its two pilots are the two rows, each their
+  own side in the Team column, and a `Rounds` band under them lists who took
+  each and how long it ran, the round in play reading its clock.
 - **Free Roam** has no clock and no score. Thirty one pilots in one list,
   your pact first, where the Team column does what eight colors cannot,
   scrolling under the pinned head.
