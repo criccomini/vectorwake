@@ -80,7 +80,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 32
+local CLIENT_PROTOCOL = 33
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -115,6 +115,20 @@ M.subject = nil
 -- Whether this pilot is the channel's subject right now, for the mark that
 -- says so.
 M.on_air = false
+-- How this seat came about, off the end of the welcome. Only the two the pilot
+-- did not ask for are named, because those are the ones owed a sentence.
+-- Published, because the words that go with them belong to the feed that
+-- prints them rather than to this file.
+M.WHY_SAFE, M.WHY_LAG = 1, 2
+-- Set when a welcome lands a flying pilot in the stands without their asking,
+-- and cleared by the arena once it has said so. A flag rather than a line,
+-- because this module cannot draw: same arrangement as `owes_build` below.
+--
+-- Worth saying at all because of the channel's delay. The stands run five
+-- seconds behind, so the first thing a benched pilot is shown is their own
+-- hull still flying, and without a word on the screen that reads as the game
+-- coming apart rather than as the room taking the seat back.
+M.benched = nil
 -- Everybody watching this room, by name, from the roster's second section.
 M.watchers = {}
 M.banner = ""
@@ -1395,11 +1409,23 @@ local function on_message(s)
         -- reconnect treatment: the input log and the clock lead belong to the
         -- life that ended, and a channel view can move the tick backwards
         -- across the delay, which the rollback machinery must never see.
-        if #s < 16 then return end
+        if #s < 17 then return end
         local seat = string.byte(s, 2)
         local epoch = u32(string.byte(s, 3), string.byte(s, 4),
                           string.byte(s, 5), string.byte(s, 6))
+        -- Read before the switch below moves it. What makes this welcome worth
+        -- a line is that it takes a hull away, and afterwards there is nothing
+        -- left on the client saying there was one.
+        local was_flying = not M.watching
         if not adopt_lifecycle(epoch, seat == 255, seat) then return end
+        -- Why the room did that, when it was not asked. Gated on the pilot
+        -- having been flying a moment ago rather than on the byte alone, so a
+        -- welcome delivered twice cannot say it twice.
+        local why = string.byte(s, 17)
+        if seat == 255 and was_flying
+            and (why == M.WHY_LAG or why == M.WHY_SAFE) then
+            M.benched = why
+        end
         -- Which room this is, as the server numbered it. Never what was asked
         -- for: a room can fill between a list being read and a key landing,
         -- and the corner of the screen is the one place that must not be
@@ -1672,6 +1698,9 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room, instance)
     sim.set_mortal(255)
     M.subject = nil
     M.on_air = false
+    -- A bench belongs to the room it happened in. Carried across, it would be
+    -- said over the first frame of the next one.
+    M.benched = nil
     M.watchers = {}
     keepalive = 0
     M.zone = ""

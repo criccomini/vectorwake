@@ -1173,6 +1173,32 @@ local function drain_comings()
     if #net.comings > 0 then net.comings = {} end
 end
 
+-- What the words are for each reason the room can take a seat back. The wire
+-- carries which, never the sentence, the same as everything else said here.
+local BENCHED = {
+    [net.WHY_LAG] = "moved to spectator: unstable connection",
+    [net.WHY_SAFE] = "moved to spectator: too long in the safe zone",
+}
+
+-- The room took the seat, and the pilot did not ask it to.
+--
+-- Red and marked `mine`, which is the pair the feed reserves for the two lines
+-- about your own fight, because this outranks both: there is no fight any
+-- more. A phone spends its one line on it for the same reason.
+--
+-- It has to be said out loud because of what a watcher is shown first. The
+-- stands run five seconds behind the room, and somebody who has just been
+-- benched lands on a frame with their own hull still flying in it, so the one
+-- reading available without a line here is that the game has broken.
+local function drain_benched()
+    local line = net.benched and BENCHED[net.benched]
+    net.benched = nil
+    if line then
+        notify({line}, pal.HURT, true)
+        sfx.ui("ui_deny")
+    end
+end
+
 local function drain_events()
     -- The perspective every color and sound is judged from. While watching
     -- it is the subject, and 255 when the channel has nobody: a ship index
@@ -1859,6 +1885,7 @@ function update(self, dt)
     drain_kills()
     drain_streaks()
     drain_comings()
+    drain_benched()
 
     -- Notifications expire. A feed that only ever scrolls leaves the last few
     -- deaths on screen through a lull, which reads as a fight that is still

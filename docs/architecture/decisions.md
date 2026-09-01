@@ -6573,3 +6573,50 @@ residual is half a point, so the hull at the top of the thrust column is not
 strong because of it. And the roster's energy-against-recharge anti-correlation
 is monotonic across all seven for the first time, the Chord having been the one
 hull with more energy than an Apex and a faster refill besides.
+
+## 127. A bench says why
+
+**Status:** accepted
+
+**What:** the welcome carries a reason byte, and a pilot the room moves to the
+stands is told which of the two ways it happened. `S2C_WELCOME` gains a
+trailing `why`: zero for every seat a pilot brought about themselves, 1 for the
+safe-zone sweep, 2 for input silence. The client prints one line in the feed,
+red and marked as its own, and plays `ui_deny`:
+
+    moved to spectator: unstable connection
+    moved to spectator: too long in the safe zone
+
+**Why:** the two five-second clocks in this game are the same number by
+coincidence, and they meet badly. A pilot whose input stops for
+`spectate_silence_ticks` loses the seat, and a new watcher is deliberately
+landed on the channel's warm ring rather than staring at nothing for
+`CHANNEL_DELAY`. Both are 500 ticks. So the first frame a benched pilot is
+served is the tick their own inputs stopped: they watch their own hull drift
+inputless, get killed, and disappear, and nothing on screen says any of it
+already happened. The reading available without a line is that the game has
+come apart.
+
+The replay itself is right, and so is the delay. Serving a benched watcher the
+live edge instead would make going quiet for five seconds a button that buys a
+live view of the room you were just fighting in, which is the hole the delay
+exists to close, and giving one watcher a different ring position breaks the
+one feed everybody else is on. Only the sentence was missing.
+
+**Cost:** `CLIENT_PROTOCOL` moves to 33. A client built for 32 reads the
+message it wants and ignores a byte, so the refusal is not protecting it
+against a misparse the way 22 and 31 were; it is there so the fleet and the
+page are never one build apart on a wire field.
+
+The reason rides the welcome rather than being worked out at the far end. Both
+involuntary benchings arrive as an ordinary welcome on seat 255, identical to
+the one a pilot gets for pressing the key, so a client left to infer it would
+have to pair the swap up with a lag notice by timing, which is the thing
+`S2C_KILL`'s assist byte exists not to do.
+
+**Verified:** 461 server tests including a new one reading the reason off all
+four welcomes the zone sends, clippy and fmt. The client's own suite with a new
+watch_test arm walking a socket through both benchings and both voluntary
+seats, plus a constant_drift guard holding `CLIENT_PROTOCOL` and the two reason
+codes against their Rust originals: perturbing either side fails it. luacheck
+clean.

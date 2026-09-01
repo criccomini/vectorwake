@@ -237,7 +237,13 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// would fly whatever the hull's profile is and never send a build, which is
 /// the game 31 played, so the refusal is what tells them to reload rather
 /// than leaving them quietly unable to spend anything.
-pub(crate) const CLIENT_PROTOCOL: u8 = 32;
+///
+/// 33 puts a reason on the end of every welcome, so a pilot the room moves to
+/// the stands is told why. A client built for 32 reads the message it wants
+/// and ignores a byte, so this one is not refusing a misparse the way 22 and
+/// 31 did: it is there so the fleet and the page cannot sit one build apart on
+/// a wire field, which is how the DESTROYED outage above happened.
+pub(crate) const CLIENT_PROTOCOL: u8 = 33;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
@@ -248,7 +254,24 @@ pub(crate) const C2S_MAX: usize = 8 * 1024;
 pub(crate) const C2S_STATUS: u8 = directory::STATUS_REQUEST;
 
 // Server to client
+/// `[S2C_WELCOME, ship, lifecycle, tick, room, settings generation, why]`, the
+/// numbers little-endian and `ship` 255 for a watcher.
+///
+/// `why` is how this seat came about, and it is the room's answer rather than
+/// the client's: the two ways to end up in the stands without asking look
+/// identical from the far end, and a client left to work it out would have to
+/// pair the swap up with a lag notice by timing. Zero on every welcome a pilot
+/// brought about themselves, which is most of them.
 pub(crate) const S2C_WELCOME: u8 = 1;
+/// Nothing to explain: a join, a hull taken from the stands, a seat given up
+/// by the pilot sitting in it, or a client that came through the door asking
+/// to watch.
+pub(crate) const WHY_NONE: u8 = 0;
+/// The safe-zone timer moved them for loitering.
+pub(crate) const WHY_SAFE: u8 = 1;
+/// Their input stopped arriving for `spectate_silence_ticks` and the room gave
+/// the seat up on their behalf.
+pub(crate) const WHY_LAG: u8 = 2;
 pub(crate) const S2C_SNAPSHOT: u8 = 2;
 pub(crate) const SNAPSHOT_HEADER: usize = 32;
 pub(crate) const SNAPSHOT_FLYING: u8 = 0;

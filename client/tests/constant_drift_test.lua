@@ -382,6 +382,39 @@ do
           #names == 0, table.concat(names, ", "))
 end
 
+-- --- the wire's own version, and the reasons it carries ---------------------
+--
+-- The client sends its protocol in the join and the zone refuses anything
+-- else, so the two copies parting is not a subtle fault: it is every player
+-- being turned away at the door, or a build that bumped one side of a wire
+-- change and shipped the other. That is exactly the kind of thing this file
+-- exists to catch before it is a page nobody can join.
+--
+-- The bench reasons ride the same wire and are written down twice the same
+-- way. They are how a pilot moved to the stands by the room finds out which
+-- of the two ways it happened, and a client reading a 1 where the zone wrote
+-- a 2 would tell them the wrong one with no way to notice.
+do
+    local proto = read("server/src/protocol.rs")
+    local wire = read("client/arena/net.lua")
+
+    local rust = tonumber(proto:match("CLIENT_PROTOCOL:%s*u8%s*=%s*(%d+)"))
+    local lua = tonumber(wire:match("CLIENT_PROTOCOL%s*=%s*(%d+)"))
+    check("the client and the zone agree on the wire's version",
+          rust ~= nil and rust == lua,
+          tostring(lua) .. " in the client, " .. tostring(rust) .. " in the zone")
+
+    local safe, lag = wire:match("M%.WHY_SAFE,%s*M%.WHY_LAG%s*=%s*(%d+),%s*(%d+)")
+    local here = {SAFE = tonumber(safe), LAG = tonumber(lag)}
+    for _, why in ipairs({"SAFE", "LAG"}) do
+        local there = tonumber(proto:match("WHY_" .. why .. ":%s*u8%s*=%s*(%d+)"))
+        check("WHY_" .. why .. " is the same number on both sides",
+              there ~= nil and there == here[why],
+              tostring(here[why]) .. " in the client, "
+              .. tostring(there) .. " in the zone")
+    end
+end
+
 if fails > 0 then
     print(fails .. " failed")
     os.exit(1)

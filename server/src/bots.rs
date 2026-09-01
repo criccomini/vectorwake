@@ -1510,7 +1510,7 @@ where
                 }
                 if data[0] == crate::S2C_MAP && data.len() == 1
                     || data[0] == crate::S2C_SETTINGS && data.len() < 5
-                    || data[0] == crate::S2C_WELCOME && data.len() < 16
+                    || data[0] == crate::S2C_WELCOME && data.len() < 17
                     || data[0] == crate::S2C_SNAPSHOT && data.len() <= crate::SNAPSHOT_HEADER
                     || data[0] == crate::S2C_DENIED && data.len() < 2
                     || data[0] == crate::S2C_ROSTER && data.len() < 2
@@ -1858,7 +1858,7 @@ where
                     }
                     if data[0] == crate::S2C_MAP && data.len() == 1
                         || data[0] == crate::S2C_SETTINGS && data.len() < 5
-                        || data[0] == crate::S2C_WELCOME && data.len() < 16
+                        || data[0] == crate::S2C_WELCOME && data.len() < 17
                         || data[0] == crate::S2C_SNAPSHOT && data.len() <= crate::SNAPSHOT_HEADER
                         || data[0] == crate::S2C_DENIED && data.len() < 2
                         || data[0] == crate::S2C_ROSTER && data.len() < 2
@@ -2032,6 +2032,7 @@ mod tests {
         message.extend_from_slice(&tick.to_le_bytes());
         message.extend_from_slice(&room.to_le_bytes());
         message.extend_from_slice(&1u32.to_le_bytes());
+        message.push(crate::WHY_NONE);
         message
     }
 
