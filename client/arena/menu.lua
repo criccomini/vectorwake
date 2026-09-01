@@ -1377,7 +1377,12 @@ local function zone_rows()
         rows[#rows + 1] = {
             label = zr.name, named = true,
             note = fmt ~= "" and fmt or nil,
-            dim = not zr.live,
+            -- Dim because it cannot be flown to, and wearing the dial that is
+            -- looking for an arena because that is what the row is waiting on.
+            -- The landing's zone stop says the same two things about the same
+            -- game in the same two ways, which is the point: this list and
+            -- that one are the same list.
+            dim = not zr.live, waiting = not zr.live,
             act = "zone", value = zr.zone,
             mark = function() return zr.zone == M.zone end,
         }
@@ -1821,7 +1826,7 @@ local function view_row(r, i)
         -- with the count beside it and the sentence under it where the
         -- section has one.
         sect = r.sect, sect_note = r.sect_note, sect_line = r.sect_line,
-        who = r.value, state = r.state, dim = r.dim,
+        who = r.value, state = r.state, dim = r.dim, waiting = r.waiting,
         group = r.group, short = r.short, tint_col = r.tint_col,
         -- What a ship row carries beyond the hull to draw: where it stands on
         -- the five flight rows against the rest of the roster, what it flies
