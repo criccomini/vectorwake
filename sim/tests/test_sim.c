@@ -5215,6 +5215,44 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
                   "and back on the same tile, whatever else the room did");
         }
 
+        /* A green is filtered like a ship and unlike a flag, per decision
+         * 132: one is put out near a live pilot, so an unfiltered field is a
+         * beacon on everybody in the room, lawful sight or not. Out of
+         * radius it arrives as eleven bytes of nothing, so the count and the
+         * indices hold and the format does not move. */
+        {
+            static sim_state m;
+            sim_init(&m, 5);
+            sim_spawn(&m, APEX, 0, 300 * 16, 300 * 16, 0, &cfg);
+            m.green_count = 2;
+            m.greens[0].active = 1;
+            m.greens[0].slot = 3;
+            m.greens[0].x = 310 * 16 * 256; /* ten tiles off: in sight */
+            m.greens[0].y = 300 * 16 * 256;
+            m.greens[0].life = 500;
+            m.greens[1] = m.greens[0];
+            m.greens[1].x = 900 * 16 * 256; /* the far side of the map */
+            m.greens[1].y = 900 * 16 * 256;
+
+            const int32_t R = 84 * 16 * 256;
+            int n = sim_pack_around(&m, buf, sizeof buf, m.ships[0].x,
+                                    m.ships[0].y, R, 0, 0);
+            static sim_state client;
+            CHECK(n > 0 && sim_unpack(&client, buf, n) == 0,
+                  "the filtered snapshot reads");
+            CHECK(client.green_count == 2, "the count is the room's");
+            CHECK(client.greens[0].active && client.greens[0].slot == 3,
+                  "the green in reach arrives whole");
+            CHECK(!client.greens[1].active && client.greens[1].x == 0,
+                  "and the far one arrives as nothing at all");
+
+            /* The whole-state path is the replay's and stays unfiltered. */
+            int whole = sim_pack(&m, buf, sizeof buf);
+            CHECK(whole > 0 && sim_unpack(&client, buf, whole) == 0,
+                  "the whole state reads");
+            CHECK(client.greens[1].active, "with every green in it");
+        }
+
         /* Distance is the only rule a round meets, with no exception for
          * whose it is. Every round in the game is spent within seconds and
          * near the hull that fired it, so a pilot's own are inside the radius

@@ -266,10 +266,25 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
 
     /* Greens, at eleven bytes each. The count is what keeps that honest: a
      * room that keeps two dozen out pays 264 bytes a snapshot, and the ring
-     * placement means those two dozen are near the people reading them. */
+     * placement means those two dozen are near the people reading them.
+     *
+     * Filtered like the ships and the rounds, unlike the flags, and decision
+     * 132 is the argument: a flag's state is the scoreboard, while a green is
+     * put out six to twenty-eight tiles from a live ship, so an unfiltered
+     * field is a beacon on every pilot in the room, the ones far outside
+     * lawful sight included. An out-of-radius green is written inert rather
+     * than dropped, so the record stays eleven bytes of nothing and the
+     * format does not move. */
     w8(&w, s->green_count);
     for (int i = 0; i < s->green_count; i++) {
         const sim_green *g = &s->greens[i];
+        if (!within(g->x, g->y, cx, cy, radius, r2)) {
+            w8(&w, 0);
+            w32(&w, 0);
+            w32(&w, 0);
+            w16(&w, 0);
+            continue;
+        }
         /* One byte for both, the way a flag writes its own two: a slot index
          * stops at twenty-two, so it and the live bit share a byte and a
          * green stays the eleven bytes docs/design/maps.md costed it at. */

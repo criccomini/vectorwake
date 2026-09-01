@@ -1317,6 +1317,14 @@ local function own_arrow(ax, ay, ox, oy, side, me)
           pal.WHITE)
 end
 
+-- A flag at four pixels: the same pennant wherever an instrument shows one,
+-- so a flag looks like a flag on the dial, on the map, and pinned to a rim.
+local function pennant(px, py, s, col)
+    F.layer:seg(px, ry(py + 3 * s, 0), px, ry(py - 3.5 * s, 0), s, pal.a(col, 0.95))
+    F.layer:tri(px, ry(py - 3.5 * s, 0), px + 4 * s, ry(py - 2 * s, 0),
+          px, ry(py - 0.5 * s, 0), pal.a(col, 0.9))
+end
+
 local function radar(cx, cy, me)
     -- No panel and no inset. The dial is the most valuable thing on screen on
     -- a map a thousand tiles across and it keeps every pixel; what made it
@@ -1398,17 +1406,30 @@ local function radar(cx, cy, me)
 
     local my_team = view_team
     for i = 0, sim.flag_count() - 1 do
-        local fx, fy, team = sim.flag_at(i)
+        local fx, fy, team, carried = sim.flag_at(i)
         local px, py = put(fx, fy)
+        local col = (team == 255) and pal.INK
+            or (team == my_team and pal.FRIEND or pal.ENEMY)
         if px then
-            local col = (team == 255) and pal.INK
-                or (team == my_team and pal.FRIEND or pal.ENEMY)
             -- A pennant rather than a bar: a flag should look like one even
             -- at four pixels.
-            F.layer:seg(px, ry(py + 3 * F.scale, 0), px, ry(py - 3.5 * F.scale, 0), F.scale,
-                  pal.a(col, 0.95))
-            F.layer:tri(px, ry(py - 3.5 * F.scale, 0), px + 4 * F.scale, ry(py - 2 * F.scale, 0),
-                  px, ry(py - 0.5 * F.scale, 0), pal.a(col, 0.9))
+            pennant(px, py, F.scale, col)
+        elseif carried and team ~= my_team then
+            -- The runner, as a bearing. Carrying the flag puts you on the
+            -- map (decision 132): the wire has always said where a carried
+            -- flag is, so the dial says it too, pinned to the rim it left
+            -- by. Only a carrier earns this; a flag lying somewhere far away
+            -- is going nowhere and can wait for the map.
+            local dx, dy = fx - qx, fy - qy
+            local m = math.max(math.abs(dx), math.abs(dy))
+            if m > 0 then
+                local inset = 5 * F.scale
+                local ex = ix + (dx * SPAN / m + SPAN) * k
+                local ey = iy + (dy * SPAN / m + SPAN) * k
+                ex = math.min(math.max(ex, ix + inset), ix + r - inset)
+                ey = math.min(math.max(ey, iy + inset), iy + r - inset)
+                pennant(ex, ey, F.scale, col)
+            end
         end
     end
 
@@ -1502,18 +1523,33 @@ local function overview(me)
         end
     end
     bracket(ix, iy, side, side, pal.a(pal.RADAR_TILE, 0.8), 22 * F.scale)
-    -- You, and only you. No ships is the rule above, and it stands: a map
-    -- showing where everybody is would be a wall hack. Where *you* are is
-    -- something you already know, and without it a view of a thousand tiles
-    -- is a picture of somewhere rather than of where you are standing, which
-    -- is the whole question the map exists to answer.
+    -- You, and only you, of the ships. That rule stands: a map showing where
+    -- everybody is would be a wall hack. Where *you* are is something you
+    -- already know, and without it a view of a thousand tiles is a picture of
+    -- somewhere rather than of where you are standing, which is the whole
+    -- question the map exists to answer.
+    --
+    -- The flags are not ships and they are on it, carried ones included,
+    -- which is decision 132: the wire tells every client where every flag is,
+    -- so the map draws it, and being lit map-wide is the cost of picking one
+    -- up, paid knowingly by whoever does. The one map the original's players
+    -- watched all game showed exactly this.
     --
     -- A cell is OVERVIEW_CELL tiles of sixteen pixels, so the world divides
     -- by that to land in the same coordinates the rectangles above use.
-    if ov.grid > 0 and me then
+    if ov.grid > 0 then
         local cell = 4 * 16
-        own_arrow(ox + (sim.ship_x(me) / cell) * k,
-                  oy + (sim.ship_y(me) / cell) * k, ix, iy, side, me)
+        local my_team = view_team
+        for i = 0, sim.flag_count() - 1 do
+            local fx, fy, team = sim.flag_at(i)
+            local col = (team == 255) and pal.INK
+                or (team == my_team and pal.FRIEND or pal.ENEMY)
+            pennant(ox + (fx / cell) * k, oy + (fy / cell) * k, F.scale, col)
+        end
+        if me then
+            own_arrow(ox + (sim.ship_x(me) / cell) * k,
+                      oy + (sim.ship_y(me) / cell) * k, ix, iy, side, me)
+        end
     end
     -- Clicking it again puts the radar back, which is the same gesture that
     -- opened it.

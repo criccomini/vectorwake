@@ -2465,7 +2465,10 @@ impl Bot {
                 // fightable foe and under any flag, which is what keeps a
                 // green something collected on the way rather than instead.
                 let hunger = 1.0 - o.growth;
-                offer(0.35 + hunger * 0.75 - d / SIGHT * 0.60, Choice::Green(gx, gy));
+                offer(
+                    0.35 + hunger * 0.75 - d / SIGHT * 0.60,
+                    Choice::Green(gx, gy),
+                );
             }
         }
         if let Some(foe) = selected.filter(|_| self.worth_trying(Goal::Foe)) {
@@ -3021,6 +3024,128 @@ mod tests {
         // And a set entirely ours is nothing to fly at.
         w.state.flags[1].team = 0;
         assert!(nearest_flag(&w, me.0, me.1, 0, f32::INFINITY).is_none());
+    }
+
+    /// A green whose slot this hull already wears at its ceiling is skipped:
+    /// the core consumes one taken at the cap, so the trip collects nothing,
+    /// and a player watching that reads it as a bot being a bot.
+    #[test]
+    fn a_green_you_cannot_wear_is_not_worth_a_trip() {
+        let mut w = World::new(9);
+        assert!(w.spawn(0, 0, 512, 512, 0) >= 0);
+        let me = &w.state.ships[0];
+        let (mx, my) = (me.x as f32 / 256.0, me.y as f32 / 256.0);
+
+        // A slot with headroom, and one pinned at this hull's ceiling.
+        let open = (0..CHARGE_SLOTS)
+            .find(|s| held_slot(&w.state.ships[0], *s) < w.slot_cap(0, *s as u8))
+            .expect("some slot has headroom") as u8;
+        let capped = sim::slot_stat(sim::UP_SPEED);
+        let cap = w.slot_cap(0, capped);
+        w.state.ships[0].up[sim::UP_SPEED] = cap;
+
+        // The capped one is nearer; the wearable one further but in sight.
+        w.state.greens[0] = sim::sim_green {
+            active: 1,
+            slot: capped,
+            x: (mx as i32 + 80) * 256,
+            y: my as i32 * 256,
+            life: 0,
+        };
+        w.state.greens[1] = sim::sim_green {
+            active: 1,
+            slot: open,
+            x: (mx as i32 + 240) * 256,
+            y: my as i32 * 256,
+            life: 0,
+        };
+        w.state.green_count = 2;
+
+        let found = nearest_green(&w, mx, my, 0, SIGHT).expect("one worth having");
+        assert_eq!(
+            found.0 as i32,
+            mx as i32 + 240,
+            "the wearable one, however much nearer the useless one lies"
+        );
+
+        // With every green useless, none is worth anything at all.
+        w.state.greens[1].slot = capped;
+        assert!(nearest_green(&w, mx, my, 0, SIGHT).is_none());
+    }
+
+    /// The retreat threshold's comment has promised a carried-upgrades term
+    /// since it was written. Growth is that term: a life built out of greens
+    /// breaks off earlier than the one it respawns into.
+    #[test]
+    fn a_grown_life_retreats_earlier() {
+        let mut w = World::new(9);
+        assert!(w.spawn(0, 0, 512, 512, 0) >= 0);
+        let bot = configured(0, 0.5, Strategy::Brawler);
+
+        let fresh = own(&w, 0);
+        assert_eq!(fresh.growth, 0.0, "a spawn wears exactly its build");
+        let base = bot.retreat_at(&fresh);
+
+        // Six steps of green on top of the build.
+        w.state.ships[0].up[sim::UP_RECHARGE] += 2;
+        w.state.ships[0].up[sim::UP_THRUST] += 2;
+        w.state.ships[0].level[sim::TRIG_GUN] += 1;
+        w.state.ships[0].level[sim::TRIG_BOMB] += 1;
+        let grown = own(&w, 0);
+        assert!(grown.growth > 0.0);
+        assert!(
+            bot.retreat_at(&grown) > base,
+            "the life on the table is worth more than the one after it"
+        );
+
+        // Ammunition is not growth, in either direction: a repel spent must
+        // not make a pilot brave, and one picked up is for throwing.
+        let at = bot.retreat_at(&grown);
+        w.state.ships[0].charge[0] = 0;
+        let spent = own(&w, 0);
+        assert_eq!(spent.growth, grown.growth, "ammunition is not growth");
+        assert_eq!(bot.retreat_at(&spent), at);
+    }
+
+    /// The whole loop, flown: a hungry pilot with nothing to fight notices a
+    /// green down the field, flies to it, and wears what it held.
+    #[test]
+    fn an_idle_pilot_collects_the_green_down_the_field() {
+        let mut w = World::new(31);
+        let ship = 0u8;
+        assert!(w.spawn(0, 0, 512, 512, 0) >= 0);
+
+        let open = (0..CHARGE_SLOTS)
+            .find(|s| held_slot(&w.state.ships[0], *s) < w.slot_cap(0, *s as u8))
+            .expect("some slot has headroom");
+        let before = held_slot(&w.state.ships[0], open);
+        // Twelve tiles east, immortal so the test cannot lose a race to its
+        // own clock, and squarely inside sight.
+        w.state.greens[0] = sim::sim_green {
+            active: 1,
+            slot: open as u8,
+            x: (512 + 12) * 16 * 256,
+            y: 512 * 16 * 256,
+            life: 0,
+        };
+        w.state.green_count = 1;
+
+        let route = crate::nav::Nav::build(&w.map);
+        let mut bot = configured(ship, 0.6, Strategy::Runner);
+        for _ in 0..3_000u32 {
+            let fresh = bot.looks_due().then(|| scan(&w, ship));
+            let buttons = bot.think(&own(&w, ship), &route, fresh);
+            w.step(&[sim::sim_input { ship, buttons }]);
+            if w.state.greens[0].active == 0 {
+                break;
+            }
+        }
+        assert_eq!(w.state.greens[0].active, 0, "the green was collected");
+        assert_eq!(
+            held_slot(&w.state.ships[0], open),
+            before + 1,
+            "and the pilot is wearing it"
+        );
     }
 
     fn configured(ship: u8, skill: f32, strategy: Strategy) -> Bot {
