@@ -2662,7 +2662,7 @@ function session.attract_tick(self, dt)
         return
     end
     -- Which game the stands show: whichever the landing's zone stop last
-    -- named, and the head of the list until one is. The stop stands down once
+    -- named, and `directory.head` until one is. The stop stands down once
     -- the stands are showing it, because kept longer, every later refresh of
     -- the list would drag the glass back to a choice already served.
     --
@@ -2688,7 +2688,7 @@ function session.attract_tick(self, dt)
             self.attract_wait = 0
         else return end
     end
-    local r = want or directory.rows[1]
+    local r = want or directory.head()
     if not r or not r.live or (r.address or "") == "" then
         session.attract_drop(self)
         return
@@ -2731,10 +2731,10 @@ end
 -- by the key and by Enter, so a hand on a keyboard never has to open a menu to
 -- reach the one control the screen exists for.
 --
--- The head of the list is the fallback, for the one case where nothing is
--- dialled: the fleet is down, and the press is a join that will wait.
+-- `directory.head` is the fallback, for the one case where nothing is dialled:
+-- the fleet is down, and the press is a join that will wait.
 function session.deploy(self)
-    menu.chosen = directory.rows[1]
+    menu.chosen = directory.head()
     if self.attract_zone then
         for _, row in ipairs(directory.rows) do
             if row.zone == self.attract_zone then menu.chosen = row end

@@ -66,6 +66,12 @@ name = "melee"
 they receive, so a rollback publishes the older content under a new, higher
 number.
 
+`default_zone` must name a declared zone. It answers two questions with one
+line: what an arena serves when nothing has told it, and which game a client
+that has not chosen one opens on. The second travels to clients in the browse
+reply, where [discovery.md](discovery.md#the-browse-reply) says what a client
+does when the front door is down.
+
 Pool tokens are stored as `sha256:` plus 64 hexadecimal characters. The
 committed reference uses `env:VW_POOL_DIGEST`, which names an environment
 variable holding that public digest. The raw token never enters the catalog.

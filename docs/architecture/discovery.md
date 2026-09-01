@@ -222,11 +222,29 @@ directory holds no identity itself and never will, per
 [decision 25](decisions.md#25-an-arena-server-chooses-which-zone-it-serves);
 this is a signpost, not a service.
 
+`default_zone` names the game a client with no choice of its own opens on. It
+is the same line an arena reads to decide what to serve when nothing has told
+it, so one entry in the catalog answers the question at both ends, and a
+deployment that names none sends nothing here.
+
+It has to be stated rather than derived, because the client's landing shows
+that game behind the panel and joins it on the one key. The list below is
+sorted alphabetically by label, for reading, so taking its head lets the
+alphabet choose where a new player starts. Worse, a game with no arena behind
+it is still a row, on purpose, so a player can see that it exists and is down:
+a deployment running five games gives the alphabet five chances to put a dead
+one first, and a landing with nothing behind it draws the loading screen
+forever. So a client takes the front door while it is up, the first row with an
+arena behind it when it is not, and the head of the list only when nothing at
+all is running. That last one is not a game anybody can join. It is a name to
+put on the press, so a fleet that is down feels like a join that waits.
+
 ```json
 {
   "name": "vectorwake",
   "catalog_version": 37,
   "meta": "https://play.example/meta",
+  "default_zone": "chaos",
   "zones": [
     {"name": "chaos", "label": "Chaos", "players": 41, "bots": 6,
      "instances": [

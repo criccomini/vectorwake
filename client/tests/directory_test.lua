@@ -397,5 +397,97 @@ _G.NEXT_REPLY = {zones = {{
 message(last(), "ignored")
 check("and one with seats does not", dir.rows[1] and dir.rows[1].full == false)
 
+-- --- the game a client with no choice of its own opens on -------------------
+--
+-- `dir.head` is what the landing dials for its backdrop and what its one key
+-- joins, and the whole screen is drawn behind that connection. It used to be
+-- the head of `rows`, which is sorted alphabetically for reading: a deployment
+-- running five games had five chances for the alphabet to put a game with no
+-- arena behind it first, and the client showed a wordmark on a starfield with
+-- four games running and nothing on screen saying why.
+--
+-- The reference deployment is exactly that shape. Its rows sort Duel, Free
+-- Roam, Team Battle, Turf, War, and the front door it names is melee.
+
+local FLEET = {
+    default_zone = "melee",
+    zones = {
+        {name = "duel", label = "Duel", players = 0, bots = 0,
+         instances = {{address = "wss://x/d"}}},
+        {name = "roam", label = "Free Roam", players = 0, bots = 0,
+         instances = {{address = "wss://x/r"}}},
+        {name = "melee", label = "Team Battle", players = 4, bots = 4,
+         instances = {{address = "wss://x/m"}}},
+    },
+}
+
+-- A deep copy, so a case that drops an arena cannot leak into the next.
+local function fleet(edit)
+    local out = {default_zone = FLEET.default_zone, zones = {}}
+    for i, z in ipairs(FLEET.zones) do
+        out.zones[i] = {name = z.name, label = z.label, players = z.players,
+                        bots = z.bots,
+                        instances = {{address = z.instances[1].address}}}
+    end
+    if edit then edit(out) end
+    return out
+end
+
+_G.NEXT_REPLY = fleet()
+message(last(), "ignored")
+check("the list still reads alphabetically",
+      dir.rows[1] and dir.rows[1].zone == "duel",
+      tostring(dir.rows[1] and dir.rows[1].zone))
+check("but the way in is the front door the deployment named",
+      dir.head() and dir.head().zone == "melee",
+      tostring(dir.head() and dir.head().zone))
+
+-- The front door down is the case that has to fall through rather than stop:
+-- there are two other games running and one of them is the answer.
+_G.NEXT_REPLY = fleet(function(f)
+    for _, z in ipairs(f.zones) do
+        if z.name == "melee" then z.instances = {} end
+    end
+end)
+message(last(), "ignored")
+check("a front door with no arena falls through to one that has",
+      dir.head() and dir.head().zone == "duel",
+      tostring(dir.head() and dir.head().zone))
+
+-- And an alphabetically earlier game being down does not take the fleet with
+-- it, which is the failure this exists for.
+_G.NEXT_REPLY = fleet(function(f)
+    for _, z in ipairs(f.zones) do
+        if z.name == "duel" then z.instances = {} end
+    end
+end)
+message(last(), "ignored")
+check("a dead head of the list is skipped, not taken",
+      dir.head() and dir.head().zone == "melee",
+      tostring(dir.head() and dir.head().zone))
+
+-- Nothing running at all is still a row to press. The join waits, which is
+-- what a fleet that is down should feel like, rather than a screen with no
+-- answer on it.
+_G.NEXT_REPLY = fleet(function(f)
+    for _, z in ipairs(f.zones) do z.instances = {} end
+end)
+message(last(), "ignored")
+check("a fleet with nothing up still names a game",
+      dir.head() and dir.head().zone == "duel",
+      tostring(dir.head() and dir.head().zone))
+
+-- A directory from before the field says nothing about a front door, and the
+-- list answers for itself.
+_G.NEXT_REPLY = {zones = {
+    {name = "duel", label = "Duel", players = 0, bots = 0, instances = {}},
+    {name = "melee", label = "Team Battle", players = 4, bots = 0,
+     instances = {{address = "wss://x/m"}}},
+}}
+message(last(), "ignored")
+check("a directory that names no front door still skips what is down",
+      dir.default_zone == "" and dir.head() and dir.head().zone == "melee",
+      tostring(dir.head() and dir.head().zone))
+
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

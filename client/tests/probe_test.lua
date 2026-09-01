@@ -64,6 +64,14 @@ check("nil", enc(nil) == "null")
 
 check("an array", enc({1, 2, 3}) == "[1,2,3]", enc({1, 2, 3}))
 check("an empty table is an object", enc({}) == "{}", enc({}))
+-- A field that is always a list has to encode as one when it is empty, or
+-- every reader that asks a list for its length gets an object instead: the
+-- harness reported a TypeError where it meant to report a timeout, and the
+-- oracle watching for a client in a room with no ships stopped firing.
+check("an empty list is a list", enc(probe.list({})) == "[]",
+      enc(probe.list({})))
+check("and a filled one is unchanged",
+      enc(probe.list({1, 2})) == "[1,2]", enc(probe.list({1, 2})))
 check("an object sorts its keys",
       enc({b = 2, a = 1}) == '{"a":1,"b":2}', enc({b = 2, a = 1}))
 check("nesting", enc({a = {1, {b = "c"}}}) == '{"a":[1,{"b":"c"}]}',

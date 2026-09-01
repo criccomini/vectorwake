@@ -102,6 +102,13 @@ pub struct Browse {
     /// deployment rather than of the build.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub meta: String,
+    /// The game a client opens on when it has no choice of its own: the same
+    /// `default_zone` an arena serves when nothing has told it otherwise, so
+    /// one line in the catalog names the deployment's front door for both
+    /// ends. Without it a client falls back to the list, which is ordered for
+    /// reading rather than for entering.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub default_zone: String,
     pub zones: Vec<BrowseZone>,
 }
 
@@ -410,6 +417,7 @@ impl Directory {
             description: self.catalog.description.clone(),
             catalog_version: self.version(),
             meta,
+            default_zone: self.catalog.default_zone.clone(),
             zones,
         }
     }
@@ -1331,6 +1339,22 @@ mod tests {
             chaos.instances[0].players, 7,
             "fullest first concentrates by default"
         );
+    }
+
+    #[test]
+    fn browse_names_the_deployment_front_door() {
+        // A client with no choice of its own has to open on something, and
+        // the games list it reads is ordered alphabetically for reading.
+        // So the catalog says which game is the way in, the same line an
+        // arena reads when nothing has told it what to serve.
+        let mut c = cat();
+        c.default_zone = "war".into();
+        assert_eq!(Directory::new(c).browse().default_zone, "war");
+        // And a deployment that names none says nothing rather than a
+        // blank, so a client falls back to the list on its own.
+        let b = Directory::new(cat()).browse();
+        assert!(b.default_zone.is_empty());
+        assert!(!serde_json::to_string(&b).unwrap().contains("default_zone"));
     }
 
     #[test]
