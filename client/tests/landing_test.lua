@@ -54,6 +54,14 @@ layer.outline = function(self, pts)
     end
 end
 
+-- Triangles too, because the carousel's two arrows are drawn as one each and
+-- where they sit down the row is the whole question about them.
+local tris = {}
+layer.tri = function(self, x1, y1, x2, y2, x3, y3)
+    self.n = self.n + 1
+    tris[#tris + 1] = {x1 = x1, y1 = y1, x2 = x2, y2 = y2, x3 = x3, y3 = y3}
+end
+
 -- Frames and rects are kept, because the key is a stroked box over a wash and
 -- the question is where the two of them landed. Discs too, for the one mark
 -- out here that is a mark rather than a box: the guest dot on the account
@@ -834,21 +842,50 @@ do
     frame(1440, 810, {land = land_in(BODY), col_open = "ship"})
     check("and says the five flight rows under it",
           word("SPEED") ~= nil and word("RECHARGE") ~= nil)
-    -- The arrows stand either side of the drawing rather than either side of
-    -- the row: what they turn is the ship, so that is what they are level
-    -- with. Both are the same height, and it is not the row's middle.
+    -- The arrows stand either side of the carousel and level with the middle
+    -- of it. The row is a ship over its name and the two turn together, so
+    -- the mark that turns them belongs beside the pair rather than beside the
+    -- drawing alone: level with the ship it sat in the top third of the row
+    -- with the centre line empty between the two of them.
+    --
+    -- Asked of the mark rather than of the box it publishes. A box centred on
+    -- its own mark says nothing about where either one is, and both were
+    -- centred on each other before this as well.
     if turns[-1] and turns[1] then
         local l, r2 = turns[-1], turns[1]
         local art
         for _, h in ipairs(ui.hits) do
             if h.action == "land_pick_ship" then art = h end
         end
+        -- The one triangle standing inside the box, in both directions.
+        -- The frame behind the panel is full of them, the dial and the marks
+        -- over the fight among them, and an x range alone catches those.
+        local function mark(within)
+            local found = nil
+            for _, t in ipairs(tris) do
+                local lo = math.min(t.x1, t.x2, t.x3)
+                local hi = math.max(t.x1, t.x2, t.x3)
+                -- Back into the space the boxes are in, since the layer takes
+                -- y down from the top of the window.
+                local ys = {H - t.y1, H - t.y2, H - t.y3}
+                local ylo = math.min(ys[1], ys[2], ys[3])
+                local yhi = math.max(ys[1], ys[2], ys[3])
+                if lo >= within.x and hi <= within.x + within.w
+                    and ylo >= within.y and yhi <= within.y + within.h then
+                    found = (ys[1] + ys[2] + ys[3]) / 3
+                end
+            end
+            return found
+        end
+        local ly, ry2 = mark(l), mark(r2)
         check("with the two arrows level with each other",
-              math.abs((l.y + l.h / 2) - (r2.y + r2.h / 2)) < 1)
+              ly and ry2 and math.abs(ly - ry2) < 1,
+              tostring(ly) .. " / " .. tostring(ry2))
         check("one either side of the drawing",
               l.x < art.x and r2.x + r2.w > art.x + art.w)
-        check("and above the name under it",
-              l.y + l.h / 2 < art.y + art.h - 20)
+        check("and level with the middle of the row, not the ship in it",
+              ly and math.abs(ly - (art.y + art.h / 2)) < 1,
+              tostring(ly) .. " against " .. tostring(art.y + art.h / 2))
     end
 
     -- The ship turns about the axis running up the screen, which is the bank

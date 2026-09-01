@@ -4750,14 +4750,15 @@ local HULL_TURN = 11
 -- against nothing: at 78 it stood 168 points tall where the five flight bars
 -- under it take 130 between them, so the section a pilot picks a hull on was
 -- mostly ship. A row is the measure everything else on this panel is drawn
--- to, so it is the one the ship gets as well.
+-- to, so it is the one the ship gets as well. The name under it takes the
+-- same band as a flight row, since it is set at the same weight as one.
 --
 -- The air is two points rather than the six it was. Six is nothing against a
 -- circle of 78 and twelve of a row's forty four, and the hulls do not need
 -- it: `reach` is a radius over every point of the polygon, so a hull as wide
 -- as it is long already stands well inside its own circle.
 local HULL_ART_PAD = 2
-local HULL_NAME_H = 30
+local HULL_NAME_H = 26
 
 -- One hull, turning on its own vertical axis, drawn the way the arena draws
 -- one.
@@ -4936,26 +4937,36 @@ local function land_row(kx, kw, y, h, r)
             hull_art(kx + kw / 2, mid, r.cls,
                      (h - nameh) / 2 - HULL_ART_PAD * F.scale, col, a)
         end
+        -- The name is set at a row's own weight rather than a heading's. It
+        -- is the label of the thing the row holds, the way every other label
+        -- on this panel is, and a heading over a drawing thirty points tall
+        -- was the largest type on the page announcing the smallest thing on
+        -- it.
         txt(r.label, kx + kw / 2, y + h - nameh / 2,
-            TYPE.LEAD * F.scale, pal.a(col, a), "center", MENU_FONT,
+            TYPE.ROW * F.scale, pal.a(col, a), "center", MENU_FONT,
             r.value ~= "spectate")
         -- The two arrows, at the glass's own edges and level with the middle
-        -- of the ship rather than with the row: what they turn is the
-        -- drawing, so that is what they stand beside.
+        -- of the row.
         --
-        -- What each one takes is the drawing's own band, which is a row of
-        -- the panel's and so already the floor a fingertip is drawn to. It
-        -- was a fixed 52, taller than the row is now, so both boxes hung over
-        -- the edge into whatever the panel had put above them.
-        local arth = h - nameh
+        -- The middle of the drawing before that, on the argument that the
+        -- drawing is what they turn. What that missed is that the name turns
+        -- with it: the pair is one thing, and standing beside its upper half
+        -- put both arrows in the top third of the row with the row's own
+        -- centre line empty between them.
+        --
+        -- Each takes the whole row, which is over the floor a platform puts
+        -- under a fingertip and is centred on the mark it draws. It was a
+        -- fixed 52 points, taller than this row, so both boxes hung over the
+        -- edge into whatever the panel had put above them.
+        local rowmid = y + h / 2
         for _, d in ipairs({{-1, kx + 24 * F.scale},
                             {1, kx + kw - 24 * F.scale}}) do
             local dir, ax = d[1], d[2]
-            F.layer:tri(ax + dir * 7 * F.scale, ry(mid),
-                        ax - dir * 6 * F.scale, ry(mid - 9 * F.scale),
-                        ax - dir * 6 * F.scale, ry(mid + 9 * F.scale),
+            F.layer:tri(ax + dir * 7 * F.scale, ry(rowmid),
+                        ax - dir * 6 * F.scale, ry(rowmid - 9 * F.scale),
+                        ax - dir * 6 * F.scale, ry(rowmid + 9 * F.scale),
                         pal.a(pal.FRIEND, 0.9))
-            hit(ax - 24 * F.scale, y, 48 * F.scale, arth,
+            hit(ax - 24 * F.scale, y, 48 * F.scale, h,
                 "land_page_ship", dir, nil, 1)
         end
         -- The ship itself takes no press. Turning the carousel is the whole

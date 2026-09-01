@@ -6628,8 +6628,9 @@ clean.
 119](#119-a-hulls-line-reads-the-five-bars-under-it)
 
 **Decision:** the hull on the body carousel is drawn in one ordinary row of
-the panel, with its name on a line under it. The sentence that ran under the
-name is gone, and the roster in `menu.lua` is seven names.
+the panel, with its name under it at a row's own weight and an arrow either
+side level with the middle of the two. The sentence that ran under the name
+is gone, and the roster in `menu.lua` is seven names.
 
 **Why:** Chris said the drawing was too tall, twice. It was 168 points of
 picture over five bars that take 130 between them, and taking sixteen points
@@ -6660,11 +6661,23 @@ The seven lines are gone from the tree. They were good sentences and nothing
 reads them now; `docs/design/ships.md` is where the roster is described at
 length, and that is the right place for prose about a hull.
 
+Two things followed the height down. The name was set at `TYPE.LEAD`, the
+largest type the interface has, which left the biggest thing on the page
+announcing the smallest; it is `TYPE.ROW` now, the weight every other label on
+this panel is set at, and its band is 26 rather than 30, the same as one of
+the flight rows under it. And the arrows moved off the drawing's middle onto
+the row's. They stood beside the ship because the ship is what they turn, but
+the name turns with it: beside the upper half of the pair they sat in the top
+third of the row with its centre line empty between them.
+
 **Verified:** `landing_test` measures the drawing off the strokes it puts on
 the layer and holds it inside one row, which fails at 103 points against the
 code this replaces. `menu_test` holds every page of the carousel to a name
-with no sentence on it. The arrows' own boxes were a fixed 52 points and hung
-over the edge of a row this short, so they take the drawing's band instead.
+with no sentence on it. The arrow marks are read off the layer rather than off
+the boxes they publish, since a box centred on its own mark says nothing about
+where either sits, and held to the middle of the row: level with the ship it
+misses by thirteen points and fails. Their boxes were a fixed 52 points and
+hung over the edge of a row this short, so each takes the whole row instead.
 A second check opens the section at a phone's measure and finds all five
 flight rows drawn; it passes against the old height too, so it is a guard on
 what the room is spent on rather than evidence of a fix. luacheck clean, the
