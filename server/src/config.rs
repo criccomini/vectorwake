@@ -100,6 +100,25 @@ pub struct ArenaConfig {
     /// Seconds one pilot may hold a flag before it drops on its own, keeping
     /// their side. Absent or zero is no limit. Only a carrying zone reads it.
     pub flag_carry_seconds: Option<u16>,
+    /// Greens the room keeps out at once. Absent or zero is a zone with none,
+    /// which is every match game: there a pilot flies the build they chose.
+    pub greens: Option<u8>,
+    /// Seconds one lies there before going out, and seconds between two being
+    /// put out.
+    pub green_seconds: Option<u16>,
+    pub green_every_seconds: Option<u16>,
+    /// The ring around a live pilot a green may appear in, in tiles. Outside
+    /// the first so it is a trip rather than a gift; inside the second so it
+    /// lands on their radar. See docs/design/maps.md for what placing them by
+    /// area did instead.
+    pub green_near_tiles: Option<i32>,
+    pub green_far_tiles: Option<i32>,
+    /// Px a green is taken from, past the hull's own edge.
+    pub green_radius: Option<i32>,
+    /// What a green may be, by kit slot name, and how often each is rolled
+    /// against the sum of them all. An empty table is no greens whatever
+    /// `greens` says, since there would be nothing for one to be.
+    pub green_weights: HashMap<String, u8>,
     /// A door's cycle, in ticks, and how much of it stands open. Zero for the
     /// period leaves every door shut.
     pub door_period: Option<u16>,

@@ -80,6 +80,7 @@ pub const EV_WARP: u8 = 11;
 pub const EV_RICOCHET: u8 = 12;
 pub const EV_ASSIST: u8 = 13;
 pub const EV_STREAK: u8 = 14;
+pub const EV_GREEN: u8 = 15;
 
 pub const MAX_FEATURES: usize = 256;
 pub const MAP_PACK_MAX: usize = MAP_TILES * MAP_TILES * 3 + 14;
@@ -385,6 +386,16 @@ pub struct sim_settings {
     /// Ticks one pilot may hold a flag before it drops on its own. Zero is no
     /// limit.
     pub flag_carry_ticks: u16,
+    /// Greens the room keeps on the field, and zero is a zone with none.
+    pub green_target: u8,
+    pub green_life: u16,
+    pub green_every: u16,
+    /// The ring around a live ship one may appear in, Q8 px.
+    pub green_near: i32,
+    pub green_far: i32,
+    pub green_radius: i32,
+    /// How often each kit slot is rolled, against the sum of them all.
+    pub green_weight: [u8; SLOT_COUNT],
     pub max_ships: u8,
     /// Whose death this instance may conclude on its own. The server keeps
     /// both at zero, which `sim_settings_baseline` writes: every death is
@@ -469,6 +480,19 @@ pub struct sim_flag {
     pub held: u16,
 }
 
+/// Mirrors `sim_green`: one prize on the ground, and the kit slot it fills.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct sim_green {
+    pub active: u8,
+    pub slot: u8,
+    pub x: i32,
+    pub y: i32,
+    pub life: u16,
+}
+
+pub const MAX_GREENS: usize = 64;
+
 pub const MAX_FLAGS: usize = 16;
 pub const TEAM_NONE: u8 = 255;
 /// A trigger with nothing on it. Matches `SIM_NO_PATTERN`.
@@ -522,6 +546,10 @@ pub struct sim_state {
     pub weapons: [sim_weapon; MAX_WEAPONS],
     pub flags: [sim_flag; MAX_FLAGS],
     pub flag_count: u8,
+    pub greens: [sim_green; MAX_GREENS],
+    pub green_count: u8,
+    /// Ticks until the next green is put out.
+    pub green_at: u16,
 }
 
 #[repr(C)]
@@ -721,7 +749,7 @@ pub const PACK_MAX: usize = 64 * 1024;
 /// is worked out: every seat carrying its owner-only tail. Grows whenever that
 /// tail does, and `a_full_private_snapshot_uses_the_state_bound` below is what
 /// notices when this copy has not kept up.
-pub const STATE_PACK_MAX: usize = 62_883;
+pub const STATE_PACK_MAX: usize = 63_588;
 pub const PACK_PRIVATE_ALL: u8 = 0x01;
 pub const SETTINGS_PACK_MAX: usize = 8192;
 pub const UP_COUNT: usize = 5;
@@ -1496,6 +1524,7 @@ mod layout {
             ("SIM_EV_RICOCHET", EV_RICOCHET),
             ("SIM_EV_ASSIST", EV_ASSIST),
             ("SIM_EV_STREAK", EV_STREAK),
+            ("SIM_EV_GREEN", EV_GREEN),
         ] {
             assert_eq!(
                 found.get(name).copied(),
@@ -1505,7 +1534,7 @@ mod layout {
         }
         assert_eq!(
             found.len(),
-            14,
+            15,
             "the core has an event the mirror has never heard of"
         );
     }
@@ -1577,6 +1606,8 @@ mod layout {
         for flag in &mut world.state.flags {
             flag.active = 1;
         }
+        // And the greens, which are the other thing a room can be full of.
+        world.state.green_count = MAX_GREENS as u8;
 
         let mut packed = vec![0u8; STATE_PACK_MAX];
         let len = world.pack_around(&mut packed, 0, 0, -1, 0, PACK_PRIVATE_ALL);

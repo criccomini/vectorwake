@@ -1651,6 +1651,134 @@ static void update_flags(sim_state *s, const sim_settings *cfg, sim_events *ev) 
     }
 }
 
+/* ---- greens ---- */
+
+/* How much of one slot a hull is wearing. Defined with the rest of the kit
+ * grants below; a green needs it to report what it just handed over. */
+static uint8_t held(const sim_ship *sh, uint8_t type);
+
+/* Roll a slot against the zone's weights. Returns -1 when the table is empty,
+ * which is a zone that wants no greens however many it asked for. */
+static int roll_green(const sim_settings *cfg, uint32_t *rng) {
+    uint32_t total = 0;
+    for (int i = 0; i < SIM_SLOT_COUNT; i++) total += cfg->green_weight[i];
+    if (total == 0) return -1;
+    *rng = xorshift32(*rng);
+    uint32_t pick = (*rng >> 8) % total;
+    for (int i = 0; i < SIM_SLOT_COUNT; i++) {
+        uint32_t w = cfg->green_weight[i];
+        if (pick < w) return i;
+        pick -= w;
+    }
+    return -1; /* unreachable: the loop above sums to `total` */
+}
+
+/* Put one green out in the ring around a live ship.
+ *
+ * Sixteen draws and then give up for this tick, which is the same budget
+ * `pick_spawn` gives itself for the same problem. A room whose pilots are all
+ * standing in a pocket surrounded by wall will place fewer than it wants, and
+ * that is the right failure: the alternative is walking the map looking for
+ * ground, once a tick, forever. */
+static void put_green(sim_state *s, const sim_settings *cfg) {
+    /* Somebody to put it near. A room with nobody alive in it gets none,
+     * which is also what stops an empty room filling up with prizes nobody
+     * ever came for. */
+    int alive = 0;
+    for (int i = 0; i < s->ship_count; i++)
+        if (s->ships[i].active && s->ships[i].alive) alive++;
+    if (alive == 0) return;
+
+    s->rng = xorshift32(s->rng);
+    int nth = (int)((s->rng >> 8) % (uint32_t)alive);
+    int host = -1;
+    for (int i = 0; i < s->ship_count; i++) {
+        if (!s->ships[i].active || !s->ships[i].alive) continue;
+        if (nth-- == 0) { host = i; break; }
+    }
+    if (host < 0) return;
+
+    int slot = roll_green(cfg, &s->rng);
+    if (slot < 0) return;
+
+    int32_t span = cfg->green_far - cfg->green_near;
+    if (span < 0) span = 0;
+    for (int n = 0; n < 16; n++) {
+        s->rng = xorshift32(s->rng);
+        uint16_t heading = (uint16_t)(s->rng >> 16);
+        s->rng = xorshift32(s->rng);
+        int32_t reach = cfg->green_near
+                        + (span ? (int32_t)((s->rng >> 8) % (uint32_t)span) : 0);
+        int32_t dx, dy;
+        heading_dir(heading, &dx, &dy);
+        int32_t x = s->ships[host].x + (int32_t)(((int64_t)dx * reach) >> 15);
+        int32_t y = s->ships[host].y + (int32_t)(((int64_t)dy * reach) >> 15);
+        /* Off the top or left has to be refused here rather than left to the
+         * tile lookup: dividing a negative truncates toward zero, so every
+         * point in the first tile's worth of negative space reads as tile
+         * zero and would place a green inside the border. */
+        if (x < 0 || y < 0) continue;
+        if (!ground(cfg->map, x / (SIM_TILE_PX * 256), y / (SIM_TILE_PX * 256)))
+            continue;
+        /* A safe zone is where a pilot cannot be shot, so a prize lying in
+         * one is a free upgrade collected at leisure. */
+        if (sim_in_safe(cfg->map, x, y)) continue;
+
+        int at = -1;
+        for (int i = 0; i < s->green_count; i++)
+            if (!s->greens[i].active) { at = i; break; }
+        if (at < 0) {
+            if (s->green_count >= SIM_MAX_GREENS) return;
+            at = s->green_count++;
+        }
+        sim_green *g = &s->greens[at];
+        g->active = 1;
+        g->slot = (uint8_t)slot;
+        g->x = x;
+        g->y = y;
+        g->life = cfg->green_life;
+        return;
+    }
+}
+
+/* Age what is out, put out what is missing, and hand over what anybody
+ * reached. */
+static void update_greens(sim_state *s, const sim_settings *cfg,
+                          sim_events *ev) {
+    int live = 0;
+    for (int i = 0; i < s->green_count; i++) {
+        sim_green *g = &s->greens[i];
+        if (!g->active) continue;
+        if (g->life > 0 && --g->life == 0) {
+            g->active = 0;
+            continue;
+        }
+        live++;
+
+        for (int k = 0; k < s->ship_count; k++) {
+            sim_ship *sh = &s->ships[k];
+            if (!sh->active || !sh->alive) continue;
+            if (!hull_reaches(&cfg->classes[sh->cls], sh->heading,
+                              sh->x, sh->y, g->x, g->y, cfg->green_radius))
+                continue;
+            /* Taken even when the slot is already full. The green is gone
+             * either way, which is what stops one a pilot cannot use sitting
+             * on their route forever, and the event says how much they hold
+             * so a client can tell a step up from a shrug. */
+            sim_grant(sh, cfg, g->slot);
+            emit(ev, SIM_EV_GREEN, (uint8_t)k, g->slot, held(sh, g->slot));
+            g->active = 0;
+            live--;
+            break;
+        }
+    }
+
+    if (live >= cfg->green_target) return;
+    if (s->green_at > 0) { s->green_at--; return; }
+    s->green_at = cfg->green_every;
+    put_green(s, cfg);
+}
+
 /* ---- kit grants ---- */
 /* How far a proximity sensor reaches, from the bomb's center, in Q8 px.
  *
@@ -2390,6 +2518,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
     }
 
     update_flags(next, cfg, ev);
+    update_greens(next, cfg, ev);
 
     /* --- weapons ---
      *
@@ -2746,6 +2875,14 @@ uint64_t sim_hash(const sim_state *s) {
         h = hash_u32(h, (uint32_t)f->x);
         h = hash_u32(h, (uint32_t)f->y);
         h = hash_u32(h, (uint32_t)f->cooldown | ((uint32_t)f->held << 16));
+    }
+    h = hash_u32(h, (uint32_t)s->green_count | ((uint32_t)s->green_at << 8));
+    for (int i = 0; i < s->green_count; i++) {
+        const sim_green *g = &s->greens[i];
+        h = hash_u32(h, (uint32_t)g->active | ((uint32_t)g->slot << 8)
+                            | ((uint32_t)g->life << 16));
+        h = hash_u32(h, (uint32_t)g->x);
+        h = hash_u32(h, (uint32_t)g->y);
     }
     for (uint16_t i = 0; i < s->weapon_count; i++) {
         const sim_weapon *w = &s->weapons[i];

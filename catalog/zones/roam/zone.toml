@@ -1,0 +1,161 @@
+# Free Roam: one map, sixty-four pilots, eight sides, and greens on the ground.
+#
+# The zone the original was actually about, and the one this catalog did not
+# have. Every other game here is a match: a clock, a podium, a result, three
+# minutes and out. This one has none of those. You arrive, you fly, and the
+# room is still going when you leave it.
+#
+# What replaces the match as a reason to keep flying is the greens. A pilot
+# starts on the build they chose like anywhere else and then grows over a life:
+# a prize is a step of energy or a rung of gun on top of what they own, and it
+# lasts until they die. That is the whole loop the original's public zones ran
+# on, and it is why this zone wants a map you can get lost on rather than a
+# room where the fight starts at the whistle.
+
+label = "Free Roam"
+
+# No clock, no score, no podium. The open arena, which is the one mode that
+# answers `None` to what a match is doing and so draws no clock at all.
+mode = "arena"
+
+# One map and no rotation, because there is nothing to rotate on: a match game
+# changes ground at the whistle and this game has no whistle. `expanse` is a
+# thousand tiles square, drawn by mapgen from the measurements of a 1998 zone.
+# See the recipe beside it.
+maps = ["expanse.vwmap"]
+
+# Sixty-four seats, which is the baseline's room and four times what the
+# original aimed a public arena at.
+max_players = 64
+max_ships = 64
+
+# Half the room, so a pilot arriving on a quiet evening finds a game rather
+# than a thousand tiles of nobody, and thirty-two seats are still free for
+# people. A bot stands down the moment somebody wants its seat.
+bot_fill = 0.5
+
+# A second instance opens only once this one holds sixty-four people. At this
+# population that means everybody who turns up is on the same map, which is
+# the whole of what a persistent zone is for.
+fill_target = 64
+
+# One room to a process. A sixty-four player arena on a megabyte of map
+# deserves its own blast radius, which is the argument
+# docs/architecture/zones-and-arenas.md makes about a zone of this shape.
+max_rooms = 1
+
+# Eight sides of eight. Named for parts of a hull, which is the register the
+# ships are named in and reads as a crew rather than as a color.
+teams = ["Keel", "Vantage", "Spar", "Chine", "Strake", "Transom", "Gudgeon", "Bollard"]
+# Eight, so nobody founds a ninth inside a game already built for eight.
+max_teams = 8
+max_humans_per_team = 8
+max_bots_per_team = 8
+
+max_watchers = 16
+
+[arena]
+# ---- greens ----
+#
+# Two dozen out at once. docs/design/maps.md records why that number and not
+# two hundred: scattered by area, two hundred greens over a million tiles is
+# one per five thousand against a pilot who sees sixty, and the zone that ran
+# that way read to its players as having none at all. They are put out in a
+# ring around a live pilot instead, so twenty-four where the people are beats
+# two hundred in a million tiles of nobody.
+greens = 24
+
+# Six to twenty-eight tiles from whoever they appeared for. Outside the first
+# so a green is a trip rather than a gift; inside the second so it lands on
+# their radar and is a decision rather than a discovery.
+green_near_tiles = 6
+green_far_tiles = 28
+
+# A minute lying there, and one put out every second and a half, which fills
+# the field in about half a minute from empty and keeps it topped up as fast
+# as a busy room can clear it.
+green_seconds = 60
+green_every_seconds = 2
+
+# The same reach a flag is taken from. Both are "fly into it".
+green_radius = 18
+
+# Sixty tiles of scatter around whichever start a pilot is given, which is
+# Alpha's own number. The map marks sixteen starts across two side variants
+# and this zone has eight sides, so most of them fall back to any start at
+# all; the radius is what turns that from a queue on sixteen tiles into
+# arrivals spread over the middle of the map.
+spawn_radius = 60
+
+# Ten minutes and fifty-five seconds is the longest sit the core can express,
+# `safe_limit` being a uint16_t. Alpha's SafetyLimit is fifteen minutes, so
+# this is as close as the field goes and far longer than anybody waits.
+safe_limit = 65535
+
+# Four seconds dead. Longer than a match game's two, because here the walk
+# back is short: you respawn into the same fight rather than into a pocket
+# sixty tiles from anybody.
+respawn_delay = 400
+
+# Team Battle's economy otherwise, so a pilot moving between the two games
+# finds the same ship and the same wall. See catalog/zones/melee/zone.toml.
+bounce = 12
+friction = 12
+streak_kills = 3
+mod_spread = 5
+multi_energy = 25
+multi_delay = 50
+prox_step = 16
+prox_delay = 150
+bomb_safety = true
+bbomb_damage = 1000
+shrap_inactive = 3
+shrap_inactive_ticks = 25
+
+# What a green may be. Weights are relative and sum to whatever they sum to.
+#
+# Stats-heavy, which is what Alpha Zone's own file is: a green is mostly one
+# more step of something you already have rather than a new capability. That
+# is what makes growth over a life feel like a slope instead of a series of
+# unlocks, and it is what stops a pilot who has been alive four minutes flying
+# something the pilot who just arrived cannot fight.
+#
+# A hull's own ceiling still applies. `sim_grant` will not push a slot past
+# what `sim_slot_cap` allows, so a green that lands on a full slot is a green
+# spent for nothing, which is a real cost of taking one you did not need.
+[arena.green_weights]
+energy = 12
+recharge = 12
+speed = 10
+thrust = 10
+rotation = 8
+gun = 6
+bomb = 6
+"gun.multi" = 4
+"gun.bounce" = 4
+"bomb.prox" = 4
+"bomb.shrapnel" = 4
+"bomb.bounce" = 3
+repel = 8
+burst = 5
+
+[arena.mod_step]
+multi = 1
+bounce = 1
+prox = 48
+
+[[arena.weapons]]
+name = "gun"
+bounces = 255
+
+[[arena.weapons]]
+name = "gun-2"
+bounces = 255
+
+[[arena.weapons]]
+name = "gun-3"
+bounces = 255
+
+[[arena.weapons]]
+name = "burst"
+damage = 515

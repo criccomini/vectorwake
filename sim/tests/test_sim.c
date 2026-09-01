@@ -3996,6 +3996,116 @@ static void test_scoring(const sim_settings *base) {
         CHECK(s.flags[f].x == was_x && s.flags[f].y == was_y, "still put");
     }
 
+    /* Greens: prizes that appear near the people who might take them.
+     *
+     * The ring is the whole design and is why this checks where they land
+     * rather than only that they exist. Scattered by area they were a zone
+     * that read to its players as having none; see docs/design/maps.md. */
+    {
+        sim_settings g = cfg;
+        g.green_target = 6;
+        g.green_every = 10;
+        g.green_life = 2000;
+        g.green_near = 6 * SIM_TILE_PX * 256;
+        g.green_far = 28 * SIM_TILE_PX * 256;
+        g.green_radius = 18 * 256;
+        /* Everything a green can be, in this room, is one more energy step. */
+        memset(g.green_weight, 0, sizeof g.green_weight);
+        g.green_weight[SIM_SLOT_STAT(SIM_UP_ENERGY)] = 1;
+
+        static sim_state s;
+        sim_init(&s, 7);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &g);
+        int live = 0;
+        for (int t = 0; t < 400 && live < 6; t++) {
+            step_n(&s, &g, 0, 0, 1);
+            live = 0;
+            for (int i = 0; i < s.green_count; i++)
+                if (s.greens[i].active) live++;
+        }
+        CHECK(live == 6, "the room fills to what the zone asked for");
+
+        for (int i = 0; i < s.green_count; i++) {
+            const sim_green *p = &s.greens[i];
+            if (!p->active) continue;
+            CHECK(p->slot == SIM_SLOT_STAT(SIM_UP_ENERGY),
+                  "and every one of them is what the table allows");
+            int64_t dx = (int64_t)p->x - 8192 * 256;
+            int64_t dy = (int64_t)p->y - 8192 * 256;
+            int64_t d2 = dx * dx + dy * dy;
+            CHECK(d2 >= (int64_t)g.green_near * g.green_near,
+                  "no closer than the ring's inside, so it is a trip");
+            CHECK(d2 <= (int64_t)g.green_far * g.green_far,
+                  "and no further than its outside, so it is on the radar");
+            int32_t tx = p->x / (SIM_TILE_PX * 256);
+            int32_t ty = p->y / (SIM_TILE_PX * 256);
+            CHECK(SIM_TILE_CLASS(sim_tile_at(cfg.map, tx, ty)) != SIM_TILE_SOLID,
+                  "and none of them is inside a wall");
+        }
+
+        /* Taking one raises what the pilot is flying. */
+        int held_before = s.ships[0].up[SIM_UP_ENERGY];
+        int idx = -1;
+        for (int i = 0; i < s.green_count; i++)
+            if (s.greens[i].active) { idx = i; break; }
+        CHECK(idx >= 0, "there is one to take");
+        /* Walk the hull onto it rather than the green onto the hull, so the
+         * pickup test is the one the game runs. */
+        s.ships[0].x = s.greens[idx].x;
+        s.ships[0].y = s.greens[idx].y;
+        step_n(&s, &g, 0, 0, 1);
+        CHECK(!s.greens[idx].active, "the green is taken");
+        CHECK(s.ships[0].up[SIM_UP_ENERGY] == held_before + 1,
+              "and the pilot is flying one step more energy");
+
+        /* And death puts them back on their own build, because a respawn
+         * deals `kit` again and a green never touched it. That is the whole
+         * of the death policy: a green lasts a life. */
+        s.ships[0].alive = 0;
+        s.ships[0].respawn_at = 2;
+        step_n(&s, &g, 0, 0, 4);
+        CHECK(s.ships[0].alive, "the pilot comes back");
+        CHECK(s.ships[0].up[SIM_UP_ENERGY] == held_before,
+              "on the build they own, without what the green lent them");
+    }
+
+    /* A green goes out on its own, so a room nobody visits does not silently
+     * carpet itself with everything anybody ever failed to collect. */
+    {
+        sim_settings g = cfg;
+        g.green_target = 1;
+        /* Long between two, so what this watches expire is not replaced in
+         * the same slot before it can be looked at. */
+        g.green_every = 500;
+        g.green_life = 50;
+        g.green_near = 6 * SIM_TILE_PX * 256;
+        g.green_far = 28 * SIM_TILE_PX * 256;
+        g.green_radius = 18 * 256;
+        memset(g.green_weight, 0, sizeof g.green_weight);
+        g.green_weight[SIM_SLOT_STAT(SIM_UP_ENERGY)] = 1;
+
+        static sim_state s;
+        sim_init(&s, 3);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &g);
+        step_n(&s, &g, 0, 0, 5);
+        int idx = -1;
+        for (int i = 0; i < s.green_count; i++)
+            if (s.greens[i].active) { idx = i; break; }
+        CHECK(idx >= 0, "one is out");
+        step_n(&s, &g, 0, 0, 60);
+        CHECK(!s.greens[idx].active, "and it has gone out on its own");
+    }
+
+    /* A zone that asks for none gets none, which is every match game we
+     * ship: there a pilot flies the build they chose and nothing else. */
+    {
+        static sim_state s;
+        sim_init(&s, 5);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        step_n(&s, &cfg, 0, 0, 500);
+        CHECK(s.green_count == 0, "the baseline puts out no greens");
+    }
+
     /* A carry clock puts a flag down on its own, keeping the side that took
      * it. Without one, a hull that can stay alive takes a flag out of the
      * game for as long as it keeps flying. */
@@ -5198,6 +5308,7 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
         }
         full.weapon_count = SIM_MAX_WEAPONS;
         full.flag_count = SIM_MAX_FLAGS;
+        full.green_count = SIM_MAX_GREENS;
 
         static uint8_t packed[SIM_STATE_PACK_MAX];
         int whole = sim_pack(&full, packed, sizeof packed);

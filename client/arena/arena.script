@@ -2135,6 +2135,7 @@ function update(self, dt)
         -- theirs.
         world.lights_begin()
         fx.gather_lights(world.light)
+        world.greens(fill, glow, t, cull)
         world.weapons(fill, glow, t, cull)
 
         for i = 0, sim.ship_count() - 1 do

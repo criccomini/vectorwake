@@ -30,9 +30,13 @@ handle /metrics/a4* {
 	rewrite * /metrics
 	reverse_proxy 127.0.0.1:9104
 }
-handle /metrics/bots* {
+handle /metrics/a5* {
 	rewrite * /metrics
 	reverse_proxy 127.0.0.1:9105
+}
+handle /metrics/bots* {
+	rewrite * /metrics
+	reverse_proxy 127.0.0.1:9199
 }
 
 handle_path /a1* {
@@ -49,4 +53,8 @@ handle_path /a3* {
 
 handle_path /a4* {
 	reverse_proxy 127.0.0.1:9004
+}
+
+handle_path /a5* {
+	reverse_proxy 127.0.0.1:9005
 }

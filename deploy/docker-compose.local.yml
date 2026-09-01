@@ -59,6 +59,9 @@ services:
   a4:
     <<: *build
     extra_hosts: *names
+  a5:
+    <<: *build
+    extra_hosts: *names
   bots:
     <<: *build
     extra_hosts: *names

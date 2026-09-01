@@ -6641,6 +6641,91 @@ mod tests {
         );
     }
 
+    /// The free roam zone as it ships: greens appear near the pilot they were
+    /// put out for, and flying into one raises what that pilot is flying.
+    #[test]
+    fn the_shipped_roam_zone_puts_greens_where_the_people_are() {
+        let dir = "../catalog/zones/roam";
+        let toml_text = std::fs::read_to_string(format!("{dir}/zone.toml")).expect("the roam zone");
+        let def: catalog::ZoneDef = toml::from_str(&toml_text).expect("it parses");
+        let map = std::fs::read(format!("{dir}/{}", def.maps[0])).expect("its map");
+
+        let mut zone = wire_zone(1, 64, 64);
+        zone.mode = def.mode.clone();
+        zone.maps_b64 = vec![fleet::b64(&map)];
+        zone.zone_toml = toml_text;
+        let mut room = ArenaServer::build_room(&zone, None).expect("a room");
+
+        assert_eq!(room.mode.name(), "arena", "no clock, no podium");
+        assert_eq!(room.world.cfg.green_target, 24, "two dozen out at once");
+        assert!(
+            room.world.cfg.green_weight.iter().any(|w| *w > 0),
+            "and a table saying what one may be"
+        );
+
+        // One pilot, in the middle of a thousand tiles. Everything a green
+        // does is measured against where they are.
+        let seat = room.world.spawn(0, 0, 512, 512, 0);
+        assert!(seat >= 0);
+        let (px, py) = {
+            let sh = room.world.state.ships[seat as usize];
+            (sh.x as i64, sh.y as i64)
+        };
+
+        let mut seen = 0;
+        for _ in 0..6_000 {
+            room.world.step(&[]);
+            seen = (0..room.world.state.green_count as usize)
+                .filter(|i| room.world.state.greens[*i].active == 1)
+                .count();
+            if seen >= 4 {
+                break;
+            }
+        }
+        assert!(seen >= 4, "greens are put out, {seen} of them");
+
+        let near = room.world.cfg.green_near as i64;
+        let far = room.world.cfg.green_far as i64;
+        for i in 0..room.world.state.green_count as usize {
+            let g = room.world.state.greens[i];
+            if g.active == 0 {
+                continue;
+            }
+            let (dx, dy) = (g.x as i64 - px, g.y as i64 - py);
+            let d2 = dx * dx + dy * dy;
+            assert!(
+                d2 >= near * near && d2 <= far * far,
+                "every green is in the ring around the pilot it appeared for"
+            );
+            assert!(
+                room.world.cfg.green_weight[g.slot as usize] > 0,
+                "and is something the zone's table allows"
+            );
+        }
+
+        // Taking one reports what it filled. Whether the pilot is any better
+        // for it is the roll's business: a green that lands on a slot already
+        // at its hull's ceiling is still taken, which is what stops one
+        // nobody can use sitting on a route forever.
+        let g = (0..room.world.state.green_count as usize)
+            .find(|i| room.world.state.greens[*i].active == 1)
+            .expect("one to take");
+        let (gx, gy, slot) = {
+            let it = room.world.state.greens[g];
+            (it.x, it.y, it.slot)
+        };
+        room.world.state.ships[seat as usize].x = gx;
+        room.world.state.ships[seat as usize].y = gy;
+        room.world.step(&[]);
+        assert_eq!(room.world.state.greens[g].active, 0, "the green is taken");
+        let took = room.world.events.e[..room.world.events.count as usize]
+            .iter()
+            .find(|e| e.etype == sim::EV_GREEN)
+            .expect("and says so");
+        assert_eq!(took.a, seat as u8, "by the pilot who flew into it");
+        assert_eq!(took.b, slot, "naming the slot it filled");
+    }
+
     /// A map that draws no stands is not a flag game and gets no flags. The
     /// melee zone is the one that proves it matters: it named no flag count,
     /// took the default four, and carried four unreachable pennants across
