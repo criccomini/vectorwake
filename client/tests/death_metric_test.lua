@@ -115,7 +115,7 @@ end
 net.connect("ws://zone", 0, "pilot", function() end)
 handle.cb(nil, handle, {event = websocket.EVENT_CONNECTED})
 deliver(string.char(1, 0) .. le32(1) .. le32(0)
-    .. string.char(1, 0) .. le32(0))
+    .. string.char(1, 0) .. le32(0) .. string.char(0))
 deliver(snapshot(1000))
 
 emit_victim = 1

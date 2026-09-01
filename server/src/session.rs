@@ -470,6 +470,8 @@ pub(crate) async fn serve_client(
                             w.extend_from_slice(&a.world.state.tick.to_le_bytes());
                             w.extend_from_slice(&(a.number as u16).to_le_bytes());
                             w.extend_from_slice(&a.settings_generation.to_le_bytes());
+                            // They came through the door asking for the stands.
+                            w.push(WHY_NONE);
                             let _ = tx.try_send(Message::Binary(w));
                             a.broadcast_roster();
                         }
@@ -553,6 +555,7 @@ pub(crate) async fn serve_client(
                     // screen that must not be a guess is where you are.
                     w.extend_from_slice(&(a.number as u16).to_le_bytes());
                     w.extend_from_slice(&a.settings_generation.to_le_bytes());
+                    w.push(WHY_NONE);
                     let _ = tx.try_send(Message::Binary(w));
                     a.broadcast_roster();
                     // Which sides this room holds, who is on them, and

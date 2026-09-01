@@ -154,13 +154,16 @@ local function u32le(v)
 end
 
 local snapshot_seq = 0
--- A snapshot as the wire carries it: subject, input receipt window, sequence,
--- lag telemetry, then the pack, whose first field is the simulation tick.
-local function welcome(ship, lifecycle, settings, room)
+-- A welcome as the wire carries it: seat, lifecycle, tick, room, settings
+-- generation, then why this seat came about.
+local function welcome(ship, lifecycle, settings, room, why)
     return string.char(1, ship) .. u32le(lifecycle or 1) .. u32le(0)
         .. string.char(room or 1, 0) .. u32le(settings or 0)
+        .. string.char(why or 0)
 end
 
+-- A snapshot as the wire carries it: subject, input receipt window, sequence,
+-- lag telemetry, then the pack, whose first field is the simulation tick.
 local function snapshot(ship, sim_tick, input_ack, input_mask, watching, lifecycle,
                         settings)
     snapshot_seq = snapshot_seq % 4294967295 + 1
