@@ -776,10 +776,11 @@ int ShrapCount(lua_State* L) {
 // Same argument as ShrapCount above, and the same fault it was written to
 // fix. The corner and the pads draw every round a trigger fires at the angle
 // it fires it, and the alternative was the two spreads copied into the
-// drawing as constants. The baseline opens a pair seven and a half degrees
-// and a fan fifteen, adds one round a rung, and ships every gun pattern at
-// one round; a zone is free to disagree with all three, and the drawing
-// would have gone on saying what the baseline said.
+// drawing as constants. The baseline opens a pair two and a quarter degrees
+// and a fan five, adds one round a rung, and ships every gun pattern at one
+// round; a zone is free to disagree with all three, and the drawing would
+// have gone on saying what the baseline said. Both numbers have moved since
+// this was written, which is the argument rather than a footnote to it.
 //
 // Read the way `compose` in sim.c reads it, off the pattern the rung
 // actually fires. Both numbers come back in the core's own units, spacing
