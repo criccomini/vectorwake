@@ -2310,23 +2310,65 @@ impl Room {
         "Unnamed".into()
     }
 
+    /// Why this ship cannot have this side, for a `may_join` that said no.
+    ///
+    /// Read off the same three things `may_join` reads, in its order, so the
+    /// reason a pilot is given is the clause that actually stopped them.
+    fn why_not_team(&self, ship: u8, team: u8) -> u8 {
+        let Some(t) = self.teams.get(&team) else {
+            return NOTEAM_GONE;
+        };
+        if !t.public && !self.invites.get(&ship).is_some_and(|s| s.contains(&team)) {
+            return NOTEAM_PRIVATE;
+        }
+        NOTEAM_FULL
+    }
+
+    /// And why the core would not let them leave where they stand. It refuses
+    /// a seat that is not there, a pilot who is down, and a pilot who is hurt,
+    /// so an active pilot who was refused is one of the last two.
+    fn why_not_leave(&self, ship: u8) -> u8 {
+        let sh = &self.world.state.ships[ship as usize];
+        if sh.active == 0 {
+            NOTEAM_GONE
+        } else if sh.alive == 0 {
+            NOTEAM_DOWN
+        } else {
+            NOTEAM_HURT
+        }
+    }
+
+    /// Tell the one pilot who asked why they are still where they were.
+    pub(crate) fn send_noteam(&self, ship: u8, why: u8) {
+        if let Some(p) = self.players.values().find(|p| p.ship == ship) {
+            let _ = p.tx.try_send(Message::Binary(vec![S2C_NOTEAM, why]));
+        }
+    }
+
     /// Cross to a side. The room decides whether the door is open; the core
     /// decides whether the pilot may leave where they are, which it refuses
-    /// for anyone dead or hurt. Both have to agree, and a refusal is silent:
-    /// the team list that follows still says where you are, which is the only
-    /// thing the client asked about.
+    /// for anyone dead or hurt. Both have to agree, and either way the pilot
+    /// is told: the team list that follows says where they still are, and
+    /// `S2C_NOTEAM` beside it says what stopped them.
+    ///
+    /// That answer used to be the list alone, which reads as nothing happening
+    /// at the far end. The client asks with a full bar and the core wants one
+    /// when the ask lands, so the refusal a player actually meets is the one
+    /// they cannot see coming: a round arrived while the message did. See
+    /// decision 150.
     pub(crate) fn join_team(&mut self, ship: u8, team: u8) -> bool {
         let bot = self.names.get(&ship).is_some_and(|s| s.bot);
         if !self.may_join(ship, team, bot) {
             self.send_teams(ship);
+            self.send_noteam(ship, self.why_not_team(ship, team));
             return false;
         }
         let from = self.world.state.ships[ship as usize].team;
         let moved = self.world.set_ship_team(ship, team);
         if moved {
-            // Only a crossing that happened. Both gates above are silent to
-            // the pilot, and a log that recorded the asking would mostly
-            // record hurt pilots pressing a key that did nothing.
+            // Only a crossing that happened. A log that recorded the asking
+            // would mostly record hurt pilots pressing a key that did nothing,
+            // and what those are owed is the answer above rather than a row.
             if let Some(seat) = self.names.get(&ship).cloned() {
                 let public = self.teams.get(&team).is_some_and(|t| t.public);
                 self.note(
@@ -2341,6 +2383,7 @@ impl Room {
             self.broadcast_roster();
         } else {
             self.send_teams(ship);
+            self.send_noteam(ship, self.why_not_leave(ship));
         }
         moved
     }

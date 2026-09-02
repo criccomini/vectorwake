@@ -264,7 +264,13 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// checked against, so it was owed; the client needs it to draw the carry
 /// limit, which it cannot count for itself when it joins mid carry. A client
 /// built for 35 would read those two bytes as the head of the next flag.
-pub(crate) const CLIENT_PROTOCOL: u8 = 36;
+///
+/// 37 answers a refused crossing. `S2C_NOTEAM` is a new tag, so a client built
+/// for 36 would skip it rather than misread anything, and the number moves for
+/// the reason 33's did: this is a wire field the fleet and the page have to
+/// agree on, and a build that cannot hear the answer goes on showing the
+/// silence this message exists to end.
+pub(crate) const CLIENT_PROTOCOL: u8 = 37;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
@@ -402,3 +408,35 @@ pub(crate) const S2C_MAPNAME: u8 = 18;
 /// client predicts, and a prediction that rolled back over the kill would
 /// announce the streak again on every replay of it.
 pub(crate) const S2C_STREAK: u8 = 19;
+/// `[S2C_NOTEAM, why]`: the side you asked for is not yours, and this is what
+/// stopped it. Sent to the one pilot who asked, beside the team list that
+/// already goes back to them.
+///
+/// The list was the whole of the answer until now, on the grounds that it
+/// still says where you are, which is what the client asked about. It is not
+/// enough. `C2S_TEAM` is sent when the client has just seen a full bar, and
+/// the core will not let a hurt pilot leave where they stand, so the ask that
+/// loses that race is the ordinary one: you press with a full bar, a round
+/// lands while the message is in flight, and the room keeps you where you are
+/// without a word. The client had already played its yes and put the card
+/// away by then, so what a player got was a confirmation and no change.
+///
+/// A reason on the wire rather than a clock in the client. A client can see
+/// that its side did not change, but not whether the room refused or has yet
+/// to answer, and telling those apart by waiting is the kind of conclusion
+/// about the shared world that decision 40 says a client does not draw.
+pub(crate) const S2C_NOTEAM: u8 = 20;
+/// No such side. It was reaped between the reading and the ask, which a
+/// private side with one member does the moment they leave it.
+pub(crate) const NOTEAM_GONE: u8 = 1;
+/// A private side that has not invited you.
+pub(crate) const NOTEAM_PRIVATE: u8 = 2;
+/// Every seat on it is taken.
+pub(crate) const NOTEAM_FULL: u8 = 3;
+/// You are waiting to respawn. Crossing hands out a fresh start and a full
+/// bar, so a pilot who is already down would be taking the better of two
+/// respawns.
+pub(crate) const NOTEAM_DOWN: u8 = 4;
+/// Your bar is not full. This is the one that arrives after a client thought
+/// it had checked: the bar was full when the key went down.
+pub(crate) const NOTEAM_HURT: u8 = 5;

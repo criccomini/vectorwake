@@ -3825,6 +3825,60 @@ mod tests {
         assert_eq!(read.iter().map(|r| r.4 as u32).sum::<u32>(), 2, "two bots");
     }
 
+    /// Every reason a crossing is refused for, said to the pilot who asked.
+    ///
+    /// The one that matters is `NOTEAM_HURT`. A client will not send the ask
+    /// on a part-full bar, so the only way to meet that refusal is to be whole
+    /// when the key goes down and hurt when the message lands, which is a
+    /// round arriving in between. It used to be answered with a team list that
+    /// said where you already were, and a player pressing a key and being
+    /// shown no change is a key that looks broken. See decision 150.
+    #[test]
+    fn a_refused_crossing_says_what_stopped_it() {
+        fn refusal(msgs: &[Vec<u8>]) -> Option<u8> {
+            msgs.iter()
+                .find(|m| m.first() == Some(&S2C_NOTEAM))
+                .map(|m| m[1])
+        }
+
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
+        let (ship, _, mut rx) = seat_rx(&mut a, "one");
+        let mine = a.world.state.ships[ship as usize].team;
+        let other = u8::from(mine == 0);
+        drain(&mut rx);
+        let whole = a.world.state.ships[ship as usize].energy;
+
+        // Hurt: whole when the key went down, a round short when it landed.
+        a.world.state.ships[ship as usize].energy -= 1;
+        assert!(!a.join_team(ship, other), "the core keeps a hurt pilot");
+        assert_eq!(
+            refusal(&drain(&mut rx)),
+            Some(NOTEAM_HURT),
+            "and the room says so rather than answering with where they are"
+        );
+
+        // Down: crossing hands out a start and a full bar, so a pilot already
+        // waiting on one would be taking the better of two respawns.
+        let sh = &mut a.world.state.ships[ship as usize];
+        sh.energy = whole;
+        sh.alive = 0;
+        assert!(!a.join_team(ship, other));
+        assert_eq!(refusal(&drain(&mut rx)), Some(NOTEAM_DOWN));
+
+        // And a crossing that works says nothing, because the roster it
+        // broadcasts is the answer.
+        let sh = &mut a.world.state.ships[ship as usize];
+        sh.alive = 1;
+        sh.energy = whole;
+        assert!(a.join_team(ship, other), "whole, alive, and a seat spare");
+        assert_eq!(
+            refusal(&drain(&mut rx)),
+            None,
+            "a crossing that happened is not refused"
+        );
+        assert_eq!(a.world.state.ships[ship as usize].team, other);
+    }
+
     #[test]
     fn a_two_team_zone_still_has_two_teams() {
         // The other half of the same rule: a warzone must not become a

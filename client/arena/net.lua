@@ -66,12 +66,32 @@ local S2C_LAG = 16
 local S2C_SAID = 17
 local S2C_MAPNAME = 18
 local S2C_STREAK = 19
+-- The answer to a side this room would not give us. See decision 150: the ask
+-- goes out on a full bar and the core wants one when it lands, so the refusal
+-- a player meets is a round arriving while their message did.
+local S2C_NOTEAM = 20
 local C2S_SAY = 11
 
 -- The fixed things, in the order the wire numbers them. Short, positive, and
 -- few: this is not chat and it does not become chat by growing, so anything
 -- that could be aimed at somebody is not on it.
 M.SAYINGS = {"gg", "nice shot", "close one", "good luck", "thanks", "sorry"}
+
+-- Why a side was refused, by the byte the room sends, in the register the
+-- menu's other refusals are written in: what stopped it, not what to do about
+-- it.
+--
+-- The last one is the reason this message exists. A player pressed the key on
+-- a full bar, because the client will not send it on anything less, and is
+-- being told their bar was not full. The words have to carry the bit that
+-- makes that make sense, which is the time the ask spent in the air.
+M.NO_TEAM = {
+    [1] = "that side is gone",
+    [2] = "that side is private",
+    [3] = "that side is full",
+    [4] = "not while you are waiting to respawn",
+    [5] = "a hit landed while that was on its way",
+}
 
 -- Who said what, and when, keyed by ship. The podium reads it and lets a line
 -- go after a few seconds; nothing here is a log.
@@ -80,7 +100,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 36
+local CLIENT_PROTOCOL = 37
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -144,6 +164,10 @@ M.map_name = ""
 -- what the corner says has to be where we actually are.
 M.room = nil
 M.denied = nil
+-- Why the last crossing was refused, in words, waiting to be read once. The
+-- arena drains it into the menu's note; nothing else holds it, because a
+-- reason that stayed would be shown again next time the panel opened.
+M.no_team = nil
 M.lost = nil
 M.pilots = {}
 M.ratings = {}
@@ -1523,6 +1547,11 @@ local function on_message(s)
             -- way it ages a kill line rather than against a wall clock.
             M.said[ship] = {phrase = M.SAYINGS[phrase + 1], n = phrase, t = 0}
         end
+    elseif kind == S2C_NOTEAM then
+        -- The words are here rather than on the wire, for the reason the
+        -- sayings are: the room sends which, and a build that does not know a
+        -- reason says nothing rather than inventing one.
+        M.no_team = M.NO_TEAM[string.byte(s, 2) or 0]
     elseif kind == S2C_STREAK then
         on_streak(s)
     elseif kind == S2C_CHARGE then
@@ -1697,6 +1726,7 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room, instance)
 
     M.denied = nil
     M.deny_code = 0
+    M.no_team = nil
     M.room = nil
     M.pilots = {}
     M.ratings = {}

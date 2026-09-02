@@ -1097,16 +1097,50 @@ local function notify(text, col, mine, gleam)
     while #feed > ui.FEED_MAX do table.remove(feed) end
 end
 
--- Every report the simulation made this tick, turned into light, noise and
+-- What the zone announced since the last frame, turned into light, noise and
 -- feed lines. Drained per tick rather than per frame: a frame can advance the
 -- simulation eight times, and the event list is replaced by each one.
+--
+-- Kills are most of it and a refusal aimed at this pilot rides along, because
+-- the two arrive the same way and `update` has no enclosing local to spare
+-- for a fifth drain. See `drain_no_team`.
 -- Kills come off the wire rather than out of the local simulation. The local
 -- death event still drives the explosion, but as a feed line it printed the
 -- same kill once per rollback: prediction runs a few ticks ahead, a snapshot
 -- from before the death revives the victim, and the next predicted ticks
 -- kill them again. The zone announces each death exactly once, with what it
 -- paid, and that message is already how ratings arrive.
-local function drain_kills()
+-- A side the room would not give us, said once.
+--
+-- The key that asks checks a full bar before it sends, so every refusal that
+-- arrives here is one the client had no way to see coming: a seat taken, a
+-- side reaped, or a round that landed while the ask was in the air. Read and
+-- cleared, because it answers one press rather than describing a state.
+-- See decision 150.
+--
+-- Said wherever the pilot is looking. The panel is usually still up, since
+-- the card steps back onto the sheet and the room answers a moment later, and
+-- there the note is the register the client's own refusal already speaks in.
+-- A pilot who shut the panel and flew off reads the feed instead, for the
+-- reason a dropped ship is said there: an ask that vanished in silence is how
+-- an interface teaches somebody to stop trusting it.
+--
+-- Drained beside the kills rather than in `update`, which has no enclosing
+-- local to spare: this needs `notify`, and that is one more than the sixty
+-- LuaJIT counts to.
+local function drain_no_team()
+    if not net.no_team then return end
+    if menu.open then
+        menu.note = net.no_team
+    else
+        notify({net.no_team}, nil, true)
+    end
+    net.no_team = nil
+    sfx.ui("ui_deny")
+end
+
+local function drain_announced()
+    drain_no_team()
     for _, k in ipairs(net.kills) do
         local vn = pilot_named(k.victim, true)
         -- Your own bomb counts as your kill in the ledger, which is correct
@@ -1903,10 +1937,10 @@ function update(self, dt)
     -- still in it, and rebuild terrain around tile zero on the way past.
     live = frame.live(self, net, sim, menu)
 
-    -- Kills the zone announced since last frame, and who came and went with
-    -- them, before the expiry pass so a line's clock starts the frame it
+    -- What the zone announced since last frame, and who came and went with
+    -- it, before the expiry pass so a line's clock starts the frame it
     -- appears.
-    drain_kills()
+    drain_announced()
     drain_streaks()
     drain_comings()
     drain_benched()
@@ -3336,6 +3370,13 @@ function menu_act(self, action, value)
     -- flight carries the side that fired it, so a change that took effect in
     -- place would turn incoming fire friendly mid-air. Refused with the reason
     -- rather than in silence.
+    --
+    -- This gate is the near half of that promise and it was the whole of it
+    -- for a while, which made the promise false where it mattered. The bar is
+    -- read here and read again by the core when the ask lands, so a round
+    -- arriving in between is a refusal this side cannot predict; the room
+    -- answers those itself now, and `net.no_team` above is where they are
+    -- said. See decision 150.
     --
     -- Asking steps back onto the sheet, because that is where the answer is:
     -- your own row crosses into the first group and their side becomes yours.

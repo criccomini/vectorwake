@@ -8185,3 +8185,64 @@ draws.
 real against a stubbed engine rather than keeping a copy of the drawing: it is
 a view of what ships, triangle counts included, so a change to the flag is a
 change to the sheet.
+
+## 150. A refused crossing says what stopped it
+
+**Status:** accepted, amending
+[decision 147](#147-the-players-sheet-is-the-menus-and-the-band-says-who-won),
+which gave the pilot card its join key and left the answer to that key
+half written.
+
+**What:** the room answers a crossing it will not make. `S2C_NOTEAM` carries
+one byte to the pilot who asked, beside the team list that already went back
+to them, saying which gate stopped it: the side is gone, private, or full;
+or the pilot is down, or hurt. The client turns the byte into a sentence and
+puts it where the pilot is looking, in the panel's note if the panel is up
+and in the feed if it is not. Protocol 37.
+
+**Why:** because the promise was already written down and was not being kept.
+The comment over `board_join` in `arena.script` said a side was "refused with
+the reason rather than in silence", and that was true of the client's own
+gate and false of the room's. `Room::join_team` put an ask past two gates and
+answered a refusal with a team list that still said where you were, on the
+stated grounds that the list is the only thing the client asked about.
+
+The gap that leaves is not a corner case. It is the ordinary one. The client
+will not send `C2S_TEAM` on a part-full bar, and the core will not let a hurt
+pilot leave where they stand, so the two checks bracket a flight time: press
+the key whole, take a hit while the message is in the air, and the room keeps
+you where you are without a word. By then the client has played its yes and
+put the card away, so what a player gets is a confirmation followed by
+nothing changing, which is worse than a plain silence. It turns up under
+fire, which is exactly when somebody wants to change sides.
+
+**What was considered and rejected:** having the client notice for itself.
+It can see that its side did not change; it cannot see whether the room
+refused or has yet to answer, and the only way to tell those apart without
+being told is to wait a while and conclude. That is the conclusion about the
+shared world that [decision 40](#40-prediction-concludes-no-death-but-your-own)
+says a client does not draw, and a timer long enough to be right on a bad
+connection is long enough to be wrong on a good one. The reason belongs on
+the wire because the room is the only party that knows it.
+
+Reusing `S2C_DENIED` was rejected too. It is the door: FULL, DRAINING,
+BANNED, and the rest are answers to a join, and a client reading one
+concludes it is not in the room.
+
+**The cost:** a protocol bump for a message an old client would have skipped
+rather than misread, which refuses every tab built for 36. The number moves
+for the reason protocol 33's did, written out beside `CLIENT_PROTOCOL`: a
+build that cannot hear this answer goes on showing
+the silence the message exists to end, and the fleet and the page sitting one
+build apart on a wire field is the fault that once drew DESTROYED over a
+healthy fleet.
+
+**The words are the client's.** The room sends which reason, never the
+sentence, the way it sends which saying. A zone a release ahead can name a
+reason this build has never heard of, and a build with no words for it says
+nothing rather than printing a number at a player.
+
+`a_refused_crossing_says_what_stopped_it` in the server pins each reason
+against the gate that produces it, and `client/tests/no_team_test.lua`
+pins the parse, the read-once, and the silence on a byte this build does not
+know.
