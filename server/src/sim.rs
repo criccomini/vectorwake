@@ -764,7 +764,7 @@ pub const PACK_MAX: usize = 66 * 1024;
 /// is worked out: every seat carrying its owner-only tail. Grows whenever that
 /// tail does, and `a_full_private_snapshot_uses_the_state_bound` below is what
 /// notices when this copy has not kept up.
-pub const STATE_PACK_MAX: usize = 65_638;
+pub const STATE_PACK_MAX: usize = 65_670;
 pub const PACK_PRIVATE_ALL: u8 = 0x01;
 pub const SETTINGS_PACK_MAX: usize = 8192;
 pub const UP_COUNT: usize = 5;

@@ -80,7 +80,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 35
+local CLIENT_PROTOCOL = 36
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL

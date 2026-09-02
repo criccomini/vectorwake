@@ -3215,19 +3215,194 @@ end
 -- layer and its level is on the glow one.
 
 
+-- A flag, as a transponder seen from above.
+--
+-- It was a staff with a cloth triangle hanging off it, waving. That is the
+-- only object in this game drawn in elevation: a stand is an octagon, a spawn
+-- is two rings, a wall is its own lit face, and a flag alone was drawn as
+-- though the camera had turned ninety degrees to watch cloth flap in a wind,
+-- in a vacuum. It read as a golf pin, which is the one real object shaped
+-- like that. It also hung up and to the right of the flag's own position, so
+-- the shape a pilot flew at sat a dozen pixels from the point `sim_flag`
+-- tests, with `flag_radius` at eighteen and nothing drawing it.
+--
+-- What replaces it: a bright core, a ring, three arcs standing off it that
+-- turn, and a ping that leaves the core on a beat and fades on its way out. A
+-- flag is the object telling a room where the game is, so it draws the
+-- broadcast. Mocked in .design/flag-graphics.
+local FLAG = {
+    -- What a stand or a dropped flag wears: arcs at twelve, inside the
+    -- eighteen the core actually tests, so what a pilot flies at is the shape
+    -- they can see.
+    GROUND_R = 12,
+    GROUND_CORE = 6,
+    -- What a carrier wears. Everything inside the widest hull in the roster
+    -- is left to the ship: a mark drawn on a hull hides the thing everybody
+    -- in the room is shooting at, and at the range where a carried flag
+    -- decides a round it is a smudge on a hull rather than a flag. Outside
+    -- it, the ship stays whole underneath and the ring reads from across a
+    -- map. The rim stands four pixels clear of the longest hull, which is
+    -- filled in below rather than typed here, because the Cipher reaches
+    -- twenty three down its own length against the Apex's twenty one and a
+    -- number picked by eye clears the wrong one.
+    RIM = 0,
+    ARC = 0,
+    CLOCK = 0,
+    -- Each further flag a pilot is holding adds a ring at this pitch.
+    STEP = 8,
+    -- How far past the outermost ring the ping travels before it is gone.
+    PING = 25,
+}
+
+for _, h in ipairs(M.HULLS) do
+    for i = 1, #h.poly, 2 do
+        local r = math.sqrt(h.poly[i] ^ 2 + h.poly[i + 1] ^ 2)
+        if r > FLAG.RIM then FLAG.RIM = r end
+    end
+end
+FLAG.RIM = FLAG.RIM + 4
+FLAG.ARC = FLAG.RIM + 7
+FLAG.CLOCK = FLAG.RIM + 16
+
+-- How many facets an arc of this radius needs. `round_segs` answers it for a
+-- whole circle and an arc is a fraction of one. Worth deriving rather than
+-- picking: a count chosen by hand cost nine hundred and sixty triangles for
+-- one standing flag, almost all of it facets under a tenth of a pixel across.
+local function facets(glow, r, span)
+    local n = math.ceil(glow:round_segs(r) * math.abs(span) / TAU)
+    return n < 3 and 3 or n
+end
+
+-- One stroke, with the light coming off it. Every other bright thing on this
+-- layer is a bloom and then a hard edge over the top of it, and an arc left
+-- bare is the one that reads as wire.
+local function lit_arc(glow, x, y, r, a0, span, w, col)
+    local n = facets(glow, r, span)
+    glow:arc_fade(x, y, r, a0, a0 + span, w * 3.4, n, pal.a(col, col[4] * 0.22))
+    glow:arc_aa(x, y, r, a0, a0 + span, w, n, col)
+end
+
+local function lit_ring(glow, x, y, r, w, col)
+    lit_arc(glow, x, y, r, 0, TAU, w, col)
+end
+
+-- One beat of the broadcast: a ring leaving `r0` and gone by `r1`. This is
+-- what makes the drawing read as something running rather than something lit.
+local function ping(glow, x, y, col, a, r0, r1, rate, t)
+    local ph = (t * rate) % 1
+    local r = r0 + (r1 - r0) * ph
+    local k = a * (1 - ph) * (1 - ph)
+    glow:ring_fade(x, y, r, 3.2 * (1 - ph) + 1, facets(glow, r, TAU),
+                   pal.a(col, k * 0.5))
+    glow:ring_aa(x, y, r, 1.4 * (1 - ph), pal.a(col, k), facets(glow, r, TAU))
+end
+
+-- Three arcs at one radius. Alternate rings turn against each other, because
+-- two turning the same way at the same phase read as one thick ring and the
+-- whole point of a stack is being countable.
+local function collar(glow, x, y, col, r, t, layer)
+    local spin = t * 1.9 * ((layer % 2 == 0) and -1 or 1) + layer * 0.7
+    for i = 0, 2 do
+        lit_arc(glow, x, y, r, spin + i / 3 * TAU, 1.3, 1.9, col)
+    end
+end
+
+-- One flag's carry clock, where the zone runs one. Counterclockwise from
+-- noon, so it empties the way a fuse burns down, and the last fifth in the
+-- other side's color, because that is who the flag is about to be available
+-- to again.
+--
+-- Drawn finer than the arcs on purpose. The arcs are the count and have to
+-- survive being small; a rim is a gauge, read by somebody looking at it. At
+-- equal weight, four rims and one collar sat on the same footing and the
+-- count stopped being the first thing anybody saw.
+local function carry_clock(glow, x, y, col, r, left)
+    glow:ring_aa(x, y, r, 1.0, pal.a(col, 0.10), facets(glow, r, TAU))
+    if left <= 0 then return end
+    local hot = left < 0.2
+    lit_arc(glow, x, y, r, -math.pi / 2, -left * TAU, 1.7,
+            pal.a(hot and pal.ENEMY or col, hot and 1 or 0.9))
+end
+
+-- A flag on its stand, or lying where its carrier died.
+local function flag_ground(fill, glow, x, y, col, t)
+    local r = FLAG.GROUND_R
+    ping(glow, x, y, col, 0.45, r * 0.5, r * 1.5, 0.5, t)
+    for i = 0, 2 do
+        lit_arc(glow, x, y, r, t * 0.5 + i / 3 * TAU, 1.15, 1.7,
+                pal.a(col, 0.8))
+    end
+    lit_ring(glow, x, y, FLAG.GROUND_CORE, 1.2, pal.a(col, 0.65))
+    fill:disc(x, y, 3.4, 16, pal.a(col, 0.2))
+    glow:disc(x, y, 1.9, 12, pal.a(pal.WHITE, 0.8))
+    glow:halo(x, y, 10, 12, pal.a(col, 0.22))
+    glow:bloom(x, y, 26, 0.10, col)
+end
+
+-- Everything one pilot is carrying, as one mark around their hull.
+--
+-- `left` is what is on each of their carry clocks, longest first, or nil in a
+-- zone with no limit. With no clocks the count is a ring of arcs per flag;
+-- with them it is one ring of arcs and a rim per flag, since stacking both
+-- would put eight rings around a ship and say neither. The rims are sorted so
+-- the one about to expire is outermost: it is the one that turns the other
+-- side's color, and it is the answer to the only question a carrier is
+-- asking.
+local function flag_held(glow, x, y, col, t, n, left)
+    local outer
+    if left then
+        collar(glow, x, y, col, FLAG.ARC, t, 1)
+        for k = 1, n do
+            carry_clock(glow, x, y, col, FLAG.CLOCK + (k - 1) * FLAG.STEP,
+                        left[k])
+        end
+        outer = FLAG.CLOCK + (n - 1) * FLAG.STEP
+    else
+        for k = 1, n do
+            collar(glow, x, y, col, FLAG.ARC + (k - 1) * FLAG.STEP, t, k)
+        end
+        outer = FLAG.ARC + (n - 1) * FLAG.STEP
+    end
+    ping(glow, x, y, col, 0.5, outer + 3, outer + FLAG.PING, 1.1, t)
+    lit_ring(glow, x, y, FLAG.RIM, 1.2, pal.a(col, 0.7))
+    glow:bloom(x, y, outer + 12, 0.09, col)
+end
+
+-- Scratch, so a frame with four flags on one hull allocates nothing.
+local carriers, carried_n, carried_left = {}, {}, {}
+
 function M.flags(fill, glow, my_team, t)
-    local wave = math.sin(t * 2.2) * 1.6
-    for i = 0, sim.flag_count() - 1 do
-        local x, y, team, carried = sim.flag_at(i)
+    local n = sim.flag_count()
+    if n == 0 then return end
+    local limit = sim.flag_carry_ticks()
+    -- Gather the carried ones onto their carriers first. A pilot holding
+    -- three flags is one mark with three rings, not three marks in the same
+    -- place, and in Capture the Flag holding the set is the whole round.
+    for k in pairs(carriers) do carriers[k] = nil end
+    for k in pairs(carried_n) do carried_n[k] = nil end
+    for k in pairs(carried_left) do carried_left[k] = nil end
+    for i = 0, n - 1 do
+        local x, y, team, carried, carrier, held = sim.flag_at(i)
         local col = (team == 255) and pal.INK
             or (team == my_team and pal.FRIEND or pal.ENEMY)
-        local top = y - (carried and 26 or 13)
-        local base = y + (carried and -10 or 6)
-        glow:seg(x, base, x, top, 1.6, pal.a(col, 0.9))
-        local pts = {x, top, x + 12 + wave, top + 4.5, x, top + 9}
-        fill:fan(pts, pal.a(col, carried and 0.6 or 0.25))
-        glow:outline(pts, 1.3, pal.a(col, carried and 1 or 0.7))
-        glow:halo(x, top + 4, carried and 22 or 14, 10, pal.a(col, 0.13))
+        if carried then
+            carriers[carrier] = col
+            carried_n[carrier] = (carried_n[carrier] or 0) + 1
+            if limit > 0 then
+                local row = carried_left[carrier]
+                if not row then row = {} carried_left[carrier] = row end
+                row[#row + 1] = math.max(0, math.min(1, 1 - held / limit))
+            end
+        else
+            flag_ground(fill, glow, x, y, col, t)
+        end
+    end
+    for who, col in pairs(carriers) do
+        local left = carried_left[who]
+        -- Longest first, so the rim about to expire lands outermost.
+        if left then table.sort(left, function(a, b) return a > b end) end
+        flag_held(glow, sim.ship_x(who), sim.ship_y(who), col, t,
+                  carried_n[who], left)
     end
 end
 

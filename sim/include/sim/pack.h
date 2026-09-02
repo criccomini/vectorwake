@@ -28,8 +28,11 @@ extern "C" {
  *
  * Rounds carry a two byte name since decision 144, and the counter it is
  * dealt from rides ahead of them: 2 + 2 * SIM_MAX_WEAPONS, which took this
- * past 64 KB and the network limit above up with it. */
-#define SIM_STATE_PACK_MAX 65638
+ * past 64 KB and the network limit above up with it.
+ *
+ * A flag carries its `held` clock as well, two bytes each, which is thirty
+ * two for a full set. */
+#define SIM_STATE_PACK_MAX 65670
 
 /* A network snapshot carries one owner-only ship tail. The whole-state
  * replay path and trusted house bots ask for every tail instead.

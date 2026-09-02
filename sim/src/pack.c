@@ -267,6 +267,14 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w32(&w, (uint32_t)f->x);
         w32(&w, (uint32_t)f->y);
         w16(&w, f->cooldown);
+        /* How long this carrier has had it. `sim_hash` has always covered
+         * `held`, and the wire is what the hash is checked against, so it
+         * belonged here from the start: a snapshot restored a carrier whose
+         * clock had been wound back to nothing, and in a zone with a carry
+         * limit that hands the flag back to the room late. It is also the
+         * only way a client can draw the limit at all, since one that joins
+         * mid carry never saw the pickup. */
+        w16(&w, f->held);
     }
 
     /* Greens, at eleven bytes each. The count is what keeps that honest: a
@@ -466,6 +474,7 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
         f->y = (int32_t)r32(&r);
         if (!world_point(f->x, f->y)) return -1;
         f->cooldown = (uint16_t)r16(&r);
+        f->held = (uint16_t)r16(&r);
     }
 
     uint32_t greens = r8(&r);
