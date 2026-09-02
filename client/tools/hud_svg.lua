@@ -576,8 +576,8 @@ if in_menu then
             {label = "Frames", choice = 1, choices = 3,
              detail = "display", pick = true},
             {label = "Fullscreen", detail = "fill the screen"},
-            {label = "Controls", detail = "keys", caret = true},
-            {label = "About", detail = "this build", caret = true},
+            {label = "Controls", detail = "keys"},
+            {label = "About", detail = "this build"},
         }) or {},
     })
 end
