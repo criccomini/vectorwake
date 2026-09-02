@@ -286,4 +286,78 @@ check("with no core at all it still names the slot",
 check("and still counts a rung from one",
       prize.words(5, 1) == "gun level 2", tostring(prize.words(5, 1)))
 
+-- --- and what color the arena says it in -----------------------------------
+--
+-- The line was drawn in the feed's own ink, which is also what an arrival, a
+-- departure and every refusal wear: the one line in that column a player is
+-- glad to catch was dressed as the five they can ignore. It is gold now, the
+-- gold the corner stack draws a count in, because a pickup is the only line
+-- there about your kit rather than about the fight or the room.
+--
+-- What it must not be is a green. There are two of those in this column and
+-- both are what a kill did to your rating; the prize green sits between them
+-- close enough to the payout that no glance separates the three. So this
+-- checks the color it wears and it checks the family it stays out of, which
+-- is the half that would rot silently if somebody reached for the obvious
+-- green later.
+--
+-- `arena.script` is a Defold script and cannot be required here, so this
+-- pulls the branch out and runs it, which is what column_test and
+-- landing_test do with the same file for the same reason.
+do
+    local f = assert(io.open("client/arena/arena.script"))
+    local src = f:read("*a")
+    f:close()
+
+    local loop = src:match(
+        "(for i = 0, sim%.event_count%(%) %- 1 do\n" ..
+        "        local ty, a, b, v = sim%.event_at%(i%).-\n    end)\n")
+    check("the arena has an event loop to run", loop ~= nil)
+    if loop then
+        local said = {}
+        -- One green taken by this pilot, and one taken by somebody else: the
+        -- field is the zone's and only your own pickup is an event, so the
+        -- second must say nothing at all.
+        local events = {{15, 0, 1, 3}, {15, 1, 1, 3}}
+        local env = {
+            sim = {EV_HIT = 3, EV_FLAG_TAKE = 8, EV_FLAG_DROP = 9,
+                   EV_GREEN = 15,
+                   event_count = function() return #events end,
+                   event_at = function(i)
+                       local e = events[i + 1]
+                       return e[1], e[2], e[3], e[4]
+                   end},
+            me = 0,
+            pal = pal,
+            prize = prize,
+            notify = function(text, col, mine)
+                said[#said + 1] = {text = text[1], col = col, mine = mine}
+            end,
+        }
+        local chunk = assert(loadstring("return function()\n" .. loop
+                                        .. "\nend", "greens"))
+        setfenv(chunk, env)
+        chunk()()
+
+        check("only the pilot's own pickup is said", #said == 1,
+              #said .. " lines")
+        local line = said[1] or {}
+        check("and it names what the green filled",
+              line.text == "picked up recharge", tostring(line.text))
+        check("marked as this pilot's, so a phone spends its one line on it",
+              line.mine == true)
+        check("said in the gold of what you carry",
+              line.col == pal.CHARGE_COL, tostring(line.col))
+        -- The three greens this line has to stay out of, by value rather than
+        -- by name, so aliasing one of them to a new name does not slip past.
+        local greens = {{"the payout", pal.PAID}, {"an assist", pal.ASSIST},
+                        {"the prize on the ground", pal.GREEN}}
+        for _, g in ipairs(greens) do
+            local c = line.col or {}
+            check("and not in the green of " .. g[1],
+                  c[1] ~= g[2][1] or c[2] ~= g[2][2] or c[3] ~= g[2][3])
+        end
+    end
+end
+
 os.exit(fails == 0 and 0 or 1)

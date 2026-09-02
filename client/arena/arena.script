@@ -1148,9 +1148,12 @@ local function drain_announced()
         -- Your own bomb counts as your kill in the ledger, which is correct
         -- and reads as nonsense in a feed line.
         --
-        -- No payout on the line. A kill used to print what it paid, and
-        -- nothing is paid: the feed says who took whom, which is the whole of
-        -- what a kill is now.
+        -- What it did to your rating, on the end of the line. A kill used
+        -- to print what it paid and stopped when nothing was paid, and the
+        -- rating is what took the payment's place: it is the only way two
+        -- kills differ now. The wreck floats the same figure for a second
+        -- and a half where the kill happened, which a pilot who is looking
+        -- somewhere else never sees; the feed holds it for nine.
         -- Two lines out of every feed are about you, and they are the two
         -- worth finding without reading: green when you took somebody, red
         -- when somebody took you. Everything else stays the feed's own color,
@@ -1188,18 +1191,26 @@ local function drain_announced()
         -- into each of the three shapes above, because it is equally true of
         -- all of them: you can soften somebody who then flies into a wall.
         if k.assist then line[#line + 1] = ", you assisted" end
-        notify(line, col, mine)
-        -- And the figure, off the wreck, for every death that moved this
-        -- pilot's rating: a kill, a death, or a victim they had softened.
-        -- Read where it happened rather than in the corner, because a pilot
-        -- who just took somebody is looking at the explosion. A kill that
-        -- paid nothing still prints its zero, since the kill was yours and
-        -- a silent one reads as a figure that failed to arrive. Every other
-        -- death is somebody else's and gets no figure. See decision 152.
-        if not watching and k.gain
-            and (mine or k.gain ~= 0) and k.killer ~= 255 then
+        -- Which deaths carry a figure at all: the ones that moved this
+        -- pilot's rating, which is a kill, a death, or a victim they had
+        -- softened. A kill that paid nothing still prints its zero, since
+        -- the kill was yours and a silent one reads as a figure that failed
+        -- to arrive. Every other death is somebody else's and gets none.
+        -- See decision 152.
+        --
+        -- One test, two places to say it. The figure drifts off the wreck,
+        -- where a pilot who has just taken somebody is already looking, and
+        -- it goes on the end of the feed line, which is where they look a
+        -- moment later and where it is still there to read. Two conditions
+        -- would be the same rule written twice, and a kill that floated a
+        -- figure the feed disagreed with is worse than either alone.
+        local moved = not watching and k.gain
+            and (mine or k.gain ~= 0) and k.killer ~= 255
+        if moved then
+            line[#line + 1] = " " .. ui.signed(k.gain)
             ui.payout(sim.ship_x(k.victim), sim.ship_y(k.victim), k.gain)
         end
+        notify(line, col, mine)
     end
     if #net.kills > 0 then net.kills = {} end
 end
@@ -1348,12 +1359,22 @@ local function drain_events()
             -- a phone the stack stands down to nothing because the pads
             -- carry the marks instead.
             --
-            -- In the feed's own ink. Three colors in this corner are the
-            -- fight, a kill of yours, a death of yours and a kill you helped
-            -- with, and a fourth would make it a set of lights to be taught
-            -- rather than the lines worth finding without reading. The words
-            -- carry this on their own.
-            notify({"picked up " .. prize.words(b, v)}, nil, true)
+            -- In the gold of what you carry, which is what the corner
+            -- stack draws a count in and what the hangar prices a build in.
+            -- This is the one line in the column that is about your kit
+            -- rather than about the fight or about the room, and it was the
+            -- feed's own ink, which is also the arrivals, the departures and
+            -- every refusal: the one line here a player wants to catch was
+            -- wearing the color of the five they can ignore.
+            --
+            -- Not a green, which is the color of the thing on the ground and
+            -- reads as the wrong one up here. The two greens in this column
+            -- are what a kill did to your rating, and the prize green sits
+            -- between them at a contrast of 1.4 to 1 against the payout: a
+            -- third green would be a third light in one family, told apart
+            -- by nobody at a glance. The gold's own neighbor is the streak,
+            -- which this file has always said is gold that moves.
+            notify({"picked up " .. prize.words(b, v)}, pal.CHARGE_COL, true)
         end
     end
 end

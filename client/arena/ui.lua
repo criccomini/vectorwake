@@ -1718,6 +1718,14 @@ function M.clear_payouts()
     M.payouts:clear()
 end
 
+-- A rating change as a pilot reads it, signed in both directions and signed
+-- at zero. Two things print one, the figure off the wreck and the end of the
+-- feed's line about the same death, and a plus that turned up in one and not
+-- the other would read as two different numbers about one kill.
+function M.signed(n)
+    return string.format("%+d", n)
+end
+
 local function nameplates(o)
     if not o.half_w or o.half_w <= 0 then return end
     -- The render script publishes its own half-extents for exactly this, so
@@ -1787,7 +1795,7 @@ local function nameplates(o)
     M.payouts:each(F.now, function(p, f, a)
         local px, py = on_glass(o, scale, p.x, p.y)
         local col = p.n < 0 and pal.HURT or pal.PAID
-        txt((p.n >= 0 and "+" or "") .. p.n, px + 12 * F.scale,
+        txt(M.signed(p.n), px + 12 * F.scale,
             py + 13 * F.scale - M.payouts.RISE * F.scale * f,
             11 * F.scale, pal.a(col, 0.95 * a), nil, nil, true)
     end)

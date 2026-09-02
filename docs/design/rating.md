@@ -20,11 +20,13 @@ That makes the ending its readout. The podium's board carries a column saying
 what the match did to each pilot's rating, signed. The rating itself is never
 drawn during the fight: a rating is a standing, and a number climbing over
 somebody's head while they are being shot at is the shape the bounty had. What
-a single death did to yours is, though: the change floats off the wreck for a
-moment, signed, for a kill, a death, or a victim you had softened, and a kill
-that paid nothing floats its zero. It is a receipt about one fight rather than
-a price on somebody's head, and it is the one number that says whether the kill
-mattered (decision 152).
+a single death did to yours is, though: the change is said twice, signed, for a
+kill, a death, or a victim you had softened, and a kill that paid nothing says
+its zero. It floats off the wreck for two and a half seconds, where a pilot who
+has just taken somebody is already looking, and it goes on the end of the feed's
+line about the same death, which stands for nine. It is a receipt about one
+fight rather than a price on somebody's head, and it is the one number that says
+whether the kill mattered (decisions 152 and 154).
 
 ## The hard part
 

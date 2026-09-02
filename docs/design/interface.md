@@ -90,10 +90,10 @@ Past those, a hue means one thing, one thing per hue, across every screen:
 | pink | `#ff5ea8` | the bomb |
 | violet | `#c27bff`, `#a06bff` | a place, not a player: the burst's rounds, a wormhole |
 | green | `#35e0a0` | a door (the open state is a darker step of the same band) |
-| prize green | `#5be08a` | a green: a thing on the field that is nobody's until somebody reaches it |
+| prize green | `#5be08a` | a green: a thing on the field that is nobody's until somebody reaches it. Only on the field and the dial, never in the feed, where the greens belong to the fight |
 | pale green | `#8dffb0` | what you were paid, and `#5aa874` a step down from it for a kill you only helped with |
-| gold | `#ffd166` | a charge you carry and spend |
-| deep gold | `#ffe08a` | a pilot on a streak, on the hull and in the feed |
+| gold | `#ffd166` | what you carry: a charge counted in the corner, the credits a build spends, the feed's line about a green you picked up |
+| streak gold | `#ffc23d` to `#fff3c4` | a pilot on a run, on the hull and in the feed, and the one gold in the game that moves: the shimmer between those two ends is what a streak is, so a still gold beside it is something else |
 | red | `#ff505a` | you are being hurt, or about to lose something |
 | slate | `#3f5878` | structure: rules, panel edges, terrain on the dial |
 
