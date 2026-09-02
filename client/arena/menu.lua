@@ -1752,10 +1752,10 @@ function M.stops()
     --
     -- No answer beside the name, because what it opens is a page rather than
     -- a value. It wore a gauge in that slot, drawn by the tab rail's own mark
-    -- table, and a rail is not what this column is: the mark was a seventh
-    -- right end in a language with six, it sat on the caret it was drawn
-    -- beside, and what it said was the word already on the row. The stop puts
-    -- its own name in ink instead. See `land_stop`.
+    -- table, and a rail is not what this column is: the mark was an end of its
+    -- own in a language that has a fixed set of them, and what it said was the
+    -- word already on the row. The stop puts its own name in ink instead. See
+    -- `land_stop`.
     out[#out + 1] = {stop = "settings", label = "settings", go = "settings"}
     return out
 end
@@ -1908,7 +1908,8 @@ function M.toggle()
 end
 
 -- Open one of the column's stops, by name. Pressing the one already open
--- shuts it, which is what the caret on the stop draws.
+-- shuts it: a stop is the panel that climbs off it, so one press works both
+-- directions.
 function M.open_stop(name)
     if M.stack[1] == name then
         M.stack = {}
@@ -2338,8 +2339,8 @@ function M.view()
     for i, s in ipairs(M.stops()) do
         out.stops[i] = {stop = s.stop, label = s.label, value = s.value,
                         named = s.named, warn = s.warn,
-                        -- Lit while its own page is open, which is what the
-                        -- caret on it turns over.
+                        -- Lit while its own page is open, which is the whole
+                        -- of what a stop says about itself.
                         open = M.stack[1] == s.stop}
     end
     local nd = node()

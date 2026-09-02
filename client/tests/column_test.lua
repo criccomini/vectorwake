@@ -354,12 +354,16 @@ do
     end
 end
 
--- A caret on a stop is a promise that a list is about to come up. Every stop
--- of this column keeps it, because every one of them opens something.
+-- No stop wears a mark saying it opens. Every one of them opens something, so
+-- the mark sorted nothing from anything, and the corner it stood in is the
+-- answer's now.
 do
     frame(1440, 810, {open = true})
-    -- The caret is two strokes drawn near a stop's right edge and it is the
+    -- The caret was two strokes drawn near a stop's right edge and it was the
     -- only thing in that corner, so counting strokes there counts carets.
+    -- Settings shared the corner with a gauge before that, and was asked for
+    -- the caret's two strokes on top of whatever the mark drew; both are gone
+    -- and nothing is stroked there now.
     local function strokes_in(stop)
         local r = hit_of("menu_stop", stop)
         if not r then return -1 end
@@ -374,17 +378,12 @@ do
         end
         return n
     end
-    -- Exactly two, on both. Settings shared that corner with a gauge for a
-    -- while and was asked for the caret's two strokes on top of whatever the
-    -- mark drew; the mark stood on the caret it was drawn beside, and it is
-    -- gone, so the corner is the caret and nothing else on every stop that
-    -- opens something.
-    check("the settings stop wears a caret", strokes_in("settings") == 2,
+    check("the settings stop wears no caret", strokes_in("settings") == 0,
           tostring(strokes_in("settings")))
-    check("and so does the account stop", strokes_in("account") == 2,
+    check("and neither does the account stop", strokes_in("account") == 0,
           tostring(strokes_in("account")))
-    check("and every stop here opens something, so every one wears one",
-          strokes_in("zone") > 0, tostring(strokes_in("zone")))
+    check("and no stop here wears one, since every one of them opens",
+          strokes_in("zone") == 0, tostring(strokes_in("zone")))
 end
 
 -- The column is measured off however many stops it carries rather than off a

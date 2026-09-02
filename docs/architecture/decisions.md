@@ -8446,3 +8446,39 @@ waist draws both corners and no flat, and pins that a wall keeps the face a
 diagonal only corners against while handing over the half it lies flush along.
 `constant_drift_test.lua` holds the four numbers level across `sim.h`, the
 renderer and the editor.
+
+## 154. Nothing in the menu promises a panel
+
+**Status:** accepted.
+
+**What:** the caret is gone from every row that opens one. `land_caret` in
+`client/arena/ui.lua` is deleted with its three callers: two on a landing
+stop, one down the column and one on a rail cell, and one on `menu_row`'s
+`caret` end. The end goes with it, so the row language has five right hand
+ends rather than six and a row that opens is an ordinary reading. The four
+stops of the column and the ship menu's five sections are what wore it, and
+the sections set what they hold where it stood. `hud_svg.lua` put one on the
+settings page's Controls and About rows, which the client itself never did.
+
+**Why:** it told a hand nothing. Every stop of the column opens a panel and
+every section of the ship menu opens one, so the mark was true of all nine
+rows and separated none of them from any other. What it cost was the corner.
+A section's reading is the one thing on that row a pilot came for, and it was
+set eighteen points short of the glass to keep clear of two strokes.
+
+**The answers moved out to the inset.** A column stop's answer ended fourteen
+points inside the panel's own inset while the caret held that corner, so the
+right hand side of the column was ragged against a left hand side that was
+not. It is flush with `M.ROW_INSET` now, which is the measure decision 104
+unified the panels on, and the guest dot that hangs off the front of an
+answer is measured from the same edge rather than from where the caret began.
+
+**What is left standing.** The marks that point at something a hand can act
+on, which is the back mark in a panel's head and the arrows: either side of a
+count, either side of the carousel, and at the edges of a row that pages its
+own name. Those tell one row from another. This one did not.
+
+`menu_language_test.lua` holds it cross-surface, on the column's stops and on
+the ship menu's sections both, because the mark was shared and a check on one
+of them would have passed while the other kept it. `column_test.lua` asks the
+same question of the stop it always asked it of.
