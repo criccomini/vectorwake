@@ -107,6 +107,7 @@ local function view(o)
     local v = {
         open = o.open ~= false,
         key = o.key or "spectate",
+        key_ship = o.key_ship,
         stops = {
             {stop = "account", label = "account", value = "deSoto 412",
              named = true},
@@ -620,6 +621,44 @@ do
           and value.index == 1)
 end
 
+-- --- the key says what the press does -------------------------------------
+--
+-- Three states of one control: no seat, a seat, and a seat with a hull drafted
+-- over it. The third names the hull, because naming it is the whole of what
+-- the press does, and the longest name in the roster is what says whether a
+-- word that long fits the key it is set in. See decision 154.
+do
+    for _, s in ipairs({{1440, 810, "desktop"}, {390, 844, "portrait"},
+                        {320, 480, "small"}}) do
+        local w, h, shape = s[1], s[2], s[3]
+        frame(w, h, {open = true, key = "play"})
+        check(shape .. " offers a seat to a client that holds none",
+              said("PLAY") ~= nil and said("SPECTATE") == nil)
+        frame(w, h, {open = true, key = "spectate"})
+        check(shape .. " offers the stands to a pilot in a seat",
+              said("SPECTATE") ~= nil)
+        frame(w, h, {open = true, key = "fly", key_ship = "Lattice"})
+        local word = said("FLY LATTICE")
+        local key = hit_of("menu_go")
+        check(shape .. " offers the refit over a drafted hull, named",
+              word ~= nil, "no FLY LATTICE on the key")
+        -- The longest hull in the roster on the narrowest key. A word set
+        -- wider than the box it stands in is a key that reads as broken, and
+        -- the roster is where the next long name comes from. The word is set
+        -- on the key's middle in the mono, whose advance is one number for
+        -- every glyph, so where its ink ends is arithmetic rather than a
+        -- guess. Same measure the panel's own overflow check uses.
+        if word and key then
+            local run = #word.s * word.px * (1233 / 2048)
+            check(shape .. " keeps the longest hull inside the key",
+                  word.x - run / 2 > key.x
+                  and word.x + run / 2 < key.x + key.w,
+                  string.format("%.0f of ink at %.0f in a key %.0f wide at %.0f",
+                                run, word.x, key.w, key.x))
+        end
+    end
+end
+
 -- --- the way back ----------------------------------------------------------
 
 -- Everybody with a room on screen gets the menu key, which is what dismissing
@@ -989,85 +1028,87 @@ do
                   tostring(ui_stub.col_sel_value))
         end
 
-        -- Settling the ship the panel was drafting, which is the arena's own
-        -- function pulled out and run: the gate it passes and the message it
-        -- sends are the whole of what a mid-match ship change is.
+        -- The column's one key, which is the arena's own branch pulled out
+        -- and run. Which of the three acts a press is, and what a refusal
+        -- does with the draft, are the whole of what the key means.
         do
-            local body = src:match(
-                "\nfunction settle_ship%(self%)(.-)\nend\n")
-            check("the arena has a settle_ship to run", body ~= nil)
-            if body then
-                local sent, closed = {}, 0
-                local m = {}
-                m.class = 3
-                m.drafting = function() return m.on end
+            local go = branch('(\n    if action == "menu_go" then.-\n    end\n)')
+            check("the arena has a branch for the column's key", go ~= nil)
+            if go then
+                local sent, closed, seat_taken, sat_out = {}, 0, 0, 0
+                local m = {class = 3, stack = {}}
+                m.flying = function() return m.in_seat end
                 m.drafted = function() return m.touched end
-                m.draft_drop = function() m.on, m.dropped = false, true end
-                m.draft_keep = function() m.on, m.kept = false, true end
+                m.draft_keep = function() m.touched, m.kept = false, true end
+                m.draft_drop = function() m.touched, m.dropped = false, true end
                 m.send_build = function(cls) sent[#sent + 1] = cls end
                 m.close = function() closed = closed + 1 end
-                local lines = {}
-                local e = {menu = m, watching = false,
-                           notify = function(t) lines[#lines + 1] = t[1] end,
-                           net = {set_class = function(c) sent.seat = c end}}
-                e.full_bar = function()
-                    if not e.full then m.note = "a new ship needs a full bar" end
-                    return e.full
+                local was_menu = env.menu
+                env.menu = m
+                env.net = {sit_out = function() sat_out = sat_out + 1 end}
+                env.session = {take_seat = function()
+                    seat_taken = seat_taken + 1
+                    return true
+                end}
+                env.full_bar = function(what)
+                    if not env.full then
+                        m.note = what .. " needs a full bar"
+                    end
+                    return env.full
                 end
-                local c = loadstring("return function(self)" .. body .. "\nend",
-                                     "settle")
-                setfenv(c, e)
-                local settle = c()
-                local room = {online = true, attract = false}
 
-                -- A panel opened and read rather than edited asks for
-                -- nothing: nobody should be respawned for looking at their
-                -- own ship.
-                m.on, m.touched, m.dropped, m.kept = true, false, nil, nil
-                settle(room)
-                check("a draft nobody touched is dropped, not sent",
-                      m.dropped and #sent == 0 and closed == 0)
+                -- Watching: one act. The room owes this client a hull and the
+                -- hull it owes is whatever the ship stop names, so a draft
+                -- made from the stands is spent by the same press that takes
+                -- the seat rather than by a second one.
+                m.in_seat, m.touched = false, true
+                go(nil, "menu_go", nil)
+                check("from the stands the key takes a seat",
+                      seat_taken == 1 and sat_out == 0 and #sent == 0,
+                      seat_taken .. " seats, " .. #sent .. " builds")
 
-                -- Edited but short of a bar: the core would refuse it, so
-                -- the client says so and drops it rather than sending into a
-                -- silence.
-                m.on, m.touched, m.dropped, m.kept = true, true, nil, nil
-                e.full = false
-                settle(room)
-                check("and one the bar cannot pay for is dropped too",
-                      m.dropped and #sent == 0 and closed == 0)
-                -- And said out loud, in the feed a pilot mid-match reads.
-                -- The panel's head carried this warning while the panel was
-                -- up, and the panel has just gone.
-                check("with the reason in the feed rather than in silence",
-                      #lines == 1
-                      and lines[1] == "a new ship needs a full bar",
-                      tostring(lines[1]))
-
-                -- Whole, and it goes: one message carrying the hull and the
-                -- build, and the menu comes down onto the fight behind it.
-                m.on, m.touched, m.dropped, m.kept = true, true, nil, nil
-                e.full = true
-                settle(room)
-                check("a draft from a full bar is kept and sent",
+                -- Flying, with a ship drafted over the seat and a bar to pay
+                -- for it: one message carrying the hull and the build, and the
+                -- menu comes down onto the fight behind it.
+                m.in_seat, m.touched, env.full = true, true, true
+                go(nil, "menu_go", nil)
+                check("a drafted ship is kept and sent on the key",
                       m.kept and sent[1] == 3 and closed == 1
-                      and sent.seat == nil,
+                      and sat_out == 0 and seat_taken == 1,
                       tostring(sent[1]) .. ", closed " .. closed)
 
-                -- From the stands the seat is asked for first, because a
-                -- room takes a build only from a pilot in one.
-                m.on, m.touched, m.kept = true, true, nil
-                e.watching = true
-                settle(room)
-                check("and from the bench the seat is asked for first",
-                      sent.seat == 3 and sent[2] == 3, tostring(sent.seat))
+                -- And short of a bar it is refused with the draft still
+                -- standing. The menu is open beside a key that will work as
+                -- soon as the bar fills, which is what settling on the way out
+                -- of the panel could never offer: out there the panel had
+                -- already gone and the draft went with it.
+                sent, closed, env.full = {}, 0, false
+                m.in_seat, m.touched, m.kept, m.dropped = true, true, nil, nil
+                go(nil, "menu_go", nil)
+                check("a refused refit holds the draft rather than dropping it",
+                      m.touched and m.kept == nil and m.dropped == nil
+                      and #sent == 0 and closed == 0,
+                      tostring(m.note))
 
-                -- With no room to tell, there is nothing to settle.
-                m.on, m.touched, m.dropped, m.kept = true, true, nil, nil
-                e.watching = false
-                settle({online = false, attract = false})
-                check("and with no room the draft is simply dropped",
-                      m.dropped and m.kept == nil and #lines == 1)
+                -- A seat and nothing pending: the key is the way back to the
+                -- stands of the room you are in.
+                env.full = true
+                m.in_seat, m.touched = true, false
+                go(nil, "menu_go", nil)
+                check("with nothing drafted the key hands the seat back",
+                      sat_out == 1 and #sent == 0 and closed == 1,
+                      sat_out .. " sit-outs, closed " .. closed)
+
+                -- Gated the same way, since standing a ship down is the same
+                -- act whichever of the two it is.
+                env.full = false
+                sat_out, closed = 0, 0
+                go(nil, "menu_go", nil)
+                check("and a part bar refuses that too",
+                      sat_out == 0 and closed == 0,
+                      sat_out .. " sit-outs, closed " .. closed)
+
+                env.menu = was_menu
             end
         end
 

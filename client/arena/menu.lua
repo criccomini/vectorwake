@@ -593,6 +593,11 @@ M.draft = nil           -- {class, kit, edited}
 
 -- Start drafting, from the ship this pilot is in.
 function M.draft_open()
+    -- One draft for as long as the column is up. Backing out of the panel and
+    -- opening it again is the same undecided ship, so the hull it reverts to
+    -- is the one this pilot was flying when the menu went up rather than the
+    -- one the carousel happened to be showing when they last stepped out.
+    if M.draft then return false end
     local kit = nil
     if M.kit then
         kit = {}
@@ -2201,6 +2206,16 @@ function M.close()
     -- behind it now wherever it stands, and MENU at the foot is the way back.
     M.stack = {}
     M.open = false
+    -- And the ship goes back the way it was found. A dismissal is not a
+    -- decision: escape, the menu key and a press on the glass beside the
+    -- column all mean "never mind", and the one control that spends a draft
+    -- is the key. The panel used to settle on any of the six ways out of it,
+    -- so a hand waved past the glass cost a respawn. See decision 154.
+    --
+    -- After the commit paths rather than instead of them: `draft_keep` clears
+    -- the draft first, so this is a no-op on the way out of a press that
+    -- spent one.
+    M.draft_drop()
     -- A question belongs to the panel it was asked in. Left standing, it would
     -- be waiting on the next thing to open the menu, which is a player pressing
     -- escape mid-fight and being asked something they have forgotten.
@@ -2292,12 +2307,26 @@ function M.view()
     local out = {open = M.open, at = M.at(), ask = M.ask, note = M.note,
                  class = M.class, arming = M.arming ~= nil, foot = M.foot,
                  -- What the one key does, which is the one thing on the
-                 -- column that reads the state rather than setting it. No
-                 -- seat in the room, whether this client has just opened or
+                 -- column that reads the state rather than setting it, and it
+                 -- reads two things: whether there is a seat, and whether the
+                 -- ship panel left a hull undecided.
+                 --
+                 -- No seat in the room, whether this client has just opened or
                  -- has been benched by a whistle, and the key is the way into
-                 -- one; a seat of your own, and it is the way back out to the
-                 -- stands of the same game. See decision 140.
-                 key = M.flying() and "spectate" or "play",
+                 -- one, flying whatever the ship stop names. A seat of your
+                 -- own, and it is the way back out to the stands of the same
+                 -- game. A seat and a ship drafted over it, and it is the
+                 -- refit: the one press that spends the draft, since a
+                 -- dismissal no longer does. See decisions 140 and 154.
+                 key = M.flying()
+                     and (M.drafted() and "fly" or "spectate")
+                     or "play",
+                 -- And which hull it would fly, for the key to name. Only
+                 -- where the key is the refit: `PLAY` already means "in
+                 -- whatever the ship stop says" and does not need saying
+                 -- twice.
+                 key_ship = (M.flying() and M.drafted())
+                     and M.hull_name() or nil,
                  -- Who is reading this, for the panel's own foot. It rode the
                  -- drawer's topbar, which was the one line on screen saying
                  -- who you are signed in as; the account stop says it now, so

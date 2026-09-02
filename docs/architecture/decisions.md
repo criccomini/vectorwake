@@ -8451,3 +8451,81 @@ roster press, `POS` and `TAKE SEAT` on a watcher's screen, the presses standing
 down under an open column, and the loading screen measured for itself. luacheck
 clean over 109 files. The playtest harness reads `screen.adrift` where it read
 `screen.landing`, and `arrive` waits for a room rather than for a front page.
+
+## 154. A dismissal is not a decision
+
+**Status:** accepted, amending [decision 136](#136-a-ship-is-one-thing-and-changing-it-costs-a-respawn),
+which made the ship panel an editor and settled its draft on the way out.
+
+**What:** the ship panel's draft is spent by one press, the column's key, and
+by nothing else. Escape, the back chevron, the stop pressed again and a press
+on the glass beside the panel all leave the draft standing; the key reads it
+and says so, and putting the column away drops it.
+
+The key already read where this client is sitting. It reads what it is holding
+too: no seat and it says `PLAY`, which flies whatever the ship stop names,
+drafted or not; a seat with nothing pending and it says `SPECTATE`; a seat with
+a hull drafted over it and it says `FLY WEDGE`, which is the refit and costs a
+respawn like any hull change. Three states of one control, on a column whose
+other four rows are questions.
+
+A draft lives as long as the column does. Backing out of the panel leaves it on
+the ship stop, which names the pending hull, and reopening the panel is the
+same undecided ship rather than a fresh baseline: the hull it reverts to is the
+one this pilot was flying when the menu went up.
+
+**Why:** because a menu that acts on a hand waved past it teaches people to
+stop trusting it. Decision 136 was right that a ship is the hull and the build
+together and has to be settled once, and it put the settle on the panel closing
+because that was the only moment it had. What that bought was six ways to spend
+a respawn, four of which are the universal gesture for "never mind". A pilot
+who opened the ship stop mid-fight to see what a Lattice does, turned the
+carousel to look, and pressed escape, was respawned in a Lattice.
+
+Decision 153 made it worse before this fixed it, by making everybody a watcher
+on the way in: a stranger who opened the client and turned the carousel to
+browse hulls was dropped into a live match by clicking outside the panel.
+
+The draft was already doing the work decision 136 wanted. Nothing about
+settling on a dismissal is what stops a walk of the carousel from costing seven
+respawns; the draft is. So there is no cost side to weigh, only a choice of
+which press spends it.
+
+**What was considered and rejected:** a key on the ship panel itself, at the
+foot where the head line now stands, with back and escape and the glass all
+reverting. It puts the commit where the decision is made, which is a real
+advantage, and it keeps the whole transaction inside the panel that owns it.
+It was rejected because it makes the ship panel the one page in this menu with
+a key of its own, where every other page acts on a row press, and because it
+costs height on the panel that has least to spare: five sections over a credit
+tray on a 320 by 480 window.
+
+Reverting only for a client with no seat was rejected as backwards on cost. An
+accidental commit from the stands means "you are in the game now", which is
+surprising; for a pilot it is a respawn in the middle of a fight, which is
+expensive. It also reads the same rule two ways depending on whether you hold a
+seat, which is the split decision 153 removed.
+
+**The cost:** `SPECTATE` is unreachable while a draft stands, since the key is
+wearing the refit. Dropping the draft is escape, and the key is back. That is
+two presses on a combination nobody has asked for: handing your seat back is
+what you do when you are done flying, and picking a hull first is not part of
+it.
+
+And the commit is off screen while the panel is open, because the column slides
+out through the bottom edge to let a panel up. A pilot who turns the carousel
+has nothing in front of them saying what happens next, so the panel's head line
+names the key: `PLAY takes a seat in it` from the stands, `FLY WEDGE respawns
+you` in a seat, and the refusals where the bar cannot pay.
+
+**A refusal now holds the draft.** It used to drop it and say so in the feed,
+because the panel had already gone by the time anything was asked. The menu is
+still open when the key is pressed, so the reason lands beside a key that will
+work as soon as the bar fills.
+
+**Verified:** `column_test` runs the arena's own `menu_go` branch through the
+three states and the two refusals; `menu_test` holds the draft's lifetime, that
+it outlives the panel and dies with the column, and that the key and the hull
+it names come off `menu.drafted`. The playtest harness plays it: `ship-change`
+backs out of the panel, checks the pilot is still flying what they were flying,
+and presses the key.

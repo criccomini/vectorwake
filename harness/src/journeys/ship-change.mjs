@@ -97,22 +97,40 @@ export async function run (pilot, { log = () => {} } = {}) {
         'until it closes, or crossing the roster costs a respawn a step.')
     }
 
-    // The hull the carousel is showing when the panel closes is the hull the
-    // room is asked for, so this is read as late as it can be rather than out
+    // The hull the carousel is showing when the panel is left is the hull the
+    // key will ask for, so this is read as late as it can be rather than out
     // of the wait above. A journey that takes it any earlier is guessing at a
     // draft still being edited, and one that guesses wrong waits out its whole
     // answer and then reports a refusal that never happened.
     const want = held.screen.hull_shown
     log(`carousel is on hull ${want}`)
 
-    // Out of the body onto the ship menu, then out of the ship stop, which is
-    // what settles the draft. Whole again first, because the panel's head has
-    // been saying so for as long as it has been open.
-    log('closing the panel')
+    // Out of the body onto the ship menu, then out of the ship stop onto the
+    // bare column. None of that spends the draft: a dismissal is not a
+    // decision, and the draft stands on the column with the ship stop naming
+    // it. See decision 154.
+    log('backing out to the column')
     await pilot.tap('menu_back')
     await pilot.until('the ship menu again', s => !s.screen.section)
     await whole(pilot, log)
     await pilot.tap('menu_back')
+    await pilot.until('the bare column',
+      s => s.screen.menu_open && !s.screen.panel)
+
+    // Still flying what they were flying, which is the half of the design
+    // that walking the panel is for: the draft has crossed no wire yet.
+    const pending = await pilot.read()
+    if (pending.me && pending.me.class !== was) {
+      throw new Error(
+        `leaving the ship panel put this pilot in hull ${pending.me.class}. ` +
+        'Closing a panel is a dismissal and must not spend a draft.')
+    }
+
+    // The key is what spends it, and it says so: with a ship drafted over a
+    // seat the column's one key is the refit.
+    log('pressing the key')
+    await whole(pilot, log)
+    await pilot.tap('menu_go')
 
     log(`waiting for the room to answer hull ${want}`)
     let flown = null
@@ -122,9 +140,8 @@ export async function run (pilot, { log = () => {} } = {}) {
         s => s.me && s.me.class === want,
         { timeout: ANSWER_MS })
     } catch (why) {
-      // Refused, which the client has to have said out loud: the panel that
-      // carried the warning has gone, and a ship dropped in silence is a menu
-      // that did nothing.
+      // Refused, which the client has to have said out loud: a ship dropped
+      // in silence is a menu that did nothing.
       const after = await pilot.read()
       if (!after.screen.note) {
         throw new Error(

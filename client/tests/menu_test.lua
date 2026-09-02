@@ -278,6 +278,24 @@ menu.watching = true
 check("and anybody watching is offered a seat instead",
       menu.view().key == "play", tostring(menu.view().key))
 menu.watching = false
+-- And a seat with a ship drafted over it is offered the refit, which is the
+-- one press that spends a draft in a match. It names the hull, because that
+-- is the whole of what the press does. From the stands the key already means
+-- "in whatever the ship stop says", so there is nothing to add out there.
+-- See decision 154.
+menu.draft_open()
+menu.pick_profile(1)
+check("a seat with a ship drafted over it is offered the refit",
+      menu.view().key == "fly" and menu.view().key_ship == "Wedge",
+      tostring(menu.view().key) .. " " .. tostring(menu.view().key_ship))
+menu.watching = true
+check("and the stands are offered the seat, with no hull to name",
+      menu.view().key == "play" and menu.view().key_ship == nil,
+      tostring(menu.view().key))
+menu.watching = false
+menu.draft_drop()
+check("and a draft nobody touched leaves the key alone",
+      menu.view().key == "spectate", tostring(menu.view().key))
 check("and none of them is open over the bare column",
       not v.stops[1].open and not v.stops[2].open and not v.stops[3].open)
 open("settings")
@@ -1809,6 +1827,38 @@ do
           and (net.kits[1].kit[19] or 0) == 0,
           #net.kits .. " sent, slot 19 at "
               .. tostring(net.kits[1] and net.kits[1].kit[19]))
+
+    -- --- and what spends one --------------------------------------------
+    --
+    -- A draft outlives the panel it was made in and dies with the menu. The
+    -- panel used to settle on any of the six ways out of it, so escape, a
+    -- press on the glass beside it, or the back chevron all cost a respawn:
+    -- a dismissal is not a decision. What spends a draft now is the column's
+    -- key, and everything that puts the column away drops one. See
+    -- decision 154.
+    menu.class = 0
+    menu.kit = nil
+    menu.open = true
+    menu.stack = {"ship"}
+    menu.draft_open()
+    menu.pick_profile(4)
+    -- Backing out of the panel to the bare column, which is where every way
+    -- out of it lands.
+    menu.stack = {}
+    check("a draft outlives the panel it was made in",
+          menu.drafting() and menu.drafted() and menu.class == 4,
+          tostring(menu.class))
+    check("and the ship stop says what is pending",
+          menu.hull_name() == "Cipher", menu.hull_name())
+
+    -- Reopening it is the same undecided ship rather than a new one, or the
+    -- hull it reverts to would be whatever the carousel was last showing.
+    menu.stack = {"ship"}
+    menu.draft_open()
+    menu.stack = {}
+    menu.close()
+    check("and closing the column puts the ship back where it started",
+          menu.class == 0 and not menu.drafting(), tostring(menu.class))
 
     net.set_kit = nil
     menu.kit = nil

@@ -5960,16 +5960,24 @@ function M.menu(v)
 
     -- The key first, under the stops that stand over it.
     --
-    -- One word, and which word is the whole of what this screen knows about
-    -- where you are sitting. No seat in the room, whether this client has just
-    -- opened or has been benched, and it is the way into one; a seat of your
-    -- own, and it is the way back out to the stands of the same game. See
-    -- decision 143.
+    -- Which word it wears is the whole of what this screen knows about where
+    -- you are sitting and what you are holding. No seat in the room, whether
+    -- this client has just opened or has been benched, and it is the way into
+    -- one; a seat of your own, and it is the way back out to the stands of the
+    -- same game; a seat with a hull drafted over it, and it is the refit, which
+    -- names the hull because that is the whole of what the press does. The
+    -- stands need no name on it: `PLAY` already means "in whatever the ship
+    -- stop says". See decisions 143 and 154.
+    local word = "PLAY"
+    if v.key == "fly" then
+        word = "FLY " .. string.upper(v.key_ship or "")
+    elseif v.key == "spectate" then
+        word = "SPECTATE"
+    end
     local ky = g.ky + rise + drop
     local key_hot = M.col_sel == "menu_go"
     if at < 1 then
-        commit_key(g.kx, ky, g.kw, g.kh, g.kpx,
-                   v.key == "spectate" and "SPECTATE" or "PLAY", key_hot)
+        commit_key(g.kx, ky, g.kw, g.kh, g.kpx, word, key_hot)
         if live then hit(g.kx, ky, g.kw, g.kh, "menu_go", nil, nil, 1) end
     end
 

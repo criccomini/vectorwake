@@ -238,11 +238,9 @@ local static = {tx = nil, ty = nil}
 -- a menu action means.
 local apply_menu
 local go_home
--- And the ship a pilot is drafting in a match, settled the moment the panel
--- they were drafting it in stops being on screen, with the line that says on
--- the panel's head what settling it will do. The frame loop is what notices
--- and what draws, and it runs above the gate both of them read.
-local settle_ship
+-- And the line that says on the ship panel's head where the draft it is
+-- holding gets spent. The frame loop draws it and it runs above the gate it
+-- reads.
 local ship_foot
 -- And the menu's own presses, which both hands reach: the pointer path is
 -- written where every other press is, a long way below the frame loop that
@@ -2560,15 +2558,12 @@ function update(self, dt)
             self.whistle_raised = false
         end
     end
+    -- The ship panel coming up, which is where a draft starts. Nothing
+    -- happens when it goes: the draft stands on the column, the ship stop
+    -- names what is pending, and the key is what spends it. See decision 154.
     local ship_up = menu.open and menu.stop_open() == "ship"
-    if ship_up ~= self.ship_panel_up then
-        self.ship_panel_up = ship_up
-        if ship_up then
-            menu.draft_open()
-        else
-            settle_ship(self)
-        end
-    end
+    if ship_up and not self.ship_panel_up then menu.draft_open() end
+    self.ship_panel_up = ship_up
     -- The panel, and the slide it leaves on.
     --
     -- The column is drawn for as long as it is on screen, which is past the
@@ -2793,8 +2788,12 @@ end
 -- you were.
 --
 -- The seat is asked for first because a room takes a build only from a pilot
--- in one, and the two messages travel in order on the same reliable wire. Same
--- order as `settle_ship`, which is the other way into a hull from the stands.
+-- in one, and the two messages travel in order on the same reliable wire.
+--
+-- And it is the press that spends a draft from the stands: the hull it asks
+-- for is whatever the ship stop names, which is the drafted one where the
+-- panel left something pending. Kept before the close, since closing drops a
+-- draft nobody spent. See decision 154.
 --
 -- It used to route through `apply_menu("ship")`, and decision 136 took the
 -- watching arm out of that function when the ship stop learned to draft: both
@@ -2802,8 +2801,10 @@ end
 -- and the column's key were controls that made a noise and no difference.
 function session.take_seat(self)
     if not (self.online and net.connected) then return false end
-    net.set_class(menu.class)
-    menu.send_build(menu.class)
+    local cls = menu.class
+    menu.draft_keep()
+    net.set_class(cls)
+    menu.send_build(cls)
     -- The board, offered once, to a pilot who now has something to fly with
     -- it. A watcher has no controls to be told about.
     ui.help_prompt = menu.needs_help_prompt()
@@ -2833,81 +2834,38 @@ local function full_bar(what)
     return true
 end
 
--- What leaving the ship panel will do, said on its head while the panel is
--- still open.
+-- Where the ship this panel is drafting gets spent, said on its head while
+-- the panel is still open.
 --
--- A pilot has to know before they close it, not after. Nothing at all until
--- something has actually been changed: a panel opened to look at your own
--- ship is not an ask, and a line under one that says "you respawn in it" is a
--- threat about nothing.
+-- It names the key, because the key is the one control that spends a draft and
+-- it is off screen while the panel stands: the column slid out through the
+-- bottom edge to let this up, so a pilot who turned the carousel has nothing
+-- in front of them saying what happens next. Back out and the key is there
+-- wearing the same words.
+--
+-- Nothing at all until something has actually been changed: a panel opened to
+-- look at your own ship is not an ask, and a line on one that says "you
+-- respawn" is a threat about nothing.
+--
+-- It used to say what *closing* would do, because closing is what settled the
+-- draft. Six ways out of a panel all spending a respawn is a menu that acts on
+-- a hand waved past it. See decision 154.
 function ship_foot()
     if not menu.drafted() then return nil end
-    if watching then return "you take a seat in it" end
+    if watching then return "PLAY takes a seat in it" end
     if not me or sim.ship_alive(me) ~= 1 then
         return "not while you are waiting"
     end
     if sim.ship_energy(me) < sim.ship_max_energy(me) then
         return "needs a full bar"
     end
-    return "you respawn in it"
-end
-
--- The ship that panel was drafting, settled, which happens the moment the
--- panel stops being on screen however it went: the way back on its head, the
--- stop pressed again, the column's key, escape, or a press on the glass
--- beside it.
---
--- One act for the whole ship. A pilot walking the carousel from an Apex to a
--- Lattice and trading a repel on the way has changed ship once, not seven
--- times, and it costs them one respawn rather than seven. That is why the
--- panel drafts at all: on the front page every turn is saved and sent as it
--- happens, because out there it costs nothing.
---
--- The gate is the core's, mirrored here only so a refusal arrives with a
--- sentence. A refusal drops the draft rather than holding it: what a pilot
--- flies and what their ship menu says have to agree, and a draft kept behind
--- a bar that may never fill is a menu describing a ship nobody is in.
-function settle_ship(self)
-    if not menu.drafting() then return end
-    -- Nothing was asked for, or there is nowhere to ask: put the ship back
-    -- and say nothing. A pilot who opened the panel to look at their own ship
-    -- has not asked for anything.
-    if not (menu.drafted() and self.online) then
-        menu.draft_drop()
-        return
-    end
-    if not watching and not full_bar("a new ship") then
-        -- Said in the feed, which is where a pilot mid-match reads things.
-        -- The head of the panel carried this warning for as long as the panel
-        -- was up, and the panel has just gone: a ship dropped in silence is a
-        -- menu that did nothing, which is how an interface teaches somebody
-        -- to stop trusting it.
-        notify({menu.note}, nil, true)
-        menu.draft_drop()
-        return
-    end
-    local cls = menu.class
-    menu.draft_keep()
-    -- From the stands a ship ask means the other thing it can mean: put me
-    -- back in, flying this. The seat is asked for first because a room takes
-    -- a build only from a pilot in one, and the two messages travel in order
-    -- on the same reliable wire. The caps answer: a room that filled while
-    -- you watched refuses, and the refusal is staying where you are.
-    if watching then net.set_class(cls) end
-    -- The build carries the hull, so this one message is the whole ask. The
-    -- server owns the roster and nothing here is predicted: a ship that
-    -- flickered back would be worse than one that arrives a frame late.
-    menu.send_build(cls)
-    -- And the menu goes, because what is behind it has just changed: a pilot
-    -- who has been put back at their start with a fresh bar should be looking
-    -- at the map rather than at a panel.
-    menu.close()
+    return "FLY " .. string.upper(menu.hull_name()) .. " respawns you"
 end
 
 function apply_menu(self, act)
     if act == "ship" then
         -- The hull this client will arrive in, with no room to ask. In a room
-        -- the ship panel drafts and `settle_ship` is what asks, because in
+        -- the ship panel drafts and the column's key is what asks, because in
         -- there a ship is the hull and the build together and changing it is
         -- one act rather than one per arrow.
         if not self.online then
@@ -3155,36 +3113,68 @@ function menu_act(self, action, value)
     if self and self.whistle_raised then self.whistle_raised = false end
     -- The column's one key: into a seat, or out of one.
     --
-    -- Which of the two it is comes off whether this client holds one. No seat,
-    -- whether it has just opened or has been benched by a whistle: the room
-    -- already has us and owes us only a hull, so the press asks for one where
-    -- it stands. A seat of our own: the press hands it back and leaves us in
-    -- the stands of the same game, which is what picking your own zone off the
-    -- list already did. See decision 143.
+    -- Which of the three it is comes off whether this client holds a seat and
+    -- whether the ship panel left a hull undecided over it. See decisions 143
+    -- and 154.
     if action == "menu_go" then
-        -- A seat of your own: hand it back and watch the room you were in
-        -- from its own gallery. The connection, the map, the roster and the
-        -- delayed channel all stay; what changes is that this client has no
-        -- hull in the fight. Gated exactly as a hull change is, since it is
-        -- the same act of standing a ship down, and refused with the reason
-        -- rather than in silence.
-        if menu.flying() then
-            if not full_bar("sitting out") then
+        ui.col_sel, ui.col_sel_value = nil, nil
+        ui.col_sect, ui.col_hull = nil, nil
+        -- No seat, whether this client has just opened or has been benched by
+        -- a whistle: the room already has us and owes us only a hull, so the
+        -- press asks for one where it stands. It flies whatever the ship stop
+        -- names, so from out here the same press spends a draft and takes a
+        -- seat, which is one act and not two.
+        if not menu.flying() then
+            if session.take_seat(self) then sfx.ui("ui_go")
+            else sfx.ui("ui_deny") end
+            return true
+        end
+        -- A seat with a ship drafted over it: the refit, and the only press
+        -- that spends a draft in a match.
+        --
+        -- One act for the whole ship. A pilot walking the carousel from an
+        -- Apex to a Lattice and trading a repel on the way has changed ship
+        -- once, not seven times, and it costs one respawn rather than seven.
+        -- That is what the panel drafts for.
+        --
+        -- A refusal holds the draft rather than dropping it. The gate is the
+        -- core's, mirrored here only so the answer arrives with a sentence,
+        -- and the sentence lands on a menu that is still open beside a key
+        -- that will work as soon as the bar fills. It used to drop the draft
+        -- and say so in the feed, because the panel had already gone by the
+        -- time anything was asked.
+        if menu.drafted() then
+            if not full_bar("a new ship") then
                 sfx.ui("ui_deny")
                 return true
             end
-            net.sit_out()
+            local cls = menu.class
+            menu.draft_keep()
+            -- The build carries the hull, so this one message is the whole
+            -- ask. The server owns the roster and nothing here is predicted: a
+            -- ship that flickered back would be worse than one that arrives a
+            -- frame late.
+            menu.send_build(cls)
+            -- And the menu goes, because what is behind it has just changed: a
+            -- pilot put back at their start with a fresh bar should be looking
+            -- at the map rather than at a panel.
             menu.close()
-            ui.col_sel, ui.col_sel_value = nil, nil
             sfx.ui("ui_go")
             return true
         end
-        ui.col_sel, ui.col_sel_value = nil, nil
-        ui.col_sect, ui.col_hull = nil, nil
-        -- Nothing to settle first: turning the carousel is the whole of
-        -- choosing a hull, and it has already been turned.
-        if session.take_seat(self) then sfx.ui("ui_go")
-        else sfx.ui("ui_deny") end
+        -- A seat and nothing pending: hand it back and watch the room you were
+        -- in from its own gallery. The connection, the map, the roster and the
+        -- delayed channel all stay; what changes is that this client has no
+        -- hull in the fight. Gated exactly as a hull change is, since it is the
+        -- same act of standing a ship down, and refused with the reason rather
+        -- than in silence.
+        if not full_bar("sitting out") then
+            sfx.ui("ui_deny")
+            return true
+        end
+        net.sit_out()
+        menu.close()
+        sfx.ui("ui_go")
         return true
     end
     -- A press off the column: the glass beside an open panel, or the fight
@@ -3378,8 +3368,8 @@ function menu_act(self, action, value)
     -- An ask per step is free because of what `apply_menu` does with it. With
     -- no room it remembers the hull and saves it, sending nothing and closing
     -- nothing; in one `menu.pick_profile` writes the draft instead and reports
-    -- nothing at all, so the whole turn costs one message when the panel
-    -- closes. See `settle_ship`.
+    -- nothing at all, so the whole turn costs one message, and that one goes
+    -- when the key is pressed. See `menu_go`.
     if action == "land_page_ship" then
         local at = menu.hull_page(ui.col_hull or menu.panel_home(), value or 1)
         ui.col_hull = at

@@ -1,5 +1,29 @@
 # The menu
 
+> **A dismissal is not a decision.** The ship panel's draft is spent by one
+> press, the column's key, and by nothing else. Escape, the back chevron, the
+> stop pressed again and a press on the glass beside the panel all leave it
+> standing; putting the column away drops it.
+>
+> So the key reads what this client is holding as well as where it is sitting.
+> No seat: `PLAY`, which flies whatever the ship stop names, drafted or not. A
+> seat with nothing pending: `SPECTATE`. A seat with a hull drafted over it:
+> `FLY WEDGE`, the refit, which costs a respawn like any hull change. A draft
+> lives as long as the column does, so backing out of the panel leaves it on
+> the ship stop, and reopening the panel is the same undecided ship rather than
+> a fresh baseline.
+>
+> The commit is off screen while the panel is open, since the column slides out
+> through the bottom edge to let a panel up. The panel's head names the key
+> instead of naming the close: `PLAY takes a seat in it`, `FLY WEDGE respawns
+> you`, and the refusals where the bar cannot pay. A refusal holds the draft,
+> because the menu is still open beside a key that will work as soon as the bar
+> fills.
+>
+> Everything below that says the panel settles when it closes is describing
+> what six ways out of one panel used to cost. See
+> [decision 154](../architecture/decisions.md).
+
 > **There is no landing.** Opening the client puts you in the stands of the
 > game you were in last, and that is an ordinary watcher's session. One screen,
 > and it is the one a benched pilot in the same room is looking at: `ACCOUNT`,

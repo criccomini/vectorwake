@@ -352,8 +352,15 @@ what a benched pilot is, so the same stops, the same radar and the same roster
 are on both. `menu.adrift` says there is no room on the glass at all, and what
 is drawn then is a loading screen. See decision 153.
 
+The column's one key reads where this client is sitting and what it is
+holding: `PLAY` with no seat, `SPECTATE` with one, and `FLY WEDGE` with a hull
+drafted over one. That last is the refit, and it is the only press that spends
+what the ship panel drafted. Escape, the back chevron and a press on the glass
+beside the panel all leave the draft standing, because a dismissal is not a
+decision; putting the column away drops it. See decision 154.
+
 Changing hull calls `sim_set_ship_class`, which is a respawn in place rather
-than an arena rebuild -- the design and its consequences are in
+than an arena rebuild. The design and its consequences are in
 docs/design/menu.md. The page also draws its own starfield and wordmark while
 the engine compiles, and the game tells it when to stop, from the first frame
 that has an arena on it.
