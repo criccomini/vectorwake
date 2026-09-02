@@ -48,9 +48,9 @@ belongs to the operator, which is where this game puts every number.
 ## Public teams have names that last
 
 A zone declares its public teams by name in its settings file, next to
-everything else the operator tunes. The names are stable on purpose: if War's
-sides are always Keel and Vantage, then "Vantage always rushes the north
-flags" becomes a sentence regulars say, and the kill feed reads like news
+everything else the operator tunes. The names are stable on purpose: if Capture
+the Flag's sides are always Keel and Vantage, then "Vantage always rushes the
+north flags" becomes a sentence regulars say, and the kill feed reads like news
 from a place rather than output from a lobby. A mode scores over the public
 teams and only them.
 
@@ -131,10 +131,10 @@ The bot server already fills rooms toward a target and yields seats to
 humans, per [ai-players.md](ai-players.md). Teams give it one more
 instruction: prefer the side that needs you. Bots flow toward whichever team
 is short, inside `max_bots_per_team`, so human choices never strand a side.
-Five friends taking one team of War against a bot-held other side is not an
-abuse case, it is a co-op mode this design gets for free, and it is why the
-caps can afford to be generous where the original had to be strict: its short
-side stayed short, ours refills.
+Five friends taking one side of Capture the Flag against a bot-held other side
+is not an abuse case, it is a co-op mode this design gets for free, and it is
+why the caps can afford to be generous where the original had to be strict: its
+short side stayed short, ours refills.
 
 ## Later, not now
 

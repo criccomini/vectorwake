@@ -82,7 +82,8 @@ end
 local room = {count = 4, teams = {[0] = 0, 1, 0, 1}}
 -- What the room's flags are this frame, swapped by the section that asks
 -- about them. Each row is what `sim.flag_at` answers: x, y, owning team,
--- carried. Empty everywhere else, which is every mode but Turf and War.
+-- carried. Empty everywhere else, which is every mode but Turf and Capture
+-- the Flag.
 local flags = {}
 _G.sim = {
     ship_count = function() return room.count end,
@@ -690,8 +691,9 @@ end
 -- A mode with flags hangs one pennant per flag off the band, colored by who
 -- holds it. This is where it goes, and the check is mostly that it goes
 -- anywhere at all: the strip was pinned twenty-five points above where the
--- room's line lands, which is eight points inside the band, so in Turf and War
--- every flag stood a staff up through the clock and the score read as garble.
+-- room's line lands, which is eight points inside the band, so in Turf and
+-- Capture the Flag every flag stood a staff up through the clock and the
+-- score read as garble.
 -- Nothing caught it because until those zones there were no flags to draw.
 --
 -- Measured against the clock's own box rather than a number written here. The

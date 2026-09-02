@@ -363,7 +363,8 @@ local land = landing and {
         -- wears the dial that is looking for an arena. It is a state a row
         -- has and neither of the two above can be in, so without it the
         -- picture cannot show what a fleet with a game down looks like.
-        {label = "War", zone = "war", live = false, format = "4v4"},
+        {label = "Capture the Flag", zone = "war", live = false,
+         format = "4v4"},
     },
     -- What the ship stop opens: one hull with its flight and its credits,
     -- and the rows those credits go on. `menu.ship_panel` builds it, driven
@@ -529,30 +530,25 @@ if in_menu then
              mark = true, index = 0, pick = true},
             {label = "Duel", named = true, note = "1v1 · 3:00",
              index = 1, pick = true},
-            {label = "War", named = true, note = "4v4", dim = true,
-             waiting = true, index = 2, pick = true},
+            {label = "Capture the Flag", named = true, note = "4v4",
+             dim = true, waiting = true, index = 2, pick = true},
         } or side and {
             {label = "Pylon", detail = "4 pilots", named = true,
              mark = true, tint = 0, index = 0},
             {label = "Caisson", detail = "4 pilots", named = true,
              tint = 1, index = 1},
         } or {
-            -- The settings page as `menu.lua` builds it: four sections, and
-            -- the two ship rows under one band rather than under two.
-            {label = "Sound", sect = "audio", choice = 2, choices = 3,
+            -- The settings page as `menu.lua` builds it: one run of rows,
+            -- with nothing banding them.
+            {label = "Sound", choice = 2, choices = 3,
              detail = "half", pick = true},
             {label = "Music", choice = 2, choices = 3, detail = "half",
              pick = true},
-            {label = "Frames", sect = "video", choice = 1, choices = 3,
+            {label = "Frames", choice = 1, choices = 3,
              detail = "display", pick = true},
             {label = "Fullscreen", detail = "fill the screen"},
-            {label = "Controls", sect = "the machine",
-             detail = "keys and pads", caret = true},
+            {label = "Controls", detail = "keys", caret = true},
             {label = "About", detail = "this build", caret = true},
-            {label = "Wake", sect = "ship", choice = 1, choices = 3,
-             detail = "standard", pick = true},
-            {label = "Charge keys", choice = 1, choices = 2,
-             detail = "repel first", pick = true},
         }) or {},
     })
 end

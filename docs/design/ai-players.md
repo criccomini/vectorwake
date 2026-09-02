@@ -316,9 +316,9 @@ what it changed.
 **A bot learns what game it is in from the settings it was dealt.** Nothing
 tells it the mode, and nothing needs to: a bot is a client (decision 29) and
 the zone's settings arrive the way they arrive for anybody. Flags that cannot
-be carried are Turf, a carry clock on carriable flags is War, a green target
-above zero is Free Roam. Reading the game off the physics it is flying under
-keeps every input a bot has one a player has too.
+be carried are Turf, a carry clock on carriable flags is Capture the Flag, a
+green target above zero is Free Roam. Reading the game off the physics it is
+flying under keeps every input a bot has one a player has too.
 
 **Objectives are map knowledge; greens are sight knowledge.** A player reads
 every flag's ownership off the pennant strip and the map, so a bot restricted
@@ -352,7 +352,7 @@ next to it for the same reason.
 
 ### Holding a point is a race, not a circle
 
-Turf stands and dropped War flags need a pilot who stays, and Travel cannot
+Turf stands and dropped flags need a pilot who stays, and Travel cannot
 stay: it arrives, the goal clears, and the next decision drifts off to fight.
 The missing mode is a hold, and its leash is the part that has to be right.
 A radius drawn in map distance holds a bot eight tiles from its stand on the
@@ -376,7 +376,7 @@ hands rather than at the next cadence, because ownership is in every
 snapshot and a defender that watches its stand flip and finishes its orbit
 first reads as asleep.
 
-### Turf spreads out; War ferries and counts
+### Turf spreads out; Capture the Flag ferries and counts
 
 A turf side of four on six stands must not arrive anywhere as a clump, so a
 stand's score is discounted by the allies already nearer it than you, which
@@ -386,8 +386,9 @@ than any ally is a place to be. Which pilots take and which hold falls out of
 the personalities the roster already has, the way everything else about a
 bot's taste does.
 
-War wants two behaviors on top of the shared flag chase. The ferry: a carried
-flag drops after thirty seconds wherever its carrier is, keeping the side, so
+Capture the Flag wants two behaviors on top of the shared flag chase. The
+ferry: a carried flag drops after thirty seconds wherever its carrier is,
+keeping the side, so
 the whole skill of carrying is to fly it home and stay alive until the clock
 puts it down on your doorstep, then go get the next. A pilot knows it is
 carrying from the state and flies accordingly, which the retreat logic
@@ -412,10 +413,10 @@ game and being an execution.
 
 None of this ships on the feeling that the bots seem better. A zone probe in
 the melee probe's family runs bot-only rooms and reports the number that says
-the game happened at all: rounds completed per match in War, score spread and
-stand traffic in Turf, greens taken and time spent near humans in Free Roam.
-The probe runs before a behavior lands and after, and the difference is the
-review.
+the game happened at all: rounds completed per match in Capture the Flag, score
+spread and stand traffic in Turf, greens taken and time spent near humans in
+Free Roam. The probe runs before a behavior lands and after, and the difference
+is the review.
 
 ## The roster: bots as long-lived individuals
 
@@ -506,7 +507,7 @@ joining, and who is sitting in a room is not the sort of thing that belongs on
 a public status; a rival chosen on a player's arrival would also make leaving
 and rejoining a way to roll for a favorable opponent. It is chosen on the room's
 clock, inside the process that flies the pilots. See
-[decision 145](../architecture/decisions.md#145-a-duel-is-one-kill-and-the-room-deals-you-a-rival).
+[decision 146](../architecture/decisions.md#146-a-duel-is-one-kill-and-the-room-deals-you-a-rival).
 
 The bands are written down rather than measured. `ordering_prior` is
 deliberately not a rating and the generated pool has no calibrated one, so there

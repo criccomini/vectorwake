@@ -18,7 +18,7 @@ label = "Duel"
 # Rounds rather than melee's tally, which is decision 142. A death ends the
 # round and two seconds later both pilots are back on their starts; the
 # scoring, the reset and the trade window are all in `modes::Duel`. One round
-# takes the match here, per decision 145.
+# takes the match here, per decision 146.
 mode = "duel"
 
 # Small rooms, and that is the whole point of them. A duel on a melee map is
@@ -59,7 +59,7 @@ max_bots_per_team = 1
 max_watchers = 8
 
 [arena]
-# One clean kill takes it, which is decision 145 moving the number decision 142
+# One clean kill takes it, which is decision 146 moving the number decision 142
 # set at two. A match is the unit a rival is dealt on, so a short one is how a
 # pilot meets more than one opponent in an evening rather than the same seat all
 # night.

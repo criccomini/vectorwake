@@ -1218,7 +1218,7 @@ mod duel_tests {
         assert_eq!(state.seconds_left, 15, "for its whole length");
     }
 
-    /// The shipped duel, per decision 145. One round is the match, and the
+    /// The shipped duel, per decision 146. One round is the match, and the
     /// intermission that follows is where a rival is dealt.
     #[test]
     fn one_clean_kill_takes_a_duel() {

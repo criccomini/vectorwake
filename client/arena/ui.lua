@@ -3069,8 +3069,9 @@ end
 -- what you last told it.
 --
 -- Keyboard only, and that is not an oversight: a touchscreen has no key to
--- open it with and no keys to list. The menu's controls page is what a phone
--- gets, and it names thumbs because thumbs are what a phone has.
+-- open it with and no keys to list. A phone is told what its controls are by
+-- the controls: every pad draws the weapon it fires, and the stick writes its
+-- own gesture around its rim.
 local binds = require("arena.binds")
 
 -- Whether the table is up. The arena owns the key; this owns the drawing.
@@ -3155,8 +3156,8 @@ local function help_table()
 end
 
 local function help_prompt()
-    -- The controls table is keyboard-only, so its offer is too. A touchscreen
-    -- gets the controls page in the menu, written for thumbs rather than keys.
+    -- The controls table is keyboard-only, so its offer is too. There is no
+    -- second page behind this for glass: the pads name themselves.
     if M.touching or M.help then return end
 
     local label = "PRESS H FOR HELP"
@@ -3762,8 +3763,8 @@ local FLAG = {gap = 8, rise = 8, drop = 9}
 -- which is a real measurement taken from the wrong end of the stack. The band
 -- ends eight points above that line, so the strip was drawn straight through
 -- the clock and every flag stood a staff up through a numeral. Nothing showed
--- it until there were flags to draw, and Turf and War are the first modes
--- that put any out.
+-- it until there were flags to draw, and Turf and Capture the Flag are the
+-- first modes that put any out.
 function FLAG.stack(m)
     if match_ended(m) or sim.flag_count() == 0 then return 0 end
     return (FLAG.gap + FLAG.rise + FLAG.drop) * F.scale
@@ -4514,6 +4515,15 @@ local function land_stop(x, y, w, h, label, value, action, lit, stacked, o)
         -- narrowest a cell gets there is barely room for a zone's name, and
         -- what would have paid for the caret is those last two letters.
         pad = 8 * F.scale
+        -- Eleven was the size that fit the longest name the catalog held, and
+        -- the catalog is where these names come from: Capture the Flag is
+        -- five letters longer than Team Battle and came out cut at the F on a
+        -- landscape phone. So the answer takes whatever size fits the cell it
+        -- landed in, floored, since past the floor a name nobody can read is
+        -- no better than a name cut short.
+        local room = w - 2 * pad
+        local run = text_w(value or "", px)
+        if run > room then px = math.max(9 * F.scale, px * room / run) end
         lbl(label, x + pad, y + h * 0.33)
         land_caret(cx, y + h * 0.33, pal.a(pal.INK, 0.75))
         local kept = F.clip_r
@@ -4767,13 +4777,9 @@ function pages.ship_h(panel, drh)
     return h
 end
 
-function pages.page_h(v, rowh, secth, noted)
+function pages.page_h(v, rowh, noted)
     local rh = noted and rowh + pages.NOTE_LINE * F.scale or rowh
-    local h = pages.HEAD_H * F.scale + 10 * F.scale
-    for _, r in ipairs(v.rows) do
-        h = h + rh + (r.sect and secth or 0)
-    end
-    return h
+    return pages.HEAD_H * F.scale + 10 * F.scale + #v.rows * rh
 end
 
 -- The panel itself: the glass, and the head that says where you are with the
@@ -6982,7 +6988,7 @@ function M.menu(v)
         local prh = (M.compact and 40 or 44) * F.scale
         local tall = (panel and pages.ship_h(panel, prh))
             or (list and pages.list_h(list, prh))
-            or pages.page_h(v, prh, 24 * F.scale, noted)
+            or pages.page_h(v, prh, noted)
         local px, py, pw, ph =
             panel_geom(panel_height(menu_h, math.min(tall, panel_room())))
         -- The panel rides the column's own slide as well as its own, so
@@ -7060,12 +7066,11 @@ function M.menu_panel(kx, kw, top, bottom, v)
     -- other row in the game.
     local pad = M.ROW_INSET * F.scale
     local rowh = (M.compact and 40 or 44) * F.scale
-    -- A run of rows under a small label and a rule, which is how the ship
-    -- panel bands its own sections and how the settings page has always
-    -- grouped: audio, video, the machine. What a band says is what the rows
-    -- under it are about, and it is the one thing a page of eight settings
-    -- cannot say in its title.
-    local secth = 24 * F.scale
+    -- One run of rows, with nothing banding them. The page grouped its rows
+    -- under small labels once, audio over the two sound rows and the machine
+    -- over the last two, and six settings are not enough of a page to want
+    -- chapters: the headings said what the rows under them already said, and
+    -- three of them made a short page read like a form.
     local noted = false
     for _, r in ipairs(v.rows) do
         if r.note then noted = true end
@@ -7079,10 +7084,7 @@ function M.menu_panel(kx, kw, top, bottom, v)
     -- Scrolled by whole rows, which is the rule the ship panel follows: a
     -- panel that stops halfway down a row asks a reader to decide whether the
     -- half they can see is worth scrolling for.
-    local extent = 0
-    for _, r in ipairs(v.rows) do
-        extent = extent + rh + (r.sect and secth or 0)
-    end
+    local extent = #v.rows * rh
     local max_scroll = math.max(0, extent - view_h)
     if M.page_scroll > max_scroll then M.page_scroll = max_scroll end
     if M.page_scroll < 0 then M.page_scroll = 0 end
@@ -7092,11 +7094,7 @@ function M.menu_panel(kx, kw, top, bottom, v)
     -- which is what keeps a finger dragging it from being hauled back.
     if M.col_sel == "menu_row" and page_followed ~= M.col_sel_value then
         page_followed = M.col_sel_value
-        local at = 0
-        for i, r in ipairs(v.rows) do
-            if i == M.col_sel_value then break end
-            at = at + rh + (r.sect and secth or 0)
-        end
+        local at = (M.col_sel_value - 1) * rh
         if at < M.page_scroll then
             M.page_scroll = at
         elseif at + rh > M.page_scroll + view_h then
@@ -7106,23 +7104,15 @@ function M.menu_panel(kx, kw, top, bottom, v)
     elseif M.col_sel ~= "menu_row" then
         page_followed = nil
     end
-    -- Nothing draws outside the panel. A row's own sentence is the one thing
-    -- here whose length this file does not choose: the thumb sentences on the
-    -- controls board run to forty characters, and at a landscape phone's 240
-    -- points they ran off the panel and over the fight beside it. Cut at the
-    -- panel's edge, which is what a stop already does with a long game name.
+    -- Nothing draws outside the panel. A row's own name and answer are the
+    -- one thing here whose length this file does not choose, and at a
+    -- landscape phone's 240 points a long one ran off the panel and over the
+    -- fight beside it. Cut at the panel's edge, which is what a stop already
+    -- does with a long game name.
     local kept_clip = F.clip_r
     local edge = math.min(kept_clip or math.huge, kx + kw - pad)
     local y = top - M.page_scroll
     for i, r in ipairs(v.rows) do
-        if r.sect then
-            if y + secth > top and y < top + view_h then
-                hrule(kx, y, kw, 0.45)
-                lbl(r.sect, kx + pad, y + secth / 2, pal.MUTE)
-                hrule(kx, y + secth, kw, 0.45)
-            end
-            y = y + secth
-        end
         if y + rh > top and y < top + view_h then
             local hot = M.col_sel == "menu_row" and M.col_sel_value == i
             LIT.state(kx, y, kw, rh, hot, r.mark)

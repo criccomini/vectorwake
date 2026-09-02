@@ -7734,9 +7734,65 @@ blast to the one the round's flight crossed, as the expire event already pins
 a landed hit to its victim. Or if bullets start drawing hits the zone takes
 back often enough to notice, which would be the same fix one weapon over.
 
+## 145. Say the game's name, and say the rest once
+
+**Status:** accepted
+
+Three notes from Chris, all of them the interface saying either the wrong
+thing or too much of it.
+
+**The flag game is Capture the Flag.** It shipped as War, after the original's
+War Zone, which is where the mode key `warzone` and the zone key `war` come
+from. Nobody calls the game that. A player reading a list of five games knows
+what Capture the Flag is before they read the format strip beside it, and has
+to be told what War is. One line does it, the label in
+`catalog/zones/war/zone.toml`: the key stays `war`, because a key is what a
+join, a room and every rating already written are filed under, and
+`Catalog::zone_label` exists exactly so the two can differ. Team Battle has
+been keyed `melee` since decision 129 for the same reason.
+
+The new name is five letters longer than the longest the catalog held, which
+found a cell that could not take it. The landing lies down into a rail on a
+short window, and a rail cell is 120 points wide: eleven point type wanted 106
+of the 104 inside one, so a landscape phone drew "Capture the Fla". The answer
+in a rail cell now takes whatever size fits it, floored at nine points, which
+is the rule `land_stop` already claimed to follow. `landing_test` pins a long
+name arriving whole on all four window shapes rather than pinning the size,
+since the next zone name is the one that will find this again.
+
+**Settings is one run of rows.** It banded them under small ticked labels:
+audio over sound and music, video over frames and fullscreen, the machine over
+controls and about. Six settings are not enough of a page to want chapters. The
+headings said what the rows under them already said, and three bands of
+twenty-four points over six rows of forty-four spent a fifth of the panel
+saying nothing, on the page a phone has the least room for.
+
+**A phone is not offered the controls board.** There is no key to bind on
+glass, so the page fell back to naming the pads: "the big pad on the right",
+"left thumb: point where you want the nose". That is a caption for controls the
+reader is holding while they read it. Every pad draws the weapon it fires, and
+the one gesture a mark cannot carry, the double tap that reverses, is written
+around the stick's own rim by `arena/touch.lua` while you fly. The `pad`
+sentences in `arena/controls.lua` went with the row, since nothing else read
+them.
+
+**Cost:** the label rides the directory's reply, so the name changes with a
+catalog publish (version 42) rather than with a client build, and a page
+already open takes it on the next browse. Ratings written under `war` keep that
+key forever, so anything that reads a class straight out of the database and
+prints it says `war`; everything a player sees goes through `zone_label`.
+
+Decision 88 listed the controls page as the one place the reverse gesture was
+named. That was true when it was written and is not now: the stick hint landed
+after it, says the same thing in two words, and says it under the thumb it is
+about, wherever the stick is drawn.
+
+**Reconsider if:** a phone player cannot find something a pad does not draw.
+The answer then is on the control rather than in a page about the controls,
+the way the stick's rim already answers reverse.
 ---
 
-## 145. A duel is one kill, and the room deals you a rival
+## 146. A duel is one kill, and the room deals you a rival
 
 **Status:** accepted, moving the number
 [decision 142](#142-a-duel-is-rounds-and-two-of-them-take-it) set and
@@ -7832,7 +7888,7 @@ is entered at random, which keeps the pinned anchor in the air: it holds the
 ladder's whole scale and does that by fighting rather than by being written
 down.
 
-The catalog moves to v42, because the zone file's `first_to` changed and a
+The catalog moves to v43, because the zone file's `first_to` changed and a
 games list prints it. A duel to one round says `first kill` on the strip rather
 than `first to 1`, which is arithmetic a player would have to finish.
 
