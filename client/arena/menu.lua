@@ -46,6 +46,10 @@ M.open = true           -- the page opens on it
 M.home = true           -- no game behind the panel
 M.class = 0             -- the hull you are flying, kept in step with the sim
 M.watching = false      -- sitting out, set by the arena each frame
+-- The side this client flies for, by the name the zone gave it, or nil while
+-- watching. Set by the arena each frame beside `M.watching`, because a side's
+-- name is the zone's to say and this file never reads a wire.
+M.side = nil
 -- A room actually playing behind the panel at home, rather than a starfield
 -- and a zone name this client remembers from last time. Set by the arena each
 -- frame, and declared here because it is read before the first one.
@@ -1717,6 +1721,25 @@ function M.stops()
     out[#out + 1] = {stop = "zone", label = "zone",
                      value = directory.label_of(M.zone), named = true,
                      go = "zone"}
+    -- Who else is in the room, and where you stand in it. A panel rather
+    -- than a page of rows, for the same reason the ship stop is one: what it
+    -- holds is a room rather than a list of settings, and only the arena has
+    -- it.
+    --
+    -- In a room and nowhere else. The front page watches somebody else's
+    -- game from the stands, and decision 108 took the roster off it along
+    -- with the rest of the instruments about a room nobody is in. That is
+    -- the one thing this column does not say the same way in both places,
+    -- against decision 143, and it is the same exception the radar and the
+    -- dial already are.
+    if not M.home then
+        out[#out + 1] = {stop = "players", label = "players",
+                         -- Your side, quoted the way a name is quoted
+                         -- everywhere; the interface's own word when you are
+                         -- on none, in the interface's own case.
+                         value = M.side or "watching", named = M.side ~= nil,
+                         panel = true}
+    end
     -- What you fly. A panel rather than a page of rows: the same five
     -- sections over the same purse wherever it is opened from. What differs
     -- is what closing it means, which is the arena's business rather than

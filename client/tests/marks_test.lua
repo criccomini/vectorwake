@@ -558,10 +558,14 @@ end
 -- The scoreboard and the nameplates answer the same question with the same
 -- pair of marks. This room has a human pilot and a bot, with the bot's hull on
 -- screen.
-ui.details = true
-local board_frame = frame(function()
+--
+-- Two frames, because the two never draw together: a panel over the arena
+-- takes the nameplates down with it, so the sheet's marks and the plate's are
+-- one frame each. What this holds is that the pair is the same pair.
+local function sheet_frame(menu_up)
+    return frame(function()
     ui.hud({
-        me = 0, class_names = {"Apex"}, menu_open = false,
+        me = 0, class_names = {"Apex"}, menu_open = menu_up,
         pilots = {[0] = {name = "you", label = "human"},
                   [1] = {name = "a bot", label = "bot", ai = true}},
         teams = {}, feed = {}, hurt = 0, charges = {},
@@ -571,14 +575,25 @@ local board_frame = frame(function()
                  snaps = 1, rx = 0, tx = 0},
         zone = "chaos", fps = 60, frame_ms = 16, rx_rate = 0, tx_rate = 0,
     })
-end)
-ui.details = false
+    if menu_up then
+        ui.menu({open = true, home = false, at = "players", key = "spectate",
+                 pilot = {name = "you"}, rows = {},
+                 stops = {{stop = "players", label = "players",
+                           value = "watching", open = true}}})
+    end
+    end)
+end
+
+local board_frame = sheet_frame(true)
 local board = chips(board_frame)
-check("the scoreboard and the nameplate chip the bot", #board == 2,
+check("the players sheet chips the bot", #board == 1,
       #board .. " chips beside one bot")
-check("the scoreboard wings the human pilot",
+check("and wings the human pilot beside it",
       #wings(board_frame) == 1,
       #wings(board_frame) .. " pairs of wings beside one human pilot")
+check("and the nameplate over the same bot answers the same way",
+      #chips(sheet_frame(false)) == 1,
+      #chips(sheet_frame(false)) .. " chips over one bot's hull")
 
 if board[1] then
     local chip = board[1]

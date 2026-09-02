@@ -62,14 +62,11 @@ return {
      what = "Fans your gun wider for more energy per shot."},
     {id = "map", name = "map", cat = "map", keys = {"m"},
      what = "Shows the whole arena instead of the radar."},
+    -- The two that stepped a selection through the roster are gone with the
+    -- board they stepped: the sheet is a panel of the menu, so the arrows
+    -- that walk every other panel walk it.
     {id = "details", name = "players", cat = "players", keys = {"p"},
      what = "Lists everyone here and what they are worth."},
-    {id = "player_prev", name = "previous player", cat = "players",
-     keys = {"pageup"},
-     what = "Shows Players and selects the previous pilot."},
-    {id = "player_next", name = "next player", cat = "players",
-     keys = {"pagedown"},
-     what = "Shows Players and selects the next pilot."},
     {id = "help", name = "controls", cat = "help", keys = {"h"},
      what = "Shows this table."},
     -- Last, and the one row on the page that cannot move. Escape is how you

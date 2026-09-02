@@ -130,7 +130,6 @@ do
     for id, flight in pairs(route.flight) do consume(id, flight.action) end
     for _, charge in ipairs(route.charge) do consume(charge.id, charge.action) end
     for id, action in pairs(route.panel) do consume(id, action) end
-    for _, move in ipairs(route.players) do consume(move.id, move.action) end
     check("every route sends the control it names", #mismatched == 0,
           table.concat(mismatched, ", "))
     check("and no two controls send the same action", #duplicate == 0,
@@ -150,9 +149,9 @@ do
     check("and no route names a control the catalog has dropped", #stale == 0,
           table.concat(stale, ", "))
 
-    -- The same dispatcher the frame loop calls consumes every panel route.
-    -- Its fixed order includes the player movement gap, so this also pins the
-    -- behavior when two panel keys land in one frame.
+    -- The same dispatcher the frame loop calls consumes every panel route,
+    -- in its fixed order, so this pins the behavior when two panel keys land
+    -- in one frame.
     local tapped, delivered = {}, {}
     for _, action in pairs(route.panel) do tapped[action] = true end
     local handlers = {}
@@ -160,13 +159,12 @@ do
         local name = id
         handlers[name] = function() delivered[#delivered + 1] = name end
     end
-    handlers.players = function() delivered[#delivered + 1] = "players" end
     route.dispatch_panel(tapped, route.panel, handlers, true)
     check("the panel dispatcher consumes every route",
           next(tapped) == nil,
           next(tapped) and tostring(next(tapped)) or nil)
     check("and preserves panel action order",
-          table.concat(delivered, ",") == "menu,details,players,map,help",
+          table.concat(delivered, ",") == "menu,details,map,help",
           table.concat(delivered, ","))
 
     tapped[route.panel.menu] = true

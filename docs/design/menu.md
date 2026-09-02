@@ -2,10 +2,15 @@
 
 > **There is one menu.** The landing and the in-match column were the same
 > drawing off two models, and this note is where they stop being two. The
-> column is `ACCOUNT`, `ZONE`, `SHIP`, `SETTINGS` over one key, and it is the
-> same four stops in the same order wherever it stands. Everything below that
-> says "the landing's stops" or "the in-match column" is describing one half of
-> a thing that is now whole.
+> column is `ACCOUNT`, `ZONE`, `PLAYERS`, `SHIP`, `SETTINGS` over one key, in
+> that order wherever it stands. Everything below that says "the landing's
+> stops" or "the in-match column" is describing one half of a thing that is now
+> whole.
+>
+> `PLAYERS` is the one stop that is not in both places. It opens the room, and
+> the front page watches somebody else's game from the stands, where decision
+> 108 says the instruments of a room nobody is in do not belong. So the front
+> page is four stops and a room is five.
 >
 > The key reads where this client is sitting. No seat anywhere, on the front
 > page or on a bench, and it says `PLAY` and is the way into one; a seat of
@@ -21,10 +26,24 @@
 > over one, so it carries the lockup, washes nothing, and escape walks out of
 > whatever is open and then stops.
 >
-> `SIDE` is gone from the column. Crossing to another team is a thing you do
-> about the room you are in rather than about yourself, and it comes back with
-> the scoreboard and the room list. See
-> [decision 143](../architecture/decisions.md).
+> `SIDE` is gone from the column, and it came back inside `PLAYERS`. Crossing
+> to another team is a thing you do about the room you are in rather than about
+> yourself, so it is done from the card of somebody already on the side you
+> want: a press on their row opens it, and its one key is `JOIN <side>`. See
+> [decision 143](../architecture/decisions.md) and
+> [decision 147](../architecture/decisions.md).
+
+> **`PLAYERS` is the room, and the whistle raises it.** One flat list: every
+> player in it, your own side first, then everyone else, then the watchers,
+> each of those three by name. A row is a name in its side's color, the seat's
+> mark, then the side in a `TEAM` column and what the zone counts. A watcher is
+> a row like any other, reading `Watching` where a side would be.
+>
+> Its answer down the column is where you stand: the side you fly for, or
+> `watching`. The band opens the same panel, and at the whistle the arena
+> raises it the way a hand would, with one column added for what the match paid
+> each pilot. Who took the match is said by the band rather than by the sheet.
+> See [decision 147](../architecture/decisions.md).
 
 > **The ship stop is in a room too, and LEAVE SEAT is gone.** The panel the
 > landing opens is the panel the in-match column opens: the same five parts

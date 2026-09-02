@@ -251,7 +251,7 @@ because they are the same fact reported by two hands.
 **Rules come in two weights.** Inside the menu, a plain hairline in the
 structural slate (`hrule`) sits over a group of rows with a small dim label
 on it. The ticked rule (`ticks`), a hairline with short teeth, belongs to the
-map border and to the scoreboard's heading; five of them down a page read as
+map border; five of them down a page read as
 texture, so the menu does not use them between groups.
 
 **Counts are marks, not numerals**, wherever the count is small enough to
@@ -288,7 +288,7 @@ in `marks.lua` because the corner stack and the touch pads both draw them,
 and two copies once disagreed about which add-ons a hull was wearing. The
 pennant is the same pennant on the radar, in the flag strip, and on the team
 mark. The helmet and the machine, a person and a bot, are the same pair in
-the games list, the scoreboard, and the nameplates: a round crowned shell with a wrapped visor against a squared shell with two lamps and
+the games list, the players sheet, and the nameplates: a round crowned shell with a wrapped visor against a squared shell with two lamps and
 an antenna. Curved is grown, boxed is built, and that difference survives
 being drawn at eleven points.
 
@@ -304,8 +304,8 @@ and it went with the rail; the rule is kept for the next one.
 The floor bites hardest on hard edges: a segment's
 edges carry falloff and survive under a pixel, a stroked box's do not, so the
 layer floors a frame's stroke at one device pixel (`vec.lua`), after the
-podium's chips, stroked at 0.9 on a density-1 screen, drew three edges each
-and lost their tops.
+ending's phrase chips, stroked at 0.9 on a density-1 screen, drew three edges
+each and lost their tops.
 
 There was a currency and it had a mark: the rivet, a fastener seen from the
 side with two strikes through it, standing in front of every price and under
@@ -331,7 +331,7 @@ The constants that repeat, from ui.lua:
 | name | value | what it measures |
 |---|---|---|
 | PAD | 14 | the margin instruments keep from the screen edge |
-| COL_W | 248 | the left column's panels: scoreboard, run log, pilot box |
+| COL_W | 248 | the left column's panels: the rooms list and the run log |
 | LINE | 18 | one row of a HUD list |
 | RADAR | 168 | the dial's side at rest |
 | GUTTER | 22 | the inset a menu row's type keeps from both of its edges |
@@ -382,16 +382,16 @@ line it stands on, and gives up both or neither: the row's ends are a small
 key and a square a third of a phone across, so measuring each name against the
 end it happens to face drew one and dropped the other. An upright phone is the
 window that runs out, and reads as the clock with a figure either side of it.
-The names are on the board a press on the band opens.
+The names are on the players sheet a press on the band opens.
 
-The match ending is the board again rather than a page of its own: at the
-whistle it comes up whether or not anybody asked for it, in a column of its
-own up to 720 points wide, with a line saying who took the match, a bar under
-that carrying each side's name inside its own share of it, and a foot with the
-countdown and one key. The same arrangement at every window size; an upright
-phone hugs the foot of the screen with it, so the key lands under a thumb.
-The band stands down while it is up, since the head carries the score and the
-foot carries the clock.
+The match ending is that sheet, raised by the arena rather than by a hand.
+There is no page of its own and no block over the fight: the whistle opens the
+`players` stop the way a press would, so escape puts it away and the arrows
+walk it exactly as they do the rest of the time. What the sheet gains is one
+column, what the match paid each pilot. Who took the match is the band's to
+say, in the pixels that have carried the score for three minutes: both sides
+stay on it, the winner at its own strength and the beaten side stood down to a
+third, over the clock counting to the next one. A draw stands neither down.
 
 Top center is the band: the clock, with a side either side of it as a name
 over a number, a team over its score, the two lines of a side adding up to the
@@ -400,9 +400,10 @@ thing reads as one line. The clock is one key tall, the same at every window
 size, so the band and the way into the menu are the same height and the top
 row reads as a row. Under it, the flag pennants and whatever the room
 has to say. The band is also the control, in a room you are in: a press opens
-the board under it, which is the roster, then the pilot box a row was pressed
-on. While that board is up the fight behind it is washed and every other
-instrument's type recedes, because the board is the thing being read. Dead
+the players sheet, which is a panel of the menu rather than a column of its
+own. While that sheet is up the fight behind it is washed and every other
+instrument's type recedes, because it is what is being read, which is the same
+rule every panel of the menu follows. Dead
 center is reserved for the big statements, DESTROYED and SAFE ZONE, and for
 the cards and tables a player asks for. On a touchscreen the bottom of the
 screen belongs to the thumbs and everything else lifts out of their way.
@@ -471,17 +472,17 @@ being read over the arena" rather than as "the menu is open".
 
 That gui-over-mesh constraint is load-bearing everywhere: the only way to
 quiet a label is to quiet the label (`text_dim`), a wash can never do it. It
-is why rows draw whole or not at all, and why the ending takes the
-nameplates down with it for the twenty five seconds it is up.
+is why rows draw whole or not at all, and why any panel over the arena takes
+the nameplates down with it while it is up.
 
 Text is also a budget. The gui draws `TEXT_POOL` strings a frame (declared in
 `state.lua`, where the side that writes them can be tested against it) and
-drops the rest, so the worst frame the interface composes, the ending with
-its roster and the pilot box open, is measured against the budget in
-podium_test, and the debug readout shows the count beside the mesh layers'
-own. The pool was once a number only the gui knew, at 128, and the podium's
-phrase chips queued past it: their boxes drew and their words did not, and
-nothing anywhere said so.
+drops the rest, so the worst frame the interface composes, a full room's
+players sheet at the whistle with its rating column out, is measured against
+the budget in players_test, and the debug readout shows the count beside the
+mesh layers' own. The pool was once a number only the gui knew, at 128, and
+the ending's phrase chips queued past it: their boxes drew and their words did
+not, and nothing anywhere said so.
 
 ## Words
 
@@ -557,16 +558,16 @@ carry is gold). Two numbers are not in it, and for the same reason: the
 corner is what a press changes. Energy is not, because your own hull carries
 the same pip every hull carries and a corner bar was the same number twice in
 the place you least look. Your rating is not, because it is what other people
-see when they look at you rather than anything you can act on, and the podium
-says what a match did to it. Damage is the vignette, red creeping in from the
+see when they look at you rather than anything you can act on, and the players
+sheet says what a match did to it at the whistle. Damage is the vignette, red creeping in from the
 edges, which never hides the ship shooting you. The words for any row are an
 ask away: rest the pointer and a card names it, says what it does, and says
 which key spends it.
 
-Panels appear because they were asked for. The scoreboard is a toggle, and
-the run log comes up with it; the pilot box opens from a scoreboard row and
-closes with the scoreboard; the map replaces the radar in its own corner and
-the same click puts it back. What was not asked for stays off, and what
+Panels appear because they were asked for. The players sheet is a stop of the
+menu, and the card about one pilot stacks on it; the run log comes up with the
+sheet; the map replaces the radar in its own corner and the same click puts it
+back. What was not asked for stays off, and what
 cannot be used is not drawn: a scrollbar on a list that fits, a spent
 charge's row, empty charge slots.
 

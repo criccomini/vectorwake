@@ -98,18 +98,17 @@ end
 
 M.hits = {}            -- clickable rectangles the menu published, top-left px
 M.map = false          -- the whole map, in the radar's corner
--- How many hulls the ship page last drew across, for whoever moves a cursor
--- around it. Set by the drawing, because how many fit is a fact about the
--- window and nothing outside this file knows the window.
--- Which pilot is being read about, by ship index, or nil. One at a time: this
--- answers "who is that", and two of them open at once is a filing cabinet.
-M.inspect = nil
+-- Which pilot's card is open over the players sheet, by ship index, or nil
+-- for the sheet itself. The interface's own state rather than the menu's, for
+-- the reason the ship stop's open section is: how deep a panel is walked is a
+-- fact about the screen. See `pages.board_card`.
+M.col_pilot = nil
 -- The connection, in numbers, behind the link bars over the dial. Off by
 -- default and on no page, because it is for whoever is working on the client
 -- rather than for whoever is flying.
 M.debug = false
--- Whether the rooms panel is down. Its key lives in the corner beside PLAYERS,
--- and like PLAYERS it opens a panel here rather than walking into the menu.
+-- Whether the rooms panel is down. Its key lives in the corner, and it is the
+-- one panel left that opens here rather than as a stop of the menu.
 M.rooms_open = false
 -- How far down the rooms list is scrolled. Its own, not the scoreboard's: the
 -- two panels share a slot and never a position, so carrying one scroll between
@@ -427,17 +426,6 @@ end
 local function hrule(x, y, w, alpha)
     F.layer:seg(x, ry(y), x + w, ry(y), 1.0 * F.scale,
                 pal.a(pal.RADAR_TILE, alpha or 0.7), true)
-end
-
--- The map border's tick, used as a rule between things.
-local function ticks(x, y, w, col, pitch)
-    pitch = pitch or 12 * F.scale
-    F.layer:seg(x, ry(y), x + w, ry(y), 0.8 * F.scale, pal.a(col, (col[4] or 1) * 0.7))
-    local n = math.max(1, math.floor(w / pitch))
-    for k = 0, n do
-        local px = x + w * k / n
-        F.layer:seg(px, ry(y - 2.5 * F.scale), px, ry(y), 0.8 * F.scale, col)
-    end
 end
 
 -- A selection: a translucent field over the whole of what is selected, a
@@ -1118,10 +1106,6 @@ M.touching = false
 -- build has no page, and a card that stopped drawing its own lines there
 -- would be a card being typed into invisibly. Set once, by the arena.
 M.page_fields = false
--- The scoreboard and your loadout, off until asked for. A guess about screen
--- size decided this before and got it backwards on the device it was written
--- for; see M.begin.
-M.details = false
 
 -- Whether this client has joined the room on screen, as a ship or as a
 -- watcher. False on the landing, where the fight behind the name is a room
@@ -1228,10 +1212,6 @@ function M.begin(layer, w, h, density, touching, now, frost_layer)
     -- this returns, so they are handed it here rather than by each caller.
     marks.begin(layer, density)
     M.touching = touching or false
-    -- Back to a row's ordinary height until the ending says otherwise this
-    -- frame. Left set, a menu opened over the whistle would keep scrolling
-    -- its own lists at the ending's pitch.
-    M.podium_zoom = 1
     M.hits = {}
     -- The lines the page is asked to hold, if any card raised this frame
     -- asks for typing. Cleared here rather than by whoever raised it, for
@@ -1747,22 +1727,6 @@ end
 -- --- panels ----------------------------------------------------------------
 
 local rows = {}
--- How the scoreboard is ordered, and how far down it. Both belong to the
--- interface rather than to the game: nothing here changes what is true, only
--- which part of it is on screen.
---
--- Clicking a heading picks that column, and clicking the one already picked
--- does nothing: every column here has an obvious direction, and a name that
--- sorts Z to A or a kill count that puts the worst first is a state somebody
--- reaches by accident and then has to work out how to leave.
---
--- Which column the scoreboard is ordered by. Alphabetical to begin with: the
--- question a player has of this list most often is "is that name in the
--- room", and a name is found in a list sorted by name. The score columns are
--- still a click away for whoever is asking the other question.
-M.sort = "name"
-M.scroll = 0
-
 -- How far the page under the tabs is scrolled, in pixels, and how tall it
 -- came out.
 --
@@ -1780,28 +1744,16 @@ function M.page_span()
     return M.page_x or 0, M.page_y or 0, M.page_w or 0, M.page_h or 0
 end
 
--- Rows on screen at once. The list was capped at nine with no way to see the
--- tenth, which in a room of sixty-four is most of it.
-local SHOWN = 9
-
--- How tall the roster panel comes out for this many pilots. Written once
--- because two callers need it: the panel draws itself from it, and the match
--- ending places its whole block off the total height of the parts, which
--- means knowing this before anything is drawn.
-local function roster_h(n)
-    local shown = math.min(n, SHOWN)
-    return 24 * F.scale + shown * LINE * F.scale + 8 * F.scale
-end
-
--- How tall one row is, in the pixels a press arrives in. Published because a
--- finger dragging the list has to be turned into rows and only this file knows
--- what a row measures. The wheel never needed it: a notch is one row by
--- definition, which is why the list could only ever be scrolled by a mouse.
+-- How tall one row is, in the pixels a scroll arrives in. Published because
+-- a finger dragging a panel and a wheel notch both have to be turned into
+-- rows, and only this file knows what a row measures.
+--
+-- The menu's row, since every list a hand can drag is a panel of the menu
+-- now: the players sheet, the settings page, the ship panel. The HUD's own
+-- eighteen-point line is what the feed and the rooms list are set on and
+-- neither is dragged.
 function M.row_pitch()
-    -- Times the ending's zoom, because a finger drags the rows as drawn: at
-    -- the whistle the board's rows are taller, and a pitch read off the bare
-    -- scale scrolled them faster than the finger moved.
-    return LINE * F.scale * (M.podium_zoom or 1)
+    return (M.compact and 40 or 44) * F.scale
 end
 
 -- Where the left column starts: under the menu chip, since the chip owns the
@@ -1860,99 +1812,30 @@ local function band_bottom()
     return band_top() + (band_type())
 end
 
--- Where the board column stands, and how wide it is.
+-- The order the players sheet reads in: your own side first, then everybody
+-- else, then the watchers, and inside each of those three by name.
 --
--- Under the band, centered on it, because the band is the control that opens
--- it and a panel belongs under the thing that opened it. The corner keys keep
--- the left column for the rooms list; this column is the scoreboard's own.
+-- The partition is "who is with me", which is the question a list of a room
+-- is opened with: a name is only worth reading once you know which end of the
+-- gun it is on. It was a partition and a chosen column for a while, with four
+-- pressable headings over the figures. The Team column says the side on every
+-- row now, so the grouping is a reading rather than the only way to tell, and
+-- one order everybody learns beats four a hand has to find its way back to.
 --
--- Filled once a frame by `M.hud` rather than worked out on demand, because
--- the top depends on what is standing between the band and the list (the
--- band always, a strip of pennants in a mode with flags, and a line of banner
--- when the room has said something), and three panels read it.
+-- Watchers last, under everybody who is actually flying. They have no score,
+-- and sorting a zero into the middle of a list reads as a pilot doing badly
+-- rather than as somebody not playing. Their rows say `watching` where a side
+-- would be, so the group needs no rule of its own beyond being last.
 --
--- Wider than the 248-point columns down the side of the screen, and capped
--- rather than fluid. A roster row is a name and five numbers, and at 248 the
--- numbers take two thirds of it and call signs are cut to nine characters; at
--- 340 a name is a name. The cap is what stops a phone held sideways from
--- spreading eight rows across 816 points of glass with the names at one edge
--- and the numbers at the other, and an upright phone is narrower than the cap
--- anyway, so there it is the margins that decide.
-local BOARD_W = 340
-local board = {x = 0, y = 0, w = 0}
-
-local function set_board(under)
-    local room = F.w - F.safe_l - F.safe_r - 2 * PAD * F.scale
-    local w = math.min(BOARD_W * F.scale, room)
-    board.w = w
-    board.x = F.safe_l + PAD * F.scale + (room - w) / 2
-    board.y = band_bottom() + (under or 0) + 10 * F.scale
-end
-
--- Two names, in the order a person reads them. Lowercased for the comparison
--- so a capital cannot jump a pilot to the top of the room, and the raw name
--- breaks a tie so the order is total and the list cannot flicker between two
--- pilots who differ only in case. The games list orders itself the same way.
--- The lowercased form is put on the row when the row is filled rather than
--- worked out here: this runs on both sides of every comparison, which is a
--- few hundred of them each frame the panel is open, to lower the same handful
--- of names over and over.
-local function ahead(a, b)
-    if a.lname ~= b.lname then return a.lname < b.lname, true end
-    if a.name ~= b.name then return a.name < b.name, true end
-    return false, false
-end
-
--- Which column the scoreboard is sorted by, and the order that column asks
--- for. Written just before the sort and read inside it, so the comparator can
--- be one function built once rather than a fresh closure over the column every
--- frame the panel is up.
-local sort_key = nil
-
--- The side the match ending puts first, or nil while a match is running.
---
--- Mid-fight the partition is "who is with me", because a name is only worth
--- reading once you know which end of the gun it is on. A finished match has a
--- better answer to which side comes first, and it is the one the ending is
--- about: whoever took it, whether or not that is yours. See `podium`.
-local top_side = nil
-
+-- Z to A inside each group, which is what was asked for. Lowercased first so
+-- a capital cannot jump a pilot to the top of the room, and the raw name
+-- breaks the tie so the order is total and two pilots who differ only in case
+-- cannot flicker past each other.
 local function by_column(a, b)
-    if top_side ~= nil then
-        -- Winner's side first, then by what each pilot did to the result:
-        -- kills less deaths, since a side's score is the kills its pilots
-        -- landed and every death is one of those handed to the other side.
-        -- Level on that, the one who was in more of it. It is the measure the
-        -- mark is picked by, so whoever wears it is the top row of its side.
-        if a.watch ~= b.watch then return b.watch end
-        local at, bt = a.team == top_side, b.team == top_side
-        if at ~= bt then return at end
-        local an, bn = a.k - a.d, b.k - b.d
-        if an ~= bn then return an > bn end
-        if a.k ~= b.k then return a.k > b.k end
-        return (ahead(a, b))
-    end
-    -- Watchers last, under everybody who is actually flying, whatever column
-    -- is chosen. They have no score to sort by and sorting them into the
-    -- middle of a scoreboard by a zero would read as a pilot doing badly
-    -- rather than as somebody not playing.
     if a.watch ~= b.watch then return b.watch end
     if a.mine ~= b.mine then return a.mine end
-    if sort_key == "name" then
-        local first, differ = ahead(a, b)
-        if differ then return first end
-    elseif sort_key == "kills" then
-        if a.k ~= b.k then return a.k > b.k end
-    elseif sort_key == "deaths" then
-        -- Fewest first: on every other column the top of the list is the
-        -- pilot doing best, and this is the one where that means less.
-        if a.d ~= b.d then return a.d < b.d end
-    elseif sort_key == "assists" then
-        if a.a ~= b.a then return a.a > b.a end
-    end
-    -- Kills break every tie, because kills are the score.
-    if a.k ~= b.k then return a.k > b.k end
-    return (ahead(a, b))
+    if a.lname ~= b.lname then return a.lname > b.lname end
+    return a.name > b.name
 end
 
 -- The rooms of this zone, and the way into a different one.
@@ -1968,6 +1851,12 @@ end
 -- In the scoreboard's slot rather than beside it, and mutually exclusive with
 -- it, because the left column has room for one panel and the top right corner
 -- already works this way: it holds the radar or the map, never both.
+
+-- Rows of it on screen at once. The scoreboard shared this cap while it was a
+-- panel in the same column; it is a menu panel now and takes whatever height
+-- the glass has, so this bounds the rooms list and nothing else.
+local SHOWN = 9
+
 local function rooms_panel(rooms, here)
     if not M.rooms_open or not rooms or #rooms == 0 then return 0 end
     local n = #rooms
@@ -2129,337 +2018,9 @@ local function refresh_players(pilots, watchers, side, viewer_name)
         r.watch = true
     end
     for i = n + 1, #rows do rows[i] = nil end
-    -- Your own team first, whatever the column says.
-    --
-    -- The scoreboard answers two questions and they do not sort the same way.
-    -- "Who is winning" is the column somebody picked; "who is with me" is a
-    -- partition, and in a fight it is the more urgent of the two, because a
-    -- name is only worth reading once you know which end of the gun it is on.
-    -- So the sort runs inside each side rather than across both.
-    --
-    -- Alphabetical inside each side by default. Kills stay on the row: they
-    -- are what a player counts in their head, and they say something points
-    -- do not, since a pilot who kills loaded ships outscores one who kills
-    -- more of the empty.
-    sort_key = M.sort
+    -- And into the one order this list has. See `by_column`.
     table.sort(rows, by_column)
     return n
-end
-
--- Move the scoreboard's existing selection by one pilot. Watchers stay in the
--- list but are skipped because they have no hull and no pilot card to select.
--- With no current selection, down starts at the top and up starts at the
--- bottom. The list does not wrap, which keeps Page Up and Page Down behaving
--- like movement rather than a cycle.
-function M.player_step(delta, pilots, watchers, side, viewer_name)
-    M.details = true
-    local n = refresh_players(pilots, watchers, side, viewer_name)
-    local choices = {}
-    local selected = nil
-    for i = 1, n do
-        if rows[i].i ~= nil then
-            choices[#choices + 1] = i
-            if rows[i].i == M.inspect then selected = #choices end
-        end
-    end
-    if #choices == 0 then
-        M.inspect = nil
-        M.scroll = 0
-        return nil
-    end
-
-    if selected == nil then
-        selected = delta < 0 and #choices or 1
-    else
-        selected = math.max(1, math.min(#choices, selected + (delta < 0 and -1 or 1)))
-    end
-    local at = choices[selected]
-    M.inspect = rows[at].i
-    if at <= M.scroll then M.scroll = at - 1 end
-    if at > M.scroll + SHOWN then M.scroll = at - SHOWN end
-    return M.inspect
-end
-
--- `moved` is what the match did to each pilot's rating, by ship, and is
--- handed in only at the ending. See `podium`.
-local function scores(me, pilots, watchers, viewer_name, always, moved)
-    -- Asked for, not assumed. Mid-fight this is the least useful thing on the
-    -- screen and the feed still says who is killing whom, so it lives behind
-    -- the same toggle your own loadout does.
-    --
-    -- `always` is the match ending, which is this panel with a head over it:
-    -- at the whistle the room's numbers stop being something a player has to
-    -- ask for.
-    if not (M.details or always) then return 0 end
-    local n = refresh_players(pilots, watchers, nil, viewer_name)
-
-    if n == 0 then
-        M.scroll = 0
-        return 0
-    end
-    -- Clamped here rather than where the wheel is read, because this is the
-    -- only place that knows how many pilots there are: a room empties while
-    -- somebody is scrolled to the bottom of it.
-    local max_scroll = math.max(0, n - SHOWN)
-    if M.scroll > max_scroll then M.scroll = max_scroll end
-    if M.scroll < 0 then M.scroll = 0 end
-    local shown = math.min(n, SHOWN)
-    local w = board.w
-    local head = 24 * F.scale
-    local h = roster_h(n)
-    local x = board.x
-    local top = board.y
-    -- Enough behind it to read over a starfield, and no border: a rule down
-    -- the left is what holds the column, the way it holds a wall face.
-    rect(x, top, w, h, pal.a(pal.BG, 0.62))
-    vrule(x, top, h, pal.a(pal.RADAR_TILE, 0.7))
-
-    -- Three columns, right aligned off the panel's own edge, in the order a
-    -- row is read. There were five, and the outer two were points and bounty:
-    -- what a kill paid and what the next one would. Neither number exists.
-    --
-    -- Four at the ending, where the outermost is what the match did to each
-    -- pilot's rating. Only there. A rating is a standing rather than a
-    -- running total, and a number climbing over somebody's head while they
-    -- are trying to fly is the shape the bounty had.
-    --
-    -- Each is as wide as the widest thing actually in it, measured every
-    -- frame against the heading as well as the numbers. Fixed offsets do not
-    -- survive several columns in 248 points, so a column sized for the worst
-    -- case eats the names in every room where the worst case has not
-    -- happened.
-    local small = (FONT - 3) * F.scale
-    local num = (FONT - 2) * F.scale
-    local GAP = 7 * F.scale
-    local function col_w(field, label)
-        -- Floored, because a column of single digits collapses to six points
-        -- and its heading is the control that sorts by it: a target that
-        -- narrow cannot be hit with a mouse, let alone a thumb.
-        local wide = math.max(text_w(label, small), 16 * F.scale)
-        for i = 1, n do
-            local r = rows[i]
-            if not r.watch then
-                wide = math.max(wide, text_w(tostring(r[field]), num))
-            end
-        end
-        return wide
-    end
-    -- What the match did, as a signed figure, worked out before the columns
-    -- are measured because the widest of them is what the column is sized to.
-    -- A pilot whose rating did not move reads a dim zero rather than nothing:
-    -- "this match changed nothing for you" is an answer, and a blank is not.
-    if moved then
-        for i = 1, n do
-            local r = rows[i]
-            local by = (not r.watch) and r.i ~= nil and moved[r.i] or nil
-            r.moved = by and ((by > 0 and "+" or "") .. tostring(by)) or nil
-            r.moved_by = by
-        end
-    else
-        for i = 1, n do rows[i].moved, rows[i].moved_by = nil, nil end
-    end
-    local aw, dw, kw = col_w("a", "A"), col_w("d", "D"), col_w("k", "K")
-    local rw = moved and col_w("moved", "RATING") or 0
-    local rx = x + w - 12 * F.scale
-    local ax = moved and (rx - rw - GAP) or rx
-    local dx = ax - aw - GAP
-    local kx = dx - dw - GAP
-    -- The marks sit in their own column left of the numbers rather than after
-    -- each name, so a scan down the list finds them in a line instead of at a
-    -- dozen different indents. The names end where that column begins.
-    local mark_x = kx - kw - GAP - MARK_K * F.scale
-    local name_x = x + 12 * F.scale
-    local name_n = math.max(3, math.floor((mark_x - GAP - name_x) /
-                                          (num * ADVANCE)))
-    -- A heading is a control now, so the one in use is lit and the rest are
-    -- not: the same way every other toggle in this interface says which way it
-    -- is set.
-    local function head_col(name, label, hx, align)
-        local on = M.sort == name
-        txt(label, hx, top + 14 * F.scale, small,
-            on and pal.a(pal.FRIEND, 0.95) or pal.a(pal.DIM, 0.7), align)
-        return on
-    end
-    head_col("name", "PILOTS", name_x, nil)
-    head_col("kills", "K", kx, "right")
-    head_col("deaths", "D", dx, "right")
-    -- Kills you were part of and did not finish. A column rather than a line
-    -- in the box a row opens, because it is the same kind of fact as the two
-    -- beside it and belongs where they are.
-    head_col("assists", "A", ax, "right")
-    -- Not a sort control, unlike the three beside it. The ending sorts by the
-    -- side that took the match and by what each pilot did to the result, and
-    -- a heading that lit but changed nothing would be a button that lies.
-    if moved then
-        txt("RATING", rx, top + 14 * F.scale, small, pal.a(pal.DIM, 0.7),
-            "right")
-    end
-    -- Hit boxes over the headings. Each takes its whole column and the gap to
-    -- its left, so the four tile without overlapping and the labels, which
-    -- are one or three characters wide, are not the target.
-    hit(x + 8 * F.scale, top + 4 * F.scale, 60 * F.scale, 18 * F.scale, "sort_name")
-    hit(kx - kw - GAP, top + 4 * F.scale, kw + GAP, 18 * F.scale, "sort_kills")
-    hit(dx - dw - GAP, top + 4 * F.scale, dw + GAP, 18 * F.scale, "sort_deaths")
-    hit(ax - aw - GAP, top + 4 * F.scale, aw + GAP, 18 * F.scale, "sort_assists")
-    ticks(x + 12 * F.scale, top + 20 * F.scale, w - 24 * F.scale,
-          pal.a(pal.RADAR_TILE, 0.35), 14 * F.scale)
-
-    -- Who wears the mark, worked out once rather than per row. Only at the
-    -- ending: mid-fight the board is a list of who is here, and a prize on it
-    -- is a reading nobody asked for while they are being shot at.
-    --
-    -- On the side that took it, and never on the other one. A match is won by
-    -- a side and the mark is the winner's to hand out; the best pilot on a
-    -- side that lost is a reading about a fight that did not go their way.
-    --
-    -- Kills less deaths, which is what that pilot was worth to the result
-    -- rather than how much of it they were seen doing. The score is the kills
-    -- a side's pilots landed, so a death is a point handed to the other side
-    -- and the pilot who took five and gave back four moved the match by one.
-    -- Level on that, the one with more kills: the same net through more of
-    -- the fight is more of the fight.
-    --
-    -- And only in a room big enough for the mark to say something. Three
-    -- scorers is where a prize starts picking somebody out rather than
-    -- restating the result.
-    local best = nil
-    if top_side ~= nil then
-        local scored = 0
-        for i = 1, n do
-            if not rows[i].watch and rows[i].k > 0 then scored = scored + 1 end
-        end
-        if scored >= 3 then
-            local best_net = 0
-            for i = 1, n do
-                local r = rows[i]
-                -- Something shot down, still. A pilot who stayed out of every
-                -- fight comes out level at nothing, which beats a wingman who
-                -- traded four for five, and the mark is not for hiding.
-                if not r.watch and r.team == top_side and r.k > 0 then
-                    local net = r.k - r.d
-                    if best == nil or net > best_net
-                       or (net == best_net and r.k > best.k) then
-                        best, best_net = r, net
-                    end
-                end
-            end
-        end
-    end
-
-    local y = top + head
-    for i = 1 + M.scroll, math.min(n, M.scroll + shown) do
-        local r = rows[i]
-        local mine = r.self
-        local reading = r.i ~= nil and M.inspect == r.i
-        -- A watcher is on nobody's side, so it is drawn in neither side's
-        -- color: the neutral ink, dimmer than a pilot, which is the reading.
-        local col = pal.DIM
-        if r.watch and mine then
-            -- A watcher has no side-colored hull to borrow from. Their own row
-            -- still wears the same cyan the pilot's own row does, so sitting
-            -- out does not make the roster lose track of who is reading it.
-            col = pal.FRIEND
-        elseif not r.watch then
-            -- The same color their plate wears out in the arena. A key is
-            -- only a key if it reads the same in both places: a name orange
-            -- here and violet on the hull is two facts about one pilot. From
-            -- the row rather than the simulation, because the simulation only
-            -- holds the seats inside this client's interest window and
-            -- answers team zero for everybody else.
-            col = team_col(r.team)
-        end
-        if mine or reading then
-            -- Your row, marked the way a selected row is marked everywhere
-            -- else in this interface: a lit rule and a wash off it, not a
-            -- glyph in front of your name. The row being read about wears the
-            -- same mark, in its own color, since it is a selection and this
-            -- is how this interface draws one.
-            local mark = reading and pal.BOUNTY or pal.FRIEND
-            wash(x, y, w, LINE * F.scale, pal.a(mark, 0.13))
-            F.layer:seg(x, ry(y), x, ry(y + LINE * F.scale), 1.6 * F.scale, pal.a(mark, 0.95))
-        end
-        local name = string.sub(r.name, 1, name_n)
-        local cy = y + LINE * F.scale / 2
-        txt(name, name_x, cy, num, pal.a(col, mine and 1.0 or 0.8),
-            nil, nil, true)
-        -- Who moved the match most, at the ending only and on the side that
-        -- took it. Nobody in a scoreless match, because a mark on a pilot
-        -- with no kills is a prize for turning up, and the more kills where
-        -- two are level on net, so it lands in the same place on every
-        -- machine rather than on whoever the roster happened to name first.
-        if best ~= nil and r == best then
-            local at = name_x + text_w(name, num) + 8 * F.scale
-            if at + text_w("MVP", small) < mark_x then
-                lbl("mvp", at, cy, pal.a(pal.PAID, 0.95), nil, small)
-            end
-        end
-        if r.ai then
-            bot_mark(mark_x, cy, pal.a(pal.DIM, 0.75))
-        else
-            pilot_mark(mark_x + MARK_K * F.scale / 2, cy,
-                       pal.a(pal.DIM, 0.75))
-        end
-        if r.watch then
-            -- No seat, so no box to open about them, and no numbers: a
-            -- watcher has not scored anything and three zeroes would say they
-            -- had. One word instead, in the columns the numbers would have
-            -- used, so the row is plainly a different kind of row.
-            txt("watching", moved and rx or ax, cy, small,
-                pal.a(pal.DIM, 0.7), "right")
-        else
-            -- The one way to ask about a pilot. Published before the panel's
-            -- own box below, which takes the wheel and would otherwise
-            -- swallow the press: first box in wins.
-            hit(x, y, w - 6 * F.scale, LINE * F.scale, "pilot", r.i)
-            -- Kills, deaths and assists all in ink. Deaths read dimmer than
-            -- the two beside them for a while, which was a judgement about
-            -- the number rather than a fact about it: a column is either a
-            -- score this board keeps or it is not on the board, and graying
-            -- one of the three says the reader should care less about it
-            -- while still making them read past it.
-            txt(tostring(r.k), kx, cy, num, pal.a(pal.INK, 0.85), "right")
-            txt(tostring(r.d), dx, cy, num, pal.a(pal.INK, 0.85), "right")
-            txt(tostring(r.a), ax, cy, num, pal.a(pal.INK, 0.85), "right")
-            -- Up in the green a kill of yours is already printed in, down in
-            -- the color the room uses for the other side, level in the ink
-            -- everything else on the row is set in.
-            if r.moved then
-                local col2 = pal.INK
-                local a2 = 0.6
-                if (r.moved_by or 0) > 0 then col2, a2 = pal.PAID, 0.95
-                elseif (r.moved_by or 0) < 0 then col2, a2 = pal.ENEMY, 0.9 end
-                txt(r.moved, rx, cy, num, pal.a(col2, a2), "right")
-            end
-        end
-        y = y + LINE * F.scale
-    end
-
-    -- No line of totals under the rows. It counted the room by seat label,
-    -- "8 here: 1 signed, 0 guest, 7 ai", and went at Chris's request: the
-    -- marks in the rows already say who is a person, and the PLAYERS chip
-    -- that opens this panel carries the head count.
-
-    -- Only when there is something to scroll to. A bar on a list that fits is
-    -- a control that does nothing.
-    if n > shown then
-        local track = shown * LINE * F.scale
-        local ty = top + head
-        local frac = shown / n
-        local bar = math.max(10 * F.scale, track * frac)
-        local at = (M.scroll / math.max(1, n - shown)) * (track - bar)
-        F.layer:seg(x + w - 3 * F.scale, ry(ty + at), x + w - 3 * F.scale, ry(ty + at + bar),
-              2 * F.scale, pal.a(pal.RADAR_TILE, 0.8))
-    end
-
-    -- The whole panel takes the wheel, rather than a strip beside it: a list
-    -- is the thing you point at when you mean to scroll it. A backdrop, so
-    -- every row in front of it wins the press by rank rather than by the luck
-    -- of publish order.
-    hit(x, top, w, h, "scores", nil, nil, -1)
-
-    -- The bottom edge, not the height: what the loadout below needs to know
-    -- is where this ends, and it does not start at the top of the screen.
-    return top + h
 end
 
 -- The notification feed: kills, arrivals, departures and flags. Newest first.
@@ -2469,8 +2030,8 @@ end
 -- well without one. Right-aligned so the edge that lines up is the one
 -- against the screen, which is what the box used to provide.
 --
--- Lines expire, and fade as they go. The arena owns the clock -- it is what
--- ages them -- so the lifetime lives here, where both halves can see it.
+-- Lines expire, and fade as they go. The arena owns the clock, it is what
+-- ages them, so the lifetime lives here, where both halves can see it.
 M.FEED_LIFE = 9
 local FEED_FADE = 1.6
 -- How many lines stand at once. Deep enough to hold a busy moment, shallow
@@ -2860,218 +2421,6 @@ end
 -- taken mid-fight. It cost a panel's worth of the left column to say none of
 -- it at a moment anybody could act on.
 
--- Who that is: one pilot, read off the roster and the simulation.
---
--- It answers the question a name over a hull raises and cannot itself answer.
--- The nameplate says what to call them; this says what the zone will vouch
--- for, how they are doing, and whether they are on your side.
---
--- In the left column under whatever is already there, because that column is
--- where this interface keeps things you asked to see. Not over the middle: a
--- box you opened by clicking a ship must not cover the ship you clicked.
-local function inspect(o, top)
-    -- It belongs to the scoreboard, which is the only thing that opens it, so
-    -- it goes when the scoreboard goes. A box left standing under a shut list
-    -- is a panel about somebody with nothing on screen saying who they were or
-    -- how to get another one.
-    if not M.details then M.inspect = nil end
-    local i = M.inspect
-    if not i then return end
-    -- A pilot who left while the box was open. The box goes with them rather
-    -- than describing somebody who is not there.
-    if i < 0 or i >= sim.ship_count()
-        or (not o.pilots[i] and not seat_here(i)) then
-        M.inspect = nil
-        return
-    end
-    local p = o.pilots[i]
-    local w = board.w
-    local x = board.x
-    local rowh = 15 * F.scale
-    -- Name, then the rows that always exist, then the team when it means
-    -- something. Counted rather than guessed so the panel is exactly as tall
-    -- as what it holds.
-    --
-    -- Their side comes from the roster when the seat is outside the snapshot,
-    -- exactly as the scoreboard's does: the simulation holds only the seats
-    -- inside this client's interest window, and a pilot across the map read
-    -- as team zero: the wrong color on the row, and possibly the wrong
-    -- side's name against it.
-    local theirs = seat_team(i, p)
-    local same_team = theirs == view_team
-    -- Which side they are on, and whether this pilot is allowed to be told.
-    --
-    -- The zone decides. A side it marks public is one anybody may see and name;
-    -- a private one is a squad who arranged themselves, and naming it here
-    -- would hand the room a roster the zone deliberately did not send. Your own
-    -- side is always yours to know, whatever it is marked, since you are in it.
-    --
-    -- What is withheld is the *name*. Which side somebody is on is on their
-    -- hull, in the color of their plate, and has been since the plates
-    -- started carrying it, so a row that said nothing at all would be keeping
-    -- a secret the screen has already given away. The row is always drawn, in
-    -- the side's color; a side this pilot may not have named reads as
-    -- "private", which is the honest answer and the one the zone intends.
-    local side, side_named = nil, false
-    for _, t in ipairs(o.teams or {}) do
-        if t.team == theirs and (t.public or same_team) then
-            side = (t.name ~= "" and t.name) or ("team " .. t.team)
-            side_named = t.name ~= ""
-        end
-    end
-    -- The invitation lives here because this is already the panel you open by
-    -- picking a person, and picking a person was the whole of the old invite
-    -- menu. Drawn only when it would do something: you are on a private side,
-    -- and this is somebody other than you who is not already on it.
-    local invite = o.may_invite and i ~= o.me and not same_team
-    -- The team row always exists now, so the count is fixed.
-    local rows_n = 8
-    local h = 30 * F.scale + rows_n * rowh
-        + (invite and (KEY_H + 12) * F.scale or 0)
-        + 10 * F.scale
-    -- Under whatever is in the column, and never above where the column
-    -- starts: with the scoreboard shut there is nothing above it, and a panel
-    -- at the top of the screen lands on the menu chip.
-    local y = math.max((top or 0) + 6 * F.scale, board.y)
-    rect(x, y, w, h, pal.a(pal.BG, 0.72))
-    vrule(x, y, h, pal.a(same_team and pal.FRIEND or pal.ENEMY, 0.9))
-
-    local col = same_team and pal.FRIEND or pal.ENEMY
-    local nm = (p and p.name) or ("ship " .. i)
-    txt(nm, x + 12 * F.scale, y + 17 * F.scale, (FONT - 1) * F.scale, pal.a(col, 0.95),
-        nil, nil, true)
-    -- The mark rides after the name here, not in a column: there is one line
-    -- and nothing to line it up with.
-    if p and p.ai then
-        bot_mark(x + 12 * F.scale
-                     + text_w(nm, (FONT - 1) * F.scale) + 5 * F.scale,
-                 y + 17 * F.scale,
-                 pal.a(pal.DIM, 0.85), 10 * F.scale)
-    end
-    -- Close, in the corner it opened under. Escape does the same thing.
-    close_mark(x + w - 17 * F.scale, y + 17 * F.scale, pal.a(pal.DIM, 0.8), 10 * F.scale)
-    hit(x + w - 26 * F.scale, y + 4 * F.scale, 26 * F.scale, 22 * F.scale, "uninspect")
-
-    local ry_ = y + 30 * F.scale
-    local lab = (FONT - 3) * F.scale
-    local val = (FONT - 2) * F.scale
-    local function row(k, v, vcol, raw)
-        txt(k, x + 12 * F.scale, ry_ + rowh / 2, lab, pal.a(pal.DIM, 0.8))
-        txt(v, x + w - 12 * F.scale, ry_ + rowh / 2, val, vcol or pal.a(pal.INK, 0.9),
-            "right", nil, raw)
-        ry_ = ry_ + rowh
-    end
-    -- In the side's own color, which is the same color their plate wears
-    -- out in the arena: this box is where a player learns what that color
-    -- on the hull they are looking at means.
-    row("TEAM", side or "private", pal.a(team_col(theirs), 0.95), side_named)
-    -- What the zone is willing to say this seat is, which is the honest
-    -- version of the question: the client cannot tell, and the server's label
-    -- is the only answer anybody has. A guest is not an accusation.
-    row("SEAT", (p and p.label) or "unknown")
-    -- Where the ladder has them. A band rather than the number behind it: the
-    -- number twitches after every death and a word moves only when something
-    -- changed, which is the whole reason tiers exist. A pilot still placing
-    -- reads as that and draws dim, because it is the absence of an answer
-    -- rather than a low one, and a newcomer should not read as ranked last.
-    local band = (p and p.tier) or "unrated"
-    row("TIER", band, band == "placing" and pal.a(pal.DIM, 0.85) or nil)
-    -- And the number under it, which is what the band is a rounding of.
-    --
-    -- The band exists so nobody has to watch a number move after every death,
-    -- and that reasoning still holds for the *band*: it is the row above and it
-    -- still only changes when something changed. This is the second line rather
-    -- than a replacement for the first. A pilot who wants to know whether they
-    -- are near the top of Lead or the bottom of it has no way to ask otherwise,
-    -- and the number is already on the wire, updated on both pilots at every
-    -- rated death.
-    --
-    -- Dim while placing, for the same reason the band is: ten games in, it is a
-    -- number that has not settled, and reading it as firm is reading it wrong.
-    -- A seat with no rating at all is a watcher, and a dash is the honest
-    -- answer there rather than a zero.
-    local score = o.ratings and o.ratings[i]
-    row("RATING", score and tostring(math.floor(score + 0.5)) or "--",
-        (band == "placing" or not score) and pal.a(pal.DIM, 0.85) or nil)
-    -- A line each, rather than one line of "21K 20D 748P". Three numbers
-    -- packed into a row with their units stuck to them is a thing to decode;
-    -- three labeled rows are three numbers to read, and this panel already
-    -- reads that way everywhere else.
-    --
-    -- Through the same read the scoreboard uses, which this panel was not
-    -- doing: the four lines came straight out of the simulation, so opening
-    -- the box on a pilot across the map answered zero to all of them while
-    -- the row it was opened from, a finger's width behind it, showed what the
-    -- roster says.
-    local k, d, a = seat_score(i, p)
-    row("KILLS", tostring(k))
-    row("DEATHS", tostring(d))
-    -- Kills you were part of and did not finish, which is the third thing a
-    -- pilot counts and the one a two-column board used to lose.
-    row("ASSISTS", tostring(a))
-
-    -- Drawn as a key, the way everything else in this interface that is a
-    -- thing to press is drawn: the corner's MENU and PLAYERS, the answers on
-    -- a confirm card, every key on the help board. It was a word over a rule,
-    -- which is what a control looked like here before the board taught the
-    -- same hand what a key looks like, and a panel keeping the old idiom asks
-    -- a player to know that this particular word is pressable.
-    local label, action = nil, nil
-    if invite then
-        -- Once it is sent it says so and stops taking clicks: the zone answers
-        -- an invitation with a team list that does not name the invitee, so
-        -- this is the only acknowledgement there is, and a button that stayed
-        -- pressable would invite an anxious second tap.
-        label = (o.invited and o.invited[i]) and "INVITED" or "INVITE"
-        action = (o.invited and o.invited[i]) and nil or "invite"
-    end
-    if label then
-        local by = ry_ + 4 * F.scale
-        local bw = key_w(label)
-        key_cap(x + 12 * F.scale, by, bw, label, action ~= nil)
-        if action then
-            hit(x + 12 * F.scale, by, bw, KEY_H * F.scale, action, i)
-        end
-    end
-    return y + h
-end
-
--- What is drawn while a pilot is sitting in a safe zone.
---
--- Two things, and the second only when the room has a limit. A safe zone is
--- the one part of the map whose rules are different and the tile says so in
--- color alone, which is a thing you learn by being shot at somewhere you
--- thought was safe. And a room that is about to take the seat back has to say
--- so first, or the ship simply stops being yours.
---
--- The same place DESTROYED uses, and never both at once: they are the two
--- states where there is nothing to fly and nothing to look away from, and the
--- middle of the screen is where a player is already looking. Lower than the
--- word is, because there is a game going on around this one and the hull it
--- is about is in the middle of it.
---
--- The clock is a numeral rather than a draining bar. A minute is too long for
--- a bar to read as anything, and the number a pilot wants here is how many
--- seconds they have, which is a number.
--- --- the help table --------------------------------------------------------
---
--- Every key the game answers to, what it is, and one sentence saying what it
--- does. Held open rather than hovered, so reading it is a decision a player
--- makes once and not something that happens to them while they are flying.
---
--- What a particular hull is carrying is the corner stack's job and it draws
--- that already; this is the keyboard, which is the same in every room.
---
--- Asked for each time it is drawn rather than held, because the keys are a
--- pilot's to move now. It used to be the list itself, on the argument that a
--- table which rearranged itself would be a reference you cannot learn; that is
--- still true of a table that rearranges on its own, and false of one that says
--- what you last told it.
---
--- Keyboard only, and that is not an oversight: a touchscreen has no key to
--- open it with and no keys to list. A phone is told what its controls are by
--- the controls: every pad draws the weapon it fires, and the stick writes its
--- own gesture around its rim.
 local binds = require("arena.binds")
 
 -- Whether the table is up. The arena owns the key; this owns the drawing.
@@ -3813,6 +3162,37 @@ end
 -- column stands at the foot and reaches nothing up here.
 local band_l, band_r = 0, 0
 
+-- The whistle, and the one thing about it this file still works out.
+--
+-- The ending was a block of its own: a line naming the side that took the
+-- match, a bar carrying each side's share of the score, and the roster under
+-- both, grown 1.45 times over a wash of the whole window. All of that is
+-- gone. What the whistle raises now is the players sheet, opened as though a
+-- hand had pressed its stop, and what says who took the match is the band:
+-- both sides stay on it, the winner at its own strength and the loser stood
+-- down. See `match_clock`.
+--
+-- So this table is down to one question, which side took it, and it stays a
+-- table rather than becoming a local because this chunk is close to the two
+-- hundred a Lua main function may declare. See upvalues_test.
+local END = {}
+
+-- Which side took it, what the ending calls that, and in what color. A draw is
+-- a real result at three minutes and says so, rather than a winner being named
+-- by tie-break.
+function END.result(o, m, names)
+    local best, best_at, drawn = -1, nil, false
+    for team, n in pairs(m.score or {}) do
+        if n > best then best, best_at, drawn = n, team, false
+        elseif n == best then drawn = true end
+    end
+    if drawn or best_at == nil then return "drawn", pal.INK, nil, false end
+    -- The side keeps the case it was supplied in; the verb is the interface
+    -- speaking, so it is drawn separately by the caller.
+    return (names and names[best_at]) or "a side",
+           best_at == view_team and pal.FRIEND or pal.ENEMY, best_at, true
+end
+
 local function match_clock(o, m, names, alone)
     if not m then return end
     local left = m.left or 0
@@ -3856,40 +3236,38 @@ local function match_clock(o, m, names, alone)
     -- gets the near-miss growth `M.pick` gives every control, and costs
     -- nothing: a phone fires from the pads.
     --
-    -- Nothing to press while the menu is up. The band keeps drawing, since a
-    -- player reading the column still wants the clock, but the board it opens
-    -- is not drawn then, and a control whose panel cannot appear is a press
-    -- that does nothing anybody can see.
-    --
-    -- The landing is that case for the whole screen rather than for one
-    -- panel: the board is not drawn out there either, so the band is a
-    -- reading of the fight going on behind the name and nothing to press.
+    -- Nothing to press while the menu is up: what the band opens is a stop of
+    -- that menu, and a control that opens what is already open would be a
+    -- press with nothing on screen answering it. On the landing the same
+    -- thing for a different reason: out there the column has no players stop
+    -- at all, so the band is a reading of the fight behind the name.
     local function press()
         if alone then return end
         local x0, x1 = band_l, band_r
         hit(x0 - 6 * F.scale, top - 4 * F.scale,
-            x1 - x0 + 12 * F.scale, big + 8 * F.scale, "details")
+            x1 - x0 + 12 * F.scale, big + 8 * F.scale, "players_open")
     end
 
-    -- A match that has finished draws no sides. The ending's own head names
-    -- both of them inside a bar with their points on the ends, a few lines
-    -- down the same window, so a side up here would be that read twice. What the band keeps
-    -- is the clock, in the pixels it has counted the match down in, now
-    -- counting to the next one.
+    -- A match that has finished keeps both its sides, and the band is what
+    -- says who took it: the winner at its own strength, the beaten side stood
+    -- down to a third, over the clock counting to the next match.
     --
-    -- And a word under it saying so, because a clock counting down to
-    -- something a player cannot see is a question. Nothing under it while a
-    -- match is being played: the clock is running and "match" beneath it is
-    -- the interface reading its own label back.
+    -- It used to give the sides up here and hand the result to a block of its
+    -- own a few lines down the window, on the grounds that a side drawn in
+    -- both places was one read twice. The block is gone: what the whistle
+    -- raises is the players sheet, which is a list of a room and knows
+    -- nothing about who won. So the one instrument that has carried the score
+    -- for three minutes carries the result as well, in the same pixels, and a
+    -- player who has spent the match reading the top of the window reads the
+    -- ending there too. See decision 147.
     --
-    -- No press either. The board this box opens is already up and covering the
-    -- window, so the box would be a strip across the top of the ending that
-    -- toggles a panel nobody can see change.
-    if match_ended(m) then
+    -- A draw stands neither side down, which is what a draw is.
+    local ended = match_ended(m)
+    if ended then
         txt("NEXT MATCH IN", F.w / 2, band_bottom() + 8 * F.scale,
             (M.compact and 9 or 11) * F.scale, pal.a(pal.DIM, 0.8), "center")
-        return
     end
+    local _, _, won = END.result(o, m, names)
 
     -- A side is a team: its name over what it has scored, which is the pair a
     -- player checks the clock to find out about.
@@ -3923,7 +3301,11 @@ local function match_clock(o, m, names, alone)
         TOP.row_right() - (F.w / 2 + half + gap)) - KEY_GAP * F.scale
     for i, side in ipairs(sides) do
         local ours = side.team == mine
-        local col = pal.a(ours and pal.FRIEND or pal.ENEMY, 0.95 * dim)
+        -- What the whistle does to a side: the one that took it keeps its
+        -- ink, the other stands down. Nothing at all while the match is being
+        -- played, and nothing to either side of a draw.
+        local stood = (ended and won ~= nil and side.team ~= won) and 0.35 or 1
+        local col = pal.a(ours and pal.FRIEND or pal.ENEMY, 0.95 * dim * stood)
         local label = (names and names[side.team]) or ""
         -- A side's name is a label and wears the interface's own case; a
         -- pilot's is quoted, the way the roster and the plate on their hull
@@ -3953,7 +3335,8 @@ local function match_clock(o, m, names, alone)
                               text_w(under, under_px))
         reach(i == 1 and edge - wide or edge + wide)
         if label ~= "" then
-            txt(label, edge, name_y, name_px, pal.a(col, 0.85 * dim), pivot,
+            txt(label, edge, name_y, name_px, pal.a(col, 0.85 * dim * stood),
+                pivot,
                 nil, quoted)
         end
         txt(under, edge, under_y, under_px,
@@ -4021,97 +3404,6 @@ end
 -- The arena counts a phrase out against it.
 M.SAY_LIFE = 4.0
 
--- One table for everything the ending owns, rather than a local apiece: this
--- chunk is close to the two hundred a Lua main function may declare, and a
--- coherent group on a table is one of them however many pieces it holds. See
--- upvalues_test.
---
--- `W` is what the ending may spend on its column, wider than the 340 the band
--- opens mid-match because a roster row is a name and five numbers and the
--- ending owns the window rather than a corner of it. `CHROME` is what a run
--- section costs before any leg is drawn.
---
--- `ZOOM` is how much larger the whole block draws than the instruments
--- around it. The ending borrowed the board's own type, sized to sit in a
--- corner of a live fight, and at the whistle that read as a footnote: the
--- one thing on screen, set in the smallest type on it. The block is one
--- drawing, so it is grown as one, the way a pinch would grow it, rather
--- than by reweighing every size on it against its neighbors. A window too
--- short for the full zoom takes what it has room for instead, and never
--- less than the old size.
-local END = {W = 720, CHROME = 38, ZOOM = 1.45}
-
--- What the ending is currently zoomed by, for the one reader outside this
--- file: a finger dragging the roster is turned into rows by `M.row_pitch`,
--- and a row on the ending is this much taller than a row anywhere else.
--- Reset every frame by `M.begin` so it never outlives the board it measures.
-M.podium_zoom = 1
-
--- Which side took it, what the ending calls that, and in what color. A draw is
--- a real result at three minutes and says so, rather than a winner being named
--- by tie-break.
-function END.result(o, m, names)
-    local best, best_at, drawn = -1, nil, false
-    for team, n in pairs(m.score or {}) do
-        if n > best then best, best_at, drawn = n, team, false
-        elseif n == best then drawn = true end
-    end
-    if drawn or best_at == nil then return "drawn", pal.INK, nil, false end
-    -- The side keeps the case it was supplied in; the verb is the interface
-    -- speaking, so it is drawn separately by the caller.
-    return (names and names[best_at]) or "a side",
-           best_at == view_team and pal.FRIEND or pal.ENEMY, best_at, true
-end
-
--- The score as one band: each side's name inside its own share of it, in the
--- ground's own near-black, with the points on the ends in the side's color.
--- The proportion is the fight and the colors are the sides, so the bar carries
--- the whole reading rather than labelling a stripe.
-function END.band(m, names, x, y, w, sides, grow)
-    -- The figures wear the ending's zoom; the bar between them keeps the
-    -- interface's own size, and so do the names set inside it, since they
-    -- have to fit the bar they are in. A band grown with the type read as a
-    -- banner rather than a reading.
-    local unz = M.podium_zoom or 1
-    local px = (M.compact and 20 or 26) * F.scale
-    local name_px = (M.compact and 10 or 12) * F.scale / unz
-    local bar_h = (M.compact and 18 or 26) * F.scale / unz
-    local gap = 14 * F.scale
-    local l, r = sides[1], sides[2]
-    local ls = (l ~= nil and m.score and m.score[l]) or 0
-    local rs = (r ~= nil and m.score and m.score[r]) or 0
-    local lcol = l == view_team and pal.FRIEND or pal.ENEMY
-    local rcol = r == view_team and pal.FRIEND or pal.ENEMY
-    local mid = y + bar_h / 2
-    local bx = x + text_w(tostring(ls), px) + gap
-    local bw = w - text_w(tostring(ls), px) - text_w(tostring(rs), px)
-        - 2 * gap
-    local part = (ls + rs) > 0 and ls / (ls + rs) or 0.5
-
-    txt(tostring(ls), x, mid, px, pal.a(lcol, 1))
-    txt(tostring(rs), x + w, mid, px, pal.a(rcol, 1), "right")
-    -- The two sides meet where the score puts them, arriving rather than
-    -- appearing. It is the only movement on the ending.
-    rect(bx, y, bw, bar_h, pal.a(pal.DIM, 0.16))
-    local lfill = bw * part * grow
-    local rfill = bw * (1 - part) * grow
-    rect(bx, y, lfill, bar_h, pal.a(lcol, 0.9))
-    rect(bx + bw - rfill, y, rfill, bar_h, pal.a(rcol, 0.9))
-    -- Each name against the outer end of its own share, so the two read
-    -- outward from the middle the way the points beyond them do. Dropped
-    -- rather than drawn over the far side when a rout leaves no room for it.
-    local pad = 9 * F.scale
-    local ground = pal.rgb(0x05070c, 0.95)
-    local ln = (l ~= nil and names and names[l]) or ""
-    local rn = (r ~= nil and names and names[r]) or ""
-    if ln ~= "" and text_w(ln, name_px) + 2 * pad < lfill then
-        txt(ln, bx + pad, mid, name_px, ground)
-    end
-    if rn ~= "" and text_w(rn, name_px) + 2 * pad < rfill then
-        txt(rn, bx + bw - pad, mid, name_px, ground, "right")
-    end
-end
-
 -- What this match did to everybody's rating, by ship.
 --
 -- The client's own subtraction rather than a number off the wire. A rating
@@ -4133,125 +3425,6 @@ local function rating_moves(o)
         end
     end
     return out
-end
-
-local function podium(o, m, names)
-    -- The room, ordered the way the ending reads it: the side that took the
-    -- match first, whether or not it is this viewer's, and the best gun first
-    -- inside each side. Set before the roster is filled, since the sort runs
-    -- inside `refresh_players`.
-    local said, said_col, winner, verbed = END.result(o, m, names)
-    top_side = winner
-    local n = refresh_players(o.pilots, o.watchers, nil, o.viewer_name)
-    top_side = nil
-
-    -- The measure and the block's own height, both known before anything is
-    -- drawn: the ending is placed as one block and there is no second pass to
-    -- discover how tall it came out. In a function because it runs twice,
-    -- once at the interface's own scale and once at the ending's, and two
-    -- copies of the same measurements is how the pads and their hit test
-    -- drifted apart once already.
-    local pad, room, w, x, title_px, bar_h, gap, head, h
-    local function measure()
-        pad = PAD * F.scale
-        room = F.w - F.safe_l - F.safe_r - 2 * pad
-        w = math.min(END.W * F.scale, room)
-        x = F.safe_l + pad + (room - w) / 2
-        title_px = (M.compact and 15 or 20) * F.scale
-        -- Divided by the zoom, because the bar does not wear it: see
-        -- `END.band`, which sizes the bar the same way.
-        bar_h = (M.compact and 18 or 26) * F.scale / (M.podium_zoom or 1)
-        gap = (M.compact and 10 or 14) * F.scale
-        head = title_px + gap + bar_h
-        h = head + gap + roster_h(n)
-    end
-    measure()
-
-    -- What the block has to clear at the top and at the bottom of the window.
-    --
-    -- The band and the word under it hold the top row now, so the block starts
-    -- under them rather than being centered through them. Both are measured at
-    -- the interface's own scale and before the zoom below touches it, because
-    -- the band is drawn at that scale whatever the block is grown to.
-    local ceil = band_bottom() + 20 * F.scale
-    local floor = F.safe_b + 18 * F.scale
-
-    -- The zoom, and everything after this line draws at it. Scaling F.scale
-    -- itself is what grows the block as one drawing: every size below, the
-    -- roster's rows included, is a multiple of it, and the hit boxes are
-    -- published off the same numbers, so the targets grow with the ink.
-    -- Clamped by the room the band has left rather than by the window's
-    -- width, since the measure already gives way to a narrow screen on its
-    -- own. The band itself never wears the zoom: it is not part of this
-    -- drawing.
-    local was_scale = F.scale
-    local slack = F.h - ceil - floor
-    local zoom = math.max(1, math.min(END.ZOOM, slack / h))
-    M.podium_zoom = zoom
-    if zoom > 1 then
-        F.scale = was_scale * zoom
-        measure()
-    end
-
-    -- Centered in what the band has left, and hugging the foot of an upright
-    -- phone: the roster is dragged with a thumb, and a thumb reaches the
-    -- bottom of a tall screen rather than the middle. Never over the band
-    -- either way, which is the one thing above it that is still being read.
-    local y
-    if M.compact and F.h > F.w then
-        y = F.h - F.safe_b - 26 * F.scale - h
-    else
-        y = ceil + (slack - h) / 2
-    end
-    y = math.max(ceil, y)
-
-    -- How long the ending has been up, so the bar arrives rather than appears.
-    -- Latched off the frame clock rather than counted from the seconds the
-    -- server sends, which are whole and would step the movement four times.
-    if M.podium_at == nil then M.podium_at = F.now end
-    local age = math.max(0, (F.now or 0) - (M.podium_at or 0))
-    local grow = math.min(1, age / 0.34)
-    grow = 1 - (1 - grow) * (1 - grow)
-
-    -- The arena stays present under one scrim, and nothing else stands between
-    -- it and the ending.
-    rect(0, 0, F.w, F.h, pal.rgb(0x03050a, 0.8))
-
-    -- Said once, over the bar it is the sentence for.
-    local ty = y + title_px * 0.5
-    if verbed then
-        -- The name keeps its supplied case; the verb is the interface talking.
-        local verb = verbed == true and "takes it" or verbed
-        local word_gap = title_px * 0.42
-        local nw = text_w(said, title_px, MENU_FONT, true)
-        local total = nw + word_gap + text_w(verb, title_px, MENU_FONT)
-        local hx = x + w / 2 - total / 2
-        txt(said, hx, ty, title_px, pal.a(said_col, 1), nil, MENU_FONT, true)
-        txt(verb, hx + nw + word_gap, ty, title_px, pal.a(pal.INK, 0.9), nil,
-            MENU_FONT)
-    else
-        txt(said, x + w / 2, ty, title_px, pal.a(said_col, 1), "center",
-            MENU_FONT)
-    end
-
-    -- The sides, winner first however the zone numbered them.
-    local sides = {}
-    for team in pairs(m.score or {}) do sides[#sides + 1] = team end
-    table.sort(sides, function(a, b)
-        local an = (m.score and m.score[a]) or 0
-        local bn = (m.score and m.score[b]) or 0
-        if an ~= bn then return an > bn end
-        return a < b
-    end)
-    END.band(m, names, x, y + title_px + gap, w, sides, grow)
-
-    -- And the board itself, in the column this block just laid out for it.
-    board.x, board.w = x, w
-    board.y = y + head + gap
-    top_side = winner
-    scores(o.me, o.pilots, o.watchers, o.viewer_name, true, rating_moves(o))
-    top_side = nil
-    F.scale = was_scale
 end
 
 -- The landing: the game's name over the one key the screen exists for.
@@ -4806,7 +3979,7 @@ end
 -- slot is looking at what that step costs. It was the third strip of the
 -- ship page's content and scrolled away with the rows above it.
 local function panel_frame(px, py, pw, ph, title, back, foot_note, back_value,
-                           tray)
+                           tray, named)
     local headh = 44 * F.scale
     -- The same measure the rows under it are inset by, so the head's mark and
     -- the names below it stand on one line rather than two points apart.
@@ -4826,8 +3999,19 @@ local function panel_frame(px, py, pw, ph, title, back, foot_note, back_value,
                 px + pad + 9 * F.scale, ry(hy - 6 * F.scale),
                 px + pad + 9 * F.scale, ry(hy + 6 * F.scale),
                 pal.a(pal.FRIEND, hot and 1 or 0.9))
-    lbl(title or "", px + pad + 18 * F.scale, hy,
-        hot and pal.a(pal.INK, 0.95) or pal.MUTE)
+    -- The head names the panel, in the register that names a group of rows.
+    -- Unless what it names is a person: a call sign is quoted wherever it is
+    -- drawn, in the case its owner gave it, so the one head that carries one
+    -- takes the menu's own voice and that pilot's own color. That is the
+    -- players sheet's card, and it is the only head in the game about
+    -- somebody rather than about a page.
+    if named then
+        txt(title or "", px + pad + 18 * F.scale, hy, TYPE.ROW * F.scale,
+            named.col or pal.a(pal.INK, 0.95), nil, MENU_FONT, true)
+    else
+        lbl(title or "", px + pad + 18 * F.scale, hy,
+            hot and pal.a(pal.INK, 0.95) or pal.MUTE)
+    end
     -- What a control waiting for a key has to say, where it says it: on the
     -- head of the page that asked, so a hand looking at the row is looking at
     -- the sentence about it.
@@ -5413,6 +4597,10 @@ function M.col_walk()
            or r.action == "land_sect" or r.action == "land_pick_ship"
            or r.action == "land_kit_row" or r.action == "land_flair"
            or r.action == "land_kit_reset"
+           -- And the players sheet: a row apiece, and the one key on the card
+           -- a row opens. The way out of either is the head's `menu_back`,
+           -- already above.
+           or r.action == "board_row" or r.action == "board_join"
         then
             out[#out + 1] = r
         end
@@ -5568,26 +4756,14 @@ function M.hud(o)
     -- anything else here, because the whistle is one of the things it
     -- answers. See `M.joined`.
     M.joined = not o.landing
-    -- Whether the match on screen has been settled, and this client is in the
-    -- room it was settled in. The ending is the board with a head over it, so
-    -- on the landing it is the roster arriving over the front page every three
-    -- minutes by another door. Out there a finished match is something the
-    -- band says a word about and the fight goes on being the backdrop it was.
+    -- Whether the match on screen has been settled, and this client is in
+    -- the room it was settled in. What that changes here is the band, which
+    -- gives up its pennants and stands the beaten side down; the account of
+    -- the match itself is the players sheet, raised by the arena at the
+    -- whistle like any other stop. Out on the landing a finished match is
+    -- something the band says a word about and the fight goes on being the
+    -- backdrop it was.
     local ending = M.joined and match_ended(o.match)
-    -- Each whistle gets its own entrance. Once play or a rival search resumes,
-    -- release the old timestamp so the next result does not inherit a fully
-    -- grown podium from the first match of the session.
-    if not ending then
-        M.podium_at = nil
-        M.podium_artifact = nil
-    elseif o.match.artifact ~= nil
-       and M.podium_artifact ~= o.match.artifact then
-        -- Network updates continue when rendering pauses. Keying the entrance
-        -- to the filed result lets a second whistle animate even when no live
-        -- frame was drawn between the two results.
-        M.podium_at = nil
-        M.podium_artifact = o.match.artifact
-    end
     if sim.ship_count() == 0 then return end
     local me = o.me
     -- Before anything draws: every instrument that separates a friend from an
@@ -5626,10 +4802,12 @@ function M.hud(o)
     -- every instrument's label at full brightness, which is the exact fault
     -- the paragraph above is about. It went unnoticed while the only card the
     -- interface raised stood inside a drawer that was always up.
-    local reading = M.details and M.joined
-        and not o.menu_open and not ending
-    F.text_dim = (ending or o.menu_open or o.card or M.room_ask or reading)
-        and 0.34 or 1
+    --
+    -- The board used to be the third case here, drawn in a column of its own
+    -- with its own wash. It is a panel of the menu now, so `o.menu_open`
+    -- covers it and there is nothing separate to dim for. The ending stays,
+    -- because the sheet the whistle raises is that same menu.
+    F.text_dim = (o.menu_open or o.card or M.room_ask) and 0.34 or 1
 
     -- On a touchscreen the bottom of the screen belongs to the thumbs. The
     -- stick sits in the bottom left corner and the pads in the bottom right,
@@ -5644,35 +4822,6 @@ function M.hud(o)
     -- board is its own column now, under the band, so the two no longer stand
     -- in one slot and neither has to put the other away.
     rooms_panel(o.rooms, o.room)
-    -- Where that column starts, before anything in it draws. Under the band,
-    -- under the pennants when the mode has flags, and under the room's note as
-    -- well when there is one, since anything drawn between them is a line the
-    -- list would otherwise be drawn over.
-    local note = (o.banner and o.banner ~= "") and 16 * F.scale or 0
-    set_board(FLAG.stack(o.match) + note)
-    -- The wash the board is read over. Laid down before the board's own panel
-    -- and after nothing else, so the fight behind it goes back and the panel
-    -- in front of it does not. Not under an open menu: that is a panel over
-    -- this one, and dimming for a panel nobody can see is a screen that went
-    -- dark for no reason.
-    if reading then rect(0, 0, F.w, F.h, pal.a(pal.BG, 0.55)) end
-    -- The board itself, at full strength over that wash: it is the thing
-    -- being read, and the dim above is what everything else on the screen is
-    -- wearing while it is up.
-    --
-    -- And not on the landing at all. The board is the room's roster, and out
-    -- there the room is scenery: the band above it reads and does not open.
-    -- See `M.joined` and the press in `match_clock`.
-    if M.joined and not (o.menu_open or ending) then
-        local behind = F.text_dim
-        if reading then F.text_dim = 1 end
-        local top = scores(me, o.pilots, o.watchers, o.viewer_name)
-        -- And under that, the pilot a row was pressed on. It belongs to this
-        -- column and is drawn with it, rather than after the instruments: all
-        -- three are one panel with one wash behind them.
-        inspect(o, top)
-        F.text_dim = behind
-    end
     -- Names hanging off ships, but not under anything being read over the
     -- arena. Glyphs come from the gui and the gui draws over every mesh, so
     -- nothing a panel lays down can cover them: a panel with six pilots'
@@ -5808,23 +4957,40 @@ function M.hud(o)
     -- no connection of its own to ask. The alternative is a second copy of
     -- the same question in the view.
     M.side_names = o.side_names
-    -- And the roster itself, for the column the menu draws beside its page.
-    -- The scoreboard fills this when somebody opens the scoreboard; the menu
-    -- is open right now and is about to read it.
+    -- And the room itself, for the players sheet the menu is about to draw.
+    -- Filled here rather than handed over in the view, because the figures a
+    -- row carries come from the simulation for every seat this client can see
+    -- and from the roster for the rest, and this file is where that read
+    -- lives. Only while the menu is up: nothing else reads it, and sorting a
+    -- room every frame for a panel nobody opened is work for no reader.
     if o.menu_open then
         refresh_players(o.pilots, o.watchers, nil, o.viewer_name)
+        M.sheet = {
+            -- The sides' names, and which of them this zone will say out
+            -- loud. A public side is one anybody may see named; a private one
+            -- is a squad who arranged themselves, and naming it on a row
+            -- would hand the room a roster the zone deliberately withheld.
+            names = o.side_names, teams = o.teams,
+            -- The roster rows, for the card a pressed row opens: what the
+            -- zone vouches for a seat as, and where the ladder has them.
+            pilots = o.pilots, ratings = o.ratings, me = o.me,
+            -- And what the match did to each rating, which is a column only
+            -- at the whistle. A rating is a standing rather than a running
+            -- total, and a number climbing over somebody's head while they
+            -- are trying to fly is the shape the bounty had.
+            ending = ending, moved = ending and rating_moves(o) or nil,
+        }
     end
     -- The band and the room's line under it read at full strength over the
     -- wash as well. They are the instrument the board belongs to rather than
     -- something it covers, and the clock is the one reading a player wants
     -- whatever else is up.
     --
-    -- The ending for the same reason and more so. It washes the whole window
-    -- and then draws the block at full strength on top, and the countdown is
-    -- part of what it is saying rather than something behind it: at a third
-    -- of an alpha the one number on screen that is still moving was the
-    -- faintest thing on it.
-    if reading or ending then F.text_dim = 1 end
+    -- The ending for the same reason and more so. What it says is who took
+    -- the match and how long until the next one, and the countdown is part of
+    -- that rather than something behind it: at a third of an alpha the one
+    -- number on screen that is still moving was the faintest thing on it.
+    if ending then F.text_dim = 1 end
     -- Through the ending as well, which is the whole point of a band: the
     -- clock is one instrument in one place, and a player who has spent three
     -- minutes reading the top of the window does not have to find it
@@ -5851,12 +5017,6 @@ function M.hud(o)
     -- The two big centered lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end
-    -- The ending, while the room counts down to the next one. Same place, same
-    -- reason: it is the thing being read.
-    if ending then
-        F.text_dim = 1
-        podium(o, o.match, o.side_names)
-    end
     -- The name and the way in, over the fight a stranger has just landed in
     -- the stands of. Through the ending as well as through play: a match
     -- ending is not a reason to take the one key on the screen away.
@@ -6891,7 +6051,13 @@ function M.menu(v)
         if s.open then open = s end
     end
     if open and open.stop == "ship" and not v.panel then open = nil end
-    if open and open.stop ~= "ship" and #v.rows == 0 then open = nil end
+    -- The players sheet is drawn from the room this file already holds rather
+    -- than from rows in the view, so it is open the moment its stop is,
+    -- without a frame of empty glass while something answers.
+    if open and open.stop ~= "ship" and open.stop ~= "players"
+       and #v.rows == 0 then
+        open = nil
+    end
     local at = panel_slide(menu_slide, open and 1 or 0)
     if not open then
         menu_h.at, menu_h.from, menu_h.to, menu_h.when = 0, 0, 0, 0
@@ -6968,6 +6134,13 @@ function M.menu(v)
         -- ship over the credits they are bought with, or whichever of the five
         -- is open over the same credits. See `land_panel`.
         local panel = open.stop == "ship" and v.panel or nil
+        -- The players sheet, and the card a pressed row opened over it. The
+        -- card is a panel that stacked, which is what `board` names here: one
+        -- level in the head says players, two levels in it says the pilot,
+        -- and back steps one of those at a time.
+        local board = open.stop == "players"
+        local card = board and M.col_pilot ~= nil
+            and select(2, pages.board_at(M.col_pilot)) or nil
         -- As tall as what it holds, eased between one page's worth and the
         -- next: walking from settings into the controls board slides the glass
         -- to the new page's height rather than swapping two rectangles.
@@ -6987,6 +6160,9 @@ function M.menu(v)
         -- a name is drawn only where the row has the two lines for it.
         local prh = (M.compact and 40 or 44) * F.scale
         local tall = (panel and pages.ship_h(panel, prh))
+            or (card and pages.HEAD_H * F.scale
+                + (pages.board_foot(card) and 5 or 4) * prh + 10 * F.scale)
+            or (board and pages.board_h(prh))
             or (list and pages.list_h(list, prh))
             or pages.page_h(v, prh, noted)
         local px, py, pw, ph =
@@ -7013,6 +6189,16 @@ function M.menu(v)
                                           panel.label or open.label,
                                           "menu_back", v.foot, nil, panel)
             land_panel(px, pw, top, foot, panel, prh)
+        elseif card then
+            local _, col = pages.sheet_side(card)
+            local top, foot = panel_frame(px, py, pw, ph, card.name,
+                                          "menu_back", nil, nil, nil,
+                                          {col = pal.a(col, 0.95)})
+            pages.board_card(px, pw, top, foot, card, prh)
+        elseif board then
+            local top, foot = panel_frame(px, py, pw, ph, open.label,
+                                          "menu_back")
+            pages.board_list(px, pw, top, foot, prh)
         elseif list then
             local top = panel_frame(px, py, pw, ph, open.label, "menu_back")
             land_list(px, pw, top, list, prh)
@@ -7043,6 +6229,371 @@ function M.menu(v)
     end
     F.case = was_case
     F.text_dim = was_dim
+end
+
+-- --- the players sheet ------------------------------------------------------
+--
+-- Everybody in the room, one row each, in the menu's own language: the glass,
+-- the head, rows at the touch floor. It is what the band opens, what the
+-- `players` stop opens, and what the whistle raises by itself, and all three
+-- are the same panel because there is one of it. See decision 147.
+--
+-- The room it draws is `rows`, filled by `refresh_players` while the menu is
+-- up, and `M.sheet`, which carries what a row cannot read off the simulation:
+-- the sides' names, whether the zone will say them, and what the match paid.
+
+-- What a row says about a side, and in what color.
+--
+-- The zone decides whether a side may be named. A public one is anybody's to
+-- see; a private one is a squad who arranged themselves, and printing its
+-- name in a column would hand the room a roster the zone withheld. Your own
+-- side is always yours to know, since you are in it. What is withheld is the
+-- name and never the fact: the color is on their hull already.
+function pages.sheet_side(r)
+    if r.watch then return "watching", pal.MUTE end
+    local col = team_col(r.team)
+    local sheet = M.sheet or {}
+    for _, t in ipairs(sheet.teams or {}) do
+        if t.team == r.team then
+            -- Whether this side would take you, which the zone answers rather
+            -- than the client working it out of two counts and a cap. It is
+            -- the same byte that decides whether a side is offered anywhere
+            -- else, so a full side reads the same way in every place that
+            -- names one.
+            if t.public or r.mine then
+                if t.name ~= "" then return t.name, col, true, t.may_join end
+                return "team " .. t.team, col, false, t.may_join
+            end
+            return "private", col, false, t.may_join
+        end
+    end
+    return "private", col
+end
+
+-- The sheet's columns, measured against what is actually in them.
+--
+-- Each is as wide as the widest thing in it, heading included, every frame.
+-- Fixed offsets do not survive several columns in a panel that is 560 points
+-- on a monitor and 362 on an upright phone: a column sized for the worst case
+-- eats the names in every room where the worst case has not happened.
+--
+-- Assists go first where the glass is too narrow to hold every column, which
+-- is an upright phone. It is the one figure of the four that is about a kill
+-- somebody else finished, and the Team column is what this sheet exists to
+-- carry.
+function pages.sheet_cols(n)
+    local px = TYPE.BODY * F.scale
+    local out = {}
+    local function col(key, head, wide)
+        for i = 1, n do
+            local r = rows[i]
+            local v = r[key]
+            if key == "team" then
+                v = (pages.sheet_side(r))
+            elseif key == "moved" then
+                v = r.moved_at
+            end
+            if v ~= nil then
+                wide = math.max(wide, text_w(tostring(v), px))
+            end
+        end
+        out[#out + 1] = {key = key, head = head,
+                         w = math.max(wide, text_w(head, LBL_PX * F.scale))}
+    end
+    col("team", "TEAM", 0)
+    col("k", "K", 16 * F.scale)
+    col("d", "D", 16 * F.scale)
+    if not M.compact then col("a", "A", 16 * F.scale) end
+    if (M.sheet or {}).moved then col("moved", "RATING", 0) end
+    return out
+end
+
+-- How wide the columns come to, gaps included, so the name knows where it
+-- ends.
+function pages.sheet_run(cols)
+    local gap = 10 * F.scale
+    local run = 0
+    for i, c in ipairs(cols) do
+        run = run + c.w + (i > 1 and gap or 0)
+    end
+    return run, gap
+end
+
+-- One row: the name in its side's color with the seat's mark after it, then
+-- the columns right-aligned off the panel's own edge.
+--
+-- Your own row keeps the wash it wears everywhere in this interface. A row
+-- under a hand lights edge to edge like every other row, and a press on it
+-- opens that pilot's card.
+local function sheet_row(kx, kw, y, h, r, cols, i)
+    local pad = M.ROW_INSET * F.scale
+    local hot = M.col_sel == "board_row" and M.col_sel_value == i
+    LIT.state(kx, y, kw, h, hot, r.self)
+    local _, col = pages.sheet_side(r)
+    if r.watch then col = pal.READ end
+    local mid = y + h / 2
+    local run, gap = pages.sheet_run(cols)
+    -- Where the name has to stop. Cut at the columns rather than drawn
+    -- through them: a call sign is as long as its pilot made it, and the
+    -- figures are the reading this sheet is opened for.
+    local kept = F.clip_r
+    F.clip_r = math.min(kept or math.huge, kx + kw - pad - run - gap)
+    local tx = kx + pad
+    txt(r.name, tx, mid, TYPE.ROW * F.scale,
+        pal.a(col, r.self and 1 or 0.85), nil, MENU_FONT, true)
+    -- The mark rides after the name, which is where it rode on the board this
+    -- replaced: one line, and the column it would line up in is spent on the
+    -- figures.
+    local mark_x = tx + text_w(r.name, TYPE.ROW * F.scale, MENU_FONT, true)
+        + 6 * F.scale
+    if r.ai then
+        bot_mark(mark_x, mid, pal.a(pal.MUTE, 0.85), 11 * F.scale)
+    else
+        pilot_mark(mark_x, mid, pal.a(pal.MUTE, 0.85), 11 * F.scale)
+    end
+    F.clip_r = kept
+    -- The figures, in the face every number in this game is set in.
+    local px = TYPE.BODY * F.scale
+    local x = kx + kw - pad
+    for j = #cols, 1, -1 do
+        local c = cols[j]
+        if c.key == "team" then
+            -- A side's name is quoted, in the case the zone gave it, the way
+            -- a name is quoted everywhere in this interface. What is not a
+            -- name is the interface's own word for the absence of one, and
+            -- those take the interface's own case: a private side, and a
+            -- watcher who is on no side at all.
+            local name, tcol, named = pages.sheet_side(r)
+            txt(name, x, mid, px, pal.a(tcol, 0.9), "right", nil, named)
+        elseif c.key == "moved" then
+            -- What the match paid, and nothing at all for somebody who was
+            -- not in it. A pilot whose rating did not move reads a dim zero,
+            -- because "this match changed nothing for you" is an answer and a
+            -- blank is not.
+            if not r.watch then
+                local by = r.moved
+                local mcol = pal.a(pal.MUTE, 1)
+                if by and by > 0 then mcol = pal.a(pal.PAID, 0.95)
+                elseif by and by < 0 then mcol = pal.a(pal.HURT, 0.9) end
+                txt(r.moved_at or "0", x, mid, px, mcol, "right")
+            end
+        else
+            -- A watcher's figures are zeros in the register a reading that
+            -- means nothing is set in: they are in the room without being in
+            -- the game, and the row says so in its Team column.
+            txt(tostring(r[c.key]), x, mid, px,
+                pal.a(r.watch and pal.MUTE or pal.READ, 1), "right")
+        end
+        x = x - c.w - gap
+    end
+    -- And the press, for a row that has a card behind it. A watcher has no
+    -- seat, so there is nothing to open and no key to offer: their row reads
+    -- rather than presses, which is a row the cursor steps over and a hand
+    -- gets no light from. A press drawn over nothing is worse than no press,
+    -- since the one answer it can give is silence.
+    if r.i ~= nil then hit(kx, y, kw, h, "board_row", i, nil, 1) end
+end
+
+-- How tall the sheet wants to be: a heading and a row per body in the room.
+function pages.board_h(rowh)
+    return pages.HEAD_H * F.scale + 24 * F.scale + #rows * rowh
+        + 10 * F.scale
+end
+
+-- The sheet, laid into the room the frame left it.
+--
+-- Scrolled with `M.page_scroll`, which is what the settings page uses and
+-- what the wheel and a dragging thumb already move: one panel of the menu
+-- scrolls at a time and this is a panel of the menu.
+function pages.board_list(kx, kw, top, bottom, rowh)
+    local pad = M.ROW_INSET * F.scale
+    local n = #rows
+    -- What the match paid each pilot, as a signed figure, worked out before
+    -- the columns are measured because the widest of them is what the column
+    -- is sized to. Written onto the rows rather than looked up twice, since
+    -- the measure and the drawing both want it.
+    local moved = (M.sheet or {}).moved
+    for i = 1, n do
+        local r = rows[i]
+        local by = moved and not r.watch and r.i ~= nil and moved[r.i] or nil
+        r.moved = by
+        r.moved_at = by and ((by > 0 and "+" or "") .. tostring(by))
+            or (moved and not r.watch and "0" or nil)
+    end
+    local cols = pages.sheet_cols(n)
+    local heads = 24 * F.scale
+    local view_h = bottom - top
+    M.page_x, M.page_y, M.page_w, M.page_h = kx, top, kw, view_h
+    local extent = heads + n * rowh
+    local max_scroll = math.max(0, extent - view_h)
+    if M.page_scroll > max_scroll then M.page_scroll = max_scroll end
+    if M.page_scroll < 0 then M.page_scroll = 0 end
+    -- And it follows the cursor, the way every panel in this menu does: a row
+    -- lit under the fold is a row nobody can see themselves pressing.
+    if M.col_sel == "board_row" and page_followed ~= M.col_sel_value then
+        page_followed = M.col_sel_value
+        local at = heads + (M.col_sel_value - 1) * rowh
+        if at < M.page_scroll then
+            M.page_scroll = at
+        elseif at + rowh > M.page_scroll + view_h then
+            M.page_scroll = at + rowh - view_h
+        end
+        M.page_scroll = math.max(0, math.min(M.page_scroll, max_scroll))
+    elseif M.col_sel ~= "board_row" then
+        page_followed = nil
+    end
+    local y = top - M.page_scroll
+    -- The headings, which name the columns and nothing else. They were four
+    -- controls that sorted by what they named; the Team column says the side
+    -- on every row now, so the grouping is a reading rather than the only way
+    -- to tell, and one order everybody learns beats four to find a way back
+    -- from. See `by_column`.
+    if y + heads > top and y < top + view_h then
+        local run, gap = pages.sheet_run(cols)
+        local x = kx + kw - pad
+        for j = #cols, 1, -1 do
+            lbl(cols[j].head, x, y + heads / 2, pal.MUTE, "right")
+            x = x - cols[j].w - gap
+        end
+        local _ = run
+    end
+    y = y + heads
+    -- Whole rows only, which is the rule the ship panel follows and the one
+    -- the interface is written to: the scissor in the renderer cuts against a
+    -- vertical edge, so a row half off the bottom draws through the frame
+    -- rather than being cut by it, and a name sliced across the middle reads
+    -- as a fault. What a row does at the edge is appear whole or not at all,
+    -- and the thumb on the panel's edge is what says there is more.
+    for i = 1, n do
+        if y >= top - 0.5 and y + rowh <= top + view_h + 0.5 then
+            sheet_row(kx, kw, y, rowh, rows[i], cols, i)
+        end
+        y = y + rowh
+    end
+    -- That there is more, as a thumb against the panel's own edge. Only where
+    -- there is: a rail on a panel that fits is an instrument reporting on
+    -- nothing.
+    if max_scroll > 0 then
+        local run = view_h
+        local thumb = math.max(20 * F.scale, run * run / extent)
+        local at = top + (run - thumb) * (M.page_scroll / max_scroll)
+        rect(kx + kw - 3 * F.scale, top, 2 * F.scale, run, pal.a(pal.DIM, 0.2))
+        rect(kx + kw - 3 * F.scale, at, 2 * F.scale, thumb,
+             pal.a(pal.DIM, 0.7))
+    end
+end
+
+-- Which row of the sheet is about this seat, or nil once they have gone. A
+-- pilot who left while their card was open takes the card with them rather
+-- than leaving a panel about somebody who is not there.
+function pages.board_at(seat)
+    for i = 1, #rows do
+        if rows[i].i ~= nil and rows[i].i == seat then return i, rows[i] end
+    end
+    return nil
+end
+
+-- The two lookups the arena needs to turn a press into a pilot and back.
+--
+-- A row's number is where it sits on the screen this frame and a seat is who
+-- it is about, and the two part company the moment somebody joins or dies:
+-- the list re-sorts every frame it is drawn. So a press is answered as a
+-- seat, which outlives the sort, and a cursor is put back on a row by looking
+-- the seat up again.
+--
+-- A watcher has no seat and no card, which is what the nil says.
+function M.board_seat_of(row)
+    local r = row and rows[row]
+    return r and r.i or nil
+end
+
+function M.board_row_of(seat)
+    return (pages.board_at(seat))
+end
+
+-- The card a pressed row opens: one pilot, and the one act the sheet offers.
+--
+-- A panel that stacked, which is what the language already calls this: the
+-- head names them, back steps out onto the sheet, and the rows read what the
+-- zone will vouch for and what they have done this match. The card answers
+-- the question a name over a hull raises and cannot itself answer.
+--
+-- Its foot is the way onto their side. That is where an invitation was always
+-- going to live: picking a person is the whole of the old invite menu, and a
+-- player deciding to join a side is usually already reading about somebody on
+-- it. Gated exactly as a hull change is, so the key says what it will cost by
+-- refusing rather than by warning.
+-- Whether a card about this pilot has a foot: the key onto their side, or the
+-- line saying that side will not take you. Asked before the panel is measured,
+-- because the language sizes a panel to what it holds and a card with nothing
+-- to offer should not keep an empty row where a key would have gone.
+function pages.board_foot(r)
+    if r == nil or r.watch or r.mine or r.self then return false end
+    return true
+end
+
+function pages.board_card(kx, kw, top, bottom, r, rowh)
+    local sheet = M.sheet or {}
+    local p = r.i ~= nil and sheet.pilots and sheet.pilots[r.i] or nil
+    local side, side_col, side_named = pages.sheet_side(r)
+    local out = {}
+    local function line(label, detail, col, named)
+        out[#out + 1] = {label = label, detail = detail, col = col,
+                         named = named}
+    end
+    line("Team", side, side_col, side_named)
+    -- What the zone is willing to say this seat is, which is the honest
+    -- version of the question: the client cannot tell, and the server's label
+    -- is the only answer anybody has. A guest is not an accusation.
+    line("Seat", (p and p.label) or "unknown")
+    -- Where the ladder has them, as the band and the number under it: the band
+    -- moves only when something changed, and the number is what the band is a
+    -- rounding of. A watcher has no rating and a dash is the honest answer.
+    local tier = (p and p.tier) or "unrated"
+    local score = sheet.ratings and r.i ~= nil and sheet.ratings[r.i]
+    line("Rating", score
+        and (tostring(math.floor(score + 0.5)) .. " " .. tier) or tier,
+        (tier == "placing" or not score) and pal.a(pal.MUTE, 1) or nil)
+    -- And the match, on one line rather than three: they are the same three
+    -- numbers the row this card was opened from already carries, and a card
+    -- that spent a row apiece on them would be the sheet said again.
+    line("This match", r.watch and "watching"
+        or (r.k .. " k  " .. r.d .. " d  " .. r.a .. " a"))
+    -- The label through the row every menu row is drawn by, and the reading
+    -- beside it drawn here rather than handed over with it: two of these are
+    -- in a color the row has no way to be told about, and a row that drew its
+    -- own reading and then had a second one laid over it would be the value
+    -- printed twice.
+    local pad = M.ROW_INSET * F.scale
+    local y = top
+    for _, l in ipairs(out) do
+        menu_row(kx + pad, y, kw - 2 * pad, rowh, {label = l.label}, false)
+        txt(l.detail, kx + kw - pad, y + rowh / 2, TYPE.BODY * F.scale,
+            l.col or pal.a(pal.READ, 1), "right",
+            l.named and MENU_FONT or nil, l.named)
+        y = y + rowh
+    end
+    -- The key, at the foot of what it is about.
+    --
+    -- Drawn only where it would do something: somebody else, on a side that
+    -- is not yours and has a seat. On your own side, on yourself and on a
+    -- watcher there is nothing for it to do, and a key that looks pressable
+    -- and is not is worse than no key. A side with nobody spare says so
+    -- instead, in the register an unavailable thing is written in.
+    local _, _, _, may_join = pages.sheet_side(r)
+    if pages.board_foot(r) then
+        local kh = (M.compact and 40 or 44) * F.scale
+        local ky = bottom - kh
+        if may_join == false then
+            txt(side .. " is full", kx + kw / 2, ky + kh / 2,
+                TYPE.BODY * F.scale, pal.a(pal.MUTE, 1), "center", MENU_FONT)
+        else
+            local hot = M.col_sel == "board_join"
+            commit_key(kx + pad, ky, kw - 2 * pad, kh,
+                       TYPE.BODY * F.scale, "JOIN " .. string.upper(side), hot)
+            hit(kx + pad, ky, kw - 2 * pad, kh, "board_join", r.team, nil, 1)
+        end
+    end
 end
 
 -- The settings panel's rows, laid into the panel the stop opened.

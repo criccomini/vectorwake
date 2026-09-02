@@ -1,0 +1,255 @@
+{
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "The sheet"
+    },
+    {
+      "id": "page-2",
+      "name": "By zone"
+    },
+    {
+      "id": "page-3",
+      "name": "The band"
+    }
+  ],
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "The language",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1020,
+      "page": "page-1"
+    },
+    {
+      "file": "ColumnDesktop.dc.html",
+      "title": "The column, with the stop",
+      "x": 0,
+      "y": 1220,
+      "w": 1440,
+      "h": 810,
+      "page": "page-1"
+    },
+    {
+      "file": "ColumnPortrait.dc.html",
+      "title": "The column, watching, phone",
+      "x": 1520,
+      "y": 1220,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "TeamBattle.dc.html",
+      "title": "Team Battle, open",
+      "x": 0,
+      "y": 2220,
+      "w": 1440,
+      "h": 810,
+      "page": "page-1"
+    },
+    {
+      "file": "PilotCard.dc.html",
+      "title": "A pilot's card, from a press on the row",
+      "x": 1720,
+      "y": 2220,
+      "w": 1440,
+      "h": 810,
+      "page": "page-1"
+    },
+    {
+      "file": "TeamBattlePortrait.dc.html",
+      "title": "Team Battle, phone",
+      "x": 0,
+      "y": 3170,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "PilotCardPortrait.dc.html",
+      "title": "A pilot's card, phone",
+      "x": 1400,
+      "y": 3170,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "TeamBattleLandscape.dc.html",
+      "title": "Team Battle, sideways phone",
+      "x": 470,
+      "y": 3170,
+      "w": 844,
+      "h": 390,
+      "page": "page-1"
+    },
+    {
+      "file": "TeamBattleEnd.dc.html",
+      "title": "At the whistle: the Players view, the band says who took it",
+      "x": 0,
+      "y": 4170,
+      "w": 1440,
+      "h": 810,
+      "page": "page-1"
+    },
+    {
+      "file": "TeamBattleEndPortrait.dc.html",
+      "title": "At the whistle, phone",
+      "x": 1520,
+      "y": 4170,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Turf.dc.html",
+      "title": "Turf",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 810,
+      "page": "page-2"
+    },
+    {
+      "file": "War.dc.html",
+      "title": "War",
+      "x": 1720,
+      "y": 0,
+      "w": 1440,
+      "h": 810,
+      "page": "page-2"
+    },
+    {
+      "file": "Duel.dc.html",
+      "title": "Duel",
+      "x": 0,
+      "y": 950,
+      "w": 1440,
+      "h": 810,
+      "page": "page-2"
+    },
+    {
+      "file": "DuelEnd.dc.html",
+      "title": "Duel, at the whistle",
+      "x": 1720,
+      "y": 950,
+      "w": 1440,
+      "h": 810,
+      "page": "page-2"
+    },
+    {
+      "file": "DuelPortrait.dc.html",
+      "title": "Duel, phone",
+      "x": 3440,
+      "y": 950,
+      "w": 390,
+      "h": 844,
+      "page": "page-2"
+    },
+    {
+      "file": "FreeRoam.dc.html",
+      "title": "Free Roam",
+      "x": 0,
+      "y": 1900,
+      "w": 1440,
+      "h": 810,
+      "page": "page-2"
+    },
+    {
+      "file": "Bands.dc.html",
+      "title": "Three bands, every zone",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1080,
+      "page": "page-3"
+    },
+    {
+      "file": "BandMiddle.dc.html",
+      "title": "Middle, Turf",
+      "x": 0,
+      "y": 1300,
+      "w": 1440,
+      "h": 810,
+      "page": "page-3"
+    },
+    {
+      "file": "BandThin.dc.html",
+      "title": "Thin, Turf",
+      "x": 1720,
+      "y": 1300,
+      "w": 1440,
+      "h": 810,
+      "page": "page-3"
+    },
+    {
+      "file": "BandCorner.dc.html",
+      "title": "Corner, Turf",
+      "x": 3440,
+      "y": 1300,
+      "w": 1440,
+      "h": 810,
+      "page": "page-3"
+    },
+    {
+      "file": "BandThinPortrait.dc.html",
+      "title": "Thin, War, phone",
+      "x": 1720,
+      "y": 2250,
+      "w": 390,
+      "h": 844,
+      "page": "page-3"
+    },
+    {
+      "file": "BandCornerPortrait.dc.html",
+      "title": "Corner, War, phone",
+      "x": 3440,
+      "y": 2250,
+      "w": 390,
+      "h": 844,
+      "page": "page-3"
+    },
+    {
+      "file": "BandCornerSheet.dc.html",
+      "title": "Corner band with the sheet up",
+      "x": 3920,
+      "y": 2250,
+      "w": 1440,
+      "h": 810,
+      "page": "page-3"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "note-sheet",
+      "x": -470,
+      "y": 0,
+      "w": 400,
+      "page": "page-1",
+      "text": "The players sheet\n\nRound three, on the sheet, after Chris's notes. The panel is called Players, and so is its stop in the column, whose answer is where you stand: your side, or Watching. The list is flat: your own side first, then everyone else, then the watchers, each run by name Z to A (Chris asked for desc twice; one flag flips it), with the side in the Team column and in the color of the name. A watcher is a row like any other, Watching for a side and zeros for figures; the band that used to divide them is gone. The side line under the head is gone, since the Team column already names every side and the band carries the score. A press on a player (enter, click or tap) opens their card, a panel that stacked, and the card's breathing key is JOIN, named for their side. So a side is joined through one of its players, the way an invitation was sent from the info box.\n\nAt the whistle the same view pops up on its own, as the Players stop opened: no result head, no bar. Escape and a press work as they do in any menu. The band at the top is what says who took it: both sides stay on it, the winner at full strength and the loser dimmed, over the clock counting to the next match.\n\nWhat this costs: a side with nobody on it has no row to press, so it cannot be joined from here; in Free Roam, founding a side needs a door of its own."
+    },
+    {
+      "id": "note-zones",
+      "x": -470,
+      "y": 0,
+      "w": 400,
+      "page": "page-2",
+      "text": "By zone\n\nOne sheet, five zones. The Team column says the side; the band above says the score, with each side's stands or flags under it in Turf and War. The duel's two players are the two rows, with no Team column, and a Rounds band under them lists who took each and how long it ran. Free Roam is one list of thirty one, your pact first, where the Team column does the work eight colors cannot, scrolling under the pinned head."
+    },
+    {
+      "id": "note-band",
+      "x": -470,
+      "y": 0,
+      "w": 400,
+      "page": "page-3",
+      "text": "The band\n\nThe sheet hangs off an instrument, and the instrument can be one of three: the shipped 26-point band at top center, a 16-point line in the same place, or a stack in the top left corner. The big sheet draws all three for every zone and at the whistle, where the band is what says who took it; the boards under it put each in a Turf room on a monitor and a War room on a phone, with the corner band once with the sheet up.\n\nMiddle keeps the first glance. Thin spends less of the top edge and makes the clock small. Corner clears the top edge entirely and sits where the room's chips come and go."
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-1"
+  }
+}

@@ -233,7 +233,6 @@ local function down(t) return h_now - t.y end
 
 -- --- a side is a name over a number ----------------------------------------
 
-ui.details = false
 frame()
 
 local pylon, caisson = drawn("PYLON"), drawn("CAISSON")
@@ -359,7 +358,7 @@ local function row_shares_a_center(where, w, h)
     -- Both ends of the row are instruments and the band grows outward from
     -- the middle, so it is aligned with neither for longer than it stays off
     -- them.
-    local press, corner = box("details"), box("map")
+    local press, corner = box("players_open"), box("map")
     if press then
         check("and the band keeps out of the chip on " .. where,
               press.x > key.x + key.w,
@@ -421,7 +420,7 @@ local function dial_hangs_under_its_row(where, w, h)
     -- And the tile readout hangs off the dial's own left edge, so the strip is
     -- as wide as the instrument under it and no wider. That is what keeps the
     -- clock band clear of both: it stops at one measurement rather than two.
-    local pos, press = drawn("POS"), box("details")
+    local pos, press = drawn("POS"), box("players_open")
     if pos then
         check("the readout starts where the dial does on " .. where,
               math.abs(pos.x - corner.x) < 0.5,
@@ -529,10 +528,10 @@ do
     -- the row it hangs under has an edge and a height that were published
     -- rather than worked out here.
     frame({rooms = ROOMS, room = 1})
-    local before, pos_before = box("details"), drawn("POS")
+    local before, pos_before = box("players_open"), drawn("POS")
     ui.map = true
     frame({rooms = ROOMS, room = 1})
-    local corner, key, press = box("map"), box("rooms"), box("details")
+    local corner, key, press = box("map"), box("rooms"), box("players_open")
     check("the map stands in the dial's corner", corner ~= nil)
     -- The strip over it belongs to the corner rather than to whichever
     -- instrument is in it, and it is measured against the dial at rest. A
@@ -582,7 +581,7 @@ end
 -- --- the band is the control -----------------------------------------------
 
 frame()
-local band = box("details")
+local band = box("players_open")
 check("the band publishes the press that opens the roster", band ~= nil)
 if band and clock then
     check("the press covers the band and no more of the arena",
@@ -590,7 +589,7 @@ if band and clock then
           string.format("%.0f wide at %.0f", band.w, band.y))
     check("a press on the clock reaches it",
           ui.pick(W / 2, band.y + band.h / 2) ~= nil
-              and ui.pick(W / 2, band.y + band.h / 2).action == "details",
+              and ui.pick(W / 2, band.y + band.h / 2).action == "players_open",
           "the clock is not the control")
     -- The field of play is the trigger's. A box over the arena eats the shot
     -- that lands in it, so the band's own is the only one up here.
@@ -604,7 +603,7 @@ end
 -- this asked while there was always something standing in that corner.
 local ways = 0
 for _, r in ipairs(ui.hits) do
-    if r.action == "details" then ways = ways + 1 end
+    if r.action == "players_open" then ways = ways + 1 end
 end
 check("nothing else opens the roster", ways == 1,
       ways .. " boxes open it")
@@ -623,51 +622,50 @@ end
 check("and the corner row is empty in an ordinary match",
       #standing == 0, table.concat(standing, " | "))
 
--- --- the board opens under it ----------------------------------------------
+-- --- at the whistle -------------------------------------------------------
+--
+-- The band is what says who took the match. It used to give both sides up
+-- here and hand the result to a block of its own a few lines down the window;
+-- the block is gone with decision 147, so the one instrument that has carried
+-- the score for three minutes carries the result as well, in the same pixels.
 
-ui.details = true
-frame()
-local heading = drawn("PILOTS")
-local panel = box("scores")
-check("the roster opens", heading ~= nil and panel ~= nil,
+frame({match = {playing = false, left = 18, score = {[0] = 15, [1] = 19}}})
+check("the whistle keeps both sides on the band",
+      drawn("PYLON") ~= nil and drawn("CAISSON") ~= nil,
       table.concat(words(), " | "))
-if heading and panel and band then
-    check("under the band rather than under the corner keys",
-          panel.y > band.y + band.h,
-          string.format("board at %.0f, band ends %.0f",
-                        panel.y, band.y + band.h))
-    check("and centered on the window the band is centered on",
-          math.abs((panel.x + panel.w / 2) - W / 2) < 2,
-          string.format("%.0f of %d", panel.x + panel.w / 2, W / 2))
+check("and says what the clock is counting to",
+      drawn("NEXT MATCH IN") ~= nil, table.concat(words(), " | "))
+do
+    -- Who won, said by weight rather than by a word: the winner keeps its ink
+    -- and the beaten side stands down. Read off the score rather than the
+    -- name, since a name is dropped where the row runs out of room and a
+    -- score never is.
+    local lost, won = drawn("15"), drawn("19")
+    local la = lost and lost.col and lost.col[4]
+    local wa = won and won.col and won.col[4]
+    check("the side that took it keeps its ink",
+          la ~= nil and wa ~= nil and wa > la * 1.5,
+          la and wa and string.format("%.2f won, %.2f lost", wa, la)
+          or "a score is missing")
+end
+-- A draw stands neither side down, which is what a draw is.
+frame({match = {playing = false, left = 18, score = {[0] = 17, [1] = 17}}})
+do
+    local both = 0
+    for i = 1, state.n do
+        if state.text[i].s == "17" then both = both + 1 end
+    end
+    check("and a draw stands neither of them down", both == 2,
+          both .. " scores drawn")
 end
 
--- The board is what is being read while it is up, so the fight behind it
--- stands back: one wash over the whole window, the way the menu does it.
-local washed = nil
-for _, r in ipairs(rects) do
-    if r.x == 0 and r.y == 0 and r.w == W and r.h == H then washed = r end
-end
-check("the fight behind it is dimmed", washed ~= nil,
-      "no wash over the window")
-
-ui.details = false
-frame()
-local still = nil
-for _, r in ipairs(rects) do
-    if r.x == 0 and r.y == 0 and r.w == W and r.h == H then still = r end
-end
-check("and undimmed once it is shut", still == nil,
-      "the wash outlived the board")
-
--- A phone gives the board the width between its margins rather than a column
--- down the middle of it with a gutter either side.
-ui.details = true
-frame({w = 390, h = 844})
-local phone_panel = box("scores")
-check("a phone spends the whole width on the board",
-      phone_panel ~= nil and phone_panel.w > 390 * 0.8,
-      phone_panel and string.format("%.0f of 390", phone_panel.w) or "no board")
-ui.details = false
+-- And nothing it opens while the sheet the whistle raised is up: what the
+-- band opens is a stop of that menu, and a control that opens what is already
+-- open is a press with nothing answering it.
+frame({match = {playing = false, left = 18, score = {[0] = 15, [1] = 19}},
+       menu_open = true})
+check("and offers no press while the menu it opens is standing",
+      box("players_open") == nil)
 
 -- --- what the room says ----------------------------------------------------
 --
@@ -770,20 +768,6 @@ do
               down(said) - said.px / 2 >= penn.bottom,
               string.format("the line starts %.1f, the strip ends %.1f",
                             down(said) - said.px / 2, penn.bottom))
-    end
-
-    frame({flags = FLAGS})
-    local shut = strip()
-    ui.details = true
-    frame({flags = FLAGS})
-    local column = box("scores")
-    ui.details = false
-    check("the board opens with flags out", column ~= nil, "no board")
-    if column and shut then
-        check("and under the strip, not over it",
-              column.y >= shut.bottom,
-              string.format("board at %.1f, the strip ends %.1f",
-                            column.y, shut.bottom))
     end
 
     -- Nothing moves in a mode without them. The stack is the same column it

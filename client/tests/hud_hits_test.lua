@@ -115,7 +115,6 @@ package.loaded["arena.world"] = {
 }
 
 local ui = require("arena.ui")
-local pal = require("arena.palette")
 
 -- --- the harness -----------------------------------------------------------
 
@@ -304,7 +303,7 @@ local counted_room = {pilots = {
        side_names = {[0] = "Pylon", [1] = "Caisson"}}
 frame(counted_room)
 do
-    local band = box("details")
+    local band = box("players_open")
     check("the band publishes the press that opens the roster", band ~= nil)
     -- One box, and it is the band's. This used to ask whether the band began
     -- to the right of the key in the corner, which said what it meant while
@@ -314,7 +313,7 @@ do
     -- the panel.
     local ways = 0
     for _, r in ipairs(ui.hits) do
-        if r.action == "details" then ways = ways + 1 end
+        if r.action == "players_open" then ways = ways + 1 end
     end
     check("nothing offers it a second time", ways == 1,
           ways .. " boxes open the roster")
@@ -349,7 +348,7 @@ do
               string.format("%.0f..%.0f, top %.0f", band.x, band.x + band.w,
                             band.y))
         check("a press on the clock opens the roster",
-              press(W / 2, band.y + band.h / 2) == "details",
+              press(W / 2, band.y + band.h / 2) == "players_open",
               tostring(press(W / 2, band.y + band.h / 2)))
         -- The band is the only thing on that line, and it is no wider than
         -- what it draws: every published box eats the press that lands in it,
@@ -368,22 +367,6 @@ ui.debug = true
 frame({menu_open = true})
 check("nor is the open readout under the menu", box("debug") == nil)
 ui.debug = false
-
--- --- the scoreboard is where you ask ---------------------------------------
-
-ui.details = true
-frame()
-check("a scoreboard row asks about its pilot", box("pilot", 3) ~= nil)
-local row = box("pilot", 3)
--- The ordering rule, asked the way a hand asks it. The panel publishes its own
--- box to take the wheel; a row published after it would be unreachable.
-check("a row's click reaches the pilot rather than the list",
-      row ~= nil and press(row.x + 4, row.y + 4) == "pilot",
-      "landed on " .. tostring(row and press(row.x + 4, row.y + 4)))
-check("every row is tested before the panel that holds them",
-      rank("pilot") ~= nil and rank("scores") ~= nil
-      and rank("pilot") < rank("scores"))
-ui.details = false
 
 -- --- the rooms list, and the question it raises ----------------------------
 --
@@ -422,197 +405,6 @@ frame({rooms = ROOMS, room = 1})
 check("a question about a reclaimed room clears itself", ui.room_ask == nil)
 check("and the list underneath comes back", box("rooms_list") ~= nil)
 ui.rooms_open = false
-
--- --- the roster is a list of names, ordered like one -----------------------
---
--- Your own side first, then everybody else as one group, and inside each of
--- them alphabetical without case deciding anything: a pilot who capitalises
--- their call sign does not get the top of the room for it.
-
-ui.details = true
-ui.sort = "name"
-room.teams = {[0] = 1, 1, 9, 9}
-frame({pilots = {[0] = {name = "zulu", label = "human"},
-                 [1] = {name = "Alpha", label = "human"},
-                 [2] = {name = "bravo", label = "human"},
-                 [3] = {name = "Charlie", label = "human"}}})
--- Read out of the scoreboard's own column rather than off the whole screen:
--- the same names are drawn again over the hulls they belong to. The column is
--- asked where it is rather than assumed, since it moved out from under the
--- corner keys and now stands under the band that opens it.
-local function in_board(t)
-    local col = box("scores")
-    return col ~= nil and t.x >= col.x and t.x <= col.x + col.w
-end
-local order = {}
-for k = 1, package.loaded["arena.state"].n do
-    local t = package.loaded["arena.state"].text[k]
-    for _, nm in ipairs({"zulu", "Alpha", "bravo", "Charlie"}) do
-        if t.s == nm and in_board(t) then order[#order + 1] = nm end
-    end
-end
-check("your side comes first, then the rest, each alphabetical",
-      table.concat(order, ",") == "Alpha,zulu,bravo,Charlie",
-      table.concat(order, ","))
-ui.details = false
-
--- --- the keyboard selection -------------------------------------------------
---
--- Page Down starts at the top when nothing is selected, Page Up starts at the
--- bottom, and both open Players if it was shut. A watcher remains in the list
--- but is not a selectable pilot because there is no hull behind their row.
-
-local nav_pilots = {
-    [0] = {name = "zulu", label = "human"},
-    [1] = {name = "Alpha", label = "human"},
-    [2] = {name = "bravo", label = "human"},
-    [3] = {name = "Charlie", label = "human"},
-}
-local nav_watchers = {{name = "spectator", label = "human"}}
-room.teams = {[0] = 1, 1, 1, 1}
-ui.inspect = nil
-ui.scroll = 0
-local picked = ui.player_step(1, nav_pilots, nav_watchers, 1, "spectator")
-check("Page Down opens Players", ui.details)
-check("and selects its first pilot", picked == 1, tostring(picked))
-picked = ui.player_step(1, nav_pilots, nav_watchers, 1, "spectator")
-check("another Page Down moves one pilot down", picked == 2, tostring(picked))
-picked = ui.player_step(-1, nav_pilots, nav_watchers, 1, "spectator")
-check("Page Up moves one pilot up", picked == 1, tostring(picked))
-
-ui.details = false
-ui.inspect = nil
-picked = ui.player_step(-1, nav_pilots, nav_watchers, 1, "spectator")
-check("Page Up from a shut list starts at the last pilot", picked == 0,
-      tostring(picked))
-check("and does not select the watcher below them", picked ~= nil)
-
--- Spectating changes the camera's `me` to its current subject. The roster's
--- own-row mark follows the connection's call sign instead, so the spectator's
--- row stays cyan while the room feed cuts between pilots.
-ui.inspect = nil
-ui.details = true
-frame({watch = {subject = 2}, viewer_name = "spectator",
-       pilots = nav_pilots, watchers = nav_watchers})
-local watcher_col = nil
-for i = 1, package.loaded["arena.state"].n do
-    local t = package.loaded["arena.state"].text[i]
-    if t.s == "spectator" then watcher_col = t.col break end
-end
-check("a spectator's own roster row stays marked",
-      watcher_col ~= nil and math.abs(watcher_col[1] - pal.FRIEND[1]) < 0.001
-      and math.abs(watcher_col[2] - pal.FRIEND[2]) < 0.001
-      and math.abs(watcher_col[3] - pal.FRIEND[3]) < 0.001)
-
--- A distant teammate is present in the roster and absent from the filtered
--- combat snapshot. Their card still has to read as a teammate's rather than
--- vanishing, because the roster's team byte is the stable fact and the
--- snapshot is a view.
-room.active[1] = false
-local distant_pilots = {
-    [0] = {name = "you", label = "human", team = 1},
-    [1] = {name = "distant", label = "bot", ai = true, team = 1},
-    [2] = {name = "enemy", label = "bot", ai = true, team = 9},
-    [3] = {name = "guest", label = "unknown", team = 9},
-}
-ui.details = true
-ui.inspect = 1
-frame({pilots = distant_pilots})
-check("a distant teammate still has a card", ui.inspect == 1)
-room.active[1] = nil
-
--- `ship_count` is the highest slot the room has ever used, not the number of
--- pilots still flying. Departures at the top leave inactive holes until the
--- slots are reused. Those holes have no roster entries and are not mystery
--- pilots named after their old seat numbers.
-room.count = 6
-room.active[4], room.active[5] = false, false
-room.alive[4], room.alive[5] = false, false
-ui.details = true
-ui.inspect = 4
-frame()
-local stale_row = false
-for i = 1, package.loaded["arena.state"].n do
-    local s = package.loaded["arena.state"].text[i].s
-    if s == "ship 4" or s == "ship 5" then stale_row = true break end
-end
-check("inactive high-water slots are absent from Players", not stale_row)
-check("a pilot card closes when its inactive slot leaves the roster", ui.inspect == nil)
-room.count = 4
-room.active[4], room.active[5] = nil, nil
-room.alive[4], room.alive[5] = nil, nil
-
-ui.inspect = nil
-ui.details = false
-ui.inspect = nil
-ui.details = false
-
--- --- and it carries four numbers in 248 points ------------------------------
---
--- Kills, deaths, points and bounty, right-aligned off the panel's edge, with a
--- name and a bot mark to the left of them. Points is the wide one: five digits
--- after a long session, where the rest are two or three. Fixed offsets fitted
--- three columns and could not fit five, so the widths are measured off the
--- numbers in the room, and this is the question a fixed offset got wrong.
---
--- Asked with the widest row a room can produce. Everything on it is either
--- left- or right-pivoted text, so the spans are exact, and none of them may
--- touch: a scoreboard whose columns collide reads as one long number.
-
-ui.details = true
-ui.sort = "name"
-room.teams = {[0] = 1, 1, 1, 1}
-local kills, deaths, assists =
-    sim.ship_kills, sim.ship_deaths, sim.ship_assists
-sim.ship_kills = function(i) return i == 1 and 137 or 1 end
-sim.ship_deaths = function(i) return i == 1 and 118 or 1 end
-sim.ship_assists = function(i) return i == 1 and 209 or 1 end
-frame({pilots = {[0] = {name = "aaa", label = "human"},
-                 [1] = {name = "Wintermute-99", label = "bot", ai = true},
-                 [2] = {name = "ccc", label = "human"},
-                 [3] = {name = "ddd", label = "human"}}})
-do
-    local st = package.loaded["arena.state"]
-    -- The widest row, found by its assists, and then everything sharing its
-    -- baseline inside the panel. Bottom-up, so one y is one row.
-    local row_y
-    local col = box("scores")
-    local function in_col(t)
-        return col ~= nil and t.x >= col.x and t.x <= col.x + col.w
-    end
-    for k = 1, st.n do
-        local t = st.text[k]
-        if t.s == "209" and in_col(t) then row_y = t.y end
-    end
-    local span = {}
-    for k = 1, st.n do
-        local t = st.text[k]
-        if t.y == row_y and in_col(t) then
-            local wide = #t.s * t.px * (1233 / 2048)
-            local x0 = t.pivot == "right" and (t.x - wide) or t.x
-            span[#span + 1] = {s = t.s, x0 = x0, x1 = x0 + wide}
-        end
-    end
-    table.sort(span, function(a, b) return a.x0 < b.x0 end)
-    check("the widest row draws a name and three numbers", #span == 4,
-          "drew " .. #span)
-    for k = 2, #span do
-        check(string.format("%s clears %s", span[k].s, span[k - 1].s),
-              span[k].x0 >= span[k - 1].x1,
-              string.format("%.1f into %.1f", span[k].x0, span[k - 1].x1))
-    end
-    -- The bot mark has a column of its own between the name and the kills, so
-    -- the marks line up down the list rather than trailing each name. It is
-    -- drawn rather than written, so what is measurable here is the gap the
-    -- name gives up for it: MARK_K plus the gap either side.
-    if #span == 4 then
-        check("the name leaves the mark its column",
-              span[2].x0 - span[1].x1 >= 11 + 7,
-              string.format("%.1f of gap", span[2].x0 - span[1].x1))
-    end
-end
-sim.ship_kills, sim.ship_deaths, sim.ship_assists = kills, deaths, assists
-ui.details = false
 
 -- --- the feed is bounded ---------------------------------------------------
 
@@ -656,154 +448,22 @@ for _, t in ipairs(said_parts) do said_line = said_line .. t.s end
 check("a feed line quotes the names and does not shout its own words",
       said_line == "Probe 7 killed vX-9 (+12)", tostring(said_line))
 
--- --- the info box ----------------------------------------------------------
-
--- It belongs to the scoreboard, which is the only thing that opens it.
-ui.details = true
-ui.inspect = 2
-frame()
-check("the info box publishes its close box", box("uninspect") ~= nil)
-
--- A pilot who left. The box goes with them rather than describing a seat that
--- is no longer in the room.
-ui.inspect = 9
-frame()
-check("an info box for a departed pilot closes itself", ui.inspect == nil)
-
--- And it goes with the list it came from, rather than standing alone with
--- nothing on screen saying who it is about or how to get another.
-ui.inspect = 2
-ui.details = false
-frame()
-check("shutting the scoreboard shuts the info box", ui.inspect == nil)
-check("and takes its close box with it", box("uninspect") == nil)
-
--- The rating, under the band it is a rounding of. The band alone cannot say
--- whether somebody is at the top of Lead or the bottom of it, and the number
--- is already on the wire.
-local function panel_rows(o)
-    local st = package.loaded["arena.state"]
-    ui.details = true
-    ui.inspect = 2
-    frame(o)
-    local seen = {}
-    for i = 1, st.n do
-        if st.text and st.text[i] then seen[#seen + 1] = st.text[i].s end
-    end
-    return seen
-end
--- The value is whatever the panel drew immediately after the label, which is
--- how every other row in this box is laid out. Looked up by adjacency rather
--- than by searching the whole frame: the scoreboard above it is full of bare
--- numbers, and a test that scanned for one would pass on somebody else's.
-local function row_value(rows, label)
-    for i, s in ipairs(rows) do
-        if s == label then return rows[i + 1] end
-    end
-    return nil
-end
-local rows = panel_rows({ratings = {[2] = 1244.4}})
-check("the info box carries a rating row", row_value(rows, "RATING") ~= nil,
-      table.concat(rows, "|"))
-check("and prints it rounded", row_value(rows, "RATING") == "1244",
-      tostring(row_value(rows, "RATING")))
-
--- A seat with no rating is a watcher, and a dash is the honest answer rather
--- than a zero, which would read as the worst pilot in the room.
-rows = panel_rows({ratings = {}})
-check("an unrated seat reads as a dash rather than a zero",
-      row_value(rows, "RATING") == "--", tostring(row_value(rows, "RATING")))
-
--- --- whose side a pilot is on ----------------------------------------------
-
--- The zone decides what may be said. A side it marks public is one anybody may
--- read; a private one is a squad who arranged themselves, and naming it here
--- would hand the room a roster the zone deliberately did not send.
+-- --- the readouts that are words ------------------------------------------
 --
--- Read off the drawn text, because that is what a player sees and the point of
--- the rule is what reaches them. Ship 0 is us on team 1; ship 3 is on team 9.
+-- Read off the drawn text, because that is what a player sees and the point
+-- of every check below is what reaches them. Case is typography rather than
+-- content: the HUD sets all of this in capitals.
+
 local function drawn()
     local st = package.loaded["arena.state"]
     local out = {}
     for k = 1, st.n do out[#out + 1] = string.upper(st.text[k].s) end
     return table.concat(out, "\n")
 end
--- Case is typography, not content: what these ask is which words reach a
--- player, and the interface sets every one of them in capitals.
+
 local function says(word)
     return drawn():find(string.upper(word), 1, true) ~= nil
 end
-
-room.teams = {[0] = 1, 1, 1, 9}
-ui.details = true
-ui.inspect = 3
-
-frame({teams = {{team = 1, name = "blue", public = true},
-                {team = 9, name = "gold", public = true}}})
-check("a public side is named", says("gold"), "no side in: " .. drawn())
-
-frame({teams = {{team = 1, name = "blue", public = true},
-                {team = 9, name = "gold", public = false}}})
-check("a private side is not named", not says("gold"))
-check("and the row is dropped rather than blanked", not says("SIDE"))
-
--- Your own side is yours to know however it is marked, since you are in it.
-room.teams = {[0] = 9, 1, 1, 9}
-frame({teams = {{team = 9, name = "gold", public = false}}})
-check("your own side is named even when it is private", says("gold"))
-
--- A zone that has sent no team list at all says nothing. Falling back to the
--- raw team byte would be the same leak by a duller instrument.
-frame({teams = {}})
-check("no team list means no side row", not says("SIDE"))
-
-room.teams = {[0] = 1, 1, 1, 1}
-
--- --- the tier a pilot wears ------------------------------------------------
---
--- The band is the only thing a player is ever told about a rating, so if it
--- does not reach this panel then the whole ladder is a number two servers
--- pass between themselves. It travels on the roster and is recomputed on
--- every kill, and for a long time it arrived and was drawn nowhere.
---
--- Read off the drawn text for the same reason the team rows are: what is
--- being asked is what reaches a player.
-
--- A whole drawn string rather than a substring of all of them. "ACE" sits
--- inside "SPACE", so the obvious spelling of this test passes on text that
--- has nothing to do with the ladder.
-local function drew(word)
-    local st = package.loaded["arena.state"]
-    for k = 1, st.n do
-        if st.text[k].s:upper() == word:upper() then return true end
-    end
-    return false
-end
-
-ui.inspect = 1
-
-frame({pilots = {[0] = {name = "you", label = "human"},
-                 [1] = {name = "someone", label = "human", tier = "Ace"}}})
-check("the tier reaches the panel", drew("Ace"), drawn())
-check("under a label saying what it is", drew("TIER"))
-
--- Provisional is the absence of an answer rather than a low one. A newcomer
--- who read as the bottom band would be told something untrue about
--- themselves on their first evening.
-frame({pilots = {[0] = {name = "you", label = "human"},
-                 [1] = {name = "someone", label = "human", tier = "placing"}}})
-check("a pilot still placing says so", drew("placing"), drawn())
-check("and is not given the bottom band instead", not drew("Newb"))
-
--- A roster that never carried one at all. The row is still drawn, because a
--- panel with a hole where a row belongs reads as a bug rather than as
--- silence, and "unrated" is the honest word for it.
-frame({pilots = {[0] = {name = "you", label = "human"},
-                 [1] = {name = "someone", label = "human"}}})
-check("a pilot with no tier at all still gets the row", drew("unrated"), drawn())
-
-ui.inspect = nil
-ui.details = false
 
 -- --- the debug readout -----------------------------------------------------
 
@@ -818,7 +478,6 @@ check("the debug readout labels each snapshot path without overlap",
 check("missed input deadlines are not labeled as packet loss",
       says("INPUT MISS") and says("0 holes"), drawn())
 ui.debug = false
-ui.inspect = nil
 
 -- --- the safe zone says so, and says what it is about to cost ------------
 --
@@ -883,8 +542,6 @@ check("no answer yet is no chip", not says("ROOM"), drawn())
 -- not grow one.
 
 do
-    ui.details = false
-    ui.inspect = nil
     frame()
     check("a room with no clock draws none",
           not says("1:47") and not says("NEXT MATCH IN"))
