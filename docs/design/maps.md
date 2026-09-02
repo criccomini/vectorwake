@@ -597,8 +597,13 @@ map that measured correctly and read as rubble. A room is cut on opposite
 walls at the same place, so it is something to fly straight through rather
 than a chicane. A stack of lines is centered and the same above the middle as
 below. A diagonal is one tile per step, never two, and crossed diagonals meet
-on exactly one tile. A hall's four ways in are the same width and each sits
-in the middle of the wall it goes through.
+on exactly one tile. Where they cross, the X draws its own middle: the waist
+widens to the four tiles the rows either side of it already hold, and the
+wedge above and below each close with a pair of slopes meeting at a point.
+Left undrawn, all four wedges are narrower than a hull, so the sweep that
+walls in unreachable ground plugged them with square wall and every X in the
+arena ran its arms into flat ledges. A hall's four ways in are the same width
+and each sits in the middle of the wall it goes through.
 
 The arithmetic under that is parity. A run centers exactly in a span only
 when the two are both odd or both even, so a gap's width is moved to its

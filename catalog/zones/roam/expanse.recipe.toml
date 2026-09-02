@@ -16,12 +16,21 @@
 #
 #   1024 by 1024 tiles          16384 by 16384 px
 #   one region a hull can fly   nothing stranded
-#   4.37% solid                 the research's figure for a 1998 zone is 3%
+#   2.64% solid                 the research's figure for a 1998 zone is 3%
 #   16 starts, 8 per side       one wormhole
 #
 # Four seeds were drawn and this is the one whose wall percentage sits closest
 # to the measured figure while leaving the most ground a hull can reach.
+#
+# That reading is stale, and knowingly so. `m_junction` now lays the middle of
+# an X rather than leaving it to the sweep that walls in what a hull cannot
+# reach, and a wedge that is solid during placement is ground the next
+# structure cannot stand on, so the whole draw moved: 529 structures against
+# 522, 763 doors against 600, and 2.64% solid against 2.72%. Redrawn on the
+# same seed, which keeps the file explainable, and not re-picked. On the
+# criterion above seed 28 now reads 2.96% and seed 47 3.07%, so a re-pick is
+# owed the next time this map is looked at rather than merely regenerated.
 
 tool = "mapgen"
 seed = 61
-hash = "cd43df5e"
+hash = "96299be0"

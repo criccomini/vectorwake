@@ -8246,3 +8246,53 @@ nothing rather than printing a number at a player.
 against the gate that produces it, and `client/tests/no_team_test.lua`
 pins the parse, the read-once, and the silence on a byte this build does not
 know.
+
+## 151. An X draws its own middle
+
+**Status:** accepted.
+
+**What:** `m_chevron` in `sim/tools/mapgen.c` lays the junction where its two
+arms cross, instead of leaving the tiles around the crossing to the sweep that
+walls in whatever a hull cannot reach. The waist takes the two tiles that make
+it as wide as the rows either side of it, and the wedge above and the wedge
+below each close with a pair of slopes that meet at a point. `expanse.vwmap`,
+the Free Roam map, is redrawn at seed 61 and its recipe carries the new hash.
+
+**Why:** because an X was not reading as one. Each arm is a band two tiles
+across stepping one tile a row, so the two land on the same two tiles on the
+row they cross and stand side by side on the rows either side. The shape
+pinched from four tiles to two exactly where it should have been widest, and
+the four wedges around that pinch came out one and two tiles across. A hull is
+three, so a pilot could reach none of them, and `fill_dead` plugged all four
+with square wall. What that drew was four flat ledges on the arms of every X
+in the arena, and Chris found them by flying at one and looking.
+
+The renderer had a fault in the same place and it is not this one. A face is
+drawn once, by the first tile of its run, and `runs` in `client/arena/world.lua`
+picked that tile with the set that also answers whether a face is covered.
+Slopes belong in that answer and not in this one, so each open side of a knot
+left its line to a slope, and a slope draws a diagonal face rather than a
+square one. The knot came out unlit: 164 faces on the shipped map. Lighting
+them was right and it is what made the ledges plain to see, which is the whole
+reason this decision exists.
+
+**The waist keeps a tile of flat on each side, and that is the shape.** The
+wedge either side of the waist points along the row, so closing it to a point
+wants a face above the point and another below it, and a tile carries one
+face. Sixteen pixels of flat at the waist of an X is what an X is at this
+size, and pretending otherwise would mean drawing a face where the collision
+has none.
+
+**The cost:** the whole draw moved. A wedge that is solid while structures are
+being placed is ground the next one cannot stand on, so seed 61 now yields 529
+structures against 522, 763 doors against 600, and 2.64% solid against 2.72%.
+The seed was kept rather than re-picked, which keeps the file explainable by
+the one command in its recipe. The pick itself is stale: on the criterion the
+recipe states, seed 28 now reads 2.96% and seed 47 3.07% against the measured
+3%, and that is written down beside the seed so the next person to open this
+map re-picks rather than regenerates.
+
+`junction_selftest` in `mapgen --selftest` reads the junction's tiles off a
+lone X, and `every open side of a crossing's knot is lit` in
+`client/tests/terrain_style_test.lua` builds the shipped crossing from its own
+tiles and names each face that goes dark.

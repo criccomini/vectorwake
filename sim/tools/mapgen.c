@@ -283,6 +283,49 @@ static void m_slope_step(int x, int y, int lean, uint8_t wall) {
 #define LEAN_DOWN 0 /* '\', x and y rising together */
 #define LEAN_UP 1   /* '/', one rising as the other falls */
 
+/* The middle of an X, laid rather than left to the sweep that walls in
+ * whatever a hull cannot reach.
+ *
+ * Two bands two tiles across, each stepping one tile a row, land on the same
+ * two tiles on the row they cross and stand side by side on the rows either
+ * side of it. So the shape pinches from four tiles to two exactly where it
+ * ought to be widest, and the four wedges around that pinch come out one and
+ * two tiles across. A hull is three, so not one of them is anywhere to go,
+ * and `fill_dead` below plugged all four with square wall. What that drew was
+ * an X whose four arms ran into flat ledges, which is not an X.
+ *
+ * Laid here instead. The waist takes the two tiles that make it as wide as
+ * the rows beside it, and the wedge above and the one below each close with a
+ * pair of slopes that meet, which is a point rather than a ledge.
+ *
+ * The waist's own two tiles stay square, and that is the shape rather than a
+ * shortcut: the wedge either side of the waist points along the row, so
+ * closing it to a point wants a face above the point and another below, and a
+ * tile carries one face. A tile of flat on each side is what the waist of an X
+ * is at sixteen pixels to the tile.
+ *
+ * `cx, cy` is the left tile of the two the arms collided on. Nothing is
+ * written over: a junction whose ground another structure already holds is
+ * one this leaves exactly as it found it. */
+static void m_junction(int cx, int cy, uint8_t wall) {
+    if (SIM_TILE_CLASS(wall) != SIM_TILE_SOLID) return;
+    static const struct {
+        int dx, dy;
+        uint8_t tile;
+    } PARTS[] = {
+        {-1, 0, SIM_TILE_SOLID},                          /* the waist */
+        { 2, 0, SIM_TILE_SOLID},
+        { 0, -2, SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_SE)}, /* the wedge above */
+        { 1, -2, SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_SW)},
+        { 0, 2, SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_NE)},  /* and the one below */
+        { 1, 2, SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_NW)},
+    };
+    for (size_t i = 0; i < sizeof PARTS / sizeof *PARTS; i++) {
+        int px = cx + PARTS[i].dx, py = cy + PARTS[i].dy;
+        if (get(px, py) == SIM_TILE_EMPTY) put(px, py, PARTS[i].tile);
+    }
+}
+
 /* Three forms, each of them symmetric and each centered on its box: one arm,
  * two arms crossed, or two meeting at a point. An odd span, so the two arms
  * of a cross meet on exactly one tile instead of passing each other. */
@@ -319,6 +362,9 @@ static void m_chevron(int x, int y, int w, int h, uint8_t wall) {
         if (cross || !back) m_slope_step(ox + i, oy + i, LEAN_DOWN, wall);
         if (cross || back) m_slope_step(ox + n - 1 - i, oy + i, LEAN_UP, wall);
     }
+    /* The wedges sit two rows off the crossing, so an X shorter than five
+     * would be reaching outside its own box for them. */
+    if (cross && n >= 5) m_junction(ox + (n - 1) / 2, oy + (n - 1) / 2, wall);
 }
 
 /* A bar with a cap at each end. Blocks along its length, and the caps stop a
@@ -1544,6 +1590,61 @@ static int generate_match(sim_map *m, uint32_t s, match_layout layout, int quiet
     return 0;
 }
 
+/* One X on clean ground, read off the tiles.
+ *
+ * A picture is what caught this and a picture is not a check. What the
+ * junction promises is a waist as wide as the rows beside it and a wedge
+ * above and below that closes to a point, so those are the tiles asserted.
+ * Drawn the way `m_chevron` draws a cross, and the arms are laid first
+ * because the junction is what is left over after they land.
+ *
+ * Left unlaid, the four wedges are one and two tiles across and `fill_dead`
+ * plugs every one of them with square wall, which is where the flat ledges on
+ * the arms of every X in the open arena came from. */
+static int junction_selftest(sim_map *m) {
+    const int n = 9, ox = 200, oy = 200;
+    const int cx = ox + (n - 1) / 2, cy = oy + (n - 1) / 2;
+    T = m->tile;
+    MW = MH = TILES;
+    memset(T, SIM_TILE_EMPTY, (size_t)TILES * TILES);
+    for (int i = 0; i < n; i++) {
+        m_slope_step(ox + i, oy + i, LEAN_DOWN, SIM_TILE_SOLID);
+        m_slope_step(ox + n - 1 - i, oy + i, LEAN_UP, SIM_TILE_SOLID);
+    }
+    m_junction(cx, cy, SIM_TILE_SOLID);
+
+    for (int x = cx - 1; x <= cx + 2; x++)
+        if (get(x, cy) != SIM_TILE_SOLID) {
+            fprintf(stderr, "junction: waist tile %d,%d is not solid\n", x, cy);
+            return 1;
+        }
+    static const struct { int dx, dy; uint8_t want; } WEDGE[] = {
+        {0, -2, SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_SE)},
+        {1, -2, SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_SW)},
+        {0, 2, SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_NE)},
+        {1, 2, SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_NW)},
+    };
+    for (size_t i = 0; i < sizeof WEDGE / sizeof *WEDGE; i++) {
+        int x = cx + WEDGE[i].dx, y = cy + WEDGE[i].dy;
+        if (get(x, y) != WEDGE[i].want) {
+            fprintf(stderr, "junction: wedge tile %d,%d is %02x, wanted %02x\n",
+                    x, y, get(x, y), WEDGE[i].want);
+            return 1;
+        }
+    }
+    /* And nothing left over: the rows the junction touches carry no empty
+     * tile with solid ground on both sides of it, which is the shape
+     * `fill_dead` would otherwise come along and plug. */
+    for (int dy = -2; dy <= 2; dy++)
+        for (int x = cx - 1; x <= cx + 2; x++)
+            if (get(x, cy + dy) == SIM_TILE_EMPTY) {
+                fprintf(stderr, "junction: %d,%d left open inside the X\n",
+                        x, cy + dy);
+                return 1;
+            }
+    return 0;
+}
+
 /* Draw one whole map into `m`. Returns 0 when every check passes, and says
  * on stderr which one did not otherwise. `quiet` is for the selftest, which
  * runs several seeds and wants a line only when something is wrong. */
@@ -1744,6 +1845,7 @@ int main(int argc, char **argv) {
      * having is that the generator produces a playable map generally and not
      * that it once did. */
     if (strcmp(argv[1], "--selftest") == 0) {
+        if (junction_selftest(m) != 0) return 1;
         for (uint32_t k = 101; k <= 112; k++)
             if (generate(m, k, 1) != 0) return 1;
         /* Both match layouts over several seeds, for the same reason: what
