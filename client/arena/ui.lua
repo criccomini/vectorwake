@@ -1416,6 +1416,14 @@ local function flag_mark(px, py, s, col)
     F.layer:disc(px, ry(py, 0), 1.3 * s, 8, pal.a(col, 1))
 end
 
+-- A prize on the dial. Built once rather than per green: two dozen of them
+-- are out at a time and `pal.a` returns a fresh table, which is work for the
+-- collector in a loop that runs every frame.
+--
+-- Short of full strength, for the reason the palette gives this color: a
+-- field of two dozen must not out-shout the ships flying between them.
+local RADAR_GREEN = pal.a(pal.GREEN, 0.9)
+
 local function radar(cx, cy, me)
     -- No panel and no inset. The dial is the most valuable thing on screen on
     -- a map a thousand tiles across and it keeps every pixel; what made it
@@ -1494,6 +1502,37 @@ local function radar(cx, cy, me)
     blips(world.radar_tiles, pal.RADAR_TILE)
     blips(world.radar_safe, pal.a(pal.RADAR_SAFE, 0.95))
     blips(world.radar_doors, pal.a(pal.RADAR_DOOR, 1.0), 1)
+
+    -- The greens, over the terrain they are lying on and under everything
+    -- that moves. A prize is a decision about where to fly next and a contact
+    -- is a decision about right now, so a dial with both on it has to put the
+    -- second on top.
+    --
+    -- The instrument is where a prize is decided on. The zone puts them out
+    -- six to twenty-eight tiles from a live pilot for that reason, which
+    -- `baseline.c` and the roam zone's file both say in as many words: inside
+    -- the far edge so a green lands on the radar of whoever it appeared for.
+    -- A prize a pilot can only find by flying over it is one nobody goes and
+    -- gets.
+    --
+    -- A dot, where a contact is a diamond and a flag is a ringed core: the
+    -- quietest of the marks standing on the terrain, because it is the only
+    -- one that does not move and cannot shoot. In nobody's color, which is
+    -- what a prize is (see `pal.GREEN`).
+    --
+    -- Nothing here culls. The zone writes a green outside a pilot's interest
+    -- radius inert, and that radius is the sixty tiles this dial spans, so
+    -- what the client holds is already what belongs on it; `put` answers nil
+    -- for the rest, which is the crop the compact dial takes.
+    for i = 0, sim.green_count() - 1 do
+        local gx, gy, _, active = sim.green_at(i)
+        if active then
+            local px, py = put(gx, gy)
+            if px then
+                F.layer:disc(px, ry(py, 0), 2 * F.scale, 8, RADAR_GREEN)
+            end
+        end
+    end
 
     local my_team = view_team
     for i = 0, sim.flag_count() - 1 do

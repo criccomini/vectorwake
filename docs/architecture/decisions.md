@@ -8246,3 +8246,71 @@ nothing rather than printing a number at a player.
 against the gate that produces it, and `client/tests/no_team_test.lua`
 pins the parse, the read-once, and the silence on a byte this build does not
 know.
+
+## 151. A green is on the dial, and taking one says what it was
+
+**Status:** accepted, finishing
+[decision 132](#132-a-green-raises-what-you-fly-not-what-you-own),
+which put the prizes on the ground and left them off the one instrument that
+answers where to fly next.
+
+**What:** the radar draws every green the client holds, as a dot in the prize
+green, over the terrain and under the flags and the contacts. Taking one puts
+a line in the feed naming what it filled and how many of that the pilot now
+holds: "picked up recharge x3". The line is marked as this pilot's, so the
+one line a phone shows can be spent on it.
+
+**Why:** the zone was already sowing them for the radar and nothing was
+drawing them there. The ring a green is put out in is six to twenty-eight
+tiles from a live ship, and `baseline.c` and the roam zone's own file both say
+why in as many words: outside the near edge so a prize is a trip rather than a
+gift, inside the far one so it lands on the radar of the pilot it appeared for
+and is a decision rather than a discovery. The dial spans the same sixty tiles
+the zone filters a snapshot to, so a green the client holds was already inside
+the square at rest and simply not drawn. What that left is a prize you find by
+flying over it, which is not a decision at all, in the one zone whose whole
+reason to keep flying is that prizes are worth going and getting.
+
+The line in the feed answers a different question. A green on the ground is
+deliberately anonymous, because a pilot deciding whether one is worth the trip
+is deciding on the trip; the moment it is taken that reasoning expires and the
+only thing they want is what they got. The core has always said so.
+`SIM_EV_GREEN` carries the slot and the count, and the comment over it in
+`sim.h` says it is there so a client can tell a step up from a shrug. The
+client was throwing both away and playing a sound that says something
+happened and never says what.
+
+**What was considered and rejected:** the map. It answers where am I going
+over a thousand tiles, and it is terrain plus flags on purpose, since a view
+of the whole arena with everything on it is a wall hack with a keyboard
+shortcut. Prizes appear and expire, so they would also be the first thing on
+it that is not a still picture of the room.
+
+A diamond on the dial, matching the shape the arena draws on the ground. That
+shape is already a contact up there, and two dozen prize diamonds read as a
+room full of ships. The dial separates by shape before it separates by color,
+because at three pixels the shape is what survives, so the mark that is not a
+hull cannot be the hull's.
+
+Coloring the feed line. Three colors in that corner are the fight, yours and
+theirs and the one you helped with, and a feed where every line is lit says
+nothing by lighting one. The words carry this on their own.
+
+Naming a green before it is taken, on the dial or on the ground. That is
+still the call [decision 132](#132-a-green-raises-what-you-fly-not-what-you-own)
+made and this does not reopen it.
+
+Saying that a prize was wasted. The event carries what the pilot holds after
+the grant, not whether the grant moved, and a slot at its ceiling reads the
+same either way. The number is the honest signal: it did not move.
+
+**The cost:** two dozen more marks on the dial in the one zone that has them,
+which is a real crowd on a phone's cropped square, and the first mark up there
+that is not terrain, a flag or a hull. Nothing on the wire and nothing in the
+core moved: the client already held the field and already got the event.
+
+**The words are the interface's.** `client/arena/prize.lua` turns a kit slot
+into the same words the corner card uses for the same kit, at the same length,
+so a pilot who reads what a green gave them can find it on the card a second
+later. `client/tests/greens_test.lua` holds the field on the ground, the field
+on the dial, the order that keeps a dot under a hull, and every shape of word.

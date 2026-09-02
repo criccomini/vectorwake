@@ -207,6 +207,7 @@ local sim = {
     has_trigger = function() return true end,
     tick = function() return 1000 end,
     weapon_count = function() return 0 end,
+    green_count = function() return 0 end,
     flag_count = function() return 0 end,
     flag_at = function() return 0, 0, 255 end,
     map_coarse = function() return nil end,

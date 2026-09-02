@@ -4,7 +4,8 @@
 --
 -- Scenarios: after (a match part way through), before (with the banner the
 -- server used to send), turf (a flag mode, for the pennant strip under the
--- band), ending (a room at the whistle), landing (the front
+-- band), roam (the one zone with prizes, for the greens on the dial),
+-- ending (a room at the whistle), landing (the front
 -- end, watched from the stands; landing-zones, landing-ships and
 -- landing-account open a stop's list, landing-login the panel an
 -- account act opens over one), waiting (what the loader hands off to
@@ -43,6 +44,11 @@ end
 -- What is on the stands, for the scenarios that have any. A row is what
 -- `sim.flag_at` answers: x, y, the team holding it, whether it is carried.
 local flags = {}
+
+-- The prizes lying about, for the one zone that has any. A row is what
+-- `sim.green_at` answers: x, y, the kit slot it fills, whether it is still
+-- there.
+local greens = {}
 
 local H
 local function fy(y) return H - y end
@@ -183,6 +189,11 @@ _G.sim = {
     TRIG_BOMB = 1,
     tick = function() return 4242 end,
     weapon_count = function() return 0 end,
+    green_count = function() return #greens end,
+    green_at = function(i)
+        local g = greens[i + 1]
+        return g[1], g[2], g[3], true
+    end,
     flag_count = function() return #flags end,
     flag_at = function(i)
         local f = flags[i + 1]
@@ -257,6 +268,24 @@ if scenario == "turf" then
     match = {playing = true, left = 158, score = {[0] = 7, [1] = 16}}
     flags = {{2990, 2990, 0, 0}, {3010, 2990, 0, 0}, {3030, 2990, 255, 0},
              {3050, 2990, 1, 0}, {3070, 2990, 1, 0}, {3090, 2990, 255, 0}}
+end
+
+-- Free Roam, which is the one zone that puts prizes on the ground, so it is
+-- the one frame that can show what a dial holds when they are out. Sown six
+-- to twenty-eight tiles from a live pilot, which is the ring the zone uses
+-- and the reason a green is meant to land on somebody's radar: these sit
+-- where that ring puts them, in tiles off the camera.
+if scenario == "roam" then
+    local function green(tx, ty, slot)
+        greens[#greens + 1] = {3000 + tx * 16, 3000 + ty * 16, slot}
+    end
+    green(9, -6, 1)
+    green(-14, 8, 19)
+    green(22, 17, 2)
+    green(-7, -21, 5)
+    green(26, -12, 12)
+    green(-24, -3, 0)
+    green(13, 27, 20)
 end
 
 -- Four frames of the front end: the stops closed, and each of the three
@@ -475,7 +504,7 @@ ui.hud({
     banner = banner,
     lag_notice = "",
     rtt = 22,
-    zone = "melee",
+    zone = (scenario == "roam") and "roam" or "melee",
     room = 1,
     fps = 60, frame_ms = 16.7, rx_rate = 31000, tx_rate = 700,
 })
