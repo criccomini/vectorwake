@@ -272,23 +272,6 @@ local kb_locked = false
 
 -- The charge slots this hull can ever carry, in order. An empty list means a
 -- hull with no charges at all, and the row simply is not drawn.
--- Every room of the game we are in, as the directory last described it.
---
--- From the directory rather than from the arena we are connected to. That
--- process knows its own rooms and nothing about the ones its siblings hold,
--- and this list is the whole zone's, so the only thing that can answer is the
--- service that hears from all of them. Nil until the directory has said, which
--- is also the answer for a zone holding one room: the corner chip and the
--- panel are both drawn from this, so neither appears until there is a choice
--- to make.
-local function my_rooms()
-    if menu.zone == "" then return nil end
-    for _, r in ipairs(directory.rows) do
-        if r.zone == menu.zone then return r.rooms end
-    end
-    return nil
-end
-
 -- The zone's sides, by the byte the simulation knows each as, for anything
 -- that wants to print one. The roster carries them already; this is the same
 -- list keyed the way a caller with a team byte in hand can use.
@@ -523,10 +506,8 @@ end
 -- Opening either shuts the other. Two of them at once was the exact thing the
 -- HUD pass existed to stop, arrived at from a different direction.
 -- One slab of text at a time, and the rule holds in both directions or it
--- holds in neither. The left column draws one panel: the rooms list stands in
--- that slot and wins it. The menu is the same argument a layer up, and its hit
--- boxes are published after the panel's, so a panel left open under it
--- swallows every press that lands in its rectangle.
+-- holds in neither. The menu's hit boxes are published after a panel's, so a
+-- panel left open under it swallows every press that lands in its rectangle.
 --
 -- The players sheet is not in this list any more, because it is not a panel
 -- of its own: it is a stop of the menu, so opening the menu is what opens it
@@ -538,8 +519,6 @@ local function shut_panels()
     -- menu, so the symptom was a table nobody asked for reappearing when the
     -- menu closed, including over a game joined in the meantime.
     ui.help = false
-    ui.rooms_open = false
-    ui.room_ask = nil
     -- And the level the ship stop was open at, with the cursor: the column
     -- comes up on its bare stops every time.
     ui.col_sect, ui.col_hull = nil, nil
@@ -663,11 +642,7 @@ local function toggle_help()
         menu.dismiss_help_prompt()
     end
     ui.help = not ui.help
-    if ui.help then
-        menu.close()
-        ui.rooms_open = false
-        ui.room_ask = nil
-    end
+    if ui.help then menu.close() end
 end
 
 -- The map is not one of those. It is an instrument rather than a slab of
@@ -728,12 +703,8 @@ TUNE.PANEL_HANDLERS = {
             return true
         end
         -- Escape dismisses the innermost open panel before opening the menu.
-        if ui.room_ask then
-            ui.room_ask = nil
-        elseif ui.help then
+        if ui.help then
             ui.help = false
-        elseif ui.rooms_open then
-            ui.rooms_open = false
         else
             toggle_menu()
             sfx.ui("ui_go")
@@ -982,8 +953,6 @@ end
 -- carried a panel describing a seat the next room deals to a stranger. What
 -- each caller does *differently* is worth reading; what they do the same is
 -- not worth writing twice.
---
--- The rooms panel is deliberately not here. See session.enter.
 local function leave_world()
     -- `net.connect` drops the old socket itself, but the world it filled is
     -- this script's to clear.
@@ -1016,7 +985,6 @@ local function leave_world()
     ui.help = false
     ui.help_prompt = false
     ui.map = false
-    ui.room_ask = nil
     ui.col_sect, ui.col_hull = nil, nil
     ui.col_sel, ui.col_sel_value = nil, nil
     ui.panel_shut()
@@ -1042,13 +1010,6 @@ function go_home(self, keep_menu)
     self.attract_zone = nil
     self.attract_instance = nil
     watching = false
-    -- The rooms of the zone being left, and a question about one of them. The
-    -- panel is deliberately left standing across a move within a zone, which
-    -- is why it has to be put away here: the next zone's list is a different
-    -- list, and its scroll offset and its open question belong to nobody.
-    ui.rooms_open = false
-    ui.room_scroll = 0
-    ui.room_ask = nil
     menu.home = true
     -- And the menu goes with the room. Leaving lands in the stands, by way of
     -- the waiting screen while the next room is found: this used to open the
@@ -1148,9 +1109,12 @@ local function drain_announced()
         -- Your own bomb counts as your kill in the ledger, which is correct
         -- and reads as nonsense in a feed line.
         --
-        -- No payout on the line. A kill used to print what it paid, and
-        -- nothing is paid: the feed says who took whom, which is the whole of
-        -- what a kill is now.
+        -- What it did to your rating, on the end of the line. A kill used
+        -- to print what it paid and stopped when nothing was paid, and the
+        -- rating is what took the payment's place: it is the only way two
+        -- kills differ now. The wreck floats the same figure for a second
+        -- and a half where the kill happened, which a pilot who is looking
+        -- somewhere else never sees; the feed holds it for nine.
         -- Two lines out of every feed are about you, and they are the two
         -- worth finding without reading: green when you took somebody, red
         -- when somebody took you. Everything else stays the feed's own color,
@@ -1188,18 +1152,26 @@ local function drain_announced()
         -- into each of the three shapes above, because it is equally true of
         -- all of them: you can soften somebody who then flies into a wall.
         if k.assist then line[#line + 1] = ", you assisted" end
-        notify(line, col, mine)
-        -- And the figure, off the wreck, for every death that moved this
-        -- pilot's rating: a kill, a death, or a victim they had softened.
-        -- Read where it happened rather than in the corner, because a pilot
-        -- who just took somebody is looking at the explosion. A kill that
-        -- paid nothing still prints its zero, since the kill was yours and
-        -- a silent one reads as a figure that failed to arrive. Every other
-        -- death is somebody else's and gets no figure. See decision 152.
-        if not watching and k.gain
-            and (mine or k.gain ~= 0) and k.killer ~= 255 then
+        -- Which deaths carry a figure at all: the ones that moved this
+        -- pilot's rating, which is a kill, a death, or a victim they had
+        -- softened. A kill that paid nothing still prints its zero, since
+        -- the kill was yours and a silent one reads as a figure that failed
+        -- to arrive. Every other death is somebody else's and gets none.
+        -- See decision 152.
+        --
+        -- One test, two places to say it. The figure drifts off the wreck,
+        -- where a pilot who has just taken somebody is already looking, and
+        -- it goes on the end of the feed line, which is where they look a
+        -- moment later and where it is still there to read. Two conditions
+        -- would be the same rule written twice, and a kill that floated a
+        -- figure the feed disagreed with is worse than either alone.
+        local moved = not watching and k.gain
+            and (mine or k.gain ~= 0) and k.killer ~= 255
+        if moved then
+            line[#line + 1] = " " .. ui.signed(k.gain)
             ui.payout(sim.ship_x(k.victim), sim.ship_y(k.victim), k.gain)
         end
+        notify(line, col, mine)
     end
     if #net.kills > 0 then net.kills = {} end
 end
@@ -1348,12 +1320,22 @@ local function drain_events()
             -- a phone the stack stands down to nothing because the pads
             -- carry the marks instead.
             --
-            -- In the feed's own ink. Three colors in this corner are the
-            -- fight, a kill of yours, a death of yours and a kill you helped
-            -- with, and a fourth would make it a set of lights to be taught
-            -- rather than the lines worth finding without reading. The words
-            -- carry this on their own.
-            notify({"picked up " .. prize.words(b, v)}, nil, true)
+            -- In the gold of what you carry, which is what the corner
+            -- stack draws a count in and what the hangar prices a build in.
+            -- This is the one line in the column that is about your kit
+            -- rather than about the fight or about the room, and it was the
+            -- feed's own ink, which is also the arrivals, the departures and
+            -- every refusal: the one line here a player wants to catch was
+            -- wearing the color of the five they can ignore.
+            --
+            -- Not a green, which is the color of the thing on the ground and
+            -- reads as the wrong one up here. The two greens in this column
+            -- are what a kill did to your rating, and the prize green sits
+            -- between them at a contrast of 1.4 to 1 against the payout: a
+            -- third green would be a third light in one family, told apart
+            -- by nobody at a glance. The gold's own neighbor is the streak,
+            -- which this file has always said is gold that moves.
+            notify({"picked up " .. prize.words(b, v)}, pal.CHARGE_COL, true)
         end
     end
 end
@@ -1710,18 +1692,11 @@ function update(self, dt)
     -- both ways round, because stopping is what makes the next look start with
     -- a fresh ask rather than with a count from ten minutes ago.
     --
-    -- The rooms panel is the second thing that reads it. It lists every room
-    -- of this game across every arena server, which is a fact only the
-    -- directory holds, and the counts on it are the whole reason somebody has
-    -- it open. A panel drawn from the last answer before the join would be a
-    -- list of where everybody was a minute ago.
     -- The zone stop is the games list, so an open one is what keeps the list
     -- fresh: a zone that comes up or goes down while somebody is reading it
     -- changes under them rather than sitting at whatever the first ask
     -- returned.
     if menu.open and menu.stop_open() == "zone" then
-        directory.tick(dt)
-    elseif ui.rooms_open and not menu.open then
         directory.tick(dt)
     elseif not live then
         -- Waiting for a first room. The list is what the attract loop dials
@@ -2541,10 +2516,6 @@ function update(self, dt)
             -- its noisy estimate into a stable count, so what the HUD is handed
             -- is the reading rather than the packets.
             link = self.link_bars,
-            -- Every room of this game and which one we are in, for the chip
-            -- in the corner and the panel it opens. Both are absent until the
-            -- directory says there is more than one.
-            rooms = my_rooms(), room = net.room,
             fps = self.fps, frame_ms = self.frame_ms,
             rx_rate = self.rx_rate, tx_rate = self.tx_rate,
             -- The two world layers themselves, for the debug readout: how
@@ -2653,12 +2624,6 @@ function update(self, dt)
     -- The menu's own card, raised over whichever level of the column asked
     -- for it and drawn from one place wherever that is.
     ui.land_card(menu.ask)
-    -- The question about moving room, last of everything that publishes a hit
-    -- box. `ask_card` drops the ones already published, which is what makes a
-    -- card the only thing on screen that can be pressed, and it can only do
-    -- that from here: drawn inside the HUD it would clear nothing but its own
-    -- panel and leave the menu's rows live underneath.
-    ui.room_card(my_rooms())
     -- Not over the menu: the stick and the pads belong to flight, and drawn
     -- under a panel they read as buttons that do nothing. Not while watching
     -- either, for the same reason: there is nothing for them to drive. And
@@ -2700,13 +2665,6 @@ function session.enter(self, address, zone_name, wt, room, watch, instance)
     -- A real join supersedes anything the landing's zone stop asked for.
     self.land_zone = nil
     -- Whatever we were in, we are leaving.
-    --
-    -- The rooms panel is the one thing left standing. Moving room is the one
-    -- join that happens from inside a list, and the list is where you were
-    -- looking: shutting it would answer the press by taking away the thing
-    -- that asked the question, and you arrive with no idea which of them you
-    -- landed in. Its question is dropped by leave_world, since that was about
-    -- a press that has now happened.
     self.replay = nil
     self.replay_loading = nil
     self.replay_after = nil
@@ -3034,7 +2992,7 @@ function apply_menu(self, act)
         -- re-dialling it. `net.set_class` is the same ask the ship page
         -- makes from the bench, and a room that filled while you watched
         -- refuses it the same way, which leaves you exactly where you were.
-        if self.attract and net.connected and not menu.chosen_room
+        if self.attract and net.connected
            and self.attract_zone == r.zone then
             self.attract = false
             self.attract_zone = nil
@@ -3044,12 +3002,11 @@ function apply_menu(self, act)
             return
         end
         self.attract = false
-        session.enter(self, r.address, r.zone, r.wt, menu.chosen_room,
-                      false, r.instance)
-        -- Spent. A room is named by the press that named it and by nothing
-        -- afterwards: a reconnect the client makes on its own belongs wherever
-        -- the ladder puts it, not wherever somebody clicked ten minutes ago.
-        menu.chosen_room = nil
+        -- No room named. A game is the whole of what a row of the list asks
+        -- for, and which copy of it seats you is the fill ladder's business.
+        -- A deep route is the one thing that still names one, and it does not
+        -- come through here.
+        session.enter(self, r.address, r.zone, r.wt, nil, false, r.instance)
         return
     end
 
@@ -3199,20 +3156,6 @@ local function in_column(self, sx, sy)
         end
     end
     return false
-end
-
-local function in_list(self, sx, sy)
-    local px, py = sx, (self.vh or 0) - sy
-    for _, r in ipairs(ui.hits) do
-        if r.action == "scores" or r.action == "rooms_list" then
-            if px >= r.x and px <= r.x + r.w
-               and py >= r.y and py <= r.y + r.h then
-                return r.action
-            end
-            return nil
-        end
-    end
-    return nil
 end
 
 -- What a press on one of the landing's controls does, named by the action
@@ -3576,12 +3519,6 @@ function on_input(self, action_id, action)
                 sfx.ui("ui_go")
                 return true
             end
-            if r.action == "take_seat" then
-                menu.pending = menu.class
-                apply_menu(self, "ship")
-                sfx.ui("ui_go")
-                return true
-            end
             -- The menu's own controls, which the keyboard reaches through
             -- the same function. See `menu_act`.
             if menu_act(self, r.action, r.value) then return true end
@@ -3589,64 +3526,6 @@ function on_input(self, action_id, action)
             if r.action == "map" then
                 toggle_map()
                 sfx.ui("ui_move")
-                return true
-            end
-            -- The rooms list, and the scoreboard it stands in front of.
-            -- One panel holds the left column, so opening either puts the
-            -- other away rather than drawing both into the same pixels.
-            if r.action == "rooms" then
-                ui.rooms_open = not ui.rooms_open
-                ui.room_scroll = 0
-                ui.room_ask = nil
-                sfx.ui("ui_move")
-                return true
-            end
-            -- The panel itself, which swallows a press that missed a row
-            -- so it cannot fall through to the guns behind it.
-            if r.action == "rooms_list" then return true end
-            -- A room to move to. The address travels with the row, since
-            -- a room on another arena server is another process and the
-            -- join is a reconnect; which one it is never reaches the
-            -- player.
-            -- A room pressed is a room asked about. Moving is a reconnect
-            -- and a reconnect is a fresh spawn, so it costs everything a
-            -- pilot is carrying; the second press is what pays it.
-            -- Pressing the same row again puts the question away, which is
-            -- how every other toggle in here behaves.
-            if r.action == "room" then
-                ui.room_ask = (ui.room_ask ~= r.value) and r.value or nil
-                sfx.ui(ui.room_ask and "ui_go" or "ui_move")
-                return true
-            end
-            if r.action == "room_answer" then
-                local want = ui.room_ask
-                ui.room_ask = nil
-                if r.value ~= 1 then
-                    sfx.ui("ui_move")
-                    return true
-                end
-                local rm = nil
-                for _, r2 in ipairs(my_rooms() or {}) do
-                    if r2.n == want then rm = r2 end
-                end
-                if rm then
-                    -- `live` because the join path refuses a row without
-                    -- it and says nobody is running the game. That flag
-                    -- means "the directory named an address for this",
-                    -- which is exactly what a room in this list is: it
-                    -- came from the same reply, and a room nobody serves
-                    -- is not in it at all.
-                    menu.chosen = {name = menu.zone, zone = menu.zone,
-                                   address = rm.address, wt = rm.wt,
-                                   live = true}
-                    -- The room's own number, which is what the server
-                    -- answers a join by and what the panel drew. Its
-                    -- position in any list is not a handle: reclaiming an
-                    -- empty room moves every position after it.
-                    menu.chosen_room = rm.n
-                    apply_menu(self, "join")
-                    sfx.ui("ui_go")
-                end
                 return true
             end
             -- Ask a pilot to fly with you, which is the one act a private
@@ -3738,37 +3617,31 @@ function on_input(self, action_id, action)
         local echo = pointer_took
         pointer_took = nil
 
-        -- Whichever list is up, dragged. It could only ever be scrolled by a
-        -- wheel, and a phone has no wheel, so on glass the list simply stopped
-        -- at whatever fitted and a room of sixty-four showed nine of them. The
-        -- rooms list stands in the same slot and needed the same gesture: nine
-        -- rows fit, a zone may hold a hundred, and the rows past the ninth
-        -- were reachable by nothing on a phone.
+        -- The menu's page, dragged. It could only ever be scrolled by a
+        -- wheel, and a phone has no wheel, so on glass a page simply stopped
+        -- at whatever fitted: the ship page is fourteen hundred points of
+        -- ladders in eight hundred of screen, and everything past the fold
+        -- was reachable by nothing on a phone.
         --
-        -- A finger that lands on the list might mean either of two things and
-        -- there is no telling which until it moves, so the choice is made on
+        -- A finger that lands on it might mean either of two things and there
+        -- is no telling which until it moves, so the choice is made on
         -- release: one that travelled was a scroll, one that did not was a tap
         -- on the row it landed on. That is why this runs ahead of the hit
         -- boxes, rather than letting a row open a card under a finger that was
         -- on its way somewhere.
         --
-        -- `dragged` is the one finger the list took, so the rest of the frame
+        -- `dragged` is the one finger the page took, so the rest of the frame
         -- leaves it alone and nothing else. The other thumb may be flying, and
         -- swallowing the whole action would stop the stick mid-turn for as
-        -- long as somebody was reading the scoreboard.
+        -- long as somebody was reading a menu.
         local dragged = nil
         if action.touch then
             for _, t in ipairs(action.touch) do
                 local sx, sy = t.screen_x or t.x, t.screen_y or t.y
-                local which = t.pressed and in_list(self, sx, sy) or nil
-                -- A menu page is dragged by the same gesture and settled the
-                -- same way, and it is the one the phone actually needed: the
-                -- ship page is fourteen hundred points of ladders in eight
-                -- hundred of screen. Pixel for pixel rather than rounded to
-                -- rows, because a page is not a list of them.
-                if not which and t.pressed and in_page(self, sx, sy) then
-                    which = "page"
-                end
+                -- Pixel for pixel rather than rounded to rows, because a page
+                -- is not a list of them.
+                local which = t.pressed and in_page(self, sx, sy)
+                              and "page" or nil
                 -- Anywhere else on the column takes the gesture too, so the
                 -- stops and the key can push it down. They have nothing to
                 -- scroll, so those only ever go downward.
@@ -3776,16 +3649,12 @@ function on_input(self, action_id, action)
                     which = "column"
                 end
                 if which then
-                    local rooms = which == "rooms_list"
-                    local page = which == "page"
-                    list_drag = {id = t.id, x = sx, y = sy, rooms = rooms,
-                                 page = page, column = which == "column",
-                                 at = page and ui.page_scroll
-                                      or ui.room_scroll,
-                                 moved = false}
+                    list_drag = {id = t.id, x = sx, y = sy,
+                                 page = which == "page",
+                                 column = which == "column",
+                                 at = ui.page_scroll, moved = false}
                     dragged = t.id
-                elseif list_drag and (list_drag.page or list_drag.column)
-                       and t.id == list_drag.id then
+                elseif list_drag and t.id == list_drag.id then
                     dragged = t.id
                     -- screen_y counts up from the bottom, so a finger moving
                     -- up the screen raises it and the page should follow it,
@@ -3832,35 +3701,6 @@ function on_input(self, action_id, action)
                         elseif not list_drag.moved then
                             hit(sx, sy, true)
                         end
-                        list_drag = nil
-                    end
-                elseif list_drag and t.id == list_drag.id then
-                    dragged = t.id
-                    -- screen_y counts up from the bottom, so a finger moving
-                    -- up the screen raises it, and dragging up should bring
-                    -- the rows below into view.
-                    --
-                    -- Measured from where the finger went down rather than
-                    -- from the last frame, so the rounding to whole rows
-                    -- happens once over the gesture instead of accumulating
-                    -- a lost pixel per frame.
-                    local dy = sy - list_drag.y
-                    local pitch = math.max(1, ui.row_pitch())
-                    -- Better than half a row before it counts as travel,
-                    -- which is the width of the wobble in a tap.
-                    if math.abs(dy) > pitch * 0.6 then list_drag.moved = true end
-                    -- Rounded toward zero, so the same small wobble counts the
-                    -- same in both directions. math.floor runs toward negative
-                    -- infinity, which made one pixel of downward drift a whole
-                    -- row of scroll while a pixel upward was none: a tap that
-                    -- shifted the list under its own finger and opened the row
-                    -- that slid into the gap.
-                    local rows = dy / pitch
-                    rows = (rows < 0) and math.ceil(rows) or math.floor(rows)
-                    local to = list_drag.at + rows
-                    ui.room_scroll = to
-                    if t.released then
-                        if not list_drag.moved then hit(sx, sy, true) end
                         list_drag = nil
                     end
                 end
@@ -3920,24 +3760,17 @@ function on_input(self, action_id, action)
         end
     end
 
-    -- The wheel, which belongs to whichever list is on screen: the menu when
-    -- it is open, and under it whichever panel holds the left column, since
-    -- the rooms list and the scoreboard stand in the same slot and only one of
-    -- them is ever up. Defold reports a wheel notch as a press and a release
-    -- of the same action, so only the press counts or every notch would move
-    -- two.
+    -- The wheel, which belongs to the menu's page and to nothing else, since
+    -- the menu holds every list this client has. Defold reports a wheel notch
+    -- as a press and a release of the same action, so only the press counts or
+    -- every notch would move two.
     if action_id == hash("wheel_up") or action_id == hash("wheel_down") then
-        if action.pressed then
+        if action.pressed and menu.open then
             local d = (action_id == hash("wheel_up")) and -1 or 1
-            if menu.open then
-                -- The page under the tabs. A notch is a couple of rows rather
-                -- than one, because a menu page is read by the screenful and
-                -- a list is read by the row.
-                ui.page_scroll = ui.page_scroll + d * ui.row_pitch() * 2.5
-                land_slid()
-            elseif ui.rooms_open then
-                ui.room_scroll = ui.room_scroll + d
-            end
+            -- A notch is a couple of rows rather than one, because a menu page
+            -- is read by the screenful and a list is read by the row.
+            ui.page_scroll = ui.page_scroll + d * ui.row_pitch() * 2.5
+            land_slid()
         end
         return
     end

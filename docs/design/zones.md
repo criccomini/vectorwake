@@ -227,7 +227,7 @@ Each row in the catalog brings more than a mode:
   traffic to get people out of provisional or its ratings say nothing. Which
   ladder depends on the mode: a kill game rates deaths, and Turf and Capture
   the Flag rate the whistle, per
-  [decision 154](../architecture/decisions.md#154-a-flag-game-rates-the-whistle-and-not-the-wreck).
+  [decision 157](../architecture/decisions.md#157-a-flag-game-rates-the-whistle-and-not-the-wreck).
 - **A bot population that plays the objective.** At our population a zone
   without one is a dead room.
 - **A balance surface.** Every mode is a new answer to "which hull wins here".

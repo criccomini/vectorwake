@@ -388,49 +388,44 @@ local function near(list, cx, cy, r)
     return out
 end
 
--- One room, and the panel that lists them open over an otherwise empty world.
--- That is where the pair still counts a population: the games list stopped
--- carrying counts when the menu became one column, and the corner's ROOM key
--- opens this instead of walking into the menu.
-local function room_frame(open)
-    ui.rooms_open = open
-    local f = frame(function()
-        ui.hud({me = 0, menu_open = false, pilots = {}, watchers = {},
-                teams = {}, feed = {}, hurt = 0, charges = {},
-                cam_x = 100, cam_y = 100, half_w = W / 2, half_h = H / 2,
-                banner = "", zone = "chaos", room = 2,
-                rooms = {{n = 1, players = 3, bots = 48}}})
+-- The scoreboard and the nameplates answer the same question with the same
+-- pair of marks. This room has a human pilot and a bot, with the bot's hull on
+-- screen.
+--
+-- Two frames, because the two never draw together: a panel over the arena
+-- takes the nameplates down with it, so the sheet's marks and the plate's are
+-- one frame each. What this holds is that the pair is the same pair.
+local function sheet_frame(menu_up)
+    return frame(function()
+    ui.hud({
+        me = 0, class_names = {"Apex"}, menu_open = menu_up,
+        pilots = {[0] = {name = "you", label = "human"},
+                  [1] = {name = "a bot", label = "bot", ai = true}},
+        teams = {}, feed = {}, hurt = 0, charges = {},
+        cam_x = 100, cam_y = 100, half_w = W / 2, half_h = H / 2,
+        banner = "", lag = 4,
+        stats = {lag = 4, lead = 2, err = 1, err_max = 9, rewind = 0,
+                 snaps = 1, rx = 0, tx = 0},
+        zone = "chaos", fps = 60, frame_ms = 16, rx_rate = 0, tx_rate = 0,
+    })
+    if menu_up then
+        ui.menu({open = true, home = false, at = "players", key = "spectate",
+                 pilot = {name = "you"}, rows = {},
+                 stops = {{stop = "players", label = "players",
+                           value = "watching", open = true}}})
+    end
     end)
-    ui.rooms_open = false
-    return f
-end
-
--- What the panel put on the frame, rather than what is on the frame. Drawing
--- it both ways and taking the difference asks that question exactly, and it
--- keeps working however the chrome around the panel changes.
-local function where(m)
-    return string.format("%.1f", m.cx)
-end
-
-local function added(pick)
-    local was = {}
-    for _, m in ipairs(pick(room_frame(false))) do
-        was[where(m)] = true
-    end
-    local out = {}
-    for _, m in ipairs(pick(room_frame(true))) do
-        if not was[where(m)] then out[#out + 1] = m end
-    end
-    return out
 end
 
 -- --- the person is a fan ---------------------------------------------------
 
--- The wings a room row counts its people with.
-local rail_frame = room_frame(true)
-local rail_only = added(wings)
-check("a room row counts people with a pair of wings", #rail_only == 1,
-      #rail_only .. " pairs the panel put up")
+-- The wings the players sheet marks a person with. The rooms list drew a pair
+-- of these beside a count too, until the chip that opened it went; the sheet
+-- is where the mark is read now, one to a row.
+local rail_frame = sheet_frame(true)
+local rail_only = wings(rail_frame)
+check("a row of the sheet marks a person with a pair of wings",
+      #rail_only == 1, #rail_only .. " pairs the sheet put up")
 
 if rail_only[1] then
     local wing = rail_only[1]
@@ -555,35 +550,6 @@ end
 
 -- --- the machine is a package ----------------------------------------------
 
--- The scoreboard and the nameplates answer the same question with the same
--- pair of marks. This room has a human pilot and a bot, with the bot's hull on
--- screen.
---
--- Two frames, because the two never draw together: a panel over the arena
--- takes the nameplates down with it, so the sheet's marks and the plate's are
--- one frame each. What this holds is that the pair is the same pair.
-local function sheet_frame(menu_up)
-    return frame(function()
-    ui.hud({
-        me = 0, class_names = {"Apex"}, menu_open = menu_up,
-        pilots = {[0] = {name = "you", label = "human"},
-                  [1] = {name = "a bot", label = "bot", ai = true}},
-        teams = {}, feed = {}, hurt = 0, charges = {},
-        cam_x = 100, cam_y = 100, half_w = W / 2, half_h = H / 2,
-        banner = "", lag = 4,
-        stats = {lag = 4, lead = 2, err = 1, err_max = 9, rewind = 0,
-                 snaps = 1, rx = 0, tx = 0},
-        zone = "chaos", fps = 60, frame_ms = 16, rx_rate = 0, tx_rate = 0,
-    })
-    if menu_up then
-        ui.menu({open = true, home = false, at = "players", key = "spectate",
-                 pilot = {name = "you"}, rows = {},
-                 stops = {{stop = "players", label = "players",
-                           value = "watching", open = true}}})
-    end
-    end)
-end
-
 local board_frame = sheet_frame(true)
 local board = chips(board_frame)
 check("the players sheet chips the bot", #board == 1,
@@ -680,39 +646,19 @@ check("the kill line still draws both names",
 check("and sets them on one line",
       human_text and bot_text and math.abs(human_text.y - bot_text.y) < 0.01)
 
--- --- and the pair sits level -----------------------------------------------
-
--- What makes the two a family, now that neither is a head. A row that reads as
--- one question needs the two answers at one size on one line: shape carries
--- the meaning, but position is what makes them a pair rather than two
--- pictures that happen to be adjacent.
-local list_frame = room_frame(true)
-local listed_wings = added(wings)
-local listed_chips = added(chips)
-check("the rooms list counts people with wings, not a dot",
-      #listed_wings == 1, #listed_wings .. " pairs against 1 expected")
-check("and counts machines with a chip", #listed_chips == 1,
-      #listed_chips .. " chips in the row")
-
-if #listed_wings == 1 and #listed_chips == 1 then
-    local person = listed_wings[1]
-    local machine = listed_chips[1]
-    -- One width. Both marks are cut to the width their caller is handed, and
-    -- that is the number the row lays itself out against: the wings are
-    -- measured tip to tip and the chip across its legs, which is why the
-    -- fringe had to reach the edge above.
-    local _, machine_reach = legs(list_frame, machine)
-    local machine_w = machine_reach * 2
-    check("the pair in the row is cut to one width",
-          math.abs(person.w - machine_w) < person.w * 0.06,
-          string.format("%.2f of wing against %.2f of chip", person.w,
-                        machine_w))
-    -- And on one line. Neither stands on anything now, so what is compared is
-    -- the middle each is drawn around rather than a foot they share.
-    check("and drawn around one line",
-          math.abs(person.cy - machine.cy) < 0.51,
-          string.format("%.2f against %.2f", person.cy, machine.cy))
-end
+-- --- and the pair that used to sit level -----------------------------------
+--
+-- The two marks were checked side by side here: a row of the rooms list set a
+-- count of people beside a count of machines, and the pair had to be cut to
+-- one width and drawn around one line, or it read as two unrelated pictures
+-- however different their shapes are.
+--
+-- Nothing counts a population that way any more. The games list gave up its
+-- counts when the menu became one column, and the rooms list went with the
+-- corner chip that opened it. The two marks still answer the same question in
+-- the same room, on the players sheet and over a hull, but one to a row and
+-- one to a plate rather than as a pair on one line. The rule is worth knowing
+-- if a count of both ever comes back; there is no row left to check it on.
 
 -- --- and the page of hulls that used to draw it ----------------------------
 --

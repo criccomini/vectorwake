@@ -74,55 +74,6 @@ local retry_in = RETRY_FIRST
 -- be torn down by the ghost of the last one, and do it again for ever.
 local generation = 0
 
--- Every room of a zone, across every arena server serving it, flattened into
--- one list.
---
--- Flattened on purpose. A room is a copy of a game and a process is an accident
--- of how the fleet was scaled, so a player choosing between them is choosing
--- between games and should not be shown the seam. That is the same rule as the
--- address: a player never sees one, and grouping this list by instance would be
--- an address with the numbers filed off.
---
--- The number on a row is the room's own, chosen by the process that opened it
--- and held until it closes. Nothing here derives one. The directory sorts a
--- zone's instances by how full they are, so a number read off this list's order
--- would change every time anybody joined anything, and "meet me in room three"
--- has to outlive a stranger leaving.
---
--- Sorted by that number so the list reads in order, and keyed by it everywhere
--- after: the address and the room's index inside its own process travel along
--- for the join and are never drawn.
-local function zone_rooms(z)
-    if not z.instances then return nil end
-    local out = {}
-    for _, inst in ipairs(z.instances) do
-        for _, rm in ipairs(type(inst.rooms) == "table" and inst.rooms or {}) do
-            -- A room with no number is not a room this can draw, and it must
-            -- not reach the sort below: a nil compared against a number raises
-            -- out of here, past the one pcall around the decode, and the games
-            -- list is never replaced again for the life of the process.
-            if type(rm) == "table" and type(rm.number) == "number" then
-                out[#out + 1] = {
-                    n = rm.number,
-                    instance = inst.id,
-                    address = inst.address,
-                    wt = inst.wt,
-                    players = rm.players or 0,
-                    bots = rm.bots or 0,
-                    full = rm.full == true,
-                    clock = rm.clock or 0,
-                    playing = rm.playing == true,
-                }
-            end
-        end
-    end
-    -- One room is the game. A list of it would be a list of the thing the
-    -- player is already in.
-    if #out < 2 then return nil end
-    table.sort(out, function(a, b) return a.n < b.n end)
-    return out
-end
-
 -- Where an instance answers, by its id.
 --
 -- A deep link names a room by zone, instance and number, and this list is the
@@ -289,12 +240,6 @@ local function on_message(s)
             -- is the opposite of an absent one, and the count is the reason it
             -- cannot be entered.
             full = up ~= nil and up.full == true,
-            -- The rooms of the instance this row would send you to, when it
-            -- is holding more than one. A zone at `max_rooms = 1`, which is
-            -- most of them, sends nothing here and the list never mentions
-            -- rooms at all: one room is the game, and a page listing it would
-            -- be a page listing the thing you just pressed.
-            rooms = zone_rooms(z),
         }
     end
     -- Alphabetical, rather than the order the reply arrives in. That order is

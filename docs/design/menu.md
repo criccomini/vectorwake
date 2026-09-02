@@ -41,8 +41,9 @@
 >
 > Its answer down the column is where you stand: the side you fly for, or
 > `watching`. The band opens the same panel, and at the whistle the arena
-> raises it the way a hand would, with one column added for what the match paid
-> each pilot. Who took the match is said by the band rather than by the sheet.
+> raises it the way a hand would, with one column added for where the ladder
+> has each pilot and what the match paid them. Who took the match is said by
+> the band rather than by the sheet.
 > See [decision 147](../architecture/decisions.md).
 
 > **The ship stop is in a room too, and LEAVE SEAT is gone.** The panel the
@@ -125,10 +126,12 @@
 
 > **The column speaks the menu language too.** The settings stop wears no
 > mark. It carried a gauge, drawn by the tab rail's own mark table, and a rail
-> is not what this column is: it was a seventh right end in a language with
-> six, it said the word already on the row, and it sat on the caret it was
-> drawn beside. What the stop wears now is a caret, like every other stop that
-> opens something.
+> is not what this column is: it was an end of its own in a language with a
+> fixed set of them, and it said the word already on the row. No stop wears a
+> mark saying it opens either. Each carried a caret for two decisions, and
+> since every stop opens something the mark was true of all four and told a
+> hand nothing. The corner it took is the answer's now. See
+> [decision 154](../architecture/decisions.md).
 >
 > A stop with no answer beside it puts its own name in ink. The others are a
 > question at the label's weight with an answer at full strength; settings has
@@ -377,9 +380,9 @@ settings and a page away from the game it was about. It is a button at the
 right hand end of that game's own row now, and it hands the seat back rather
 than the room: what a pilot leaving a match wants is to stop flying, not to
 lose the arena they were flying in. So the row that carries it is the room's
-own, the panel stays standing over the result, and the corner offers TAKE SEAT
-for going back in. Right is the arrow that reaches the button, which is where
-it is drawn and the one thing right had no other use for on a list of games.
+own, the panel stays standing over the result, and the ship stop is the way
+back in. Right is the arrow that reaches the button, which is where it is drawn
+and the one thing right had no other use for on a list of games.
 
 That leaves one press on this list with one meaning: be in this game. Three
 states answer it three ways, and all three are `M.want_zone`.
@@ -689,13 +692,13 @@ beside the key with the name over them.
 The stops are decision 89, and they exist because the drawer went undiscovered:
 a first visit met PLAY NOW and a hamburger, deployed into whatever the stands
 were showing, and never learned there was another game or another ship to be. A
-column row is the question at its left edge and the current answer with a caret
-at its right; a rail cell sets the question over the answer, with the caret on
-the question's line. All three drop a list. Account drops the account acts,
-which is the whole of that interface since decision 99 took the pilot page:
-sign up or set a password, roll a new call sign, log in or log off, with a
-rule between what you can do to the account you are and how to be a different
-one, and a dot on the stop for a guest with something to lose. Zone drops the
+column row is the question at its left edge and the current answer at its
+right; a rail cell sets the question over the answer. All three drop a list.
+Account drops the account acts, which is the whole of that interface since
+decision 99 took the pilot page: sign up or set a password, roll a new call
+sign, log in or log off, with a rule between what you can do to the account
+you are and how to be a different one, and a dot on the stop for a guest with
+something to lose. Zone drops the
 games list in place; picking one re-dials the stands to it, so the fight behind
 the glass becomes the one the key would join, and PLAY NOW stays the press that
 commits. Ship drops the panel that is the whole of a ship: five parts over the credits
@@ -738,10 +741,13 @@ the windows it does not fit.
 Nothing else is added. Every reading a panel would carry is one the HUD
 already draws, to the people in the room, in code that has to be right anyway.
 
-The corner keeps MENU and drops TAKE SEAT. That key means the same act as PLAY NOW, and two controls for one act,
-one of them pulsing at the foot of the screen and one a chip in the corner, is
-the offer made twice. A pilot the room benched mid-match keeps TAKE SEAT: they
-are not on the landing, and the seat being held is theirs already.
+The corner drops TAKE SEAT. That chip meant the same act as PLAY NOW, and two
+controls for one act, one of them pulsing at the foot of the screen and one a
+chip in the corner, is the offer made twice. It stayed for a while for a pilot
+the room benched mid-match, who is not on the landing and whose seat is being
+held already, and that is the offer made twice as well: the ship stop is where
+a pilot picks the hull they are coming back in, and coming back is what
+pressing it does from the bench.
 
 ### Before a room answers
 

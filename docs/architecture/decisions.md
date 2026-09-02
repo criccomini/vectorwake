@@ -8447,7 +8447,192 @@ diagonal only corners against while handing over the half it lies flush along.
 `constant_drift_test.lua` holds the four numbers level across `sim.h`, the
 renderer and the editor.
 
-## 154. A flag game rates the whistle and not the wreck
+## 154. Nothing in the menu promises a panel
+
+**Status:** accepted.
+
+**What:** the caret is gone from every row that opens one. `land_caret` in
+`client/arena/ui.lua` is deleted with its three callers: two on a landing
+stop, one down the column and one on a rail cell, and one on `menu_row`'s
+`caret` end. The end goes with it, so the row language has five right hand
+ends rather than six and a row that opens is an ordinary reading. The four
+stops of the column and the ship menu's five sections are what wore it, and
+the sections set what they hold where it stood. `hud_svg.lua` put one on the
+settings page's Controls and About rows, which the client itself never did.
+
+**Why:** it told a hand nothing. Every stop of the column opens a panel and
+every section of the ship menu opens one, so the mark was true of all nine
+rows and separated none of them from any other. What it cost was the corner.
+A section's reading is the one thing on that row a pilot came for, and it was
+set eighteen points short of the glass to keep clear of two strokes.
+
+**The answers moved out to the inset.** A column stop's answer ended fourteen
+points inside the panel's own inset while the caret held that corner, so the
+right hand side of the column was ragged against a left hand side that was
+not. It is flush with `M.ROW_INSET` now, which is the measure decision 104
+unified the panels on, and the guest dot that hangs off the front of an
+answer is measured from the same edge rather than from where the caret began.
+
+**What is left standing.** The marks that point at something a hand can act
+on, which is the back mark in a panel's head and the arrows: either side of a
+count, either side of the carousel, and at the edges of a row that pages its
+own name. Those tell one row from another. This one did not.
+
+`menu_language_test.lua` holds it cross-surface, on the column's stops and on
+the ship menu's sections both, because the mark was shared and a check on one
+of them would have passed while the other kept it. `column_test.lua` asks the
+same question of the stop it always asked it of.
+
+## 155. A kill says what it did to your rating, and a pickup wears a color
+
+**Status:** accepted, amending
+[decision 152](#152-a-death-floats-what-it-did-to-your-rating), which put the
+figure over the wreck and left the feed line silent, and reopening the last
+paragraph of
+[decision 151](#151-a-green-is-on-the-dial-and-taking-one-says-what-it-was),
+which left a pickup line the color of everything else in that column.
+
+**What:** three changes, all in the top right corner.
+
+The feed's line about a death ends in what the death did to this pilot's
+rating, signed: "OZONE killed KESTREL +12", "KESTREL killed OZONE -9",
+"OZONE killed WREN, you assisted +3". The same deaths that float a figure over
+the wreck are the ones that carry it here, off one condition in
+`drain_announced` rather than two, and both print through `ui.signed`, which
+signs a gain, a loss and a nought alike.
+
+The figure over the wreck stands for two and a half seconds instead of one and
+a half, at full strength for the first 0.9 of them. `M.RISE` is unchanged, so
+it now covers the same 26 points at half the speed.
+
+And the line that says what a green gave you is gold, `#ffd166`, the gold the
+corner stack draws a count in and the hangar prices a build in.
+
+**Why the figure needed a second place.** A kill pays nothing, so the rating is
+the only way two of them differ, and 152 said it in the world: over the wreck,
+for a second and a half, anchored where the death happened. That is the right
+first place, because a pilot who has just taken somebody is looking at the
+explosion. It is a bad only place. The wreck can be behind you, off the edge of
+the glass, or under a bomb going off; the glance that reads a number is the
+second glance, and by the time a player in a fight has one to spare the figure
+has gone. The feed line about the same death stands for nine seconds in a
+corner nothing moves through. So the figure is said in both places, and one
+condition in `drain_announced` writes them, which is what stops a kill floating
+a number the corner disagrees with.
+
+The longer life is Chris's, and it is the same argument one step further:
+notice and read are different lengths of time. Slowing the rise falls out of it
+rather than being chosen, and it is the half worth slowing, since the rise is
+what says the figure is leaving and a number is easier to read when it is not
+travelling.
+
+**Why gold, and why not the obvious green.** 151 left the line uncolored and
+said why: three colors in that corner are the fight, and a feed where every
+line is lit says nothing by lighting one. What that missed is which lines were
+sharing the unlit ink. Arrivals, departures, a refused crossing and a refused
+refit are all in it, and every one of them is a line a player can ignore. The
+pickup is the only line in the column about the pilot's own kit, and it was
+dressed as the five they cannot use.
+
+The obvious color is the prize green the diamond wears on the ground and the
+dot wears on the dial, and it is the one color it cannot be. The two greens in
+this column are what a kill did to your rating, `#8dffb0` for a payout and
+`#5aa874` for an assist, and the prize green sits between them: 1.4 to 1 in
+contrast against the payout, at the same hue, on a thirteen-pixel line. A third
+green there is a third light in one family, told apart by nobody at a glance,
+which is the whole of what a color in this corner is for. The prize green stays
+where it is unambiguous, on the field and on the dial.
+
+Gold is the band that was left, and it also happens to be the one that means
+this. The corner stack has said what you carry is gold since it was drawn, the
+hangar prices a build in the same gold, and a green is a thing you now carry.
+The streak is the neighbor, and what makes a streak line a streak line is the
+shimmer rather than the hue, which is a claim the feed's own code has made since
+that line was written. A still gold beside a moving one reads as a different
+kind of line.
+
+**What was considered and rejected.** Violet, which is free in the feed and
+means "in the world and nobody's" in the palette, the same thing a green is. It
+is ruled out by the note over `M.GREEN`: violet means a place, and a prize is a
+thing you pick up, which is why the diamond is not violet either. Coloring the
+line violet and the diamond green is one thing wearing two colors, and one
+thing per hue is the rule that keeps the palette honest.
+
+The feed's full ink, `#dfe9f5`, which conflicts with nothing because it is not a
+hue. It is what the phone's toast already draws an uncolored line in, so it
+would have closed a real gap between the two surfaces. It was rejected as an
+answer to the wrong question: a brighter slate says "this line matters more",
+where the corner's language is that a color says what kind of line it is.
+
+Dropping the wreck's figure now that the line carries one. The wreck is where a
+pilot is looking on the tick it happens, and the corner is where they are
+looking a second later. Neither covers the other's moment.
+
+**The cost.** A fifth kind of lit line in a column that argued for three, which
+is a real price and is the price Chris asked to pay. Nothing on the wire moved:
+`k.gain` has been on every kill message since protocol 38 and the client was
+already working the change out from the copy it holds.
+
+**Held by** `client/tests/kill_line_test.lua`, which pulls `drain_announced`
+out of the arena and runs it over the three lines that are yours, the ones that
+are not, and a watcher's seat, then sweeps every shape of death asking only
+that the line and the wreck answer together; the figure's clock is at the foot
+of the same file, pinned as what a player can read rather than as the constant
+behind it. `client/tests/greens_test.lua` runs the arena's event loop and pins
+the pickup's color by value, along with the three greens it has to stay out of.
+
+## 156. The corner is the fight
+
+**Status:** accepted.
+
+**What:** the two chips left in the top left corner are gone, and the panel
+one of them opened goes with them. `TAKE SEAT`, which a benched pilot pressed
+to get back in a hull, and `ROOM n`, which named which copy of the game you
+were in and opened a list of the others. What is left up there is the on-air
+tally, which is not a control and is drawn only while the room's channel is
+pointed at you. In an ordinary match that corner holds nothing at all.
+
+**Why:** each of them was a second way to do something already offered.
+Pressing `TAKE SEAT` set the pilot's current class and opened the ship stop,
+which is exactly what opening the ship stop does: the panel's foot reads "you
+take a seat in it" from the bench, and settling it sends the class and the
+build together. The chip was the ship stop with the hull picked for you, in a
+corner, and it had already been taken off the landing for the same reason
+(decision 143's column key says it better there).
+
+`ROOM n` is the same argument one step out. A game is what a player picks, and
+which copy of it seats them is the fill ladder's business: that is why the
+number never travels with a row of the games list. The chip put the seam back
+on screen, and the panel behind it made moving between copies a reconnect, a
+fresh spawn, and a confirm card asking whether the pilot meant it. A zone
+holding one room, which is most of them, drew nothing.
+
+**What went with the panel.** `rooms_panel`, `M.room_card` and their state in
+`ui.lua`; `zone_rooms` in `directory.lua` and the `rooms` field it put on every
+row of the games list; `menu.chosen_room`, whose only writer was the card's
+answer; the `rooms`, `rooms_list`, `room`, `room_answer` and `take_seat`
+actions in `arena.script`, with the wheel and drag paths that scrolled the
+list. `in_list` went too: it tested for `scores` as well, which nothing has
+published since the scoreboard became a panel of the menu, so the row-scrolling
+half of the drag has been unreachable for a while. Dragging is the menu's page
+and the column now, which is what a phone actually needed. The key cap
+(`key_w`, `key_frame`, `key_cap`) had no other caller, nor did `population`,
+which set a count of people beside a count of machines and was the last reader
+of `COL_W`.
+
+**A room is still nameable**, by a deep link, which carries zone, instance and
+number and is the one thing that ever asked for a particular one. `net.room` is
+still on the wire and `session.enter` still takes a room; nothing in the
+interface names one.
+
+`hud_hits_test.lua` holds the corner empty in every state a room has.
+`band_test.lua` and `landing_test.lua` measured the top row against the chip's
+published box, which was the one thing up there at a key's own height; they
+read the row off the on-air tally and off the link meter's box instead, since
+neither corner publishes a box any more. `marks_test.lua` read the pilot and
+bot marks off a row of the rooms list, and reads them off the players sheet.
+
+## 157. A flag game rates the whistle and not the wreck
 
 **Status:** accepted, amending
 [decision 131](#131-a-duel-is-a-two-seat-zone-and-nothing-else), which filed

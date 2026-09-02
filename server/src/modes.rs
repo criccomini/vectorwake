@@ -235,7 +235,7 @@ pub const NAMES: [&str; 5] = ["arena", "warzone", "melee", "turf", "duel"];
 /// The kill games rate kills: a melee, a duel and free roam are decided by
 /// who shot whom, and their ladders stay as they were. A flag game is decided
 /// by ground held, so its ladder is moved by the whistle and not by the
-/// wreck. See decision 154.
+/// wreck. See decision 157.
 pub fn rated_by_match(name: &str) -> bool {
     matches!(name, "turf" | "warzone")
 }

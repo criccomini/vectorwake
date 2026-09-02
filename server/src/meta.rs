@@ -180,7 +180,7 @@ create table if not exists rated_event_receipts (
 );
 create index if not exists rated_event_receipts_botsweep
     on rated_event_receipts (at) where bots_only;
--- A whistle in a zone rated by match (decision 154): the score and one
+-- A whistle in a zone rated by match (decision 157): the score and one
 -- standing per account, rating before and after. Human-involving matches
 -- only, as with rated_events; a bot-only match leaves its receipt above and
 -- nothing else. Replayable the same way, since every standing carries both

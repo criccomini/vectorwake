@@ -257,9 +257,9 @@ local machine = stop_of("settings")
 check("the machine stop opens a page", machine.go == "settings",
       tostring(machine.go))
 -- And nothing at all beside its name. It carried a gauge for a while, drawn
--- by the tab rail's mark table: a seventh right end in a language with six,
--- sitting on the caret it was drawn next to and saying the word already on the
--- row. `land_stop` gives a stop with no answer the ink instead.
+-- by the tab rail's mark table: an end of its own in a language that has a
+-- fixed set of them, saying the word already on the row. `land_stop` gives a
+-- stop with no answer the ink instead.
 check("and carries no answer and no mark",
       machine.value == nil and machine.mark == nil,
       tostring(machine.mark))
@@ -318,8 +318,8 @@ check("a bare column has no page open", menu.stop_open() == nil)
 check("pressing a stop opens its page",
       select(2, menu.press_stop("settings")) == true
       and menu.stop_open() == "settings", table.concat(menu.stack, "/"))
--- Pressing the one already open shuts it, which is what the caret on the stop
--- draws.
+-- Pressing the one already open shuts it: a stop is the panel climbing off
+-- it, and there is one press for both directions.
 check("and opening the open one shuts it",
       menu.open_stop("settings") == nil and #menu.stack == 0)
 check("a stop the room is not offering answers nothing",

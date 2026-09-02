@@ -219,6 +219,16 @@ M.CHARGES = {
     {name = "charge 3", short = "C3"},
     {name = "charge 4", short = "C4"},
 }
+-- The gold of what you carry. The corner stack draws every count in it, the
+-- hangar draws the credits a build spends in it, and the feed says a green
+-- you picked up in it, because a green is the one line in that column about
+-- your kit rather than about the fight or the room.
+--
+-- The streak's gold is the near neighbor and does not collide with it, which
+-- is a claim the feed already makes in as many words: a streak is gold that
+-- moves, and a still gold beside it is not a streak. Every other band in this
+-- corner is spoken for. Green is what a kill did to your rating, twice over;
+-- red is being hurt; the cyan and orange pair is a side; violet is a place.
 M.CHARGE_COL = rgb(0xffd166)
 -- What a pilot is worth. Its own color, because it is neither a team nor a
 -- kind of upgrade: it is a price.

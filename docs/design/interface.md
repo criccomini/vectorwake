@@ -90,10 +90,10 @@ Past those, a hue means one thing, one thing per hue, across every screen:
 | pink | `#ff5ea8` | the bomb |
 | violet | `#c27bff`, `#a06bff` | a place, not a player: the burst's rounds, a wormhole |
 | green | `#35e0a0` | a door (the open state is a darker step of the same band) |
-| prize green | `#5be08a` | a green: a thing on the field that is nobody's until somebody reaches it |
+| prize green | `#5be08a` | a green: a thing on the field that is nobody's until somebody reaches it. Only on the field and the dial, never in the feed, where the greens belong to the fight |
 | pale green | `#8dffb0` | what you were paid, and `#5aa874` a step down from it for a kill you only helped with |
-| gold | `#ffd166` | a charge you carry and spend |
-| deep gold | `#ffe08a` | a pilot on a streak, on the hull and in the feed |
+| gold | `#ffd166` | what you carry: a charge counted in the corner, the credits a build spends, the feed's line about a green you picked up |
+| streak gold | `#ffc23d` to `#fff3c4` | a pilot on a run, on the hull and in the feed, and the one gold in the game that moves: the shimmer between those two ends is what a streak is, so a still gold beside it is something else |
 | red | `#ff505a` | you are being hurt, or about to lose something |
 | slate | `#3f5878` | structure: rules, panel edges, terrain on the dial |
 
@@ -263,7 +263,7 @@ chip: a small stroked box with its word inside, on or off, lit when held.
 
 **Everything that points is drawn.** Sort order is a triangle, never a caret
 character or a letter v. The wake stepper's arrows, the week stepper, the back
-caret on a page a phone has drilled into, the "you are here" wedge in a row's
+mark on a page a phone has drilled into, the "you are here" wedge in a row's
 gutter, the watching play-mark, the board's arrow keys: all triangles from
 the mesh layer, weighted like the line work around them. A "<" set in type is
 a picture of a mathematical symbol, not of going back. The gui font's glyphs
@@ -280,9 +280,11 @@ rail's destinations, and decision 102 deleted the rail. The gauge outlived it
 by a few decisions on the settings stop, which was the one stop with no word
 to put where the others put an answer, until decision 109 took it off: a mark
 that repeats the label is the label said twice, and in a column whose rows end
-in one of six things it was a seventh. A stop that opens wears the caret. The
-rule that removed the gauge is not that a stop may not have a mark, so if one
-earns a picture it can have one.
+in a fixed set of things it was one more. A stop that opens wore a caret after
+that, until decision 154 found the same fault in it: every stop opens
+something, so a mark on every one of them separates nothing, and the corner is
+better spent on the answer. The rule is not that a stop may not have a mark,
+so if one earns a picture it can have one.
 
 A drawing that appears in two places is one function. The weapon marks live
 in `marks.lua` because the corner stack and the touch pads both draw them,
@@ -340,16 +342,18 @@ The constants that repeat, from ui.lua:
 | name | value | what it measures |
 |---|---|---|
 | PAD | 14 | the margin instruments keep from the screen edge |
-| COL_W | 248 | the left column's panels: the rooms list and the run log |
 | LINE | 18 | one row of a HUD list |
 | RADAR | 168 | the dial's side at rest |
 | GUTTER | 22 | the inset a menu row's type keeps from both of its edges |
 | ROW_PAD | 16 | how far a lit row reaches past its column of type |
 | KEY_H | 26 | a button's height |
 
-The HUD has a fixed geography, and it is the prototype's. Top left: the chip
-row (TAKE SEAT, ROOM, the on-air or watching chip) and the rooms panel under
-it, all of which come and go, so in an ordinary match that corner is the fight.
+The HUD has a fixed geography, and it is the prototype's. Top left: the on-air
+tally, and nothing else. It was a row of chips, and each turned out to be a
+second way to do something the interface already offered: TAKE SEAT, which the
+ship stop says better, and ROOM n, which named which copy of the game you were
+in and opened a list of the others. Both are gone, and so is the rooms panel
+that hung under them, so in an ordinary match that corner is the fight.
 Bottom middle: the faint `MENU` key, and the column it raises, in a room you
 are in. Top left held MENU until decision 102 moved it to the foot, where the
 panel it opens stands. The front page carries the column and not the key: out
@@ -397,7 +401,10 @@ The match ending is that sheet, raised by the arena rather than by a hand.
 There is no page of its own and no block over the fight: the whistle opens the
 `players` stop the way a press would, so escape puts it away and the arrows
 walk it exactly as they do the rest of the time. What the sheet gains is one
-column, what the match paid each pilot. Who took the match is the band's to
+column: where the ladder has each pilot, with what the match paid them in
+brackets after it. The standing is set in the ink the figures beside it are,
+since no rating is good or bad; only the movement is green up and red down.
+Who took the match is the band's to
 say, in the pixels that have carried the score for three minutes: both sides
 stay on it, the winner at its own strength and the beaten side stood down to a
 third, over the clock counting to the next one. A draw stands neither down.

@@ -288,7 +288,7 @@ local function reading(self, dt, html5, touch, ui, menu)
             depth = #menu.stack,
             -- A card takes every box on screen, so a harness that finds no
             -- box it wanted should look here before calling it a fault.
-            card = (menu.ask ~= nil) or (ui.room_ask ~= nil),
+            card = menu.ask ~= nil,
             note = menu.note,
         },
 

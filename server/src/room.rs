@@ -3444,7 +3444,7 @@ impl Room {
     /// scored as the mode scored them, and the movement goes to the
     /// meta-layer the way a death's does. Nothing in a kill game: the ledger
     /// there is the deaths, and this is the one place the two ways of being
-    /// rated meet. See decision 154.
+    /// rated meet. See decision 157.
     fn settle_match(&mut self) {
         if !self.rating.rates_by_match() {
             return;

@@ -137,7 +137,7 @@ pub struct Rating {
     /// Whether this room rates the match rather than the death. A flag game
     /// is won by holding ground, and a death in it is a fact about the
     /// fight and not about the game, so the ledger stays empty and the only
-    /// exchange is the one `matched` runs at the whistle. See decision 154.
+    /// exchange is the one `matched` runs at the whistle. See decision 157.
     by_match: bool,
 }
 

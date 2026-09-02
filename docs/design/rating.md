@@ -24,11 +24,13 @@ That makes the ending its readout. The podium's board carries a column saying
 what the match did to each pilot's rating, signed. The rating itself is never
 drawn during the fight: a rating is a standing, and a number climbing over
 somebody's head while they are being shot at is the shape the bounty had. What
-a single death did to yours is, though: the change floats off the wreck for a
-moment, signed, for a kill, a death, or a victim you had softened, and a kill
-that paid nothing floats its zero. It is a receipt about one fight rather than
-a price on somebody's head, and it is the one number that says whether the kill
-mattered (decision 152).
+a single death did to yours is, though: the change is said twice, signed, for a
+kill, a death, or a victim you had softened, and a kill that paid nothing says
+its zero. It floats off the wreck for two and a half seconds, where a pilot who
+has just taken somebody is already looking, and it goes on the end of the feed's
+line about the same death, which stands for nine. It is a receipt about one
+fight rather than a price on somebody's head, and it is the one number that says
+whether the kill mattered (decisions 152 and 155).
 
 ## The hard part
 
@@ -228,7 +230,7 @@ and the least needs saying about them.
 Turf and Capture the Flag are won by holding ground, and a rating there that
 counted deaths was a rating about the dogfights on turf maps rather than about
 turf. So those two zones rate the match and nothing else, per
-[decision 154](../architecture/decisions.md#154-a-flag-game-rates-the-whistle-and-not-the-wreck).
+[decision 157](../architecture/decisions.md#157-a-flag-game-rates-the-whistle-and-not-the-wreck).
 The kill games, Team Battle, Duel and Free Roam, are unchanged and rate only
 by kills and deaths.
 
@@ -299,7 +301,9 @@ why the filter exists.
 There is no zone whose rating is the unmarked default any more.
 
 The podium's rating column, per the top of this document, is the match's own
-and needs no label: a match is in one zone by definition.
+and needs no label: a match is in one zone by definition. It carries the
+standing and the movement together, as `1500 (-6)`, because a signed figure
+alone says how the evening went and not where anybody stands.
 
 ## Storage
 
