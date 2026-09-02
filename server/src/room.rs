@@ -2729,9 +2729,11 @@ impl Room {
                     m.extend_from_slice(&vr.to_le_bytes());
                     m.extend_from_slice(&kr.to_le_bytes());
                     m.push(r.credits.len() as u8);
-                    // A quit pays no bounty: points are the sim's to award
-                    // and the sim saw no death.
-                    m.extend_from_slice(&0u16.to_le_bytes());
+                    // The same 13 bytes the ordinary death writes. A quit
+                    // used to carry a payout of zero here, two dead bytes
+                    // left from when a kill was worth something, and a
+                    // client reading the one layout it knows took them for
+                    // the tick.
                     m.extend_from_slice(&tick.to_le_bytes());
                     // Nobody is told they helped, for the same reason. The
                     // sim never ran a death here, so no assist column moved,
