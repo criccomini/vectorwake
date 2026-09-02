@@ -2735,10 +2735,10 @@ impl Room {
                     // client reading the one layout it knows took them for
                     // the tick.
                     m.extend_from_slice(&tick.to_le_bytes());
-                    // Nobody is told they helped, for the same reason. The
-                    // sim never ran a death here, so no assist column moved,
-                    // and a notice about one the scoreboard does not show is
-                    // the disagreement this byte exists to avoid.
+                    // Nobody is told they helped. The sim never ran a death
+                    // here, so no assist column moved, and a notice about one
+                    // the scoreboard does not show is the disagreement this
+                    // byte exists to avoid.
                     m.push(0);
                     for pl in self.players.values() {
                         let _ = pl.tx.try_send(Message::Binary(m.clone()));
