@@ -2,11 +2,11 @@
   "pages": [
     {
       "id": "page-1",
-      "name": "The four"
+      "name": "The scoreline"
     },
     {
       "id": "page-2",
-      "name": "A: The scoreline"
+      "name": "The four, first pass"
     },
     {
       "id": "page-3",
@@ -24,12 +24,21 @@
   "artboards": [
     {
       "file": "Main.dc.html",
+      "title": "The scoreline at one size, every zone",
+      "x": 0,
+      "y": 0,
+      "w": 1552,
+      "h": 1180,
+      "page": "page-1"
+    },
+    {
+      "file": "Directions.dc.html",
       "title": "Four shapes, every zone",
       "x": 0,
       "y": 0,
       "w": 1552,
-      "h": 2880,
-      "page": "page-1"
+      "h": 2960,
+      "page": "page-2"
     },
     {
       "file": "Shipped.dc.html",
@@ -38,61 +47,61 @@
       "y": 0,
       "w": 1440,
       "h": 810,
-      "page": "page-1"
+      "page": "page-2"
     },
     {
       "file": "ScorelineDesktop.dc.html",
       "title": "Team Battle, monitor",
       "x": 0,
-      "y": 0,
+      "y": 1320,
       "w": 1440,
       "h": 810,
-      "page": "page-2"
+      "page": "page-1"
     },
     {
       "file": "ScorelineTurf.dc.html",
       "title": "Turf, monitor",
       "x": 0,
-      "y": 930,
+      "y": 2250,
       "w": 1440,
       "h": 810,
-      "page": "page-2"
+      "page": "page-1"
     },
     {
       "file": "ScorelineDuel.dc.html",
       "title": "Duel, monitor",
       "x": 0,
-      "y": 1860,
+      "y": 3180,
       "w": 1440,
       "h": 810,
-      "page": "page-2"
+      "page": "page-1"
     },
     {
       "file": "ScorelineEnd.dc.html",
       "title": "At the whistle, monitor",
       "x": 0,
-      "y": 2790,
+      "y": 4110,
       "w": 1440,
       "h": 810,
-      "page": "page-2"
+      "page": "page-1"
     },
     {
       "file": "ScorelinePortrait.dc.html",
       "title": "Team Battle, phone",
       "x": 1540,
-      "y": 0,
+      "y": 1320,
       "w": 390,
       "h": 844,
-      "page": "page-2"
+      "page": "page-1"
     },
     {
       "file": "ScorelinePortraitTurf.dc.html",
       "title": "Turf, phone",
       "x": 2030,
-      "y": 0,
+      "y": 1320,
       "w": 390,
       "h": 844,
-      "page": "page-2"
+      "page": "page-1"
     },
     {
       "file": "CornersDesktop.dc.html",

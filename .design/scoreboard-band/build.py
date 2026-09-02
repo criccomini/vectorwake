@@ -356,13 +356,13 @@ def signed(n, px, dim=1.0):
             f'opacity:{dim}">({n:+d})</span>')
 
 
-def rating(zone, px=13, caption=True, dim=1.0, align="left"):
+def rating(zone, px=13, caption=True, dim=1.0, align="left", cap_px=None):
     """The viewer's standing in this zone, and what the room has done to it
     since they sat down. The standing in ink, since no rating is good or
     bad; only the movement takes a color."""
     at, moved = ME[zone]
-    cap = (f'<span class="hud" style="font-size:{px - 3}px;color:{DIM}">'
-           f'Rating</span>' if caption else "")
+    cap = (f'<span class="hud" style="font-size:{cap_px or px - 3}px;'
+           f'color:{DIM}">Rating</span>' if caption else "")
     return (f'<span class="row" style="gap:{6 if caption else 4}px;'
             f'justify-content:{"flex-end" if align == "right" else "flex-start"}">'
             f'{cap}<span class="num" style="font-size:{px}px;color:{INK};'
@@ -439,68 +439,79 @@ def band_shipped(w, room, zone, compact, state="open"):
 # --- A. the scoreline --------------------------------------------------------
 
 
-def band_scoreline(w, room, zone, compact, state="open"):
-    """One line at top center, the scores leading it: a side is its score
-    at 22 points with its name at 10 beside it, and the clock between
-    them at 15 in the reading ink. The inversion the shipped band has is
-    put the right way up. Flags hang under the clock as beacons, a
-    duel's rounds are pips in place of numbers, and the rating is a
-    readout in the top left, the twin of POS in the top right."""
+def band_scoreline(w, room, zone, compact, state="open", px=13):
+    """One line at top center, everything on it one size: the HUD's own
+    13 point body, which POS and the feed are already set in. A side is
+    its score and its name, the clock stands between them in the reading
+    ink, and the rating is a readout in the top left, the twin of POS in
+    the top right, at the same size again. What tells a score from a
+    name from the clock is color and order, not weight: a side's two
+    words wear its color, the clock is the reading ink, the rating is
+    ink with its movement colored. Flags hang under the clock as beacons
+    and a duel's rounds are pips in place of numbers."""
     top = PAD
-    score_px = 20 if compact else 22
-    clock_px = 14 if compact else 15
-    name_px = 10
     gap = 12 if compact else 16
-    # Everything stands on one bottom line, the score's own, and that line
-    # is placed so the score is centered in the row.
-    bottom = top + (KEY_H + score_px) / 2
-    out = [f'<div class="abs">{rating_readout(zone, compact)}</div>']
+    line = (f'top:{top}px;height:{KEY_H}px;display:flex;align-items:center;'
+            f'position:absolute')
+    out = [rating_readout(zone, compact, px)]
     if room["clock"] is None:
         out.append(
-            f'<div class="abs hud" style="left:50%;top:{top}px;height:{KEY_H}px;'
-            f'transform:translateX(-50%);display:flex;align-items:center;'
-            f'font-size:{clock_px}px;color:{INK};opacity:.9;white-space:nowrap">'
+            f'<div class="hud" style="{line};left:50%;transform:translateX(-50%);'
+            f'font-size:{px}px;color:{INK};opacity:.9;white-space:nowrap">'
             f'<span class="num">{room["flying"]}</span>&nbsp;flying</div>')
         return "".join(out)
     clock = clock_text(room, state)
-    half = adv(clock, clock_px) / 2
+    ended = state == "end"
+    # At the whistle the middle says what the clock is counting to, on the
+    # line itself: a second line under the row would be a second size.
+    middle = (f'<span class="num" style="font-size:{px}px;color:{READ};'
+              f'opacity:.95">{clock}</span>')
+    mid_w = adv(clock, px)
+    if ended:
+        middle = (f'<span class="hud" style="font-size:{px}px;color:{DIM};'
+                  f'white-space:nowrap">Next match in</span>' + middle)
+        mid_w += adv("Next match in", px) + 8
     out.append(
-        f'<div class="abs num" style="left:50%;top:{bottom - clock_px:.1f}px;'
-        f'transform:translateX(-50%);font-size:{clock_px}px;color:{READ};'
-        f'opacity:.95">{clock}</div>')
-    if state == "end":
-        out.append(next_match("left:50%;transform:translateX(-50%)",
-                              top + KEY_H + 7, 9 if compact else 10))
+        f'<div class="row" style="{line};left:50%;transform:translateX(-50%);'
+        f'gap:8px">{middle}</div>')
+    half = mid_w / 2
     duel = zone == "duel"
     for i, s in enumerate(room["sides"]):
         dim = stood(room, s, state)
         edge = w / 2 - half - gap if i == 0 else w / 2 + half + gap
         pos = (f"right:{w - edge:.0f}px" if i == 0 else f"left:{edge:.0f}px")
-        # A phone has no room for the names; the figures always draw.
-        name = "" if (compact and not duel) else label(s, name_px, dim)
+        # A phone has no room for a team's name, and so has any window where
+        # the name would run into the rating on the left or the dial's strip
+        # on the right: the name drops and the figure always draws, which is
+        # the shipped band's rule. A duel's sides are its pilots, and a pip
+        # with no name is nobody, so a duel keeps them.
+        room_l = edge - (PAD + adv("Rating 1494 (-6)", px) + gap)
+        room_r = row_right(w, compact) - edge
+        fits = adv(s.name, px) + 8 + adv(str(s.score), px) <= (
+            room_l if i == 0 else room_r)
+        name = "" if ((compact or not fits) and not duel) else label(s, px, dim)
         if duel:
-            figure = pips(s, 1.2, 3, reverse=(i == 0))
-            figure = f'<span style="padding-bottom:4px">{figure}</span>'
+            figure = pips(s, px / 13, 3, reverse=(i == 0))
         else:
-            figure = (f'<span class="num" style="font-size:{score_px}px;'
+            figure = (f'<span class="num" style="font-size:{px}px;'
                       f'color:{s.col};opacity:{dim}">{s.score}</span>')
         bits = [figure, name] if i == 0 else [name, figure]
-        bits = [b for b in bits if b]
-        out.append(
-            f'<div class="abs row" style="{pos};top:{bottom - score_px:.1f}px;'
-            f'height:{score_px}px;align-items:flex-end;gap:8px">'
-            f'{"".join(bits)}</div>')
-    if room["stands"] and state != "end":
-        out.append(f'<div class="abs row" style="left:50%;top:{top + KEY_H + 6}px;'
+        bits = [x for x in bits if x]
+        out.append(f'<div class="row" style="{line};{pos};gap:8px">'
+                   f'{"".join(bits)}</div>')
+    if room["stands"] and not ended:
+        out.append(f'<div class="abs row" style="left:50%;top:{top + KEY_H + 4}px;'
                    f'transform:translateX(-50%)">{beacons(room, .9, 3)}</div>')
     return "".join(out)
 
 
-def rating_readout(zone, compact):
-    """The top left corner: your standing, the way POS is the top right."""
+def rating_readout(zone, compact, px=13):
+    """The top left corner: your standing, the way POS is the top right,
+    and at the same size as everything else on the row. A phone drops
+    the caption the way it drops the sides' names."""
     return (f'<div class="abs row" style="left:{PAD}px;top:{PAD}px;'
             f'height:{KEY_H}px">'
-            f'{rating(zone, 13, caption=not compact)}</div>')
+            f'{rating(zone, px, caption=not compact, cap_px=px)}</div>')
 
 
 # --- B. the corners ----------------------------------------------------------
@@ -793,12 +804,16 @@ def screen(form, band, zone, state="open", seed=1):
 STRIP_W, STRIP_H = 720, 84
 
 
-def strip(band, zone, state="open", w=STRIP_W, h=STRIP_H, compact=False):
+def strip(band, zone, state="open", w=STRIP_W, h=STRIP_H, compact=False,
+          px=None):
     """The top of a window and nothing else: the row, the strip over the
     dial and the top edge of the dial, so a band is judged against the
     end it stops at."""
     room = ROOMS[zone]
-    inner = radar(w, compact) + BANDS[band](w, room, zone, compact, state)
+    fn = BANDS[band]
+    drawn = (fn(w, room, zone, compact, state, px) if px
+             else fn(w, room, zone, compact, state))
+    inner = radar(w, compact) + drawn
     return (f'<div style="position:relative;width:{w}px;height:{h}px;'
             f'overflow:hidden;background-color:{BG};flex:none;'
             f'background-image:{starfield(w, h, 3 + hash(band + zone) % 97)}">'
@@ -882,10 +897,75 @@ DIRECTIONS = [
 ]
 
 
-def main_sheet():
+def scoreline_sheet():
     body = [
-        title("The scoreboard band · round four"),
+        title("The scoreboard band · round four · the pick"),
+        h1("The scoreline, at one size"),
+        cap("Chris picked A and asked for one thing changed: nothing on the "
+            "row varies in size. The first draft set the scores at 22, the "
+            "clock at 15 and the names at 10; here every figure and every "
+            "word on the row is 13 points, which is the HUD's own body size "
+            "and what POS and the feed are already set in. What tells a score "
+            "from a name from the clock is color and order rather than weight: "
+            "a side's two words wear its color, the clock is the reading ink, "
+            "the rating is ink with its movement colored. The row is one key "
+            "tall as before and the band still grows outward from the clock "
+            "and stops short of the dial; a phone drops the names and the "
+            "rating's caption, and the figures always draw. Flags hang under "
+            "the clock as the radar's beacon, a duel's rounds are pips, and at "
+            "the whistle the middle reads what the clock is counting to on the "
+            "line itself rather than on a second line at a second size.",
+            900),
+        f'<div style="height:22px"></div>',
+        title("Every zone, and the whistle"),
+    ]
+    cells = "".join(
+        f'<div style="display:flex;flex-direction:column;gap:6px">'
+        f'{strip("Scoreline", zone, state)}'
+        f'<span class="lbl" style="letter-spacing:.1em">{note}</span></div>'
+        for zone, state, note in STATES)
+    body.append(
+        f'<div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));'
+        f'gap:14px 16px;width:{2 * STRIP_W + 16}px">{cells}</div>')
+    body += [
+        f'<div style="height:34px"></div>',
+        title("The one size, tried at three"),
+        cap("13 is the body. 12 is the caption size the row's neighbors use "
+            "for POS, and 14 is one up. Turf, because it has the most on the "
+            "row.", 900),
+        f'<div style="height:12px"></div>',
+    ]
+    cells = "".join(
+        f'<div style="display:flex;flex-direction:column;gap:6px">'
+        f'{strip("Scoreline", "turf", px=px)}'
+        f'<span class="lbl" style="letter-spacing:.1em">{px} points'
+        f'{" · the boards" if px == 13 else ""}</span></div>'
+        for px in (12, 13, 14))
+    body.append(
+        f'<div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));'
+        f'gap:14px 16px;width:{2 * STRIP_W + 16}px">{cells}</div>')
+    body += [
+        f'<div style="height:34px"></div>',
+        title("As shipped, for the record"),
+        f'<div style="display:flex;gap:16px;align-items:flex-start">'
+        f'{strip("Shipped", "melee")}{strip("Shipped", "turf")}</div>',
+        cap("Decision 67's band on main today: the clock at 26, each score at "
+            "14, the names at 9, and no rating anywhere on the HUD.", 900),
+    ]
+    return (f'<div style="padding:40px 48px 56px;width:{2 * STRIP_W + 16 + 96}px;'
+            f'background:{BG};display:flex;flex-direction:column;gap:2px">'
+            f'{"".join(body)}</div>')
+
+
+def directions_sheet():
+    body = [
+        title("The scoreboard band · round four · the first pass"),
         h1("Four shapes for the top of the window"),
+        cap("The first pass, kept for the record. Chris picked A, the "
+            "scoreline, and asked for it at one size; that is the first page. "
+            "The scoreline drawn here is the draft he picked from, with its "
+            "scores at 22, clock at 15 and names at 10.", 900),
+        f'<div style="height:14px"></div>',
         cap("The shipped band is decision 67's: the clock one key tall at top "
             "center, a side either side of it as a 9 point name over a 14 point "
             "number. What is wrong with it, a week in: the middle looks wonky, "
@@ -971,7 +1051,8 @@ def page(name, body):
 
 
 def main():
-    boards = {"Main": main_sheet(),
+    boards = {"Main": scoreline_sheet(),
+              "Directions": directions_sheet(),
               "Shipped": screen("Desktop", "Shipped", "melee")}
     for key, *_ in DIRECTIONS:
         boards[f"{key}Desktop"] = screen("Desktop", key, "melee")
@@ -987,31 +1068,39 @@ def main():
 
 
 def canvas(boards):
-    """Where each board sits on the canvas: the four directions across
-    every zone on the first page beside the shipped band, then a page a
-    direction with its four monitors down the left and its two phones
-    to the right."""
-    pages = [{"id": "page-1", "name": "The four"}]
+    """Where each board sits on the canvas: the pick first, the scoreline
+    at one size across every zone with its monitors down the left and
+    its phones to the right; then the first pass's four directions for
+    the record, a page each after the sheet that compares them."""
+    pages = [{"id": "page-1", "name": "The scoreline"},
+             {"id": "page-2", "name": "The four, first pass"}]
     arts = [
-        dict(file="Main.dc.html", title="Four shapes, every zone", x=0, y=0,
-             w=2 * STRIP_W + 16 + 96, h=2880, page="page-1"),
+        dict(file="Main.dc.html", title="The scoreline at one size, every zone",
+             x=0, y=0, w=2 * STRIP_W + 16 + 96, h=1180, page="page-1"),
+        dict(file="Directions.dc.html", title="Four shapes, every zone",
+             x=0, y=0, w=2 * STRIP_W + 16 + 96, h=2960, page="page-2"),
         dict(file="Shipped.dc.html", title="As shipped: Team Battle, monitor",
-             x=1640, y=0, w=1440, h=810, page="page-1"),
+             x=1640, y=0, w=1440, h=810, page="page-2"),
     ]
-    for n, (key, head, *_) in enumerate(DIRECTIONS, start=2):
+    col = [("Desktop", "Team Battle, monitor"), ("Turf", "Turf, monitor"),
+           ("Duel", "Duel, monitor"), ("End", "At the whistle, monitor")]
+
+    def boards_of(key, pid, x0, y0):
+        for i, (suffix, t) in enumerate(col):
+            arts.append(dict(file=f"{key}{suffix}.dc.html", title=t, x=x0,
+                             y=y0 + i * 930, w=1440, h=810, page=pid))
+        arts.append(dict(file=f"{key}Portrait.dc.html",
+                         title="Team Battle, phone", x=x0 + 1540, y=y0,
+                         w=390, h=844, page=pid))
+        arts.append(dict(file=f"{key}PortraitTurf.dc.html",
+                         title="Turf, phone", x=x0 + 2030, y=y0, w=390,
+                         h=844, page=pid))
+
+    boards_of("Scoreline", "page-1", 0, 1320)
+    for n, (key, head, *_) in enumerate(DIRECTIONS[1:], start=3):
         pid = f"page-{n}"
         pages.append({"id": pid, "name": head.replace(" · ", ": ")})
-        col = [("Desktop", "Team Battle, monitor"), ("Turf", "Turf, monitor"),
-               ("Duel", "Duel, monitor"), ("End", "At the whistle, monitor")]
-        for i, (suffix, t) in enumerate(col):
-            arts.append(dict(file=f"{key}{suffix}.dc.html", title=t, x=0,
-                             y=i * 930, w=1440, h=810, page=pid))
-        arts.append(dict(file=f"{key}Portrait.dc.html",
-                         title="Team Battle, phone", x=1540, y=0, w=390,
-                         h=844, page=pid))
-        arts.append(dict(file=f"{key}PortraitTurf.dc.html",
-                         title="Turf, phone", x=2030, y=0, w=390, h=844,
-                         page=pid))
+        boards_of(key, pid, 0, 0)
     listed = {a["file"] for a in arts}
     assert listed == {f"{n}.dc.html" for n in boards}, listed ^ {
         f"{n}.dc.html" for n in boards}
