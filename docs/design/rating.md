@@ -16,10 +16,15 @@ Roam carries two ratings and no total over them, and a first game in a zone
 they have never flown places them from scratch however good they are
 elsewhere. Every screen that shows a rating says which zone it came from.
 
-That makes the ending its one readout. The podium's board carries a column
-saying what the match did to each pilot's rating, signed, and nothing carries it
-during the fight: a rating is a standing, and a number climbing over somebody's
-head while they are being shot at is the shape the bounty had.
+That makes the ending its readout. The podium's board carries a column saying
+what the match did to each pilot's rating, signed. The rating itself is never
+drawn during the fight: a rating is a standing, and a number climbing over
+somebody's head while they are being shot at is the shape the bounty had. What
+a single death did to yours is, though: the change floats off the wreck for a
+moment, signed, for a kill, a death, or a victim you had softened, and a kill
+that paid nothing floats its zero. It is a receipt about one fight rather than
+a price on somebody's head, and it is the one number that says whether the kill
+mattered (decision 151).
 
 ## The hard part
 

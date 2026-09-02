@@ -1666,6 +1666,19 @@ local function on_glass(o, scale, x, y)
     return F.w / 2 + (x - o.cam_x) * scale, F.h / 2 + (y - o.cam_y) * scale
 end
 
+-- What a death did to this pilot's rating, drifting off the wreck. On the
+-- module rather than in a local because ui.lua stands at LuaJIT's limit of
+-- two hundred locals; see decision 151 for why the figure is back.
+M.payouts = require("arena.ui_payouts").new()
+
+function M.payout(x, y, n)
+    M.payouts:add(F.now, x, y, n)
+end
+
+function M.clear_payouts()
+    M.payouts:clear()
+end
+
 local function nameplates(o)
     if not o.half_w or o.half_w <= 0 then return end
     -- The render script publishes its own half-extents for exactly this, so
@@ -1727,7 +1740,18 @@ local function nameplates(o)
             end
         end
     end
-
+    -- The figures, drifting off the wrecks they were earned on. Walked
+    -- backwards into itself so an expired one is dropped in the same pass
+    -- that draws the rest, and the list stays as short as the killing is
+    -- fast. Green when the number went up, the feed's red when it went down,
+    -- and a plus zero is drawn as a gain, since the kill was still yours.
+    M.payouts:each(F.now, function(p, f, a)
+        local px, py = on_glass(o, scale, p.x, p.y)
+        local col = p.n < 0 and pal.HURT or pal.PAID
+        txt((p.n >= 0 and "+" or "") .. p.n, px + 12 * F.scale,
+            py + 13 * F.scale - M.payouts.RISE * F.scale * f,
+            11 * F.scale, pal.a(col, 0.95 * a), nil, nil, true)
+    end)
 end
 
 -- --- panels ----------------------------------------------------------------

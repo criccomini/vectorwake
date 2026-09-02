@@ -2564,13 +2564,13 @@ mod tests {
         assert_eq!(m[0], S2C_KILL);
         assert_eq!(m[1], ship, "the victim's seat");
         assert_eq!(m[2], room.players[&hunter].ship, "credited to the hunter");
-        assert_eq!(m.len(), 15);
+        assert_eq!(m.len(), 15, "the quit reads exactly like any other kill");
         assert_eq!(
-            u32::from_le_bytes(m[10..14].try_into().unwrap()),
+            u32::from_le_bytes(m[8..12].try_into().unwrap()),
             room.world.state.tick,
             "the feed names the authoritative tick"
         );
-        assert_eq!(m[14], 0, "and hands nobody an assist for a quit");
+        assert_eq!(m[12], 0, "and hands nobody an assist for a quit");
     }
 
     #[test]
@@ -4244,29 +4244,39 @@ mod tests {
             b: victim,
             v: finisher as i32,
         };
+        // The ledger the rating reads, so the exchange moves three numbers
+        // and the private copy has something to say.
+        let tick = a.world.state.tick;
+        let (vrid, hrid, frid) = (a.rid_of(victim), a.rid_of(helper), a.rid_of(finisher));
+        a.rating.damage(tick, &vrid, &hrid, 600, false);
+        a.rating.damage(tick, &vrid, &frid, 400, false);
         a.score_events();
 
-        let helped = |rx: &mut mpsc::Receiver<Message>| -> u8 {
+        let rated = |rid: &str| a.rating.rating_of(rid).round() as i16;
+        let helped = |rx: &mut mpsc::Receiver<Message>| -> (u8, i16) {
             let msgs = drain(rx);
             let m = msgs
                 .iter()
                 .find(|m| m.first() == Some(&S2C_KILL))
                 .expect("the death itself reaches every seat");
-            assert_eq!(m.len(), 13, "the kill carries the private byte");
+            assert_eq!(m.len(), 15, "the kill carries the private bytes");
             assert_eq!((m[1], m[2]), (victim, finisher), "and reads the same");
-            m[12]
+            (m[12], i16::from_le_bytes([m[13], m[14]]))
         };
-        assert_eq!(helped(&mut helper_rx), 1, "the pilot who helped is told");
-        assert_eq!(helped(&mut finisher_rx), 0, "a kill is not also an assist");
-        assert_eq!(
-            helped(&mut victim_rx),
-            0,
-            "the pilot who died reads a death"
-        );
-        assert_eq!(
-            a.channel.pending_feed[0][12], 0,
-            "and the copy the stands watch claims nothing"
-        );
+        let (h, hr) = helped(&mut helper_rx);
+        assert_eq!(h, 1, "the pilot who helped is told");
+        assert_eq!(hr, rated(&hrid), "and what it did to their rating");
+        assert!(hr > 1200, "which the shared head could not have told them");
+        let (f, fr) = helped(&mut finisher_rx);
+        assert_eq!(f, 0, "a kill is not also an assist");
+        assert_eq!(fr, rated(&frid), "the finisher reads their own rating");
+        let (v, vr) = helped(&mut victim_rx);
+        assert_eq!(v, 0, "the pilot who died reads a death");
+        assert_eq!(vr, rated(&vrid), "and what it cost them");
+        assert!(vr < 1200);
+        let stands = &a.channel.pending_feed[0];
+        assert_eq!(stands[12], 0, "the copy the stands watch claims nothing");
+        assert_eq!(&stands[13..15], &[0, 0], "and is rated nothing");
     }
 
     #[test]

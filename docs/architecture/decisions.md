@@ -8246,3 +8246,44 @@ nothing rather than printing a number at a player.
 against the gate that produces it, and `client/tests/no_team_test.lua`
 pins the parse, the read-once, and the silence on a byte this build does not
 know.
+
+## 151. A death floats what it did to your rating
+
+**Status:** accepted, amending
+[decision 97](#97-ships-are-preconstructed-and-nothing-is-bought),
+which put the rating column on the podium and said nothing carries it during
+the fight.
+
+**What:** the figure that used to drift off a wreck is back, and it is the
+rating. When a death moves this pilot's rating, the change floats off the
+victim's wreck, signed: green for a kill, the feed's red for a death, green
+again for a victim they had softened, and a plus zero when the kill was theirs
+and paid nothing. Anchored in the world, so it falls behind a moving player the
+way the wreck does, held a quarter second, gone in a second and a half. Nobody
+else's death gets a figure, and a watcher gets none.
+
+The wire grew two bytes to make the third case possible. `S2C_KILL` names the
+killer and the victim and carried their two ratings, so a pilot who only
+softened the victim was told they helped and never what it was worth, and
+their client's copy of their own rating went stale until a roster or a kill of
+their own. Protocol 38 puts the recipient's own rating after the helped byte,
+built per copy as that byte already was; the stands read a zero. The client
+works the change out from the copy it holds, so the figure is the difference
+of the two rounded numbers the pilot would otherwise read.
+
+**Why:** 97's objection was to a standing being read mid-fight, and the bounty
+was one: a price on every other hull, on screen all the time, saying who to go
+after. This is a receipt about one fight, over in a moment, and it answers the
+question the feed line does not. The feed says who took whom; now that nothing
+pays, the rating is the only way kills differ, and a pilot who leaves before
+the whistle never saw the board that carried the column. Chris asked for the
+plus, then for the minus and the assist as well: a rating that moves in silence
+in one direction and out loud in the other is a rating nobody trusts.
+
+**Cost:** two bytes a death a seat, and the quit kill came into line while the
+message moved: it still carried the payout bytes the ordinary kill had dropped,
+so a client read its tick and its assist flag off the wrong offsets and the
+line for a pilot who quit under fire landed at no tick that would ever come.
+The podium column is unchanged, and rating.md and interface.md say the figure
+exists again.
+

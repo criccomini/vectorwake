@@ -378,15 +378,18 @@ check("snapshot sequences and world ticks cross rollover together",
 -- and the zone sets it on one copy of the message and zeroes every other.
 --
 -- victim, killer, victim rating(2), killer rating(2), contributors, tick(4),
--- you helped. Nothing about a payout: a kill pays nothing.
+-- you helped, your rating(2). Nothing about a payout: a kill pays nothing.
+-- The last two are this pilot's own rating after the death, 1200 on the
+-- remote kill, 1208 after the kill, 1200 after the death, 1203 after the
+-- assist, so the change the arena floats is worked out from the copy held.
 local remote_kill = string.char(4, 1, 0, 176, 4, 176, 4, 1)
-    .. u32le(5010) .. string.char(0)
-local my_kill = string.char(4, 1, 3, 176, 4, 176, 4, 1)
-    .. u32le(5010) .. string.char(0)
+    .. u32le(5010) .. string.char(0, 176, 4)
+local my_kill = string.char(4, 1, 3, 176, 4, 184, 4, 1)
+    .. u32le(5010) .. string.char(0, 184, 4)
 local my_death = string.char(4, 3, 0, 176, 4, 176, 4, 1)
-    .. u32le(5010) .. string.char(0)
+    .. u32le(5010) .. string.char(0, 176, 4)
 local my_assist = string.char(4, 2, 0, 176, 4, 176, 4, 2)
-    .. u32le(5010) .. string.char(1)
+    .. u32le(5010) .. string.char(1, 179, 4)
 local charge = string.char(15, 1, 0)
     .. string.char(0, 1, 0, 0, 0, 2, 0, 0) .. u32le(5010)
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = remote_kill})
@@ -410,6 +413,16 @@ check("a kill you helped with says so, and the others do not",
 -- feed unable to say who was doing the killing while it happened; a melee room
 -- is eight ships and the whole fight is a few lines a minute. Which of them is
 -- yours is decided where the line is written, not here.
+-- What each death did to this pilot, from the private copy against the one
+-- the client already held. No roster has said what we were before the first
+-- one, so it has no figure and leaves the copy behind it; the kill is worth
+-- eight, the death costs the eight back, and the assist pays three the
+-- shared head could never have told us, since neither name on it is ours.
+check("a death carries what it did to your rating",
+      net.kills[1].gain == nil and net.kills[2].gain == 8
+      and net.kills[3].gain == -8 and net.kills[4].gain == 3,
+      tostring(net.kills[1].gain) .. " " .. tostring(net.kills[2].gain)
+      .. " " .. tostring(net.kills[3].gain) .. " " .. tostring(net.kills[4].gain))
 check("every kill in the room is news, not only yours",
       net.kills[1].killer == 0 and net.kills[1].victim == 1
       and net.kills[2].killer == 3 and net.kills[3].victim == 3,

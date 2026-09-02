@@ -443,9 +443,9 @@ prompt breathes once every three seconds, the on-air dot swells slowly
 because a blink held for minutes is a blink a player learns to stop seeing,
 an arming bind slot pulses, the ending's score bar arrives over a third of a
 second, eased, and it is the one movement on that screen. Feed lines spend
-their last second and a half leaving; a payout drifts off the wreck that
-paid it, anchored in the world so it falls behind a moving player the way
-the wreck does.
+their last second and a half leaving; what a death did to your rating drifts
+off the wreck, anchored in the world so it falls behind a moving player the
+way the wreck does.
 
 The rules under that list: motion marks the thing being read or the thing
 being waited for, never decorates, and one surface gets one movement. Fast

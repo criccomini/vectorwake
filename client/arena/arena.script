@@ -1002,6 +1002,7 @@ local function leave_world()
     -- The next zone deals these seats to different pilots.
     for k in pairs(rolls) do rolls[k] = nil end
     fx.reset()
+    ui.clear_payouts()
     -- Leaving a zone re-derives the tables from the baseline, so what a spec
     -- id means changes on the way out of one as well as into it.
     world.forget_specs()
@@ -1187,6 +1188,17 @@ local function drain_announced()
         -- all of them: you can soften somebody who then flies into a wall.
         if k.assist then line[#line + 1] = ", you assisted" end
         notify(line, col, mine)
+        -- And the figure, off the wreck, for every death that moved this
+        -- pilot's rating: a kill, a death, or a victim they had softened.
+        -- Read where it happened rather than in the corner, because a pilot
+        -- who just took somebody is looking at the explosion. A kill that
+        -- paid nothing still prints its zero, since the kill was yours and
+        -- a silent one reads as a figure that failed to arrive. Every other
+        -- death is somebody else's and gets no figure. See decision 151.
+        if not watching and k.gain
+            and (mine or k.gain ~= 0) and k.killer ~= 255 then
+            ui.payout(sim.ship_x(k.victim), sim.ship_y(k.victim), k.gain)
+        end
     end
     if #net.kills > 0 then net.kills = {} end
 end

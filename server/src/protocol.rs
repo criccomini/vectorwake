@@ -270,7 +270,15 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// the reason 33's did: this is a wire field the fleet and the page have to
 /// agree on, and a build that cannot hear the answer goes on showing the
 /// silence this message exists to end.
-pub(crate) const CLIENT_PROTOCOL: u8 = 37;
+///
+/// 38 puts the recipient's own rating on the end of every `S2C_KILL`, two
+/// bytes after the helped byte, so a pilot who only softened the victim is
+/// told what the death did to them. A client built for 37 would read the
+/// message it wants and ignore two bytes, so as with 33 the number moves to
+/// keep the fleet and the page on one wire field, and because the quit kill
+/// was two bytes longer than the ordinary one until now and a stale build
+/// read that one wrong.
+pub(crate) const CLIENT_PROTOCOL: u8 = 38;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
@@ -305,16 +313,19 @@ pub(crate) const SNAPSHOT_FLYING: u8 = 0;
 pub(crate) const SNAPSHOT_WATCHING: u8 = 1;
 pub(crate) const S2C_ROSTER: u8 = 3;
 /// `[S2C_KILL, victim, killer, victim rating, killer rating, contributors,
-/// tick, you helped]`, the ratings little-endian.
+/// tick, you helped, your rating]`, the ratings little-endian i16.
 ///
 /// Nothing about a payout, because a kill pays nothing: bounty priced one and
 /// points banked it, and both went with the shop.
 ///
-/// Broadcast, with one exception: the last byte is built per recipient and is
-/// 1 only on the copy sent to a pilot the core credited with an assist for
-/// this death. Everybody else, watchers and the room channel included, is
-/// sent a zero, so an assist is a thing you are told about your own fight and
-/// nobody reads off somebody else's.
+/// Broadcast, with one exception: the last three bytes are built per
+/// recipient. The helped byte is 1 only on the copy sent to a pilot the core
+/// credited with an assist for this death, so an assist is a thing you are
+/// told about your own fight and nobody reads off somebody else's. The
+/// rating is the recipient's own after the exchange, which is how a pilot
+/// who softened the victim learns what that was worth: the shared head
+/// carries only the two names on the line. Watchers and the room channel
+/// are sent a zero for both.
 ///
 /// A byte on the death rather than a message of its own, because it is not a
 /// second event: it qualifies a line the feed is already about to print, and
