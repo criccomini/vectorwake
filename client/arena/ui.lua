@@ -2808,10 +2808,19 @@ local function safe_note(spent, limit)
     -- while the hull is still there.
     local left = math.ceil((limit - spent) / 100)
     if left < 0 then left = 0 end
+    -- Clocked the way the match clock is. Past a minute nobody reads a bare
+    -- count of seconds as a duration, and the limit is a uint16 of ticks, so
+    -- the longest sit this can be asked to draw is 656 seconds.
+    local clock = string.format("%d:%02d", math.floor(left / 60), left % 60)
     -- Red for the last ten, which is where it stops being information and
     -- starts being a warning.
     local col = left <= 10 and pal.ENEMY or pal.DIM
-    txt("seat released in " .. left, F.w / 2, y + (M.compact and 15 or 20) * F.scale,
+    -- Says where the pilot is about to be rather than what the room is about
+    -- to take, since a seat is the room's word for it. The feed's own line
+    -- once the clock runs out is "moved to spectator: too long in the safe
+    -- zone", and this is that line said in advance.
+    txt("moving to spectator in " .. clock, F.w / 2,
+        y + (M.compact and 15 or 20) * F.scale,
         (M.compact and 10 or 12) * F.scale, pal.a(col, 0.9), "center")
 end
 
