@@ -1,0 +1,264 @@
+{
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "The four"
+    },
+    {
+      "id": "page-2",
+      "name": "A: The scoreline"
+    },
+    {
+      "id": "page-3",
+      "name": "B: The corners"
+    },
+    {
+      "id": "page-4",
+      "name": "C: The bar"
+    },
+    {
+      "id": "page-5",
+      "name": "D: The tally"
+    }
+  ],
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Four shapes, every zone",
+      "x": 0,
+      "y": 0,
+      "w": 1552,
+      "h": 2880,
+      "page": "page-1"
+    },
+    {
+      "file": "Shipped.dc.html",
+      "title": "As shipped: Team Battle, monitor",
+      "x": 1640,
+      "y": 0,
+      "w": 1440,
+      "h": 810,
+      "page": "page-1"
+    },
+    {
+      "file": "ScorelineDesktop.dc.html",
+      "title": "Team Battle, monitor",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 810,
+      "page": "page-2"
+    },
+    {
+      "file": "ScorelineTurf.dc.html",
+      "title": "Turf, monitor",
+      "x": 0,
+      "y": 930,
+      "w": 1440,
+      "h": 810,
+      "page": "page-2"
+    },
+    {
+      "file": "ScorelineDuel.dc.html",
+      "title": "Duel, monitor",
+      "x": 0,
+      "y": 1860,
+      "w": 1440,
+      "h": 810,
+      "page": "page-2"
+    },
+    {
+      "file": "ScorelineEnd.dc.html",
+      "title": "At the whistle, monitor",
+      "x": 0,
+      "y": 2790,
+      "w": 1440,
+      "h": 810,
+      "page": "page-2"
+    },
+    {
+      "file": "ScorelinePortrait.dc.html",
+      "title": "Team Battle, phone",
+      "x": 1540,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-2"
+    },
+    {
+      "file": "ScorelinePortraitTurf.dc.html",
+      "title": "Turf, phone",
+      "x": 2030,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-2"
+    },
+    {
+      "file": "CornersDesktop.dc.html",
+      "title": "Team Battle, monitor",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 810,
+      "page": "page-3"
+    },
+    {
+      "file": "CornersTurf.dc.html",
+      "title": "Turf, monitor",
+      "x": 0,
+      "y": 930,
+      "w": 1440,
+      "h": 810,
+      "page": "page-3"
+    },
+    {
+      "file": "CornersDuel.dc.html",
+      "title": "Duel, monitor",
+      "x": 0,
+      "y": 1860,
+      "w": 1440,
+      "h": 810,
+      "page": "page-3"
+    },
+    {
+      "file": "CornersEnd.dc.html",
+      "title": "At the whistle, monitor",
+      "x": 0,
+      "y": 2790,
+      "w": 1440,
+      "h": 810,
+      "page": "page-3"
+    },
+    {
+      "file": "CornersPortrait.dc.html",
+      "title": "Team Battle, phone",
+      "x": 1540,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-3"
+    },
+    {
+      "file": "CornersPortraitTurf.dc.html",
+      "title": "Turf, phone",
+      "x": 2030,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-3"
+    },
+    {
+      "file": "BarDesktop.dc.html",
+      "title": "Team Battle, monitor",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 810,
+      "page": "page-4"
+    },
+    {
+      "file": "BarTurf.dc.html",
+      "title": "Turf, monitor",
+      "x": 0,
+      "y": 930,
+      "w": 1440,
+      "h": 810,
+      "page": "page-4"
+    },
+    {
+      "file": "BarDuel.dc.html",
+      "title": "Duel, monitor",
+      "x": 0,
+      "y": 1860,
+      "w": 1440,
+      "h": 810,
+      "page": "page-4"
+    },
+    {
+      "file": "BarEnd.dc.html",
+      "title": "At the whistle, monitor",
+      "x": 0,
+      "y": 2790,
+      "w": 1440,
+      "h": 810,
+      "page": "page-4"
+    },
+    {
+      "file": "BarPortrait.dc.html",
+      "title": "Team Battle, phone",
+      "x": 1540,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-4"
+    },
+    {
+      "file": "BarPortraitTurf.dc.html",
+      "title": "Turf, phone",
+      "x": 2030,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-4"
+    },
+    {
+      "file": "TallyDesktop.dc.html",
+      "title": "Team Battle, monitor",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 810,
+      "page": "page-5"
+    },
+    {
+      "file": "TallyTurf.dc.html",
+      "title": "Turf, monitor",
+      "x": 0,
+      "y": 930,
+      "w": 1440,
+      "h": 810,
+      "page": "page-5"
+    },
+    {
+      "file": "TallyDuel.dc.html",
+      "title": "Duel, monitor",
+      "x": 0,
+      "y": 1860,
+      "w": 1440,
+      "h": 810,
+      "page": "page-5"
+    },
+    {
+      "file": "TallyEnd.dc.html",
+      "title": "At the whistle, monitor",
+      "x": 0,
+      "y": 2790,
+      "w": 1440,
+      "h": 810,
+      "page": "page-5"
+    },
+    {
+      "file": "TallyPortrait.dc.html",
+      "title": "Team Battle, phone",
+      "x": 1540,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-5"
+    },
+    {
+      "file": "TallyPortraitTurf.dc.html",
+      "title": "Turf, phone",
+      "x": 2030,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-5"
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-1"
+  }
+}
