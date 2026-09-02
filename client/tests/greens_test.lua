@@ -243,72 +243,47 @@ check("and every green went under it", last_green < first_contact,
 -- an add-on per trigger per kind, then the charges. Written out here rather
 -- than asked of the extension, so a layout that moves has to move in a test
 -- as well as in the words.
---
--- The ceilings are the hull's, and this stands one hull up with a ladder of
--- eight on every slot so the words can be read against a slot with room left
--- and the same slot full.
 
-local CAPS = {}
 _G.sim = {
     UP_COUNT = 5, TRIG_COUNT = 2, MOD_COUNT = 6,
     SLOT_LEVEL0 = 5, SLOT_MOD0 = 7, SLOT_CHARGE0 = 19,
-    ship_class = function() return 0 end,
-    slot_cap = function(_, slot) return CAPS[slot] or 8 end,
 }
 local prize = require("arena.prize")
 
 -- The name, and only the name. A bare count in a sentence cannot be read:
 -- "recharge x3" is not three recharges, and no phrasing of a number in a
--- feed line makes it one.
-check("a stat is named", prize.words(0, 1, 0) == "energy", prize.words(0, 1, 0))
-check("and is still only named when a pilot holds several",
-      prize.words(1, 3, 0) == "recharge", prize.words(1, 3, 0))
+-- feed line makes it one. The one number that stays is a rung, because a
+-- rung is which weapon you are firing rather than how many you have.
+check("a stat is named", prize.words(0, 1) == "energy", prize.words(0, 1))
+check("and says nothing more when a pilot holds several",
+      prize.words(1, 3) == "recharge", prize.words(1, 3))
 check("a rung counts from one, the way the corner card does",
-      prize.words(5, 1, 0) == "gun level 2", prize.words(5, 1, 0))
+      prize.words(5, 1) == "gun level 2", prize.words(5, 1))
 check("the second trigger is the bomb",
-      prize.words(6, 2, 0) == "bomb level 3", prize.words(6, 2, 0))
+      prize.words(6, 2) == "bomb level 3", prize.words(6, 2))
 check("an add-on says which trigger it landed on",
-      prize.words(7, 1, 0) == "gun spray", prize.words(7, 1, 0))
+      prize.words(7, 1) == "gun spray", prize.words(7, 1))
 check("jargon is spelled out, as it is on the card",
-      prize.words(7 + 6 + 2, 1, 0) == "bomb proximity detonation",
-      prize.words(7 + 6 + 2, 1, 0))
-check("a charge is named", prize.words(19, 1, 0) == "repel",
-      prize.words(19, 1, 0))
-
--- The one thing worth adding, and the reason the count was there at all: a
--- green that lands on a full slot is a trip spent for nothing, and the feed
--- is the only place that can say so.
-check("a slot with nothing left in it says so",
-      prize.words(1, 8, 0) == "recharge, at its limit", prize.words(1, 8, 0))
-check("a toggle the pilot already has says it too",
-      (function() CAPS[8] = 1 local w = prize.words(8, 1, 0) CAPS[8] = nil
-       return w end)() == "gun bounce, at its limit")
-check("a full rack of a charge says it",
-      (function() CAPS[19] = 3 local w = prize.words(19, 3, 0) CAPS[19] = nil
-       return w end)() == "repel, at its limit")
-check("and a rung at the top of its ladder",
-      (function() CAPS[5] = 2 local w = prize.words(5, 2, 0) CAPS[5] = nil
-       return w end)() == "gun level 3, at its limit")
-
--- A hull that cannot hold the slot at all reads as a ceiling of nought, and
--- a line saying a pilot is at the limit of something they can never carry
--- would be true and useless.
-check("a slot this hull cannot reach says nothing about limits",
-      (function() CAPS[2] = 0 local w = prize.words(2, 0, 0) CAPS[2] = nil
-       return w end)() == "speed")
+      prize.words(7 + 6 + 2, 1) == "bomb proximity detonation",
+      prize.words(7 + 6 + 2, 1))
+check("a charge is named", prize.words(19, 1) == "repel", prize.words(19, 1))
+check("a full rack of one reads the same",
+      prize.words(19, 3) == "repel", prize.words(19, 3))
 
 -- A slot the core grew that this client has no word for still has to answer
 -- something: a feed line reading "picked up" and nothing else is a bug a
 -- player sees, where an unlovely word is one they shrug at.
 check("a slot past the ones named still says something",
-      prize.words(99, 1, 0) ~= "" and prize.words(99, 1, 0) ~= nil,
-      tostring(prize.words(99, 1, 0)))
+      prize.words(99, 1) ~= "" and prize.words(99, 1) ~= nil,
+      tostring(prize.words(99, 1)))
 
 -- Off a core that answers nothing, which is every test and tool that stubs
--- the engine: the words still come out, without the ceiling they cannot ask
--- about.
+-- the engine: the layout falls back to the one that shipped and the words
+-- still come out.
 _G.sim = nil
 check("with no core at all it still names the slot",
-      prize.words(1, 3, 0) == "recharge", tostring(prize.words(1, 3, 0)))
+      prize.words(1, 3) == "recharge", tostring(prize.words(1, 3)))
+check("and still counts a rung from one",
+      prize.words(5, 1) == "gun level 2", tostring(prize.words(5, 1)))
 
 os.exit(fails == 0 and 0 or 1)

@@ -8256,11 +8256,10 @@ answers where to fly next.
 
 **What:** the radar draws every green the client holds, as a dot in the prize
 green, over the terrain and under the flags and the contacts. Taking one puts
-a line in the feed naming what it filled: "picked up recharge", "picked up
-gun level 2", "picked up bomb proximity detonation". Where the slot has no
-room left the line says so, "picked up recharge, at its limit", and says
-nothing else about the count. The line is marked as this pilot's, so the one
-line a phone shows can be spent on it.
+a line in the feed naming what it filled and nothing else: "picked up
+recharge", "picked up gun level 2", "picked up bomb proximity detonation".
+The line is marked as this pilot's, so the one line a phone shows can be
+spent on it.
 
 **Why:** the zone was already sowing them for the radar and nothing was
 drawing them there. The ring a green is put out in is six to twenty-eight
@@ -8302,18 +8301,19 @@ Naming a green before it is taken, on the dial or on the ground. That is
 still the call [decision 132](#132-a-green-raises-what-you-fly-not-what-you-own)
 made and this does not reopen it.
 
-Printing the count. The line carried one, as the corner card's "x n", and it
-does not survive being put in a sentence: a card's "spray x2" is two sprays,
-where a feed line's "recharge x3" reads as three recharges at once, which is
-not a thing anybody holds. The count is drawn in the corner stack, live, and
-the feed's job is to name the thing.
+Printing the count, which the line did at first as the corner card's "x n".
+It does not survive being put in a sentence: a card's "spray x2" is two
+sprays, where a feed line's "recharge x3" reads as three recharges at once,
+which is not a thing anybody holds. The count is drawn live in the corner
+stack, and a line read in a tenth of a second wants one fact.
 
-Saying outright that a prize was wasted. The event carries what the pilot
-holds after the grant, not whether the grant moved, so the green that fills
-the last step and the green that lands on a full slot report the same
-number. The line states the condition instead, which is true either way and
-is the fact worth acting on: there is no more of this to be had, so stop
-flying at them.
+Then a word for a slot with no room left, which was the count's one real
+job: a green that lands on a full slot is a trip spent for nothing. It went
+the same way, on Chris's call, and the argument against it is the argument
+against the count. The line is a name. The event cannot say whether the
+grant moved anyway, since the green that fills the last step and the green
+that lands on an already full slot report the same number, so the best it
+could offer was a condition and not the thing a pilot would want to know.
 
 **The cost:** two dozen more marks on the dial in the one zone that has them,
 which is a real crowd on a phone's cropped square, and the first mark up there

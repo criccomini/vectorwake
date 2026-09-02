@@ -1341,7 +1341,7 @@ local function drain_events()
             -- with, and a fourth would make it a set of lights to be taught
             -- rather than the lines worth finding without reading. The words
             -- carry this on their own.
-            notify({"picked up " .. prize.words(b, v, a)}, nil, true)
+            notify({"picked up " .. prize.words(b, v)}, nil, true)
         end
     end
 end
