@@ -178,14 +178,9 @@ local function frame(o)
                  snap_missed = 1, snap_reordered = 2,
                  snaps = 120, rx = 0, tx = 0},
         zone = "chaos",
-        rooms = o.rooms, room = o.room,
         safe = o.safe, safe_limit = o.safe_limit,
         fps = 60, frame_ms = 16.7, rx_rate = 31000, tx_rate = 700,
     })
-    -- Where the frame loop draws it, and the placement is the point: the card
-    -- drops every box published before it, so it has to come after everything
-    -- that publishes one.
-    ui.room_card(o.rooms)
     ui.finish()
 end
 

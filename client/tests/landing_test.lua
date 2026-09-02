@@ -6,8 +6,7 @@
 -- Opening the client puts you in the stands of a real room, so the front end
 -- is the watcher's HUD rather than a panel describing a game. What is added
 -- to it is a lockup, the four stops of the column (account, zone, ship,
--- settings) and the one key, in that order up the screen, and what is taken
--- away is the TAKE SEAT chip, because the key is that key.
+-- settings) and the one key, in that order up the screen.
 --
 -- It is the same column a player raises mid-match, drawn by the same function
 -- off the same view (decision 143). What is checked here is the home arm of
@@ -273,13 +272,6 @@ local function land_in(sect)
     out.panel = sect
     return out
 end
-
--- A zone holding more than one room, for the checks that need something
--- standing in the top left corner. The row holds nothing at all in an ordinary
--- match, and the ROOM chip is the one thing there that publishes a box at the
--- row's own line and a key's own height.
-local ROOMS = {{n = 1, players = 3, bots = 20},
-               {n = 2, players = 0, bots = 51}}
 
 -- The column as the arena hands it over: four stops, whichever one is open,
 -- and the rows or the panel behind it. `menu.view()` builds this for real off
@@ -711,12 +703,6 @@ do
                   or "no key box")
     end
 end
-
--- The one thing a landing takes away. The column's key is the way into a hull
--- here, and a chip in the corner offering the same act is the offer made
--- twice.
-check("the landing carries no TAKE SEAT chip",
-      box("take_seat") == nil)
 
 -- --- what a stop lets through ----------------------------------------------
 --
@@ -2090,24 +2076,26 @@ end
 -- again the moment somebody pressed PLAY NOW, which is the front page moving
 -- under the hand that just used it.
 --
--- The chip is the ruler here, so these frames are drawn with a second room in
--- the zone. A landing with one room puts nothing in that corner at all, and
--- the band's own box is a few points taller than the row on purpose so a thumb
--- can find it: reading the row's line off that box would be reading padding.
+-- The near corner is empty too: what stood there was a held seat and a room
+-- number, and both have gone. So the ruler is the meter's own box at the far
+-- end, which spans the row from the top of the safe area down to where the
+-- dial starts. The band's own box is a few points taller than the row on
+-- purpose so a thumb can find it, and reading the row's line off that box
+-- would be reading padding.
 do
-    frame(390, 844, {rooms = ROOMS, room = 1})
-    local chip, clock = box("rooms"), word("1:47")
-    check("portrait draws the corner chip and the clock",
-          chip and clock, "missing one of them")
-    if chip and clock then
-        check("portrait keeps the band on the corner row's own line",
-              math.abs(clock.y - (chip.y + chip.h / 2)) < 1,
-              string.format("clock at %.0f, chip mid %.0f",
-                            clock.y, chip.y + chip.h / 2))
-        check("and to the right of the chip rather than through it",
-              clock.x > chip.x + chip.w,
-              string.format("clock at %.0f, chip ends %.0f",
-                            clock.x, chip.x + chip.w))
+    frame(390, 844)
+    local meter, clock = box("debug"), word("1:47")
+    check("portrait draws the meter and the clock",
+          meter and clock, "missing one of them")
+    if meter and clock then
+        check("portrait keeps the band on the row the meter spans",
+              clock.y > meter.y and clock.y < meter.y + meter.h,
+              string.format("clock at %.0f, row %.0f to %.0f",
+                            clock.y, meter.y, meter.y + meter.h))
+        check("and left of the meter rather than through it",
+              clock.x < meter.x,
+              string.format("clock at %.0f, meter starts %.0f",
+                            clock.x, meter.x))
     end
     check("and gives up the side names, the row being 390 points",
           word("PYLON") == nil and word("CAISSON") == nil,
@@ -2137,21 +2125,26 @@ do
           word("1:47") ~= nil)
 
     -- A window with room keeps the same band on the same line.
-    frame(1440, 810, {rooms = ROOMS, room = 1})
-    local wide_chip, wide_clock = box("rooms"), word("1:47")
-    check("a wide window keeps the clock on the corner row's own line",
-          wide_chip and wide_clock
-              and math.abs(wide_clock.y - (wide_chip.y + wide_chip.h / 2)) < 24,
-          string.format("clock at %s, chip mid %s",
+    frame(1440, 810)
+    local wide_meter, wide_clock = box("debug"), word("1:47")
+    check("a wide window keeps the clock on the row the meter spans",
+          wide_meter and wide_clock
+              and wide_clock.y > wide_meter.y
+              and wide_clock.y < wide_meter.y + wide_meter.h,
+          string.format("clock at %s, row ends %s",
                         tostring(wide_clock and wide_clock.y),
-                        tostring(wide_chip and wide_chip.y + wide_chip.h / 2)))
+                        tostring(wide_meter
+                                 and wide_meter.y + wide_meter.h)))
     check("and keeps the side names", word("PYLON") ~= nil)
 end
 
 -- A pilot the room is holding a seat for is not on the landing, and keeps it.
+-- The way back into a hull is the ship stop, wherever they are: the corner
+-- carried a TAKE SEAT chip beside it for a while, and two controls for one act
+-- is the offer made twice.
 frame(1440, 810, {landing = false})
-check("a benched pilot still gets TAKE SEAT",
-      box("take_seat") ~= nil)
+check("a benched pilot gets no chip offering the seat a second time",
+      box("take_seat") == nil)
 check("and no key that would join a room they are already in",
       box("menu_go") == nil)
 check("and no name over the fight they are already in",

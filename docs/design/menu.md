@@ -379,9 +379,9 @@ settings and a page away from the game it was about. It is a button at the
 right hand end of that game's own row now, and it hands the seat back rather
 than the room: what a pilot leaving a match wants is to stop flying, not to
 lose the arena they were flying in. So the row that carries it is the room's
-own, the panel stays standing over the result, and the corner offers TAKE SEAT
-for going back in. Right is the arrow that reaches the button, which is where
-it is drawn and the one thing right had no other use for on a list of games.
+own, the panel stays standing over the result, and the ship stop is the way
+back in. Right is the arrow that reaches the button, which is where it is drawn
+and the one thing right had no other use for on a list of games.
 
 That leaves one press on this list with one meaning: be in this game. Three
 states answer it three ways, and all three are `M.want_zone`.
@@ -740,10 +740,13 @@ the windows it does not fit.
 Nothing else is added. Every reading a panel would carry is one the HUD
 already draws, to the people in the room, in code that has to be right anyway.
 
-The corner keeps MENU and drops TAKE SEAT. That key means the same act as PLAY NOW, and two controls for one act,
-one of them pulsing at the foot of the screen and one a chip in the corner, is
-the offer made twice. A pilot the room benched mid-match keeps TAKE SEAT: they
-are not on the landing, and the seat being held is theirs already.
+The corner drops TAKE SEAT. That chip meant the same act as PLAY NOW, and two
+controls for one act, one of them pulsing at the foot of the screen and one a
+chip in the corner, is the offer made twice. It stayed for a while for a pilot
+the room benched mid-match, who is not on the landing and whose seat is being
+held already, and that is the offer made twice as well: the ship stop is where
+a pilot picks the hull they are coming back in, and coming back is what
+pressing it does from the bench.
 
 ### Before a room answers
 

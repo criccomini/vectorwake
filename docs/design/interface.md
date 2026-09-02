@@ -342,16 +342,18 @@ The constants that repeat, from ui.lua:
 | name | value | what it measures |
 |---|---|---|
 | PAD | 14 | the margin instruments keep from the screen edge |
-| COL_W | 248 | the left column's panels: the rooms list and the run log |
 | LINE | 18 | one row of a HUD list |
 | RADAR | 168 | the dial's side at rest |
 | GUTTER | 22 | the inset a menu row's type keeps from both of its edges |
 | ROW_PAD | 16 | how far a lit row reaches past its column of type |
 | KEY_H | 26 | a button's height |
 
-The HUD has a fixed geography, and it is the prototype's. Top left: the chip
-row (TAKE SEAT, ROOM, the on-air or watching chip) and the rooms panel under
-it, all of which come and go, so in an ordinary match that corner is the fight.
+The HUD has a fixed geography, and it is the prototype's. Top left: the on-air
+tally, and nothing else. It was a row of chips, and each turned out to be a
+second way to do something the interface already offered: TAKE SEAT, which the
+ship stop says better, and ROOM n, which named which copy of the game you were
+in and opened a list of the others. Both are gone, and so is the rooms panel
+that hung under them, so in an ordinary match that corner is the fight.
 Bottom middle: the faint `MENU` key, and the column it raises, in a room you
 are in. Top left held MENU until decision 102 moved it to the foot, where the
 panel it opens stands. The front page carries the column and not the key: out

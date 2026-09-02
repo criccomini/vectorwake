@@ -68,10 +68,6 @@ M.chosen = nil          -- the game a row just asked for
 -- Cleared when it lands, when the menu closes, and when a press names
 -- somewhere else. See `M.arrived`.
 M.await = nil
--- And which of its rooms, by the number the server gave that room, when a row
--- named one. Nil is what every arrival through the games list says, and it
--- means "wherever the fill ladder puts me".
-M.chosen_room = nil
 -- How deep into the column's pages a hand has walked. Empty is the bare three
 -- stops, which is the ordinary state: one entry is the page a stop opened, two
 -- is a page that page opened. That is the whole depth of this tree.

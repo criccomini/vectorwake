@@ -8580,3 +8580,54 @@ that the line and the wreck answer together; the figure's clock is at the foot
 of the same file, pinned as what a player can read rather than as the constant
 behind it. `client/tests/greens_test.lua` runs the arena's event loop and pins
 the pickup's color by value, along with the three greens it has to stay out of.
+
+## 156. The corner is the fight
+
+**Status:** accepted.
+
+**What:** the two chips left in the top left corner are gone, and the panel
+one of them opened goes with them. `TAKE SEAT`, which a benched pilot pressed
+to get back in a hull, and `ROOM n`, which named which copy of the game you
+were in and opened a list of the others. What is left up there is the on-air
+tally, which is not a control and is drawn only while the room's channel is
+pointed at you. In an ordinary match that corner holds nothing at all.
+
+**Why:** each of them was a second way to do something already offered.
+Pressing `TAKE SEAT` set the pilot's current class and opened the ship stop,
+which is exactly what opening the ship stop does: the panel's foot reads "you
+take a seat in it" from the bench, and settling it sends the class and the
+build together. The chip was the ship stop with the hull picked for you, in a
+corner, and it had already been taken off the landing for the same reason
+(decision 143's column key says it better there).
+
+`ROOM n` is the same argument one step out. A game is what a player picks, and
+which copy of it seats them is the fill ladder's business: that is why the
+number never travels with a row of the games list. The chip put the seam back
+on screen, and the panel behind it made moving between copies a reconnect, a
+fresh spawn, and a confirm card asking whether the pilot meant it. A zone
+holding one room, which is most of them, drew nothing.
+
+**What went with the panel.** `rooms_panel`, `M.room_card` and their state in
+`ui.lua`; `zone_rooms` in `directory.lua` and the `rooms` field it put on every
+row of the games list; `menu.chosen_room`, whose only writer was the card's
+answer; the `rooms`, `rooms_list`, `room`, `room_answer` and `take_seat`
+actions in `arena.script`, with the wheel and drag paths that scrolled the
+list. `in_list` went too: it tested for `scores` as well, which nothing has
+published since the scoreboard became a panel of the menu, so the row-scrolling
+half of the drag has been unreachable for a while. Dragging is the menu's page
+and the column now, which is what a phone actually needed. The key cap
+(`key_w`, `key_frame`, `key_cap`) had no other caller, nor did `population`,
+which set a count of people beside a count of machines and was the last reader
+of `COL_W`.
+
+**A room is still nameable**, by a deep link, which carries zone, instance and
+number and is the one thing that ever asked for a particular one. `net.room` is
+still on the wire and `session.enter` still takes a room; nothing in the
+interface names one.
+
+`hud_hits_test.lua` holds the corner empty in every state a room has.
+`band_test.lua` and `landing_test.lua` measured the top row against the chip's
+published box, which was the one thing up there at a key's own height; they
+read the row off the on-air tally and off the link meter's box instead, since
+neither corner publishes a box any more. `marks_test.lua` read the pilot and
+bot marks off a row of the rooms list, and reads them off the players sheet.
