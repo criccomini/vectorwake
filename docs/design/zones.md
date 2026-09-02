@@ -186,7 +186,8 @@ scattered by area, two hundred greens over a million tiles is one per five
 thousand against a pilot who sees sixty, and the zone that ran that way read to
 its players as having none at all. Outside six tiles so a green is a trip
 rather than a gift, inside twenty-eight so it lands on the radar of the pilot
-it appeared for.
+it appeared for, where the dial draws them: a prize a pilot can only find by
+flying over it is one nobody goes and gets.
 
 The weights are stats-heavy, which is what Alpha Zone's own settings file is: a
 green is mostly one more step of something you already have rather than a new
@@ -203,8 +204,8 @@ authoring system and a sandbox.
 **A mode-aware client.** The client reads the catalog's format strip, draws
 flags and greens off the wire, and gets the match clock from `match_state`.
 Turf and Capture the Flag needed no client change at all beyond the strip;
-greens needed one accessor, one drawing function and a sound that was already
-in the kit.
+greens needed one accessor, a drawing on the ground and a dot on the dial, a
+sound that was already in the kit, and a feed line naming what one filled.
 
 **Rating-banded matchmaking.** See Duel above.
 
@@ -249,7 +250,9 @@ In rough order of what would move the needle:
    re-decides, so a bot that reaches a stand has no reason to stay on it.
    The design for this and the rest of objective play is now in
    [ai-players.md](ai-players.md).
-3. **A green worth reading.** Every green draws as the same diamond, because a
-   pilot deciding whether one is worth the trip is deciding on the trip. If
-   that turns out to be the wrong call, what a green holds is already on the
-   wire.
+3. **A green worth reading.** Every green draws as the same diamond on the
+   ground and the same dot on the dial, because a pilot deciding whether one
+   is worth the trip is deciding on the trip. The feed names what it was the
+   moment it is taken, which is a different question with a different answer.
+   If the first call turns out to be wrong, what a green holds is already on
+   the wire.

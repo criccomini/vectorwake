@@ -1416,6 +1416,14 @@ local function flag_mark(px, py, s, col)
     F.layer:disc(px, ry(py, 0), 1.3 * s, 8, pal.a(col, 1))
 end
 
+-- A prize on the dial. Built once rather than per green: two dozen of them
+-- are out at a time and `pal.a` returns a fresh table, which is work for the
+-- collector in a loop that runs every frame.
+--
+-- Short of full strength, for the reason the palette gives this color: a
+-- field of two dozen must not out-shout the ships flying between them.
+local RADAR_GREEN = pal.a(pal.GREEN, 0.9)
+
 local function radar(cx, cy, me)
     -- No panel and no inset. The dial is the most valuable thing on screen on
     -- a map a thousand tiles across and it keeps every pixel; what made it
@@ -1494,6 +1502,37 @@ local function radar(cx, cy, me)
     blips(world.radar_tiles, pal.RADAR_TILE)
     blips(world.radar_safe, pal.a(pal.RADAR_SAFE, 0.95))
     blips(world.radar_doors, pal.a(pal.RADAR_DOOR, 1.0), 1)
+
+    -- The greens, over the terrain they are lying on and under everything
+    -- that moves. A prize is a decision about where to fly next and a contact
+    -- is a decision about right now, so a dial with both on it has to put the
+    -- second on top.
+    --
+    -- The instrument is where a prize is decided on. The zone puts them out
+    -- six to twenty-eight tiles from a live pilot for that reason, which
+    -- `baseline.c` and the roam zone's file both say in as many words: inside
+    -- the far edge so a green lands on the radar of whoever it appeared for.
+    -- A prize a pilot can only find by flying over it is one nobody goes and
+    -- gets.
+    --
+    -- A dot, where a contact is a diamond and a flag is a ringed core: the
+    -- quietest of the marks standing on the terrain, because it is the only
+    -- one that does not move and cannot shoot. In nobody's color, which is
+    -- what a prize is (see `pal.GREEN`).
+    --
+    -- Nothing here culls. The zone writes a green outside a pilot's interest
+    -- radius inert, and that radius is the sixty tiles this dial spans, so
+    -- what the client holds is already what belongs on it; `put` answers nil
+    -- for the rest, which is the crop the compact dial takes.
+    for i = 0, sim.green_count() - 1 do
+        local gx, gy, _, active = sim.green_at(i)
+        if active then
+            local px, py = put(gx, gy)
+            if px then
+                F.layer:disc(px, ry(py, 0), 2 * F.scale, 8, RADAR_GREEN)
+            end
+        end
+    end
 
     local my_team = view_team
     for i = 0, sim.flag_count() - 1 do
@@ -1666,6 +1705,19 @@ local function on_glass(o, scale, x, y)
     return F.w / 2 + (x - o.cam_x) * scale, F.h / 2 + (y - o.cam_y) * scale
 end
 
+-- What a death did to this pilot's rating, drifting off the wreck. On the
+-- module rather than in a local because ui.lua stands at LuaJIT's limit of
+-- two hundred locals; see decision 152 for why the figure is back.
+M.payouts = require("arena.ui_payouts").new()
+
+function M.payout(x, y, n)
+    M.payouts:add(F.now, x, y, n)
+end
+
+function M.clear_payouts()
+    M.payouts:clear()
+end
+
 local function nameplates(o)
     if not o.half_w or o.half_w <= 0 then return end
     -- The render script publishes its own half-extents for exactly this, so
@@ -1727,7 +1779,18 @@ local function nameplates(o)
             end
         end
     end
-
+    -- The figures, drifting off the wrecks they were earned on. Walked
+    -- backwards into itself so an expired one is dropped in the same pass
+    -- that draws the rest, and the list stays as short as the killing is
+    -- fast. Green when the number went up, the feed's red when it went down,
+    -- and a plus zero is drawn as a gain, since the kill was still yours.
+    M.payouts:each(F.now, function(p, f, a)
+        local px, py = on_glass(o, scale, p.x, p.y)
+        local col = p.n < 0 and pal.HURT or pal.PAID
+        txt((p.n >= 0 and "+" or "") .. p.n, px + 12 * F.scale,
+            py + 13 * F.scale - M.payouts.RISE * F.scale * f,
+            11 * F.scale, pal.a(col, 0.95 * a), nil, nil, true)
+    end)
 end
 
 -- --- panels ----------------------------------------------------------------
@@ -1833,15 +1896,16 @@ end
 -- rather than as somebody not playing. Their rows say `watching` where a side
 -- would be, so the group needs no rule of its own beyond being last.
 --
--- Z to A inside each group, which is what was asked for. Lowercased first so
--- a capital cannot jump a pilot to the top of the room, and the raw name
--- breaks the tie so the order is total and two pilots who differ only in case
--- cannot flicker past each other.
+-- A to Z inside each group. It ran Z to A first, which is what was asked for
+-- then, and a room read backwards is one a hand cannot scan: a list of names
+-- is looked down the way a phone book is. Lowercased first so a capital cannot
+-- jump a pilot to the front, and the raw name breaks the tie so the order is
+-- total and two pilots who differ only in case cannot flicker past each other.
 local function by_column(a, b)
     if a.watch ~= b.watch then return b.watch end
     if a.mine ~= b.mine then return a.mine end
-    if a.lname ~= b.lname then return a.lname > b.lname end
-    return a.name > b.name
+    if a.lname ~= b.lname then return a.lname < b.lname end
+    return a.name < b.name
 end
 
 -- The rooms of this zone, and the way into a different one.

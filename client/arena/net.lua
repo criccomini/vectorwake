@@ -100,7 +100,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 37
+local CLIENT_PROTOCOL = 38
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -747,10 +747,22 @@ local function publish_kill(e)
     -- here, because a watcher's sentinel ship is 255 and so is the killer on
     -- a wall death: asking "is this me" from a seat that has no hull makes
     -- every collision in the room look personal.
-    M.kills[#M.kills + 1] = {victim = victim, killer = killer,
-                             assist = e.assist}
+    local k = {victim = victim, killer = killer, assist = e.assist}
+    M.kills[#M.kills + 1] = k
+    -- What this death did to you, worked out here rather than sent, because
+    -- the rating the client holds is exact and the figure a pilot reads is
+    -- the rounded one: the difference of two rounded numbers is the change
+    -- between the two numbers they will see. Read before the two names on
+    -- the line are written, since you may be one of them. A watcher has no
+    -- rating here and a pilot with no copy yet has nothing to subtract
+    -- from; neither gets a figure.
+    local was = not M.watching and M.me ~= 255 and M.ratings[M.me] or nil
     M.ratings[victim] = vr
     M.ratings[killer] = kr
+    if not M.watching and M.me ~= 255 then
+        M.ratings[M.me] = e.mine
+        if was then k.gain = e.mine - was end
+    end
     -- A rated death is a game played, which is what decides whether the number
     -- is shown at all. Counting it here stops a pilot reading "placing" for a
     -- whole session after their tenth.
@@ -812,7 +824,7 @@ local function publish_timed_events()
 end
 
 local function on_kill(s)
-    if #s < 13 then return end
+    if #s < 15 then return end
     local e = {
         victim = string.byte(s, 2), killer = string.byte(s, 3),
         vr = i16(string.byte(s, 4), string.byte(s, 5)),
@@ -827,6 +839,12 @@ local function on_kill(s)
         -- to work out here and nothing to check it against. See S2C_KILL in
         -- server/src/protocol.rs.
         assist = string.byte(s, 13) ~= 0,
+        -- This pilot's own rating after the death, the other private field.
+        -- The two above name the killer and the victim only; a pilot whose
+        -- shots softened the victim moved too, and this is the only way
+        -- they hear by how much. Zero on a watcher's copy, which has no
+        -- rating in this room to report.
+        mine = i16(string.byte(s, 14), string.byte(s, 15)),
     }
     local key = e.tick .. ":" .. e.victim .. ":" .. e.killer
     if seen_kills[key] then return end

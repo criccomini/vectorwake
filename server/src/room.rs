@@ -2729,19 +2729,13 @@ impl Room {
                     m.extend_from_slice(&vr.to_le_bytes());
                     m.extend_from_slice(&kr.to_le_bytes());
                     m.push(r.credits.len() as u8);
-                    // A quit pays no bounty: points are the sim's to award
-                    // and the sim saw no death.
-                    m.extend_from_slice(&0u16.to_le_bytes());
                     m.extend_from_slice(&tick.to_le_bytes());
-                    // Nobody is told they helped, for the same reason. The
-                    // sim never ran a death here, so no assist column moved,
-                    // and a notice about one the scoreboard does not show is
-                    // the disagreement this byte exists to avoid.
-                    m.push(0);
-                    for pl in self.players.values() {
-                        let _ = pl.tx.try_send(Message::Binary(m.clone()));
-                    }
-                    self.channel.pending_feed.push(m);
+                    // Nobody is told they helped. The sim never ran a death
+                    // here, so no assist column moved, and a notice about
+                    // one the scoreboard does not show is the disagreement
+                    // that byte exists to avoid. Their own rating rides
+                    // along as on any kill, since the ladder did move.
+                    self.send_kill(m, &[]);
                 }
             }
             // Filed before the seat is torn down, since the seat is what says
@@ -3789,17 +3783,7 @@ impl Room {
             // is a fact about somebody's own fight, and a room that read it
             // off the feed would be reading a list of who is working together
             // and how hurt the loser already was.
-            for p in self.players.values() {
-                let mut theirs = m.clone();
-                theirs.push(u8::from(assisted.contains(&p.ship)));
-                let _ = p.tx.try_send(Message::Binary(theirs));
-            }
-            // And the copy that claims nothing, which is the one the stands
-            // get. It waits in the ring with the frame it belongs to, or the
-            // feed would announce a death the delayed picture has not shown
-            // yet.
-            m.push(0);
-            self.channel.pending_feed.push(m.clone());
+            self.send_kill(m, &assisted);
             let assists = rated.as_ref().map_or(0, |r| r.credits.len());
             if assists > 1 {
                 println!(
@@ -3901,6 +3885,32 @@ impl Room {
     }
 
     /// What a seat's rating is filed under, which is not what it is called.
+    /// Finish an `S2C_KILL` and send it: the shared head, then per recipient
+    /// whether they helped and what they are rated now.
+    ///
+    /// The rating is the recipient's own, after the exchange, and it is on
+    /// the message because the shared head names only the killer's and the
+    /// victim's. A pilot whose shots softened the victim moved too, and
+    /// without this byte their client's copy went stale until a roster or a
+    /// kill of their own, and the figure the client floats off the wreck
+    /// could not be drawn for them at all. See decision 152.
+    ///
+    /// The stands get the copy that claims nothing and is rated nothing. It
+    /// waits in the ring with the frame it belongs to, or the feed would
+    /// announce a death the delayed picture has not shown yet.
+    fn send_kill(&mut self, mut m: Vec<u8>, assisted: &[u8]) {
+        for p in self.players.values() {
+            let mut theirs = m.clone();
+            theirs.push(u8::from(assisted.contains(&p.ship)));
+            let mine = self.rating.rating_of(&self.rid_of(p.ship)).round() as i16;
+            theirs.extend_from_slice(&mine.to_le_bytes());
+            let _ = p.tx.try_send(Message::Binary(theirs));
+        }
+        m.push(0);
+        m.extend_from_slice(&0i16.to_le_bytes());
+        self.channel.pending_feed.push(m);
+    }
+
     pub(crate) fn rid_of(&self, ship: u8) -> String {
         self.names
             .get(&ship)
