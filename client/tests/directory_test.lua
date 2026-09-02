@@ -406,8 +406,9 @@ check("and one with seats does not", dir.rows[1] and dir.rows[1].full == false)
 -- arena behind it first, and the client showed a wordmark on a starfield with
 -- four games running and nothing on screen saying why.
 --
--- The reference deployment is exactly that shape. Its rows sort Duel, Free
--- Roam, Team Battle, Turf, War, and the front door it names is melee.
+-- The reference deployment is exactly that shape. Its rows sort Capture the
+-- Flag, Duel, Free Roam, Team Battle, Turf, and the front door it names is
+-- melee.
 
 local FLEET = {
     default_zone = "melee",

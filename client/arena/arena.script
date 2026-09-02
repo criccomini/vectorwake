@@ -627,7 +627,7 @@ end
 -- stop of the menu now, so what the key does is open the menu already standing
 -- on it. Everything else about it follows from that: escape walks out of it
 -- the way it walks out of any panel, the arrows walk its rows, and a press
--- opens the card the way a press opens any row. See decision 145.
+-- opens the card the way a press opens any row. See decision 147.
 --
 -- Not at home: the front page has no players stop to open, since the room out
 -- there is somebody else's (decision 108).
@@ -2517,7 +2517,7 @@ function update(self, dt)
     -- rating column: the match's own arithmetic, which is the one thing about
     -- it a mid-fight list has no business carrying. Who took it is said by
     -- the band, in the pixels that have carried the score for three minutes.
-    -- See decision 145.
+    -- See decision 147.
     --
     -- Raised the way a hand raises it, so escape, a press beside it and the
     -- menu key all put it away exactly as they do the rest of the time.

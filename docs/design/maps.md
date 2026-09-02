@@ -249,12 +249,12 @@ south, **eight starts apiece 256 tiles apart**, from (180,180) to (948,884).
 **Flags sit one per quadrant of the middle, forty tiles out.** Not spread with
 everything else, and that exception is the whole lesson of this section. They
 were three hundred tiles apart for the same reason the starts are, and it made
-the flag game unplayable rather than large: the shipped War map starts its
-pilots in a 68-tile box at the center, so the nearest flag sat two hundred tiles
-away, past sixty tiles of sight, past the radar, and past anything that would
-take a pilot there. Watched on the live server for four minutes: forty-two
-kills, four flags, and the banner never moved off "flags 0 - 0, 4 loose". Nobody
-had touched one, and nothing about a healthy arena said so.
+the flag game unplayable rather than large: the shipped Capture the Flag map
+starts its pilots in a 68-tile box at the center, so the nearest flag sat two
+hundred tiles away, past sixty tiles of sight, past the radar, and past
+anything that would take a pilot there. Watched on the live server for four
+minutes: forty-two kills, four flags, and the banner never moved off "flags 0 -
+0, 4 loose". Nobody had touched one, and nothing about a healthy arena said so.
 
 Forty tiles out puts all four on the radar of a pilot standing between them, and
 eighty tiles between neighbours is about twelve seconds of flying -- enough that

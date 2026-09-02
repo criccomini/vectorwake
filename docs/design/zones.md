@@ -6,7 +6,7 @@ Five games, in one catalog, on one engine.
 |---|---|---|---|
 | Team Battle | Three minute 4v4 melee | 8 seats, 5 maps | kills |
 | Turf | Six stands that pay whoever holds them | 8 seats, 3 maps | turf |
-| War | Four flags, a round to whoever holds the set | 8 seats, 3 maps | flags |
+| Capture the Flag | Four flags, a round to whoever holds the set | 8 seats, 3 maps | flags |
 | Duel | One against one on small ground | 2 seats, 3 maps | rounds |
 | Free Roam | A thousand tiles, no clock, greens | 64 seats, 1 map | nothing |
 
@@ -60,7 +60,7 @@ Worth stating plainly, because it is the argument against generalizing early.
 Four games, and the whole of what the core had to grow:
 
 - `flag_carry`, one byte, deciding whether taking a flag picks it up. That is
-  the entire difference between War and Turf.
+  the entire difference between Capture the Flag and Turf.
 - `flag_carry_ticks`, so a carried flag comes down on its own.
 - `sim_green`, six fields, and the five settings that place them.
 - One event, `SIM_EV_GREEN`.
@@ -89,10 +89,10 @@ Six stands and four a side is deliberate. Two more stands than either team has
 pilots means nobody can cover the map, which is the pressure the whole game
 runs on.
 
-## War
+## Capture the Flag
 
-The classic flag game, named for the original's War Zone. A flag can only be
-taken from a side that is not yours, it rides whoever took it, and it drops
+The classic flag game, which the original ran as its War Zone. A flag can only
+be taken from a side that is not yours, it rides whoever took it, and it drops
 where they die. Hold all four for ten seconds and the round is yours; the flags
 go neutral and back on their stands, and the next round starts.
 
@@ -110,7 +110,7 @@ catalog a player could not read from outside the room.
 
 ## Duel
 
-One pilot against one, first to two rounds, on ground ninety-six tiles across.
+One pilot against one, one kill a match, on ground ninety-six tiles across.
 
 The rooms hold two seats and that is what does the matchmaking. A client
 prefers the fullest room below its cap, which for a room of two means the one
@@ -131,19 +131,28 @@ the room, and its thirty-eight tile field covers most of a ninety-six tile map
 besides. See
 [decision 138](../architecture/decisions.md#138-a-duel-is-too-small-to-hold-a-wormhole).
 
-It is played in rounds. A death ends the round, and two seconds later both
-pilots are back on their own starts with a full bar and a full rack. Two
-rounds take the match, level at two plays on, and the three minute clock is
-the backstop: the leader takes it and level is a draw. That two second window
-is the trade rule, and it is also the respawn delay, so a bomb thrown by a
-pilot who is already dead still lands and the round goes to both of them.
+It is played in rounds and one of them takes it. A death ends the round, and
+two seconds later both pilots are back on their own starts with a full bar and
+a full rack. The three minute clock is the backstop: the leader takes it and
+level is a draw. That two second window is the trade rule, and it is also the
+respawn delay, so a bomb thrown by a pilot who is already dead still lands and
+the round goes to both of them.
 
-Rounds are what the word promises, and they buy the thing a tally cannot: a
-pilot who loses the opening exchange is one round from level rather than
-watching out a fight that is already decided. The score is rounds taken, read
-off the other side's deaths, so flying into a wall hands the round across the
-arena instead of taking a point off your own. See
-[decision 142](../architecture/decisions.md#142-a-duel-is-rounds-and-two-of-them-take-it).
+A trade is why the round survives even where one of them is the whole match.
+The match wants a leader rather than a number, so two deaths inside the window
+give both sides a round, neither leads, and it plays on to two-one. That is what
+a first-blood duel could never do and the reason
+[decision 142](../architecture/decisions.md#142-a-duel-is-rounds-and-two-of-them-take-it)
+set the count at two; the window turned out to be the part doing the work, so
+[decision 146](../architecture/decisions.md#146-a-duel-is-one-kill-and-the-room-deals-you-a-rival)
+moved the count back to one. The score is rounds taken, read off the other
+side's deaths, so flying into a wall hands the round across the arena instead
+of taking a point off your own.
+
+A short match is also the unit a rival is dealt on. Fly three of them against
+the same person and the room asks the population for somebody else, near their
+strength and not one of the last few it has had, so an evening in here is
+several opponents rather than whichever pilot the fill happened to seat first.
 
 The match is between the two seats, so a seat changing hands is a new match:
 whole clock, nothing on the board, both pilots home. An arrival lands across
@@ -152,8 +161,10 @@ from whoever is already there. That is
 Without it a person at the door was put into the match the room's bots were
 having, and shown its score at the whistle.
 
-Pairing by rating is not here. That needs a band and a queue and is a decision
-to take on its own.
+Pairing two people by rating is not here. That needs a band and a queue and is
+a decision to take on its own. Choosing which bot you are put across from needs
+neither, because every candidate already exists, and that is
+[decision 146](../architecture/decisions.md#146-a-duel-is-one-kill-and-the-room-deals-you-a-rival).
 
 ## Free Roam
 
@@ -191,8 +202,9 @@ authoring system and a sandbox.
 
 **A mode-aware client.** The client reads the catalog's format strip, draws
 pennants and greens off the wire, and gets the match clock from `match_state`.
-Turf and War needed no client change at all beyond the strip; greens needed one
-accessor, one drawing function and a sound that was already in the kit.
+Turf and Capture the Flag needed no client change at all beyond the strip;
+greens needed one accessor, one drawing function and a sound that was already
+in the kit.
 
 **Rating-banded matchmaking.** See Duel above.
 
@@ -215,10 +227,11 @@ Each row in the catalog brings more than a mode:
 - **A bot population that plays the objective.** At our population a zone
   without one is a dead room.
 - **A balance surface.** Every mode is a new answer to "which hull wins here".
-  Turf, War, Duel and Free Roam are all flying the roster Team Battle was tuned
-  for, and none has been measured. They fly it because the tuning is the
-  core's: a zone file says what makes it that zone and nothing else, so a room
-  that wants a different ship has to say so and be seen saying it.
+  Turf, Capture the Flag, Duel and Free Roam are all flying the roster Team
+  Battle was tuned for, and none has been measured. They fly it because the
+  tuning is the core's: a zone file says what makes it that zone and nothing
+  else, so a room that wants a different ship has to say so and be seen saying
+  it.
 - **An arena process.** One per declared zone, which is now five, with the
   services, routes and firewall ports that go with them.
 
@@ -230,7 +243,8 @@ only game; five zones divide the population and the tuning attention five ways.
 In rough order of what would move the needle:
 
 1. **Measure them.** `calibrate` and the melee probe are built for one format.
-   Turf and War have new answers to which hull wins, and nobody has asked.
+   Turf and Capture the Flag have new answers to which hull wins, and nobody
+   has asked yet.
 2. **Bots that hold a point.** `Mode::Travel` arrives at a flag and then
    re-decides, so a bot that reaches a stand has no reason to stay on it.
    The design for this and the rest of objective play is now in

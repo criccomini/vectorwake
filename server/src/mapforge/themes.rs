@@ -178,9 +178,9 @@ impl Brief {
     /// if it somehow does; a flag game's default is the count its rules read
     /// best at, and a recipe overrides either.
     ///
-    /// Four for War, because a round is won by holding the set and a set of
-    /// four is small enough for a side of four to cover and large enough that
-    /// covering it costs them the map. Six for Turf, where nothing is won by
+    /// Four for Capture the Flag, because a round is won by holding the set
+    /// and a set of four is small enough for a side of four to cover and large
+    /// enough that covering it costs them the map. Six for Turf, where nothing is won by
     /// holding all of them: two more stands than either side has pilots is
     /// what stops the game being one scrum that moves around the map.
     ///

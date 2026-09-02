@@ -155,22 +155,20 @@ local function view(o)
     elseif o.at == "settings" then
         v.page = "settings"
         v.rows = {
-            {label = "sound", index = 1, sect = "audio", detail = "half",
+            {label = "sound", index = 1, detail = "half",
              choice = 2, choices = 4, pick = true},
             {label = "music", index = 2, detail = "quiet", choice = 1,
              choices = 3, pick = true},
-            {label = "frames", index = 3, sect = "video",
+            {label = "frames", index = 3,
              detail = "as the display asks", pick = true},
             {label = "fullscreen", index = 4, detail = "fill the screen",
              pick = true},
-            {label = "controls", index = 5, sect = "the machine",
-             detail = "keys and pads", pick = true},
+            {label = "controls", index = 5, detail = "keys", pick = true},
             {label = "about", index = 6, detail = "this build", pick = true},
-            -- One row as long as the longest the client ships, which is a
-            -- thumb sentence off the controls board. It is here so the panel
-            -- is measured against something that can actually run off it.
-            {label = "fire", index = 7, sect = "the machine",
-             detail = "Left thumb: point where you want the nose",
+            -- One row longer than anything the client ships, so the panel is
+            -- measured against something that can actually run off it.
+            {label = "fire", index = 7,
+             detail = "as long an answer as a row will ever carry",
              pick = true},
         }
     end
@@ -489,16 +487,19 @@ do
           top > 120, "panel top " .. top)
 end
 
--- The rows come in bands, which is what a page of eight settings cannot say in
--- its title: audio, video, the machine. The drawer grouped them and the panel
--- that replaced it did not for a while, because nothing in the drawing read
--- `sect` off a row.
+-- One run of rows and nothing over them. The page came in bands once, a small
+-- label and a ticked rule over each run: audio, video, the machine. Six
+-- settings do not need chapters, and the headings said what the rows under
+-- them already said.
 do
     frame(1440, 810, {open = true, at = "settings"})
-    check("the panel draws its section heads", said("AUDIO") ~= nil,
-          "no audio band")
-    check("and every one of them", said("VIDEO") ~= nil
-          and said("THE MACHINE") ~= nil)
+    check("the panel bands nothing",
+          said("AUDIO") == nil and said("VIDEO") == nil
+          and said("THE MACHINE") == nil, "a section head is still drawn")
+    -- And every row is still on the page, which is the thing a lost band
+    -- could have taken with it.
+    local rows = hits_of("menu_row")
+    check("with every row still on it", #rows == 7, #rows .. " rows")
 end
 
 -- Nothing the panel draws leaves the panel. A row's sentence is the one thing

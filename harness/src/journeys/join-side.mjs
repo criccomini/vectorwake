@@ -1,6 +1,6 @@
 // Read the room from the players sheet, and cross to the other side from it.
 //
-// The whole of decision 145 from a player's side: the scoreboard, the roster,
+// The whole of decision 147 from a player's side: the scoreboard, the roster,
 // the pilot box and the side picker are one panel, that panel is a stop of the
 // menu, and joining a side is done from the card of somebody already on it.
 //

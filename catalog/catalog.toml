@@ -5,7 +5,7 @@
 # whole of the conflict resolution and a rollback needs a new higher number
 # rather than a reused one.
 
-version = 41
+version = 43
 name = "vectorwake"
 description = "the reference deployment"
 
@@ -67,7 +67,8 @@ name = "melee"
 [[zone]]
 name = "turf"
 
-# War is the flag game: four flags, and a round to whoever holds the set.
+# Capture the Flag is the flag game: four flags, and a round to whoever holds
+# the set. Keyed `war`, which is what its ratings are filed under.
 [[zone]]
 name = "war"
 

@@ -273,157 +273,39 @@ for _, win in ipairs({{1280, 800, 1}, {844 * 2, 390 * 2, 2}, {640, 480, 1}}) do
           off == nil, off)
 end
 
--- --- and a phone is told about the controls it cannot read ----------------
+-- --- and every control still says what it does ----------------------------
 --
--- These rows were written out a second time in the menu once, and drifted:
--- the map moved onto the dial and the page a phone reads went on describing a
--- game without it. One list fixes that, and this pins the part of it a sweep
--- cannot judge.
+-- The sentence is the only thing on a row a sweep cannot judge, and it is the
+-- half that drifted last time: these rows were written out a second time in
+-- the menu, the map moved onto the dial, and the second list went on
+-- describing a game without it. One list fixed that. What is left to check is
+-- that every control on it has a sentence at all, and that none of them names
+-- a device instead of an act.
 --
--- Not every tappable thing needs a sentence. Most of what a finger lands on
--- in the arena is a word on a card: INVITE, WATCH, a room number. Those say
--- what they do by being read. What needs saying is the controls that carry no
--- word at all, or that live behind a card you have to know to open, and that
--- is a judgement rather than something a regex can settle. So the judgement
--- is written down here and checked, instead of being left in somebody's head.
+-- The thumb sentences are gone with the page that drew them. A phone is not
+-- offered the controls board any more: what a thumb can do is drawn under it,
+-- every pad wearing the weapon it fires and the stick writing its own gesture
+-- around its rim, so a page naming those in words was a caption for controls
+-- the reader was holding.
 
 do
-    -- Wearing no label a player can read, so a phone learns them here or not
-    -- at all. The dial is a picture and the pads are marks.
-    -- The charge keys are named for the slot they spend rather than for a
-    -- weapon, because a kit carries two kinds and which two is the pilot's
-    -- choice. They still need the sentence: what a thumb has to be told is
-    -- where the cell is, and that is the same wherever the choice landed.
-    --
-    -- Reverse is on the list because it is a stance rather than a control: on
-    -- glass it is a double tap on the stick's half, which is a gesture no
-    -- amount of looking at the screen will find.
-    local MUST_SAY = {"turn left", "thrust", "reverse", "guns", "bombs",
-                      "charge 1", "charge 2", "multifire", "map", "players"}
-    local pad = {}
-    for _, r in ipairs(ROWS) do pad[r.name] = r.pad end
-
-    local silent = {}
-    for _, name in ipairs(MUST_SAY) do
-        if not pad[name] or pad[name] == "" then silent[#silent + 1] = name end
-    end
-    check("every unlabeled control has a sentence for a thumb", #silent == 0,
-          table.concat(silent, ", "))
-
-    -- The ones that say nothing, and why. The controls page is the page being
-    -- read; turn right shares the stick with turn left and is named by it.
-    -- Page Up and Page Down are replaced by tapping the pilot row. Anything
-    -- else arriving with no `pad` is a control a phone has quietly lost.
-    local QUIET = {controls = true, ["turn right"] = true,
-                   ["previous player"] = true, ["next player"] = true}
     local mute = {}
     for _, r in ipairs(ROWS) do
-        if not r.pad and not QUIET[r.name] then mute[#mute + 1] = r.name end
+        if not r.what or r.what == "" then mute[#mute + 1] = r.name end
     end
-    check("and only the deliberate ones are keyboard-only", #mute == 0,
+    check("every control says what it does", #mute == 0,
           table.concat(mute, ", "))
 
-    -- And it fits the column it lands in.
-    --
-    -- The page a phone reads is not the block this file measures above: these
-    -- sentences go on menu rows, on the settings panel that climbs off the
-    -- settings stop, and a row does not wrap a detail. Nothing clamps one
-    -- either, so a sentence a few words too long is not shortened or cut, it
-    -- is drawn straight out of the panel and over the fight. The longest that
-    -- ships fits with room to spare, and the point of measuring it is that the
-    -- next one written is a coin toss rather than a decision.
-    --
-    -- Drawn rather than counted, through the same ui.menu the client calls, so
-    -- the answer moves if the column, the type or the padding does. The panel
-    -- keeps its own inset to itself, so that is taken off the drawing too:
-    -- every row sets its name at the panel's left edge, and the panel is
-    -- symmetrical, so one label's x is both edges.
-    do
-        local st = package.loaded["arena.state"]
-        local wide = {}
-        st.n = 0
-        ui.begin(layer, 390, 844, 1, true, 0)
-        local rows = {}
-        for _, r in ipairs(ROWS) do
-            if r.pad then
-                rows[#rows + 1] = {label = r.pad_name or r.name, detail = r.pad}
-            end
-        end
-        -- The controls board, open as the client opens it: a page of the
-        -- settings stop, drawn in the column over the key that raised it.
-        ui.menu({open = true, at = "controls", page = "controls", rows = rows,
-                 stops = {
-                     {stop = "leave", label = "leave",
-                      value = "to the stands"},
-                     {stop = "settings", label = "settings",
-                      mark = "settings", open = true},
-                     {stop = "side", label = "side", value = "Pylon",
-                      named = true},
-                 },
-                 pilot = {name = "Krait 4"}})
-        ui.finish()
-        local x0, w = ui.column_span()
-        local said, named = {}, {}
-        for _, r in ipairs(rows) do
-            said[string.lower(r.detail)] = true
-            named[string.lower(r.label)] = true
-        end
-        local edge = nil
-        for i = 1, st.n do
-            local t = st.text[i]
-            if named[string.lower(t.s)] and t.x > x0 then
-                edge = math.min(edge or t.x, t.x)
-            end
-        end
-        check("the page drew its rows in the column", edge ~= nil,
-              "no row name landed inside " .. string.format("%.0f", x0))
-        local inset = edge and (edge - x0) or 0
-        local lo, hi = x0 + inset, x0 + w - inset
-        for i = 1, st.n do
-            local t = st.text[i]
-            -- The row raises the first letter of a sentence as it draws it,
-            -- so what lands is not the string controls.lua wrote.
-            if said[string.lower(t.s)] then
-                local tw = glyphs(t.s) * t.px * ADVANCE
-                local left = t.x
-                if t.pivot == "right" then left = t.x - tw
-                elseif t.pivot == "center" then left = t.x - tw / 2 end
-                if left < lo - 0.5 or left + tw > hi + 0.5 then
-                    wide[#wide + 1] = string.format("%q spans %.0f..%.0f",
-                                                    t.s, left, left + tw)
-                end
-                said[string.lower(t.s)] = nil
-            end
-        end
-        check("every thumb sentence reached the page", next(said) == nil,
-              "missing " .. tostring(next(said)))
-        check("and every one fits the column it is drawn in", #wide == 0,
-              table.concat(wide, ", "))
-    end
-
-    -- A thumb sentence that names a key is a sentence written for the wrong
-    -- device, which is the shape the drift took last time.
+    -- A sentence that names the key is a sentence saying twice what the key
+    -- column beside it already says once.
     local keyed = {}
     for _, r in ipairs(ROWS) do
-        if r.pad and (r.pad:find("[Pp]ress ") or r.pad:find("[Kk]ey")) then
+        if r.what:find("[Pp]ress ") or r.what:find(" key") then
             keyed[#keyed + 1] = r.name
         end
     end
-    check("and no thumb sentence names a key", #keyed == 0,
+    check("and none of them names a key to say it", #keyed == 0,
           table.concat(keyed, ", "))
-
-    -- What a phone is handed is every row a thumb can work, which is the whole
-    -- list less the deliberate keyboard-only set above. Derived from that set
-    -- so adding another honest desktop control cannot stale a second count.
-    local thumbed, keyboard_only = 0, 0
-    for _, r in ipairs(ROWS) do
-        if r.pad then thumbed = thumbed + 1
-        elseif QUIET[r.name] then keyboard_only = keyboard_only + 1 end
-    end
-    check("a phone is offered every control it can work",
-          thumbed == #ROWS - keyboard_only,
-          thumbed .. " of " .. #ROWS)
-
 end
 
 if fails > 0 then

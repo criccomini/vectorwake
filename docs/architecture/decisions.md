@@ -7734,9 +7734,183 @@ blast to the one the round's flight crossed, as the expire event already pins
 a landed hit to its victim. Or if bullets start drawing hits the zone takes
 back often enough to notice, which would be the same fix one weapon over.
 
+## 145. Say the game's name, and say the rest once
+
+**Status:** accepted
+
+Three notes from Chris, all of them the interface saying either the wrong
+thing or too much of it.
+
+**The flag game is Capture the Flag.** It shipped as War, after the original's
+War Zone, which is where the mode key `warzone` and the zone key `war` come
+from. Nobody calls the game that. A player reading a list of five games knows
+what Capture the Flag is before they read the format strip beside it, and has
+to be told what War is. One line does it, the label in
+`catalog/zones/war/zone.toml`: the key stays `war`, because a key is what a
+join, a room and every rating already written are filed under, and
+`Catalog::zone_label` exists exactly so the two can differ. Team Battle has
+been keyed `melee` since decision 129 for the same reason.
+
+The new name is five letters longer than the longest the catalog held, which
+found a cell that could not take it. The landing lies down into a rail on a
+short window, and a rail cell is 120 points wide: eleven point type wanted 106
+of the 104 inside one, so a landscape phone drew "Capture the Fla". The answer
+in a rail cell now takes whatever size fits it, floored at nine points, which
+is the rule `land_stop` already claimed to follow. `landing_test` pins a long
+name arriving whole on all four window shapes rather than pinning the size,
+since the next zone name is the one that will find this again.
+
+**Settings is one run of rows.** It banded them under small ticked labels:
+audio over sound and music, video over frames and fullscreen, the machine over
+controls and about. Six settings are not enough of a page to want chapters. The
+headings said what the rows under them already said, and three bands of
+twenty-four points over six rows of forty-four spent a fifth of the panel
+saying nothing, on the page a phone has the least room for.
+
+**A phone is not offered the controls board.** There is no key to bind on
+glass, so the page fell back to naming the pads: "the big pad on the right",
+"left thumb: point where you want the nose". That is a caption for controls the
+reader is holding while they read it. Every pad draws the weapon it fires, and
+the one gesture a mark cannot carry, the double tap that reverses, is written
+around the stick's own rim by `arena/touch.lua` while you fly. The `pad`
+sentences in `arena/controls.lua` went with the row, since nothing else read
+them.
+
+**Cost:** the label rides the directory's reply, so the name changes with a
+catalog publish (version 42) rather than with a client build, and a page
+already open takes it on the next browse. Ratings written under `war` keep that
+key forever, so anything that reads a class straight out of the database and
+prints it says `war`; everything a player sees goes through `zone_label`.
+
+Decision 88 listed the controls page as the one place the reverse gesture was
+named. That was true when it was written and is not now: the stick hint landed
+after it, says the same thing in two words, and says it under the thumb it is
+about, wherever the stick is drawn.
+
+**Reconsider if:** a phone player cannot find something a pad does not draw.
+The answer then is on the control rather than in a page about the controls,
+the way the stick's rim already answers reverse.
 ---
 
-## 145. The players sheet is the menu's, and the band says who won
+## 146. A duel is one kill, and the room deals you a rival
+
+**Status:** accepted, moving the number
+[decision 142](#142-a-duel-is-rounds-and-two-of-them-take-it) set and
+extending [decision 131](#131-a-duel-is-a-two-seat-zone-and-nothing-else).
+
+**What:** three things, one shape. A duel match is one clean kill rather than
+two rounds. A pilot flying against somebody is replaced after three matches, or
+at once where it never suited them. And the replacement is chosen for the room
+rather than being the next free name on a list.
+
+**Why:** asked for, after a card that said `Pilot TAKES IT` over a rating of
+minus twenty-two. Both halves of that turned out to be the same problem seen
+from two ends.
+
+The rating was arithmetic. Rating settles per death against the opponent in
+front of you, and the opponent was a fill bot two hundred points below. Elo
+pays for surprise, so each kill was worth a quarter of the pilot's K and the
+one death three quarters of it. Nothing is wrong there. What was wrong is that
+the opponent had been the same pilot all evening, chosen because `claim` walked
+the pool from index zero and handed back the lowest free individual every time.
+A duel room never releases its seat at a whistle, a lone arrival always lands in
+the room the fill ladder kept, and between them a session was one opponent.
+
+That also flattens the measurement, which is the part that makes it a bug
+rather than a preference. Repeat dampening discounts a kill on the same person
+by `1/(1+n)` and holds the count for five minutes past the last one, so
+back-to-back matches against one seat run at 1, then a half, then a third. By
+the fifth the ending card has stopped moving with the play.
+
+So the room learns who is in it and asks for somebody worth fighting. The
+population director already had every part of this and was using none of them:
+a bot parses the roster it is sent, which carries every seat's rating and
+whether it is a machine, so a connection inside a room can see who it is
+across from. That observation goes back to the director on the same handle its
+stand-down flag rides. Nothing new is published and no wire moves.
+
+Which is deliberate, and it is why the band does not live on `BotRequest`.
+That struct rides `status_json`, which `C2S_STATUS` answers to anybody who asks
+without joining, so a competence band on it would publish a readout of whoever
+is in the room. Choosing the rival from inside the process also keeps the
+choice off the one input a client controls: a client picks its room at join, so
+a rival dealt on arrival would make leaving and rejoining a reroll, and the
+direction that pays is rolling for an opponent rated far above you. The swap is
+on the room's clock instead.
+
+The band itself is a designed table of five rows, one per tier, on
+`ordering_prior`, which is the roster's own strength order and deliberately not
+a rating. There is nothing checked in to derive it from: the generated pool has
+no calibrated prior and only a powered report can produce one. So it is written
+down where a designer can move it, the rows are the tiers from `rating.rs`, and
+a test fails if the two lists drift apart. The rows overlap by design, because a
+band is where to look rather than a bracket to be sorted into.
+
+One kill rather than two rounds is the last piece and the one that makes the
+rest work: a match is the unit a rival is dealt on, so a short match is how a
+pilot meets more than one opponent in an evening.
+
+Decision 142 argued for two, and its strongest argument no longer holds. It
+worried that a freak trade would take a first-blood match, which decision 90 had
+to hold a fight open for two seconds to prevent. `Duel::decided` wants a leader
+and not a number, so a trade gives both sides a round, neither leads, and the
+match plays on to two-one whatever `first_to` says. The rule that absorbs the
+trade is the trade window, not the round count.
+
+What is genuinely lost is the second thing 142 wanted: a pilot who loses the
+opening exchange is no longer one round from level. They are in the next match
+instead, which is a different answer to the same discomfort and now a much
+shorter wait.
+
+**Cost:** the podium is a bigger share of the loop. Fifteen seconds of ending
+after a fight that may be thirty is a lot more waiting than fifteen after two
+minutes, and the number is not moved here because nobody has measured a fight
+on this ground. The harness flies 1v1 legs to a death and records ticks per
+leg, which is what settles it.
+
+A swap costs the room a pilot for about a second. The outgoing one leaves at the
+intermission, which is the departure a yielding bot already takes rather than
+the forty second graceful walk, and the replacement is claimed on the next
+director cycle. That lands inside the fifteen second podium, so the seat is full
+again before the whistle and decision 141 never fires. If the claim were ever
+slow enough to miss it, the arrival would restart the match, which is
+141 working as designed and reads as an unlucky whistle.
+
+The churn guard had to learn the difference. It holds refill for thirty seconds
+after any stand-down, which is right for a person joining and leaving and wrong
+for a seat changing occupant on purpose, and it is keyed to the whole instance,
+so one duel room rotating would have stalled twenty. A pilot leaving to be
+replaced now keeps filling its request until it is actually gone, so the room is
+never counted short and the guard never fires.
+
+The authored roster is still dealt first and in order. Only the generated pool
+is entered at random, which keeps the pinned anchor in the air: it holds the
+ladder's whole scale and does that by fighting rather than by being written
+down.
+
+The catalog moves to v43, because the zone file's `first_to` changed and a
+games list prints it. A duel to one round says `first kill` on the strip rather
+than `first to 1`, which is arithmetic a player would have to finish.
+
+**Verified:** 511 server tests, clippy and fmt clean. Two on the mode: one
+clean kill taking the match, and a trade at one round each playing on to
+two-one. Six on the director: the tiers and the bands naming the same five
+things in the same order, a band following its rival's tier, a banded claim
+landing inside the band it asked for, a claim skipping the pilots a room has
+just had, a pilot leaving to be replaced leaving its room neither short nor
+over-full, and the rival being the best person in a room and never a machine.
+
+**Reconsider if:** three matches is the wrong cadence. It is set where repeat
+dampening has halved what a kill is worth, which is a fact about the rating
+layer rather than about how long it is interesting to fight somebody, and those
+two numbers have no reason to be the same one. Or if the bands turn out to
+matter less than the archetype does, in which case what a room should ask for is
+a pilot who fights differently from the last one rather than one who fights as
+well.
+
+---
+
+## 147. The players sheet is the menu's, and the band says who won
 
 **Status:** accepted, superseding
 [decision 67](#67-the-scoreboard-is-a-band-you-press) below the band and

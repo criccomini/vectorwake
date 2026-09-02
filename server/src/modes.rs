@@ -1218,6 +1218,36 @@ mod duel_tests {
         assert_eq!(state.seconds_left, 15, "for its whole length");
     }
 
+    /// The shipped duel, per decision 146. One round is the match, and the
+    /// intermission that follows is where a rival is dealt.
+    #[test]
+    fn one_clean_kill_takes_a_duel() {
+        let (mut m, mut w, names) = duel(1);
+        kill(&mut m, &mut w, &names, 1);
+        assert_eq!(m.match_state().unwrap().score, vec![1, 0]);
+        let (reset, closed) = close_round(&mut m, &mut w, &names);
+        assert!(closed, "one round and a lead is the whole match");
+        assert!(!reset, "so nobody is put back on the ground for another");
+        assert!(!m.match_state().unwrap().playing);
+    }
+
+    /// The freak exchange decision 142 raised against a duel to one round.
+    /// `decided` wants a leader rather than a number, so a trade costs a round
+    /// and the match goes on, whatever `first_to` is set to.
+    #[test]
+    fn a_trade_does_not_take_a_duel_to_one_round() {
+        let (mut m, mut w, names) = duel(1);
+        trade(&mut m, &mut w, &names);
+        assert_eq!(m.match_state().unwrap().score, vec![1, 1]);
+        let (reset, closed) = close_round(&mut m, &mut w, &names);
+        assert!(reset && !closed, "level at one, so it plays on");
+
+        kill(&mut m, &mut w, &names, 0);
+        let (_, closed) = close_round(&mut m, &mut w, &names);
+        assert!(closed, "and the next clean kill settles it");
+        assert_eq!(m.match_state().unwrap().score, vec![1, 2]);
+    }
+
     #[test]
     fn level_at_the_target_plays_on_until_somebody_leads() {
         let (mut m, mut w, names) = duel(2);

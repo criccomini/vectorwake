@@ -10,7 +10,7 @@
 # What the count does decide is how many zones a host can cover, because an
 # arena picks a zone nobody is serving and then stays with it. So the rule is
 # one process per declared zone, and the catalog declares five: Team Battle,
-# Turf, War, Duel and Free Roam. A deployment check compares this file with
+# Turf, Capture the Flag, Duel and Free Roam. A deployment check compares this file with
 # the catalog so adding a zone cannot publish an empty game again. Reach for
 # max_rooms when the answer is seats.
 #

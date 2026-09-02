@@ -31,7 +31,7 @@
 > yourself, so it is done from the card of somebody already on the side you
 > want: a press on their row opens it, and its one key is `JOIN <side>`. See
 > [decision 143](../architecture/decisions.md) and
-> [decision 145](../architecture/decisions.md).
+> [decision 147](../architecture/decisions.md).
 
 > **`PLAYERS` is the room, and the whistle raises it.** One flat list: every
 > player in it, your own side first, then everyone else, then the watchers,
@@ -43,7 +43,7 @@
 > `watching`. The band opens the same panel, and at the whistle the arena
 > raises it the way a hand would, with one column added for what the match paid
 > each pilot. Who took the match is said by the band rather than by the sheet.
-> See [decision 145](../architecture/decisions.md).
+> See [decision 147](../architecture/decisions.md).
 
 > **The ship stop is in a room too, and LEAVE SEAT is gone.** The panel the
 > landing opens is the panel the in-match column opens: the same five parts

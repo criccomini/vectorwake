@@ -777,10 +777,10 @@ typedef struct {
     /* Whether a flag leaves its stand when somebody takes it, which is the
      * original's Flag:CarryFlags read as a yes or a no.
      *
-     * Set, a flag rides its taker and drops where they die: that is War, and
-     * the flag is a thing you carry home. Clear, the stand keeps its ground
-     * and only ever changes hands, so flying over one is the whole of
-     * claiming it: that is Turf, where the flag is a place rather than an
+     * Set, a flag rides its taker and drops where they die: that is Capture
+     * the Flag, and the flag is a thing you carry home. Clear, the stand keeps
+     * its ground and only ever changes hands, so flying over one is the whole
+     * of claiming it: that is Turf, where the flag is a place rather than an
      * object. Both games are the same three fields underneath, which is why
      * this is a setting and not a second entity. */
     uint8_t flag_carry;
