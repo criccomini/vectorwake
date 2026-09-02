@@ -20,9 +20,10 @@ records why this is our own service rather than Nakama.
 | credentials | account, method (`secret`, `password`, `steam`, more later), identifier or hash. A human account whose only credential is its secret is a guest |
 | names | account, call sign, unique fleet-wide under a case-insensitive index |
 | rated_events | full records for human-involving fights: participants, weights, ratings before and after, arena, mode class, opponent kind, timestamp |
-| rated_event_receipts | the event id, filing time, and bot-only flag used to make rating ingest exactly once without retaining every bot payload |
+| rated_matches | full records for human-involving matches in the zones rated by match: the score and one standing per account with its rating before and after, arena, zone, timestamp |
+| rated_event_receipts | the event id, filing time, and bot-only flag used to make rating ingest exactly once without retaining every bot payload. Deaths and matches share it, since the arena mints every id from one space |
 | pilot_events | what happened to a pilot rather than to their rating: arrivals, refusals, hull and side changes, departures and why, tied together by a session. See [the pilot log](#the-pilot-log) |
-| ratings | account, mode class, rating, games. The authoritative projection; human ratings are replayable from `rated_events`, while bots retain their live projection and calibrated seed |
+| ratings | account, mode class, rating, games. The authoritative projection; human ratings are replayable from `rated_events` and `rated_matches`, while bots retain their live projection and calibrated seed |
 | client_errors | grouped browser failures: account, build, message, stack, page, user agent, first and last occurrence, and count. Deleted thirty days after the latest occurrence |
 
 A house bot needs no table of its own: the roster individual's name *is* its

@@ -260,6 +260,75 @@ pub(super) async fn route(
             }
         }
 
+        // A whistle in a zone rated by match. Same envelope and auth as a
+        // death, its own table and its own rules, the same receipt.
+        "/v1/rated-matches" => {
+            if catalog.pool_for_token(&s("pool_token")).is_none() {
+                return Some((403, serde_json::json!({ "error": "unknown pool token" })));
+            }
+            let class = {
+                let class = s("class");
+                if class.is_empty() {
+                    DEFAULT_CLASS.to_string()
+                } else {
+                    class
+                }
+            };
+            let zone = s("zone");
+            let instance = s("instance");
+            let empty = Vec::new();
+            let events = body
+                .get("events")
+                .and_then(|value| value.as_array())
+                .unwrap_or(&empty);
+            let mut stored = 0usize;
+            let mut rejected = Vec::new();
+            let mut failed = Vec::new();
+            for (index, event) in events.iter().enumerate() {
+                if let Err(error) = validate_rated_match(event) {
+                    rejected.push(serde_json::json!({
+                        "index": index,
+                        "error": error,
+                    }));
+                    continue;
+                }
+                match ingest_match(db, &class, &zone, &instance, event).await {
+                    Ok(()) => stored += 1,
+                    Err(error) => failed.push(error),
+                }
+            }
+            if failed.is_empty() {
+                if !rejected.is_empty() {
+                    println!(
+                        "meta: {} of {} rated matches refused: {}",
+                        rejected.len(),
+                        events.len(),
+                        rejected[0]["error"].as_str().unwrap_or("invalid match")
+                    );
+                }
+                (
+                    200,
+                    serde_json::json!({ "stored": stored, "rejected": rejected }),
+                )
+            } else {
+                println!(
+                    "meta: {} of {} rated matches could not be stored: {}",
+                    failed.len(),
+                    events.len(),
+                    failed[0]
+                );
+                (
+                    500,
+                    serde_json::json!({
+                        "stored": stored,
+                        "rejected": rejected,
+                        "failed": failed.len(),
+                        "error": failed[0],
+                    }),
+                )
+            }
+        }
+
         // The other thing an arena hands off: what happened to the pilots in
         // it. Same envelope and same auth as the rated events above, a
         // different table at the far end, and no projection to keep in step,
@@ -612,6 +681,169 @@ pub(super) async fn ingest(
 /// Refuse a pilot event that cannot fit the shape the arena writes or the
 /// columns that store it. The route reports these by index so one bad record
 /// reaches the dead-letter file without holding every later record behind it.
+/// A rated match is well formed when every standing names a distinct account
+/// on a side the score has a row for, and no rating moved further than one
+/// event may. The same bound as a death, held by the same constant.
+pub(super) fn validate_rated_match(event: &serde_json::Value) -> Result<(), String> {
+    event
+        .get("id")
+        .and_then(|value| value.as_i64())
+        .ok_or("no event id")?;
+    event
+        .get("tick")
+        .and_then(|value| value.as_u64())
+        .filter(|tick| *tick <= u32::MAX as u64)
+        .ok_or("invalid tick")?;
+    let score = event
+        .get("score")
+        .and_then(|value| value.as_array())
+        .filter(|score| score.len() >= 2 && score.len() < 256)
+        .ok_or("invalid score")?;
+    if score
+        .iter()
+        .any(|n| n.as_u64().is_none_or(|n| n > u16::MAX as u64))
+    {
+        return Err("invalid score".into());
+    }
+    let standings = event
+        .get("standings")
+        .and_then(|value| value.as_array())
+        .filter(|standings| !standings.is_empty() && standings.len() < 256)
+        .ok_or("invalid standings")?;
+    let mut accounts = std::collections::HashSet::new();
+    for standing in standings {
+        let account = standing
+            .get("account")
+            .and_then(|value| value.as_i64())
+            .filter(|account| *account > 0)
+            .ok_or("invalid standing account")?;
+        if !accounts.insert(account) {
+            return Err("duplicate standing account".into());
+        }
+        standing
+            .get("kind")
+            .and_then(|value| value.as_u64())
+            .filter(|kind| *kind <= 1)
+            .ok_or("invalid standing kind")?;
+        standing
+            .get("team")
+            .and_then(|value| value.as_u64())
+            .filter(|team| (*team as usize) < score.len())
+            .ok_or("standing on a side the score has no row for")?;
+        let before = standing
+            .get("before")
+            .and_then(|value| value.as_f64())
+            .filter(|rating| rating.is_finite())
+            .ok_or("invalid standing rating before match")?;
+        let after = standing
+            .get("after")
+            .and_then(|value| value.as_f64())
+            .filter(|rating| rating.is_finite())
+            .ok_or("invalid standing rating after match")?;
+        let movement = after - before;
+        if !movement.is_finite() || movement.abs() > rating::EVENT_CAP + 1e-6 {
+            return Err("standing rating movement exceeds the event bound".into());
+        }
+    }
+    Ok(())
+}
+
+/// One rated match, filed exactly once and applied to the ratings.
+///
+/// The receipt table is shared with deaths: an id is an id, the sweep that
+/// ages bot receipts out is one sweep, and a match and a death can never be
+/// mistaken for each other because the arena mints every id at random from
+/// one space. Bot-only matches keep the receipt and no row, as bot-only
+/// deaths do; a match a person played is kept whole.
+pub(super) async fn ingest_match(
+    db: &mut Client,
+    class: &str,
+    zone: &str,
+    instance: &str,
+    event: &serde_json::Value,
+) -> Result<(), String> {
+    validate_rated_match(event)?;
+    let Some(event_id) = event.get("id").and_then(|value| value.as_i64()) else {
+        return Err("no event id".into());
+    };
+    let tick = event
+        .get("tick")
+        .and_then(|value| value.as_i64())
+        .unwrap_or(0);
+    let bots_only = event
+        .get("bots_only")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let score = event
+        .get("score")
+        .cloned()
+        .unwrap_or(serde_json::Value::Array(Vec::new()));
+    let empty = Vec::new();
+    let standings = event
+        .get("standings")
+        .and_then(|value| value.as_array())
+        .unwrap_or(&empty);
+
+    let db = db
+        .transaction()
+        .await
+        .map_err(|error| format!("cannot open a transaction: {error}"))?;
+    let filed = db
+        .execute(
+            "insert into rated_event_receipts (event_id, bots_only)
+             values ($1, $2)
+             on conflict (event_id) do nothing",
+            &[&event_id, &bots_only],
+        )
+        .await
+        .map_err(|error| format!("cannot file match receipt: {error}"))?;
+    if filed == 0 {
+        return db
+            .commit()
+            .await
+            .map_err(|error| format!("cannot commit: {error}"));
+    }
+    if !bots_only {
+        db.execute(
+            "insert into rated_matches
+               (event_id, class, zone, instance, tick, score, standings)
+             values ($1,$2,$3,$4,$5,$6,$7)",
+            &[
+                &event_id,
+                &class,
+                &zone,
+                &instance,
+                &tick,
+                &score,
+                &serde_json::Value::Array(standings.clone()),
+            ],
+        )
+        .await
+        .map_err(|error| format!("cannot store rated match: {error}"))?;
+    }
+    for standing in standings {
+        let account = standing
+            .get("account")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(0);
+        if account == 0 {
+            continue;
+        }
+        let delta = standing
+            .get("after")
+            .and_then(|value| value.as_f64())
+            .unwrap_or(0.0)
+            - standing
+                .get("before")
+                .and_then(|value| value.as_f64())
+                .unwrap_or(0.0);
+        apply(&db, account, class, delta).await?;
+    }
+    db.commit()
+        .await
+        .map_err(|error| format!("cannot commit: {error}"))
+}
+
 pub(super) fn validate_pilot_event(event: &serde_json::Value) -> Result<(), String> {
     if !event.is_object() {
         return Err("pilot event is not an object".into());

@@ -180,6 +180,23 @@ create table if not exists rated_event_receipts (
 );
 create index if not exists rated_event_receipts_botsweep
     on rated_event_receipts (at) where bots_only;
+-- A whistle in a zone rated by match (decision 154): the score and one
+-- standing per account, rating before and after. Human-involving matches
+-- only, as with rated_events; a bot-only match leaves its receipt above and
+-- nothing else. Replayable the same way, since every standing carries both
+-- ends of its movement.
+create table if not exists rated_matches (
+    id        bigserial primary key,
+    event_id  bigint not null unique,
+    at        timestamptz not null default now(),
+    class     text not null,
+    zone      text not null,
+    instance  text not null,
+    tick      bigint not null,
+    score     jsonb not null,
+    standings jsonb not null
+);
+create index if not exists rated_matches_by_time on rated_matches (at);
 -- One-shot migrations that have run, so a schema step that cannot be written
 -- as `if not exists` runs once and not on every boot.
 create table if not exists schema_marks (
@@ -1334,6 +1351,20 @@ async fn route(
                           where not re.bots_only
                             and re.at >= bound.since and re.at < bound.until
                             and ($3 = '' or re.class = $3)
+                         union all
+                         -- A whistle moves a standing too, in the zones
+                         -- rated by match, and the week's swing is every
+                         -- movement or it is not the week's.
+                         select (item.standing->>'account')::bigint,
+                                rm.class,
+                                (item.standing->>'after')::double precision
+                                  - (item.standing->>'before')::double precision,
+                                false
+                           from rated_matches rm, bound
+                          cross join lateral jsonb_array_elements(rm.standings)
+                                     as item(standing)
+                          where rm.at >= bound.since and rm.at < bound.until
+                            and ($3 = '' or rm.class = $3)
                      ),
                      moved as (
                          select account, sum(delta) as delta
@@ -4132,6 +4163,69 @@ mod tests {
     #[test]
     fn a_well_formed_rating_event_is_accepted() {
         assert_eq!(settlement::validate_rated_event(&rated_event()), Ok(()));
+    }
+
+    fn rated_match() -> serde_json::Value {
+        serde_json::json!({
+            "id": 10,
+            "tick": 18_000,
+            "score": [9, 4],
+            "bots_only": false,
+            "standings": [
+                { "account": 11, "kind": 0, "team": 0, "before": 1200.0, "after": 1232.0 },
+                { "account": 12, "kind": 1, "team": 1, "before": 1200.0, "after": 1196.0 }
+            ]
+        })
+    }
+
+    #[test]
+    fn a_well_formed_rated_match_is_accepted() {
+        assert_eq!(settlement::validate_rated_match(&rated_match()), Ok(()));
+    }
+
+    #[test]
+    fn a_rated_match_is_refused_where_it_is_malformed() {
+        let mut no_id = rated_match();
+        no_id.as_object_mut().unwrap().remove("id");
+        assert_eq!(
+            settlement::validate_rated_match(&no_id),
+            Err("no event id".into())
+        );
+
+        let mut one_side = rated_match();
+        one_side["score"] = serde_json::json!([9]);
+        assert_eq!(
+            settlement::validate_rated_match(&one_side),
+            Err("invalid score".into())
+        );
+
+        let mut off_the_board = rated_match();
+        off_the_board["standings"][1]["team"] = serde_json::json!(2);
+        assert_eq!(
+            settlement::validate_rated_match(&off_the_board),
+            Err("standing on a side the score has no row for".into())
+        );
+
+        let mut twice = rated_match();
+        twice["standings"][1]["account"] = serde_json::json!(11);
+        assert_eq!(
+            settlement::validate_rated_match(&twice),
+            Err("duplicate standing account".into())
+        );
+
+        let mut too_far = rated_match();
+        too_far["standings"][0]["after"] = serde_json::json!(1200.0 + rating::EVENT_CAP + 1.0);
+        assert_eq!(
+            settlement::validate_rated_match(&too_far),
+            Err("standing rating movement exceeds the event bound".into())
+        );
+
+        let mut nobody = rated_match();
+        nobody["standings"] = serde_json::json!([]);
+        assert_eq!(
+            settlement::validate_rated_match(&nobody),
+            Err("invalid standings".into())
+        );
     }
 
     #[test]

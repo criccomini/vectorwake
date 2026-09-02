@@ -8446,3 +8446,46 @@ waist draws both corners and no flat, and pins that a wall keeps the face a
 diagonal only corners against while handing over the half it lies flush along.
 `constant_drift_test.lua` holds the four numbers level across `sim.h`, the
 renderer and the editor.
+
+## 154. A flag game rates the whistle and not the wreck
+
+**Status:** accepted, amending
+[decision 131](#131-a-duel-is-a-two-seat-zone-and-nothing-else), which filed
+a rating under the zone's key and left every zone rating by the death.
+
+**What:** Turf and Capture the Flag rate the match. A death in either moves
+nobody: `rating.damage` keeps no ledger in a room rated by match, so `death`
+and `quit` find nothing to settle and the kill feed's line is the whole of
+what a death does. At the whistle the room runs one exchange over every seat
+that was on a public side for thirty seconds or more, the same field time the
+participation grant asks for. It is team Elo: a side's strength is the mean of
+its pilots, each pair of sides is a contest decided by the score, and every
+pilot on a side takes the same signed result at their own K, capped by the
+same constant a death is. A level score is a draw. The anchor holds, a bot
+moves at its K, and the farm brake applies where everybody on the other side
+was a machine. A match is one game toward provisional.
+
+The exchange travels as its own record, `spool::MatchEvent`, on its own spool
+and route, `/v1/rated-matches`, into its own table, `rated_matches`, and
+through the receipt table a death already uses, since the arena mints every id
+from one space. The week's swing reads both tables. The release barrier a
+rated session settles through posts both spools.
+
+Team Battle, Duel and Free Roam are untouched: kills and deaths, as before.
+`modes::rated_by_match` is the one place that says which zones are which.
+
+**Why:** a rating filed under `turf` was a rating about the dogfights on turf
+maps, since deaths were the only thing it saw, and a pilot who held four stands
+all match and traded two deaths doing it went down. The ladders of every
+objective game that has kept one work the way this now does: the match result
+moves rating, and per-action credit stays a stat, because a stat can be padded
+and a win cannot. Per-flag credit was the alternative and is what rating.md's
+open question warned would be farmed in an empty arena; a win over a side of
+bots pays nothing once you outrate them and the brake caps the rest.
+
+**Cost:** two ways of being rated, meeting in one function on the room and one
+flag on `Rating`. A pilot in a flag zone waits ten matches, not ten deaths, to
+leave provisional. The client's death figure is gated on the contributor byte
+`S2C_KILL` already carried, so a death that rated nobody floats nothing, and
+the client stops counting games off kills, since in these zones the games are
+matches and come with the roster. No wire change.

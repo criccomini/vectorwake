@@ -670,6 +670,9 @@ pub(crate) struct Room {
     pub(crate) pilots: std::sync::Arc<std::sync::Mutex<spool::Spool<pilot::Event>>>,
     /// Completed matches, including the short replay the public result opens.
     pub(crate) matches: std::sync::Arc<std::sync::Mutex<spool::Spool<growth::Artifact>>>,
+    /// Rated matches on their way to the meta-layer, from a zone rated by
+    /// match. Empty forever in a kill game.
+    pub(crate) results: std::sync::Arc<std::sync::Mutex<spool::Spool<spool::MatchEvent>>>,
     /// Rating id to account, for the pilots in this room that have one.
     ///
     /// It outlives the seat on purpose. A pilot who leaves can still appear as
@@ -1289,6 +1292,9 @@ impl Room {
             a.world.state.flag_count = want.min(placed);
         }
         a.mode = modes::build(&cfg.arena.mode, &a.mode_setup(&cfg.arena));
+        if modes::rated_by_match(&cfg.arena.mode) {
+            a.rating.rate_by_match();
+        }
         for w in a.retune(&cfg.arena) {
             println!("zone: {w}");
         }
@@ -1384,6 +1390,9 @@ impl Room {
             spool: std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::rated("/nonexistent"))),
             pilots: std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::pilot("/nonexistent"))),
             matches: std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::matches(
+                "/nonexistent",
+            ))),
+            results: std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::results(
                 "/nonexistent",
             ))),
             next_id: 1,
@@ -3213,6 +3222,7 @@ impl Room {
     /// stays down until something puts it back, and `open_match` is what does.
     pub(crate) fn close_match(&mut self) {
         self.note_match_results();
+        self.settle_match();
         self.file_match();
         if self.maps.len() > 1 {
             self.map_at = (self.map_at + 1) % self.maps.len();
@@ -3424,12 +3434,88 @@ impl Room {
         }
     }
 
+    /// Field time that counts as having played the match, in ticks. Thirty
+    /// seconds: the closing seconds are not worth arriving for, whether the
+    /// prize is the participation grant or a rated result.
+    const MIN_PLAY_TICKS: u32 = 30 * 100;
+
+    /// The whistle's exchange, in a zone rated by match. Every seat that
+    /// played to the end and sat on a public side is on it, the sides are
+    /// scored as the mode scored them, and the movement goes to the
+    /// meta-layer the way a death's does. Nothing in a kill game: the ledger
+    /// there is the deaths, and this is the one place the two ways of being
+    /// rated meet. See decision 154.
+    fn settle_match(&mut self) {
+        if !self.rating.rates_by_match() {
+            return;
+        }
+        let Some(state) = self.mode.match_state().filter(|state| !state.playing) else {
+            return;
+        };
+        let now = self.world.state.tick;
+        let match_age = now.wrapping_sub(self.match_opened_at);
+        let mut sides: Vec<Vec<rating::Id>> = vec![Vec::new(); state.score.len()];
+        for player in self.players.values() {
+            let played = match_age.min(now.wrapping_sub(player.joined));
+            if played < Self::MIN_PLAY_TICKS {
+                continue;
+            }
+            let team = self.world.state.ships[player.ship as usize].team as usize;
+            if let Some(side) = sides.get_mut(team) {
+                side.push(self.rid_of(player.ship));
+            }
+        }
+        let Some(result) = self.rating.matched(now, &sides, &state.score) else {
+            return;
+        };
+        self.hand_off_match(&result);
+        // The podium reads the ratings off the roster, so the exchange is on
+        // the wire before the board goes up rather than on the roster's own
+        // half-hertz clock.
+        self.broadcast_roster();
+    }
+
+    /// A rated match, addressed to the meta-layer. Only seats with accounts
+    /// travel, for the reason `hand_off` gives, and a match with none is not
+    /// sent.
+    pub(crate) fn hand_off_match(&mut self, r: &rating::RatedMatch) {
+        let mut all_bots = true;
+        let standings: Vec<spool::MatchStanding> = r
+            .standings
+            .iter()
+            .filter_map(|s| {
+                let account = *self.accounts.get(&s.who)?;
+                let bot = self.rating.is_bot(&s.who);
+                all_bots = all_bots && bot;
+                Some(spool::MatchStanding {
+                    account,
+                    kind: u8::from(bot),
+                    team: s.team,
+                    before: s.before,
+                    after: s.after,
+                })
+            })
+            .collect();
+        if standings.is_empty() {
+            return;
+        }
+        let ev = spool::MatchEvent {
+            id: rand::random(),
+            tick: r.tick,
+            score: r.score.clone(),
+            standings,
+            bots_only: all_bots,
+        };
+        if let Ok(mut s) = self.results.lock() {
+            s.push(ev);
+        }
+    }
+
     /// File one settlement event per occupied seat at the whistle: whether
     /// they stayed to the end, whether their side took it, and what they
     /// helped with. Thirty seconds of field time is what counts as having
     /// been in the match, so the closing seconds are not worth arriving for.
     fn note_match_results(&self) {
-        const MIN_PLAY_TICKS: u32 = 30 * 100;
         let Some(state) = self.mode.match_state().filter(|state| !state.playing) else {
             return;
         };
@@ -3451,7 +3537,7 @@ impl Room {
                 continue;
             };
             let played = match_age.min(now.wrapping_sub(player.joined));
-            let completed = played >= MIN_PLAY_TICKS;
+            let completed = played >= Self::MIN_PLAY_TICKS;
             let ship = &self.world.state.ships[player.ship as usize];
             let detail = serde_json::json!({
                 "match": self.match_no,
