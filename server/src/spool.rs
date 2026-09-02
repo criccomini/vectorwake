@@ -60,6 +60,32 @@ pub struct Credit {
     pub after: f64,
 }
 
+/// One rated match, as it travels. The same rule as a death: only seats with
+/// accounts are on it, since a guest is rated in the room and forgotten with
+/// it, and a match with no account on either side is not sent.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+pub struct MatchEvent {
+    /// Minted once when filed and carried through every retry, as on a death.
+    pub id: i64,
+    pub tick: u32,
+    /// The final score per public side, in the zone's order.
+    pub score: Vec<u16>,
+    pub standings: Vec<MatchStanding>,
+    /// True when no human played, computed in the arena for the reason the
+    /// death's flag is: only this process knows who was a person.
+    pub bots_only: bool,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+pub struct MatchStanding {
+    pub account: u64,
+    /// 1 for a bot, 0 for a person, the death's `victim_kind` convention.
+    pub kind: u8,
+    pub team: u8,
+    pub before: f64,
+    pub after: f64,
+}
+
 /// How many events one post carries. A batch is one transaction per event at
 /// the far end, so this is about bounding a retry rather than about throughput.
 const BATCH: usize = 256;
@@ -139,6 +165,10 @@ pub struct Spools {
     pub rated: Arc<Mutex<Spool<Event>>>,
     pub pilots: Arc<Mutex<Spool<crate::pilot::Event>>>,
     pub matches: Arc<Mutex<Spool<crate::growth::Artifact>>>,
+    /// What a whistle did to the ladder, in a zone rated by match. Its own
+    /// file and route: a death and a match land in different tables and are
+    /// validated by different rules, and a spool carries one kind of record.
+    pub results: Arc<Mutex<Spool<MatchEvent>>>,
 }
 
 impl Spools {
@@ -147,6 +177,7 @@ impl Spools {
             rated: Arc::new(Mutex::new(Spool::rated(dir))),
             pilots: Arc::new(Mutex::new(Spool::pilot(dir))),
             matches: Arc::new(Mutex::new(Spool::matches(dir))),
+            results: Arc::new(Mutex::new(Spool::results(dir))),
         }
     }
 
@@ -160,6 +191,9 @@ impl Spools {
             s.aim(url, token, zone, class, instance);
         }
         if let Ok(mut s) = self.matches.lock() {
+            s.aim(url, token, zone, class, instance);
+        }
+        if let Ok(mut s) = self.results.lock() {
             s.aim(url, token, zone, class, instance);
         }
     }
@@ -198,6 +232,17 @@ impl Spool<crate::pilot::Event> {
 impl Spool<crate::growth::Artifact> {
     pub fn matches(dir: &str) -> Spool<crate::growth::Artifact> {
         Spool::open(dir, "matches.jsonl", "/v1/matches", "match")
+    }
+}
+
+/// The rated match half.
+impl Spool<MatchEvent> {
+    pub fn results(dir: &str) -> Spool<MatchEvent> {
+        Spool::open(dir, "results.jsonl", "/v1/rated-matches", "rated match")
+    }
+
+    fn account_batches(&self, account: u64) -> Vec<Batch<MatchEvent>> {
+        self.batches_matching(|event| event.standings.iter().any(|s| s.account == account))
     }
 }
 
@@ -509,16 +554,31 @@ fn batch_rejections(
 /// owns queue removal; this is an acknowledgment barrier, and duplicate posts
 /// are absorbed by the event id.
 pub async fn settle_account(
-    spool: &Arc<Mutex<Spool<Event>>>,
+    spools: &Spools,
     base: &str,
     pool_token: &str,
     account: u64,
 ) -> Result<(), String> {
-    let batches = spool
+    let batches = spools
+        .rated
         .lock()
         .map_err(|_| "rated event spool lock failed".to_string())?
         .account_batches(account);
-    settle_batches(batches, base, pool_token, "/v1/events", "event").await
+    settle_batches(batches, base, pool_token, "/v1/events", "event").await?;
+    // A whistle can move a standing too, so it goes through the same barrier.
+    let batches = spools
+        .results
+        .lock()
+        .map_err(|_| "rated match spool lock failed".to_string())?
+        .account_batches(account);
+    settle_batches(
+        batches,
+        base,
+        pool_token,
+        "/v1/rated-matches",
+        "rated match",
+    )
+    .await
 }
 
 /// Post a set of batches and drop what the far end acknowledged.
@@ -960,7 +1020,9 @@ mod tests {
         s.push(ev(7, 11));
         let spool = Arc::new(Mutex::new(s));
 
-        settle_account(&spool, &base, "tok", 11)
+        let mut spools = Spools::open(d.to_str().unwrap());
+        spools.rated = spool.clone();
+        settle_account(&spools, &base, "tok", 11)
             .await
             .expect("meta acknowledged the account's debt");
 
@@ -985,7 +1047,9 @@ mod tests {
         s.push(ev(7, 11));
         let spool = Arc::new(Mutex::new(s));
 
-        let error = settle_account(&spool, &base, "tok", 11)
+        let mut spools = Spools::open(d.to_str().unwrap());
+        spools.rated = spool.clone();
+        let error = settle_account(&spools, &base, "tok", 11)
             .await
             .expect_err("a refusal is not a settlement acknowledgment");
 

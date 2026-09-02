@@ -757,16 +757,22 @@ local function publish_kill(e)
     M.ratings[killer] = kr
     if not M.watching and M.me ~= 255 then
         M.ratings[M.me] = e.mine
-        if was then k.gain = e.mine - was end
+        -- Only a rated death gets a figure. A death nobody was credited for
+        -- is a wall, or a zone that rates the match and not the death, and
+        -- a plus zero there would read as a kill that paid nothing.
+        if was and e.rated then k.gain = e.mine - was end
     end
     -- A rated death is a game played, which is what decides whether the number
     -- is shown at all. Counting it here stops a pilot reading "placing" for a
-    -- whole session after their tenth.
-    for _, ship in ipairs({victim, killer}) do
-        local p = M.pilots[ship]
-        if p then
-            p.games = (p.games or 0) + 1
-            p.tier = M.tier(M.ratings[ship], p.games)
+    -- whole session after their tenth. In a zone rated by match the games are
+    -- matches and arrive with the roster, so nothing is counted here.
+    if e.rated then
+        for _, ship in ipairs({victim, killer}) do
+            local p = M.pilots[ship]
+            if p then
+                p.games = (p.games or 0) + 1
+                p.tier = M.tier(M.ratings[ship], p.games)
+            end
         end
     end
 end
@@ -827,7 +833,10 @@ local function on_kill(s)
         kr = i16(string.byte(s, 6), string.byte(s, 7)),
         -- Byte 8 is the contributor count. Nothing about a payout follows it
         -- any more: a kill pays nothing, because bounty priced one and points
-        -- banked it and both went with the shop.
+        -- banked it and both went with the shop. What it still says is
+        -- whether the ladder moved at all: a wall death credits nobody, and
+        -- neither does any death in a zone rated by match.
+        rated = string.byte(s, 8) ~= 0,
         tick = u32(string.byte(s, 9, 12)),
         -- Whether this death handed *this* pilot an assist. The one byte on
         -- the message that is not the same for everybody in the room: the

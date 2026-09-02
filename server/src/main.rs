@@ -968,6 +968,7 @@ async fn main() {
     tokio::spawn(spool::drain_loop(spools.rated.clone()));
     tokio::spawn(spool::drain_loop(spools.pilots.clone()));
     tokio::spawn(spool::drain_loop(spools.matches.clone()));
+    tokio::spawn(spool::drain_loop(spools.results.clone()));
     let ladder = load_ladder(&dir);
     let seed_source = if arena::certified_pilot_attestation().is_some() {
         "the verified compiled pilot report"
@@ -2518,6 +2519,110 @@ mod tests {
             moved,
             "a pilot with nobody in sight sat still instead of looking"
         );
+    }
+
+    /// A match that has just ended on a given score, standing in for the
+    /// clock: what the whistle does to the ladder is the question, not how
+    /// the mode arrived at it.
+    struct Whistle(Vec<u16>);
+
+    impl modes::Mode for Whistle {
+        fn tick(&mut self, _ctx: &mut modes::ModeCtx) {}
+        fn on_death(&mut self, _ctx: &mut modes::ModeCtx, _victim: u8, _killer: u8) {}
+        fn name(&self) -> &'static str {
+            "whistle"
+        }
+        fn match_state(&self) -> Option<modes::MatchState> {
+            Some(modes::MatchState {
+                playing: false,
+                seconds_left: 0,
+                score: self.0.clone(),
+            })
+        }
+    }
+
+    /// A flag zone rates the whistle and not the wreck: a death there leaves
+    /// the ladder alone, and the match moves everybody who played it, with
+    /// the exchange on its way to the meta-layer and on the roster.
+    #[test]
+    fn a_flag_zone_rates_the_match_and_not_the_death() {
+        let d = std::env::temp_dir().join(format!("vw-matched-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let spools = spool::Spools::open(d.to_str().unwrap());
+        spools.aim("http://127.0.0.1:1", "tok", "turf", "turf", "i1");
+        let results = spools.results.clone();
+
+        let mut def = wire_zone(1, 6, 16);
+        def.mode = "turf".into();
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = ArenaServer::new(cfg, spools, HashMap::new());
+        z.serve_zone(&def).expect("a room");
+        let room = &mut z.rooms[0];
+        assert!(room.rating.rates_by_match(), "turf is rated by match");
+
+        let mut seats = Vec::new();
+        for (name, team) in [("a1", 0u8), ("a2", 0), ("b1", 1), ("b2", 1)] {
+            let (tx, rx) = mpsc::channel(OUT_QUEUE);
+            std::mem::forget(rx);
+            let id = room
+                .join(Seat::guest(name, false), 0, 16, tx)
+                .expect("a seat");
+            let ship = room.players[&id].ship;
+            room.world.state.ships[ship as usize].team = team;
+            room.players.get_mut(&id).unwrap().joined = 0;
+            room.accounts
+                .insert(name.to_string(), 1 + seats.len() as u64);
+            seats.push((name.to_string(), ship));
+        }
+        // A late arrival, in for the closing seconds, on the winning side.
+        let (tx, rx) = mpsc::channel(OUT_QUEUE);
+        std::mem::forget(rx);
+        let late = room
+            .join(Seat::guest("late", false), 0, 16, tx)
+            .expect("a seat");
+        let late_ship = room.players[&late].ship;
+        room.world.state.ships[late_ship as usize].team = 0;
+        room.match_opened_at = 0;
+        room.world.state.tick = 10_000;
+        room.players.get_mut(&late).unwrap().joined = 9_000;
+
+        // A death mid-match: the ledger never fills, so nothing settles.
+        let tick = room.world.state.tick;
+        room.rating.damage(tick, "b1", "a1", 1000, false);
+        assert!(room.rating.death(tick, "b1").is_none());
+        assert_eq!(room.rating.rating_of("a1"), rating::UNRATED);
+
+        room.mode = Box::new(Whistle(vec![9, 4]));
+        room.close_match();
+
+        assert!(
+            room.rating.rating_of("a1") > rating::UNRATED,
+            "the winners rose"
+        );
+        assert_eq!(room.rating.rating_of("a1"), room.rating.rating_of("a2"));
+        assert!(
+            room.rating.rating_of("b1") < rating::UNRATED,
+            "the losers fell"
+        );
+        assert_eq!(room.rating.games_of("a1"), 1);
+        assert_eq!(
+            room.rating.rating_of("late"),
+            rating::UNRATED,
+            "thirty seconds on the field is what counts as having played"
+        );
+        assert_eq!(room.rating.games_of("late"), 0);
+
+        let s = results.lock().unwrap();
+        let ev = s.last().expect("the match went to the spool");
+        assert_eq!(ev.score, vec![9, 4]);
+        assert_eq!(ev.standings.len(), 4, "four accounts played it");
+        assert!(!ev.bots_only);
+        let a1 = ev.standings.iter().find(|st| st.account == 1).unwrap();
+        assert_eq!(a1.team, 0);
+        assert!(a1.after > a1.before);
+        drop(s);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     /// A seat is furniture, and its last occupant does not come with it.

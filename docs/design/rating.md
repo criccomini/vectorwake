@@ -11,6 +11,10 @@ which is kills, deaths and assists and lasts three minutes. Rating is an
 estimate of how good you are at one of these games, and it is the only number
 in this game that outlives the match it was earned in.
 
+That is the kill games. The flag games, Turf and Capture the Flag, are rated
+on the match instead: a death there moves nothing, and the whistle moves
+everybody who played. See [the flag games](#the-flag-games) below.
+
 One per zone, not one per player. A pilot who has flown Team Battle and Free
 Roam carries two ratings and no total over them, and a first game in a zone
 they have never flown places them from scratch however good they are
@@ -26,7 +30,7 @@ its zero. It floats off the wreck for two and a half seconds, where a pilot who
 has just taken somebody is already looking, and it goes on the end of the feed's
 line about the same death, which stands for nine. It is a receipt about one
 fight rather than a price on somebody's head, and it is the one number that says
-whether the kill mattered (decisions 152 and 154).
+whether the kill mattered (decisions 152 and 155).
 
 ## The hard part
 
@@ -201,10 +205,9 @@ The attribution math below degenerates to ordinary Elo when there is exactly
 one contributor, so a mode where a kill has a single cause needs no separate
 implementation.
 
-Rating measures killing and dying. It does not measure flag captures, goals, or
-the thousand quiet things good players do. That is a real gap, and the plan is
-objective-based rated events later rather than pretending kills are the whole
-game.
+In the kill games, rating measures killing and dying. It does not measure the
+thousand quiet things good players do, and that is a real gap. In the flag
+games it measures whether your side won, which is the next section.
 
 What a player sees is a tier rather than a number, and nothing at all until
 they are out of provisional. The bands live in `server/src/rating.rs`, from
@@ -221,6 +224,56 @@ Five bands, and Ace is the widest of them deliberately. A ladder with a rung
 every hundred points turns into the number it was meant to replace, and the
 stretch above a pilot who has clearly arrived is where the fewest people are
 and the least needs saying about them.
+
+## The flag games
+
+Turf and Capture the Flag are won by holding ground, and a rating there that
+counted deaths was a rating about the dogfights on turf maps rather than about
+turf. So those two zones rate the match and nothing else, per
+[decision 157](../architecture/decisions.md#157-a-flag-game-rates-the-whistle-and-not-the-wreck).
+The kill games, Team Battle, Duel and Free Roam, are unchanged and rate only
+by kills and deaths.
+
+The shape is team Elo, which is what every objective game that has kept a
+ladder settled on. A side's strength is the mean rating of the pilots on it,
+each pair of sides is one contest decided by the score, and every pilot on a
+side takes the same signed result at their own K:
+
+```
+R_s  = mean rating of side s
+E_st = 1 / (1 + 10^((R_t - R_s) / 400))
+S_st = 1 if score_s > score_t, 0.5 if level, 0 otherwise
+ΔR_i = K_i · mean over t≠s of (S_st - E_st)     for every i on side s
+```
+
+Two sides is the ordinary case and the mean over other sides is then one
+term. A level score is a draw, which moves nobody at equal strength.
+
+Who is on a side is the room's call, and it is the same call the participation
+grant already makes: thirty seconds on the field, so a pilot who arrives for
+the closing seconds is not on the exchange in either direction. A private side
+cannot win a flag round and is not on it either.
+
+Everything else is the death rule again. K decays with games the same way,
+and a match is one game, so a pilot is out of provisional after ten matches
+rather than ten deaths. The per-event cap is the same constant. The anchor is
+pinned and a bot moves at its own K. The farm brake applies to a match where
+everybody on the other side was a machine, since that is the only match a
+person can arrange for themselves, and losing is never capped.
+
+What is deliberately not in it is per-flag credit. Paying a pilot for each
+stand taken or flag carried is what gets farmed, and it is what the objective
+games that tried it took out again: a stat can be padded and a win cannot.
+Flag takes and stand time belong on the board beside assists, where the score
+already lives, and score and rating do different jobs. The
+[original](../research/asss-server.md) paid points per flag and per carried
+flag killed, and had no rating at all, which is the other way of saying the
+same thing.
+
+In these zones a death still writes its feed line and its row on the board,
+and the figure that floats off a wreck does not appear, since there is nothing
+to report. The podium's rating column reads the whistle's exchange, which is
+on the roster before the board goes up.
 
 ## Where a rating is read
 
@@ -255,7 +308,9 @@ alone says how the evening went and not where anybody stands.
 ## Storage
 
 Every rated event involving a human is stored with its inputs: participants,
-weights, ratings before and after, arena, zone, and timestamp. Bot-only
+weights, ratings before and after, arena, zone, and timestamp. A rated match
+is stored the same way in its own table, `rated_matches`, with the score and a
+standing per account, so a match is as replayable as a death. Bot-only
 events update the live ratings and career totals but retain only a compact
 exactly-once receipt.
 
@@ -334,12 +389,9 @@ Whether a ladder arena should show the number behind the tier. Tiers shipped
 as the general answer, and a dedicated competitive arena is the one place
 where the anxiety a raw number creates might be the point.
 
-How to rate the objective game without letting a player farm rating by taking
-uncontested flags in an empty arena.
-
 Whether survival should count. A player who escapes at 5% energy did something
 skillful that the current model scores as nothing.
 
-Whether team outcomes should adjust individual ratings, as they do in most team
-games. It rewards playing for the team and it punishes people for their
-teammates, and both effects are real.
+Whether team outcomes should adjust individual ratings in the kill games, as
+they now do in the flag games. It rewards playing for the team and it punishes
+people for their teammates, and both effects are real.
