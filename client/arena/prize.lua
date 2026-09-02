@@ -30,23 +30,40 @@ end
 -- interface is what knows that trigger is called the gun.
 local TRIGGERS = {"gun", "bomb"}
 
--- How many of it you now hold, where that is worth saying. One of a thing is
--- the thing, so nothing is added; above one this is the corner card's own
--- "x n", because a pilot reading the feed and then reading the card must not
--- have to translate between two ways of counting the same kit.
+-- The one thing said about a slot besides its name: that there is no more of
+-- it to be had.
 --
--- It is also the whole of what tells a step up from a shrug. A green that
--- lands on a slot already at its ceiling is spent for nothing, and what says
--- so is a number that did not move.
-local function times(held)
-    return (held > 1) and (" x" .. held) or ""
+-- The count is not said. The corner card writes one as "x n", and that works
+-- where the card does: "spray x2" is two sprays. In a sentence it stops
+-- working, because "recharge x3" reads as three recharges at once, which is
+-- not a thing anybody holds. What a pilot wants off this line is what they
+-- got, and the corner stack already draws how much of it they have.
+--
+-- The ceiling is worth a word, because it is the difference between a step up
+-- and a shrug: a green that lands on a full slot is a trip spent for nothing,
+-- and nothing else on screen says so. `sim_grant` clamps at `sim_slot_cap`
+-- and the event carries what the pilot holds after the grant, so a count that
+-- has reached the cap is exactly a slot with nothing left in it.
+--
+-- Said as a condition rather than as a change, because the event cannot tell
+-- the two apart: the green that fills the last step and the green that landed
+-- on a slot already full both report the ceiling.
+local function limit(slot, held, ship)
+    local core = _G.sim
+    if not (core and core.slot_cap and core.ship_class and ship) then
+        return ""
+    end
+    local cap = tonumber(core.slot_cap(core.ship_class(ship), slot)) or 0
+    if cap > 0 and held >= cap then return ", at its limit" end
+    return ""
 end
 
--- One slot, named. `held` is what the pilot holds of it after the grant,
--- which is what SIM_EV_GREEN carries.
-function M.words(slot, held)
+-- One slot, named. `held` is what the pilot holds of it after the grant and
+-- `ship` is the seat that took it, which is what SIM_EV_GREEN carries.
+function M.words(slot, held, ship)
     slot = tonumber(slot) or 0
     held = tonumber(held) or 0
+    local at_cap = limit(slot, held, ship)
     local ups = core_n("UP_COUNT", 5)
     local trigs = core_n("TRIG_COUNT", 2)
     local mods = core_n("MOD_COUNT", 6)
@@ -57,7 +74,7 @@ function M.words(slot, held)
     -- A flight stat: one of the five every hull is flying on already.
     if slot < lvl0 then
         local up = pal.UPGRADES[slot + 1]
-        return (up and up.name or "upgrade") .. times(held)
+        return (up and up.name or "upgrade") .. at_cap
     end
 
     -- A rung of a weapon's ladder, counted from one: the bottom of a ladder
@@ -65,7 +82,7 @@ function M.words(slot, held)
     -- up is level two here exactly as it is on the card.
     if slot < mod0 then
         local t = TRIGGERS[slot - lvl0 + 1] or "weapon"
-        return t .. " level " .. (held + 1)
+        return t .. " level " .. (held + 1) .. at_cap
     end
 
     -- An add-on, with the trigger it was bolted to. The trigger has to be
@@ -78,12 +95,12 @@ function M.words(slot, held)
         local i = slot - mod0
         local t = TRIGGERS[math.floor(i / mods) + 1] or "weapon"
         local m = pal.MODS[i % mods + 1]
-        return t .. " " .. (m and (m.long or m.name) or "add-on") .. times(held)
+        return t .. " " .. (m and (m.long or m.name) or "add-on") .. at_cap
     end
 
     -- A charge: a thing you carry a count of and spend.
     local c = pal.CHARGES[slot - ch0 + 1]
-    return (c and c.name or "charge") .. times(held)
+    return (c and c.name or "charge") .. at_cap
 end
 
 return M
