@@ -1,8 +1,10 @@
 # The beacon
 
-Chris's ask, twice. First: the flags look silly, come up with cooler ones,
-mocked up. Then, off the first sheet: the beacon, only the beacon, and make
-the collar big enough to clear the ship.
+Chris's ask, three rounds of it. First: the flags look silly, come up with
+cooler ones, mocked up. Then, off the first sheet: the beacon, only the beacon,
+and make the collar big enough to clear the ship. Then: Turf can use the same
+drawing, and a pilot holding several flags should show several layers, with
+the layers going to the clocks where a zone runs one.
 
 So this is no longer a comparison. It is the sheet that develops one drawing,
 by [client/tools/flags_svg.lua](../../client/tools/flags_svg.lua). Nothing in
@@ -10,7 +12,7 @@ by [client/tools/flags_svg.lua](../../client/tools/flags_svg.lua). Nothing in
 
 ```sh
 lua5.1 client/tools/flags_svg.lua /tmp/flags.svg
-chromium --headless --screenshot=/tmp/flags.png --window-size=1240,2060 \
+chromium --headless --screenshot=/tmp/flags.png --window-size=1240,2775 \
   file:///tmp/flags.svg
 ```
 
@@ -33,7 +35,12 @@ triangles.
 Carried, the whole thing opens into a collar outside the hull and the ping
 comes twice as often. That is a change of rate rather than of shape, which is
 what lets the two states be told apart at a size where shape has stopped
-working. It costs 490.
+working. It costs 514, or about 874 with a carry clock on it.
+
+Turf uses the same drawing. A stand is never carried, so half of it never runs
+there, and that is fine: a transponder pinging on claimed ground is exactly
+what a held stand has to say, and one flag drawing across the catalog beats two
+that a player has to learn separately.
 
 ## The collar is built off the roster, not off the eye
 
@@ -42,10 +49,11 @@ The Cipher is a knife and reaches 23 down its own length, so the collar sat on
 the nose of the hull it was supposed to be marking.
 
 The sheet now reads `M.HULLS` out of `world.lua`, takes the widest reach in the
-roster, and puts the inner rim four pixels outside it. The arcs stand seven
-pixels beyond that and the ping runs from the rim out to twenty five past it.
-Every number below the arcs comes from the polygons, so a hull that gets recut
-moves the clearance with it rather than quietly breaking the drawing.
+roster, and puts the inner rim four pixels outside it. The first ring of arcs
+stands seven beyond that, the first clock rim sixteen, each further flag adds
+eight, and the ping runs from whatever the outermost ring turns out to be to
+twenty five past it. Every number comes off the polygons, so a hull that gets
+recut moves the clearance with it rather than quietly breaking the drawing.
 
 The band called `the whole roster` is the proof: one collar over all seven
 hulls at the size they fly, with each hull's own reach drawn as a dashed
@@ -67,32 +75,66 @@ zoom the game is actually played at.
 
 Capture the Flag drops a carried flag after thirty seconds, per
 [zones.md](../../docs/design/zones.md#capture-the-flag), and nothing on screen
-counts them down. The collar is round, so the clock is a rim to drain, and it
-costs one arc.
+counts them down. The collar is round, so the clock is a rim to drain.
 
-It sits fourteen pixels outside the inner rim, which is far enough out that it
-cannot be read as a fourth arc. It empties counterclockwise from noon, the way
-a fuse burns down, and the last five seconds turn to the other side's color,
-because that is who the flag is about to be available to again.
+It sits sixteen pixels outside the inner rim, far enough out that it cannot be
+read as one of the arcs, and it is drawn finer than they are. That is
+deliberate: the arcs are the count and have to survive being small, while a rim
+is a gauge, read by somebody who is looking at it. At equal weight, four rims
+and one collar sat on the same footing and the count stopped being the first
+thing anybody saw.
 
-## What is still open
+It empties counterclockwise from noon, the way a fuse burns down, and the last
+five seconds turn to the other side's color, because that is who the flag is
+about to be available to again.
 
-**Turf may want its own mark.** A turf stand is a place rather than a thing you
-carry: `flag_carry` is clear there, the flag never leaves its tile, and what
-the drawing has to say is that this ground is being held. A transponder pinging
-on a claimed stand says that well, which is the argument for using the same
-drawing in both zones. It is also the argument for giving Turf something that
-never opens into a collar, since a turf flag is never carried and half of this
-drawing is therefore dead there.
+## Carrying more than one
 
-**Two carriers close together overlap.** Four flags and eight seats means it
-will happen. The collars are rings rather than fills, so they cross rather than
-occlude, but it has not been looked at with two ships in one place.
+Chris's read, and the right one: the case that matters is not two carriers in
+one place, it is one carrier holding several flags. In Capture the Flag that is
+the entire round, since holding all four for ten seconds takes it, so a pilot
+two flags in has to look like it from anywhere on the map.
 
-**Nothing is wired up.** `M.flags` in `world.lua` still draws the pennant. What
-lands from here is that function, the two states, and the clock, which needs
-`flag_carry_ticks` and the carrier's `held` count on the wire where the client
-can read them.
+**No carry limit: one ring of arcs per flag.** Alternate rings turn against
+each other, because two rings turning the same way at the same phase read as
+one thick ring and the whole point of the stack is being countable.
+
+**With the clock: one ring of arcs, and a draining rim per flag.** Stacking
+both would put eight rings around a ship and say neither. The rims are sorted
+so the one about to expire is outermost: it is the one that turns the other
+side's color, and it is the answer to the only question a carrier is asking.
+`sim_flag` keeps `held` per flag, so the rims drain at their own rates and never
+move together, which is what makes the stack worth reading rather than just
+counting.
+
+The stack is also the cheap case. One pilot holding four with clocks costs 1930
+triangles; four pilots holding one apiece cost 3496, because each of them pays
+for its own ping and its own inner rim.
+
+## What the wire owes this
+
+`M.flags` in `world.lua` still draws the pennant, and three things have to
+arrive before the rest of this can land.
+
+**`carrier` is on the wire and not in Lua.** `pack.c` writes it beside `team`
+and `carried`, but `flag_at` in the extension returns x, y, team and carried
+only. Grouping a pilot's flags into one stack needs it, and it costs one
+`lua_pushnumber`.
+
+**`held` is on neither.** It is a field of `sim_flag`, it is not packed, and the
+client cannot derive it: a client joining mid carry never saw the pickup, and a
+snapshot would zero whatever it had counted. That is decision 43's rule, and
+[memory 583](../../.optmem/memory) is the last time this repository learned it
+the hard way, with Free Roam's greens. Two bytes a flag and a protocol bump.
+
+**`flag_carry_ticks` has no accessor.** Without it `held` is a tick count with
+nothing to divide by, and the rim has no full.
+
+## Still open
+
+**Two carriers on top of each other.** Less likely than the stack, but eight
+seats means it happens. The collars are rings rather than fills, so they cross
+rather than occlude, and it has not been looked at.
 
 ## How the sheet is made
 

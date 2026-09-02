@@ -4,7 +4,7 @@
 --
 -- Rasterize with any browser:
 --
---     chromium --headless --screenshot=out.png --window-size=1240,2060 out.svg
+--     chromium --headless --screenshot=out.png --window-size=1240,2775 out.svg
 --
 -- The pennant this replaces is the only object in the game drawn in
 -- elevation. Everything else on the ground is a plan view: a stand is an
@@ -33,7 +33,7 @@ local out_path = assert(arg[1], "an output path")
 local root = arg[2] or "client"
 package.path = root .. "/?.lua;" .. package.path
 
-local W, H = 1240, 2060
+local W, H = 1240, 2775
 local defs, uid = {}, 0
 local shapes, tris = 0, 0
 
@@ -232,9 +232,22 @@ end
 
 local B = {}
 
--- Standing on a stand, or lying where somebody dropped it. Ten pixels of arc
--- against an eighteen pixel pickup radius: big enough to fly at, small enough
--- that four of them on a map are objects rather than weather.
+-- Where each ring of the stack sits. A pilot can hold more than one flag, and
+-- in Capture the Flag holding the set is the round, so the drawing has to be
+-- able to say two and three and four rather than just "carrying".
+--
+-- One rim, always: that is the boundary against the hull and there is only one
+-- hull. Then either a ring of arcs per flag, or, where the zone runs a carry
+-- limit, one ring of arcs and a draining rim per flag. Arcs say you have them;
+-- rims say how long for. Stacking both would put eight rings around a ship and
+-- say neither.
+local ARC0 = CLEAR + 7
+local CLOCK0 = CLEAR + 16
+local STEP = 8
+
+-- Standing on a stand, or lying where somebody dropped it. Twelve pixels of
+-- arc against an eighteen pixel pickup radius: big enough to fly at, small
+-- enough that four of them on a map are objects rather than weather.
 function B.ground(fill, glow, x, y, col, o)
     local spin = o.t * 0.5
     glow:halo(x, y, 16, 12, pal.a(col, 0.10))
@@ -249,38 +262,76 @@ function B.ground(fill, glow, x, y, col, o)
     glow:disc(x, y, 1.9, 12, pal.a(pal.WHITE, 0.8))
 end
 
--- Riding a hull. Everything inside the widest hull in the roster is left to
--- the ship, so the collar is a ring of daylight and then the flag: the hull
--- underneath stays whole and shootable, and a ship wearing this is legible
--- from across a map without hiding what anybody is aiming at.
-function B.held(fill, glow, x, y, col, o)
-    local spin = o.t * 1.9
-    glow:halo(x, y, CLEAR + 18, 16, pal.a(col, 0.11))
-    ping(glow, x, y, col, 0.5, CLEAR, CLEAR + 25, 1.1, o.t)
+-- One ring of arcs. Alternate rings turn against each other so a stack never
+-- locks into a solid band: two rings turning the same way at the same phase
+-- read as one thick ring, and the whole point of the stack is being countable.
+local function collar(glow, x, y, col, r, t, layer)
+    local dir = (layer % 2 == 0) and -1 or 1
+    local spin = t * 1.9 * dir + layer * 0.7
     for i = 0, 2 do
         local a0 = spin + i / 3 * TAU
-        glow:arc_aa(x, y, CLEAR + 7, a0, a0 + 1.3, 1.9,
-                    facets(glow, CLEAR + 7, 1.3), pal.a(col, 1))
+        glow:arc_aa(x, y, r, a0, a0 + 1.3, 2.2,
+                    facets(glow, r, 1.3), pal.a(col, 1))
     end
-    glow:ring_aa(x, y, CLEAR, 1.2, pal.a(col, 0.7), facets(glow, CLEAR, TAU))
 end
 
--- The carry clock's rim, outside the arcs so it cannot be mistaken for one.
--- Counterclockwise from noon, so it empties the way a fuse burns down, and the
--- last fifth in the other side's color, because that is who the flag is about
--- to be available to again.
-local CLOCK_R = CLEAR + 14
-
-function B.clock(glow, x, y, col, left)
+-- One flag's carry clock. Counterclockwise from noon, so it empties the way a
+-- fuse burns down, and the last fifth in the other side's color, because that
+-- is who the flag is about to be available to again.
+--
+-- Drawn finer than the arcs on purpose. The arcs are the count and have to
+-- survive being small; the rims are a gauge, read when somebody is looking at
+-- them. Equal weight put four rims and one collar on the same footing and the
+-- count stopped being the first thing anybody saw.
+local function clock(glow, x, y, col, r, left)
     local hot = left < 0.2
-    glow:ring_aa(x, y, CLOCK_R, 1.2, pal.a(col, 0.16),
-                 facets(glow, CLOCK_R, TAU))
+    glow:ring_aa(x, y, r, 1.0, pal.a(col, 0.10), facets(glow, r, TAU))
     if left <= 0 then return end
-    glow:arc_aa(x, y, CLOCK_R, -math.pi / 2, -math.pi / 2 - left * TAU, 2.4,
-                facets(glow, CLOCK_R, left * TAU),
+    glow:arc_aa(x, y, r, -math.pi / 2, -math.pi / 2 - left * TAU, 1.7,
+                facets(glow, r, left * TAU),
                 pal.a(hot and ENEMY or col, hot and 1 or 0.9))
 end
 
+-- Riding a hull.
+--
+-- Everything inside the widest hull in the roster is left to the ship, so the
+-- collar is a ring of daylight and then the flag: the hull underneath stays
+-- whole and shootable, and a ship wearing this is legible from across a map
+-- without hiding what anybody is aiming at.
+--
+-- `o.n` is how many flags this pilot is holding, one by default. `o.left` is
+-- what is left on each of their carry clocks, as a fraction, and is nil in a
+-- zone that runs no carry limit. Where there are clocks they are sorted so the
+-- one about to expire is outermost: it is the one that turns the other side's
+-- color, and it is the answer to the only question a carrier is asking.
+function B.held(fill, glow, x, y, col, o)
+    local n = o.n or 1
+    local outer
+    if o.left then
+        collar(glow, x, y, col, ARC0, o.t, 1)
+        local left = {}
+        for i = 1, n do left[i] = o.left[i] or 1 end
+        table.sort(left, function(a, b) return a > b end)
+        for k = 1, n do
+            clock(glow, x, y, col, CLOCK0 + (k - 1) * STEP, left[k])
+        end
+        outer = CLOCK0 + (n - 1) * STEP
+    else
+        for k = 1, n do
+            collar(glow, x, y, col, ARC0 + (k - 1) * STEP, o.t, k)
+        end
+        outer = ARC0 + (n - 1) * STEP
+    end
+    glow:halo(x, y, outer + 10, 16, pal.a(col, 0.11))
+    ping(glow, x, y, col, 0.5, outer + 3, outer + 25, 1.1, o.t)
+    glow:ring_aa(x, y, CLEAR, 1.2, pal.a(col, 0.7), facets(glow, CLEAR, TAU))
+end
+
+-- How far out a carrier's drawing reaches, so the sheet can lay out cells that
+-- fit it rather than cells that clip it.
+function B.reach(n, timed)
+    return (timed and CLOCK0 or ARC0) + (n - 1) * STEP + 25
+end
 
 -- --- the sheet ---------------------------------------------------------------
 
@@ -536,6 +587,73 @@ y = y - PH
 
 rule(y + 4)
 
+-- --- more than one ----------------------------------------------------------
+--
+-- The case that matters is not two carriers in one place: it is one carrier
+-- holding several flags, which in Capture the Flag is the whole round. Hold
+-- all four for ten seconds and it is yours, so a pilot two flags in has to
+-- look like it from anywhere on the map.
+
+y = y - 16
+head(40, y, "carrying more than one, x1.35")
+y = y - 17
+y = note(40, y, "top row, a zone with no carry limit: one ring of arcs per"
+         .. " flag, alternate rings turning against each other so a stack"
+         .. " stays countable. bottom row, the same hands with the clock"
+         .. " running: one ring of arcs, and a draining rim per flag.")
+
+local MH = 300
+y = y - 12
+for n = 1, 4 do
+    local cx = 200 + (n - 1) * 290
+    local cy = y - MH / 2 + 8
+    at(1.35, cx, cy, function()
+        hull(1, cx, cy, UP, FRIEND)
+        B.held(L_FILL, L_GLOW, cx, cy, FRIEND, {t = TH, n = n})
+    end)
+    text(cx, y - MH + 30, n == 1 and "one flag" or (n .. " flags"), 9,
+         "#4a5768")
+end
+y = y - MH
+
+y = y - 4
+-- Four hands, each flag taken at a different moment, which is what the stack
+-- is for: the rims do not move together and the outermost is always the one
+-- about to go.
+local HANDS = {{0.72}, {0.81, 0.33}, {0.88, 0.52, 0.14}, {0.9, 0.66, 0.4, 0.17}}
+local hand_cost = {}
+for n = 1, 4 do
+    local cx = 200 + (n - 1) * 290
+    local cy = y - MH / 2 + 8
+    at(1.35, cx, cy, function()
+        hull(1, cx, cy, UP, FRIEND)
+        hand_cost[n] = cost(function()
+            B.held(L_FILL, L_GLOW, cx, cy, FRIEND,
+                   {t = TH, n = n, left = HANDS[n]})
+        end)
+    end)
+    local secs = {}
+    for _, f in ipairs(HANDS[n]) do
+        secs[#secs + 1] = string.format("%.0f", 30 * f)
+    end
+    text(cx, y - MH + 30, table.concat(secs, " / ") .. " seconds left", 9,
+         "#4a5768")
+    if n == 4 then
+        -- Both ends of it, because the arena's worst case is not this cell.
+        -- Four pilots holding one flag each pay four pings, four inner rims
+        -- and four collars; one pilot holding four pays one of each.
+        text(40, y - MH + 10,
+             string.format("a pilot holding four costs %d triangles; four"
+                           .. " pilots holding one apiece cost %d, since"
+                           .. " every one of them pays for its own ping and"
+                           .. " its own rim", hand_cost[4], hand_cost[1] * 4),
+             9, "#4a5768", "start")
+    end
+end
+y = y - MH
+
+rule(y + 4)
+
 -- --- the carry clock ---------------------------------------------------------
 --
 -- Capture the Flag drops a carried flag after thirty seconds and nothing on
@@ -550,15 +668,14 @@ y = note(40, y, "thirty seconds, invisible today. the rim sits outside the"
          .. " seconds turn to the other side's color, because that is who the"
          .. " flag is about to be available to again.")
 
-local CKH = 268
+local CKH = 302
 y = y - 12
 for i, f in ipairs({1, 0.55, 0.2, 0.05}) do
     local cx = 220 + (i - 1) * 270
     local cy = y - CKH / 2 - 4
     at(1.9, cx, cy, function()
         hull(1, cx, cy, UP, FRIEND)
-        B.held(L_FILL, L_GLOW, cx, cy, FRIEND, {t = TH})
-        B.clock(L_GLOW, cx, cy, FRIEND, f)
+        B.held(L_FILL, L_GLOW, cx, cy, FRIEND, {t = TH, left = {f}})
     end)
     text(cx, y - CKH + 30, string.format("%.0f seconds left", 30 * f), 9,
          "#4a5768")
@@ -604,8 +721,10 @@ at(1, x0, cy, function()
     B.ground(L_FILL, L_GLOW, x0 + 460, cy - 56, FRIEND, {t = T + 1.4})
     local rx, ry_ = x0 + 800, cy - 20
     hull(1, rx, ry_, -0.35, FRIEND)
-    B.held(L_FILL, L_GLOW, rx, ry_, FRIEND, {t = TH})
-    B.clock(L_GLOW, rx, ry_, FRIEND, 0.42)
+    -- Two flags, taken eleven seconds apart, which is what a run home
+    -- actually looks like once somebody is winning.
+    B.held(L_FILL, L_GLOW, rx, ry_, FRIEND, {t = TH, n = 2,
+                                             left = {0.60, 0.24}})
     hull(5, rx - 128, ry_ - 48, -0.2, ENEMY)
     hull(4, rx - 150, ry_ + 40, -0.5, ENEMY)
 end)
@@ -633,6 +752,8 @@ f:write(string.format(
     table.concat(art_fill, "\n"), table.concat(art_glow, "\n"),
     table.concat(front, "\n")))
 f:close()
-print(string.format("hull reach %.0f, collar rim %.0f, %d triangles, "
-                    .. "%d px of page left -> %s",
-                    HULL_R, CLEAR, tris, y, out_path))
+print(string.format("hull reach %.0f, collar rim %.0f. standing %d, carried "
+                    .. "%d, four with clocks %d, four carriers %d. %d "
+                    .. "triangles on the page, %d px of it left -> %s",
+                    HULL_R, CLEAR, ground_cost, held_cost, hand_cost[4],
+                    hand_cost[1] * 4, tris, y, out_path))
