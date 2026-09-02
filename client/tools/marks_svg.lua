@@ -4,7 +4,8 @@
 --
 -- Rasterize with any browser:
 --
---     chromium --headless --screenshot=out.png --window-size=1200,1400 out.svg
+--     chromium --headless --hide-scrollbars --screenshot=out.png \
+--         --window-size=1180,1560 out.svg
 --
 -- It drives the real arena/marks.lua against a small SVG layer, the way
 -- hud_svg.lua drives the whole interface, and exists for the same reason:
@@ -110,6 +111,10 @@ function layer:arc(x, y, r, a0, a1, w, _, col)
 end
 
 -- --- the engine, as much of it as the marks touch ---------------------------
+--
+-- A mark reads the hull it belongs to off the core rather than taking one as
+-- an argument, so this stub is also how a section below says what to draw:
+-- set `ship`, then ask for the mark.
 
 local ship = {level = {}, mods = {}, off = false}
 _G.sim = {
@@ -123,12 +128,14 @@ _G.sim = {
         if n <= 0 then return 1, 0 end
         return n + 1, (n == 1) and (65536 / 48) or (65536 / 24)
     end,
+    ship_class = function() return 0 end,
     ship_level = function(_, t) return ship.level[t] or 0 end,
     ship_mod = function(_, t, i) return (ship.mods[t] or {})[i] or 0 end,
     ship_multi_off = function() return ship.off end,
 }
 
 local marks = require("arena.marks")
+local pal = require("arena.palette")
 marks.begin(layer, 1)
 
 -- --- the sheet --------------------------------------------------------------
@@ -150,7 +157,36 @@ local function head(x, y, s)
 end
 
 local K = 26
+
+-- The sheet's own names for the add-ons, kept short because a permutation
+-- cell names up to six of them under a mark at eight points. The order is
+-- the core's, and the assert holds them to it: a seventh add-on, or two of
+-- them swapped, would mislabel every cell rather than fail.
 local MODS = {"spray", "bounce", "prox", "shrap", "freeze", "push"}
+assert(#MODS == #pal.MODS, "the add-on list moved; see arena/palette.lua")
+
+-- One mark, asked for the way the arena asks for one.
+--
+-- `marks.weapon` is the only way in: the corner stack calls it, the thumb
+-- pads call it, and it reads a hull's rungs and add-ons off the core rather
+-- than taking them. So a section here dresses the stub hull and makes the
+-- same call, which is what keeps the sheet a view of what ships instead of
+-- a second drawing that agrees with it for a while. It used to call
+-- something lower down, and the day that moved the sheet stopped running,
+-- with no caller left in the client to notice.
+--
+-- Both ladders take the rung on show, because shrapnel is colored off the
+-- gun's rung even when it is worn on a bomb. A gun left at nothing draws
+-- every bomb's fragments in the rung-zero color and says the add-on is
+-- colder than the round carrying it.
+local function mark(x, y, gun, lvl, modn)
+    local t = gun and sim.TRIG_GUN or sim.TRIG_BOMB
+    local mods = {}
+    for i = 1, #MODS do mods[i - 1] = modn[i] or 0 end
+    ship.level = {[sim.TRIG_GUN] = lvl, [sim.TRIG_BOMB] = lvl}
+    ship.mods = {[t] = mods}
+    return marks.weapon(x, y, K, 0, t)
+end
 
 local y = H - 46
 
@@ -158,8 +194,8 @@ local y = H - 46
 head(40, y, "the rounds, bare, rung 0 to 3")
 y = y - 58
 for lvl = 0, 3 do
-    marks.round(90 + lvl * 120, y, K, true, lvl, {})
-    marks.round(660 + lvl * 120, y, K, false, lvl, {})
+    mark(90 + lvl * 120, y, true, lvl, {})
+    mark(660 + lvl * 120, y, false, lvl, {})
 end
 label(270, y - 44, "gun")
 label(840, y - 44, "bomb")
@@ -168,22 +204,33 @@ label(840, y - 44, "bomb")
 y = y - 92
 head(40, y, "the bomb, every permutation of add-ons, one rung of each")
 y = y - 66
-for i = 0, 63 do
-    local col_ = i % 8
-    local row = math.floor(i / 8)
+local PER_ROW = 8
+local PERMS = 2 ^ #MODS
+local ROWS = math.ceil(PERMS / PER_ROW)
+for i = 0, PERMS - 1 do
+    local col_ = i % PER_ROW
+    local row = math.floor(i / PER_ROW)
     local cx = 90 + col_ * 142
     local cy = y - row * 96
     local modn, names = {}, {}
-    for b = 1, 6 do
+    for b = 1, #MODS do
         if math.floor(i / 2 ^ (b - 1)) % 2 == 1 then
             modn[b] = 1
             names[#names + 1] = MODS[b]
         end
     end
-    marks.round(cx, cy, K, false, 1, modn)
-    label(cx, cy - 44, #names == 0 and "bare" or table.concat(names, "+"), 8)
+    mark(cx, cy, false, 1, modn)
+    -- Four names or more go on two lines: on one they are wider than the
+    -- cell they belong to, and twenty-two of the sixty-four carry that many.
+    if #names > 3 then
+        label(cx, cy - 44, table.concat(names, "+", 1, 3) .. "+", 8)
+        label(cx, cy - 54, table.concat(names, "+", 4), 8)
+    else
+        label(cx, cy - 44, #names == 0 and "bare" or
+              table.concat(names, "+"), 8)
+    end
 end
-y = y - 7 * 96
+y = y - (ROWS - 1) * 96
 
 -- The three add-ons whose depth changes the drawing, walked up their rungs.
 y = y - 100
@@ -201,7 +248,7 @@ for _, d in ipairs(depth) do
     for n = 1, d[2] do
         local modn = {}
         modn[slot] = n
-        marks.round(dx, y, K, false, 1, modn)
+        mark(dx, y, false, 1, modn)
         label(dx, y - 44, d[1] .. " " .. n, 8)
         dx = dx + 116
     end
@@ -216,25 +263,21 @@ head(40, y, "the gun: 1 to 5 bullets, then bounce, freeze, a declined fan")
 y = y - 62
 local gun_loads = {
     {"1 round", {}},
-    {"spray 1: 2", {[0] = 1}},
-    {"spray 2: 3", {[0] = 2}},
-    {"spray 3: 4", {[0] = 3}},
-    {"spray 4: 5", {[0] = 4}},
-    {"fan+bounce", {[0] = 2, [1] = 1}},
-    {"freeze 2", {[4] = 2}},
+    {"spray 1: 2", {1}},
+    {"spray 2: 3", {2}},
+    {"spray 3: 4", {3}},
+    {"spray 4: 5", {4}},
+    {"fan+bounce", {2, 1}},
+    {"freeze 2", {[5] = 2}},
 }
 dx = 80
 for _, g in ipairs(gun_loads) do
-    ship.level = {[0] = 2}
-    ship.mods = {[0] = g[2]}
-    marks.weapon(dx, y, K, 0, 0)
+    mark(dx, y, true, 2, g[2])
     label(dx, y - 44, g[1], 8)
     dx = dx + 138
 end
-ship.level = {[0] = 2}
-ship.mods = {[0] = {[0] = 2, [1] = 1}}
 ship.off = true
-marks.weapon(dx, y, K, 0, 0)
+mark(dx, y, true, 2, {2, 1})
 label(dx, y - 44, "fan declined", 8)
 ship.off = false
 
@@ -243,7 +286,6 @@ ship.off = false
 y = y - 104
 head(40, y, "the charges")
 y = y - 62
-local pal = require("arena.palette")
 marks.charge(0, 90, y, 20, pal.a(pal.CHARGE_COL, 0.85))
 label(90, y - 44, "repel", 8)
 marks.charge(1, 220, y, 20, pal.a(pal.BURST, 0.85))
@@ -252,6 +294,16 @@ marks.charge(2, 350, y, 20, pal.a(pal.CHARGE_COL, 0.85))
 label(350, y - 44, "fallback", 8)
 
 -- --- out --------------------------------------------------------------------
+
+-- The sheet is a fixed height and its sections are laid out by walking down
+-- from the top, so a section added or a row grown runs off the bottom and
+-- draws nothing to say so. flags_svg.lua checks its own sheet the same way
+-- and for the same reason: nobody rasterizes one of these every time they
+-- touch a drawing.
+if y - 44 < 0 then
+    print(string.format("the sheet overran its page by %d px; raise H",
+                        math.ceil(44 - y)))
+end
 
 local f = assert(io.open(out_path, "w"))
 f:write(string.format(

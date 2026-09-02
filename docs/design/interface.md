@@ -90,6 +90,7 @@ Past those, a hue means one thing, one thing per hue, across every screen:
 | pink | `#ff5ea8` | the bomb |
 | violet | `#c27bff`, `#a06bff` | a place, not a player: the burst's rounds, a wormhole |
 | green | `#35e0a0` | a door (the open state is a darker step of the same band) |
+| prize green | `#5be08a` | a green: a thing on the field that is nobody's until somebody reaches it |
 | pale green | `#8dffb0` | what you were paid, and `#5aa874` a step down from it for a kill you only helped with |
 | gold | `#ffd166` | a charge you carry and spend |
 | deep gold | `#ffe08a` | a pilot on a streak, on the hull and in the feed |
@@ -292,6 +293,13 @@ once there is no room for the arcs standing off it. The helmet and the machine, 
 the games list, the players sheet, and the nameplates: a round crowned shell with a wrapped visor against a squared shell with two lamps and
 an antenna. Curved is grown, boxed is built, and that difference survives
 being drawn at eleven points.
+
+The dial's marks separate by shape before they separate by color, because at
+three pixels the shape is what survives. Terrain is squares, a flag is that
+ringed core, a contact is a diamond over a halo, and a green is a plain dot:
+the quietest of them, because it is the only thing up there that neither
+moves nor shoots. Contacts go on top, since a prize is a decision about where
+to fly next and a hull is a decision about right now.
 
 Stroke weight has one rule with one exception. A mark's pen comes off its own
 size with a floor (`marks.pen`: a ratio of the mark, never under about a

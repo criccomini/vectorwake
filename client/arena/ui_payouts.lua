@@ -1,6 +1,6 @@
 -- Lifetime and compaction for the figures that drift off a wreck: what a
 -- death did to this pilot's rating, signed. It was the bounty a kill paid,
--- deleted with the shop, and it came back as the rating under decision 151.
+-- deleted with the shop, and it came back as the rating under decision 152.
 
 local M = {}
 M.__index = M

@@ -26,6 +26,7 @@ local directory = require("arena.directory")
 local menu = require("arena.menu")
 local pal = require("arena.palette")
 local marks = require("arena.marks")
+local prize = require("arena.prize")
 local world = require("arena.world")
 local fx = require("arena.fx")
 local sfx = require("arena.sfx")
@@ -1194,7 +1195,7 @@ local function drain_announced()
         -- who just took somebody is looking at the explosion. A kill that
         -- paid nothing still prints its zero, since the kill was yours and
         -- a silent one reads as a figure that failed to arrive. Every other
-        -- death is somebody else's and gets no figure. See decision 151.
+        -- death is somebody else's and gets no figure. See decision 152.
         if not watching and k.gain
             and (mine or k.gain ~= 0) and k.killer ~= 255 then
             ui.payout(sim.ship_x(k.victim), sim.ship_y(k.victim), k.gain)
@@ -1319,7 +1320,7 @@ local function drain_events()
     if #net.snap_deaths > 0 then net.snap_deaths = {} end
     if #net.snap_blasts > 0 then net.snap_blasts = {} end
     for i = 0, sim.event_count() - 1 do
-        local ty, a = sim.event_at(i)
+        local ty, a, b, v = sim.event_at(i)
         if ty == sim.EV_HIT and a == me then
             hurt = 1
         elseif ty == sim.EV_FLAG_TAKE or ty == sim.EV_FLAG_DROP then
@@ -1328,6 +1329,31 @@ local function drain_events()
             notify({pilot_named(a),
                 (ty == sim.EV_FLAG_TAKE and " took a flag"
                  or " dropped a flag")}, col)
+        elseif ty == sim.EV_GREEN and a == me then
+            -- What the green was. The diamond on the ground says nothing
+            -- about what it holds, deliberately, because a pilot deciding
+            -- whether it is worth the trip is deciding on the trip; the
+            -- moment it is taken that stops being true and the answer is
+            -- the only thing they want. See `prize.words`.
+            --
+            -- Only ever your own: the field is the zone's and a prediction
+            -- client settles one hull, so this event exists for the pilot
+            -- flying and for nobody else. Somebody else's pickup arrives as
+            -- a green that is no longer in the snapshot, which the arena
+            -- draws and does not narrate.
+            --
+            -- Marked `mine`, so a phone shows it, which spends the one
+            -- line a thumb-sized screen has. That is the right way to spend
+            -- it: what a pilot carries is read off the corner stack, and on
+            -- a phone the stack stands down to nothing because the pads
+            -- carry the marks instead.
+            --
+            -- In the feed's own ink. Three colors in this corner are the
+            -- fight, a kill of yours, a death of yours and a kill you helped
+            -- with, and a fourth would make it a set of lights to be taught
+            -- rather than the lines worth finding without reading. The words
+            -- carry this on their own.
+            notify({"picked up " .. prize.words(b, v)}, nil, true)
         end
     end
 end

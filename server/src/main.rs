@@ -2564,7 +2564,7 @@ mod tests {
         assert_eq!(m[0], S2C_KILL);
         assert_eq!(m[1], ship, "the victim's seat");
         assert_eq!(m[2], room.players[&hunter].ship, "credited to the hunter");
-        assert_eq!(m.len(), 15, "the quit reads exactly like any other kill");
+        assert_eq!(m.len(), 15, "the same layout as any other death");
         assert_eq!(
             u32::from_le_bytes(m[8..12].try_into().unwrap()),
             room.world.state.tick,

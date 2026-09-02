@@ -2735,10 +2735,6 @@ impl Room {
                     // one the scoreboard does not show is the disagreement
                     // that byte exists to avoid. Their own rating rides
                     // along as on any kill, since the ladder did move.
-                    //
-                    // This message used to carry two bytes of payout the
-                    // ordinary kill had already dropped, and the client read
-                    // its tick and its assist flag off the wrong offsets.
                     self.send_kill(m, &[]);
                 }
             }
@@ -3897,7 +3893,7 @@ impl Room {
     /// victim's. A pilot whose shots softened the victim moved too, and
     /// without this byte their client's copy went stale until a roster or a
     /// kill of their own, and the figure the client floats off the wreck
-    /// could not be drawn for them at all. See decision 151.
+    /// could not be drawn for them at all. See decision 152.
     ///
     /// The stands get the copy that claims nothing and is rated nothing. It
     /// waits in the ring with the frame it belongs to, or the feed would

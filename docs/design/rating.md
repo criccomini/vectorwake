@@ -24,7 +24,7 @@ a single death did to yours is, though: the change floats off the wreck for a
 moment, signed, for a kill, a death, or a victim you had softened, and a kill
 that paid nothing floats its zero. It is a receipt about one fight rather than
 a price on somebody's head, and it is the one number that says whether the kill
-mattered (decision 151).
+mattered (decision 152).
 
 ## The hard part
 
