@@ -1,4 +1,4 @@
--- The beacon, the flag that replaces the pennant, on one sheet.
+-- The beacon, the flag the arena draws, on one sheet.
 --
 --     lua5.1 client/tools/flags_svg.lua <out.svg> [root]
 --
@@ -20,14 +20,16 @@
 -- survives being small.
 --
 -- Four other candidates were drawn against it and are in the history of this
--- file; Chris picked this one. What is left here is the sheet that develops
--- it: every state, every hull, and the two motions it has.
+-- file; Chris picked this one and it shipped. What is left here is the sheet
+-- that shows it: every state, every hull, and the two motions it has.
 --
--- Unlike a hand drawn mock, every shape here goes through
--- client/render/vec.lua, the same arithmetic the mesh builder runs, in the
--- same layers and the same blend modes. `vwbuf` is stubbed to write SVG
--- triangles instead of vertex buffers, so a drawing that lands on this sheet
--- lands in the arena unchanged, and the triangle count it costs is printed.
+-- Nothing here is a copy of the drawing. `arena/world.lua` is loaded for real
+-- against a stubbed engine, `M.flags` is called the way the arena calls it,
+-- and `vwbuf` writes SVG triangles instead of vertex buffers. So the sheet is
+-- a view of what ships: change the flag and this changes with it, including
+-- the triangle counts it prints, and a sheet that still looks right is the
+-- cheapest check that a change to the drawing did not break a state nobody
+-- was thinking about.
 
 local out_path = assert(arg[1], "an output path")
 local root = arg[2] or "client"
@@ -136,6 +138,28 @@ _G.vwbuf = {
 
 -- --- the rest of Defold, as much of it as vec.lua touches --------------------
 
+local TAU = math.pi * 2
+
+-- --- the arena's own drawing --------------------------------------------------
+--
+-- `arena/world.lua` needs a palette, an effects module and a `sim` global, and
+-- nothing else at load time. The flag path asks the core five things: how many
+-- flags there are, what each one is, how long a carry may last, and where a
+-- ship is. Those are what this answers.
+
+local stage = {flags = {}, carry = 0, ships = {}}
+
+_G.sim = setmetatable({
+    flag_count = function() return #stage.flags end,
+    flag_at = function(i)
+        local f = stage.flags[i + 1]
+        return f.x, f.y, f.team, f.carried, f.carrier or 0, f.held or 0
+    end,
+    flag_carry_ticks = function() return stage.carry end,
+    ship_x = function(i) return (stage.ships[i] or {}).x or 0 end,
+    ship_y = function(i) return (stage.ships[i] or {}).y or 0 end,
+}, {__index = function() return function() return 0 end end})
+
 _G.hash = function(s) return s end
 _G.buffer = {create = function() return {} end, VALUE_TYPE_FLOAT32 = 1}
 _G.go = {get = function() return {} end}
@@ -145,192 +169,59 @@ local vec = require("render.vec")
 local pal = require("arena.palette")
 
 -- Order matters and is the arena's: fill first, then glow over it. Named
--- apart from the `fill, glow` every drawing below takes, because those are
--- arguments, the way arena/world.lua's own M.flags takes them.
+-- apart from the `fill, glow` a drawing takes, because those are arguments.
 local L_FILL = vec.layer("fill", 1)
 local L_GLOW = vec.layer("glow", 1)
 lists[L_FILL.id], blends[L_FILL.id] = art_fill, ""
 lists[L_GLOW.id], blends[L_GLOW.id] = art_glow, ADD
 
-local TAU = math.pi * 2
+local world = require("arena.world")
+local FLAG = world.FLAG
+local HULLS = world.HULLS
 
--- The colors a flag can wear. Neutral is INK, which is what an unowned flag
--- draws today and is worth keeping: a flag nobody holds is not a third team,
--- it is the absence of one.
-local NEUTRAL, FRIEND, ENEMY = pal.INK, pal.FRIEND, pal.ENEMY
-
--- --- the roster, read rather than copied ------------------------------------
---
--- The hull polygons out of arena/world.lua, lifted by slicing the table out of
--- the file and evaluating it. Every value in there is a number or a table of
--- them, so this is safe, and it means the clearance this sheet proves is
--- proved against the roster as it stands rather than against a copy of it
--- that goes stale the first time a hull is recut.
-local function read_hulls(path)
-    local f = assert(io.open(path, "r"), path)
-    local src = f:read("*a")
-    f:close()
-    local i = assert(src:find("M.HULLS = {", 1, true), "no M.HULLS")
-    -- The table is a top level literal, so it closes on a line that is one
-    -- brace and nothing else. Counting braces instead would have to know
-    -- which of them are inside comments.
-    local j = assert(src:find("\n}\n", i, true), "M.HULLS does not close")
-    local chunk = assert(loadstring("return "
-                                    .. src:sub(i + #"M.HULLS = ", j + 1)))
-    return chunk()
-end
-
-local HULLS = read_hulls(root .. "/arena/world.lua")
-
--- The names, in the order arena/world.lua declares them.
+-- The names, in the order arena/world.lua declares them. They live in that
+-- file's comments rather than in the table, which is the one thing here that
+-- has to be kept by hand.
 local HULL_NAMES = {"Apex", "Wedge", "Chord", "Anvil", "Cipher", "Facet",
                     "Lattice"}
 
--- How far the widest hull in the roster reaches from its own center. This is
--- the number the collar is built on rather than a figure picked by eye: the
--- Apex is 21 and was what the first draft cleared, but the Cipher is a knife
--- and reaches 23 down its own length, so a collar sized to the Apex sat on
--- the nose of the hull it was supposed to be marking.
-local HULL_R = 0
-for _, h in ipairs(HULLS) do
-    for i = 1, #h.poly, 2 do
-        local r = math.sqrt(h.poly[i] ^ 2 + h.poly[i + 1] ^ 2)
-        if r > HULL_R then HULL_R = r end
-    end
-end
-
--- Four pixels of daylight between the widest hull and the collar's inner rim.
--- Less and a Cipher at full stretch touches it; the whole point of drawing the
--- flag around the ship rather than on it is that the ship stays legible.
-local CLEAR = HULL_R + 4
-
--- --- the beacon --------------------------------------------------------------
---
--- `o.t` is the clock. Both states draw on the flag's own position, which is
--- the second thing wrong with the pennant: it hangs its cloth up and to the
--- right, so the shape a pilot flies at sits a dozen pixels off the point the
--- core tests, and the eighteen pixel pickup radius is invisible.
-
--- How many facets an arc of this radius needs. Layer:round_segs answers it for
--- a whole circle, and an arc is a fraction of one. Worth deriving rather than
--- passing in: the first draft of this drawing passed segment counts by hand
--- and cost nine hundred and sixty triangles standing, most of them facets
--- under a tenth of a pixel across.
-local function facets(glow, r, span)
-    local n = math.ceil(glow:round_segs(r) * math.abs(span) / TAU)
-    return n < 3 and 3 or n
-end
-
--- One ring per beat, leaving `r0` and gone by `r1`. This is the whole of what
--- makes the drawing read as something running rather than something lit.
-local function ping(glow, x, y, col, a, r0, r1, rate, t)
-    local ph = (t * rate) % 1
-    local r = r0 + (r1 - r0) * ph
-    glow:ring_aa(x, y, r, 1.4 * (1 - ph),
-                 pal.a(col, a * (1 - ph) * (1 - ph)), facets(glow, r, TAU))
-end
+-- The colors a flag can wear. Neutral is INK, which is what an unowned flag
+-- draws: a flag nobody holds is not a third team, it is the absence of one.
+-- `world.flags` picks them off the viewer's side, so the sheet flies for side
+-- zero and hands a flag the team it wants the color of.
+local NEUTRAL, FRIEND, ENEMY = pal.INK, pal.FRIEND, pal.ENEMY
+local TEAM = {[tostring(NEUTRAL)] = 255, [tostring(FRIEND)] = 0,
+              [tostring(ENEMY)] = 1}
 
 local B = {}
 
--- Where each ring of the stack sits. A pilot can hold more than one flag, and
--- in Capture the Flag holding the set is the round, so the drawing has to be
--- able to say two and three and four rather than just "carrying".
---
--- One rim, always: that is the boundary against the hull and there is only one
--- hull. Then either a ring of arcs per flag, or, where the zone runs a carry
--- limit, one ring of arcs and a draining rim per flag. Arcs say you have them;
--- rims say how long for. Stacking both would put eight rings around a ship and
--- say neither.
-local ARC0 = CLEAR + 7
-local CLOCK0 = CLEAR + 16
-local STEP = 8
-
--- Standing on a stand, or lying where somebody dropped it. Twelve pixels of
--- arc against an eighteen pixel pickup radius: big enough to fly at, small
--- enough that four of them on a map are objects rather than weather.
-function B.ground(fill, glow, x, y, col, o)
-    local spin = o.t * 0.5
-    glow:halo(x, y, 16, 12, pal.a(col, 0.10))
-    ping(glow, x, y, col, 0.45, 6, 18, 0.5, o.t)
-    for i = 0, 2 do
-        local a0 = spin + i / 3 * TAU
-        glow:arc_aa(x, y, 12, a0, a0 + 1.15, 1.7,
-                    facets(glow, 12, 1.15), pal.a(col, 0.8))
-    end
-    glow:ring_aa(x, y, 6.0, 1.2, pal.a(col, 0.65), facets(glow, 6, TAU))
-    fill:disc(x, y, 3.4, 16, pal.a(col, 0.2))
-    glow:disc(x, y, 1.9, 12, pal.a(pal.WHITE, 0.8))
+-- One flag on its stand, or lying where its carrier died.
+function B.ground(_, _, x, y, col, o)
+    stage.flags = {{x = x, y = y, team = TEAM[tostring(col)], carried = false}}
+    stage.carry = 0
+    world.flags(L_FILL, L_GLOW, 0, o.t)
 end
 
--- One ring of arcs. Alternate rings turn against each other so a stack never
--- locks into a solid band: two rings turning the same way at the same phase
--- read as one thick ring, and the whole point of the stack is being countable.
-local function collar(glow, x, y, col, r, t, layer)
-    local dir = (layer % 2 == 0) and -1 or 1
-    local spin = t * 1.9 * dir + layer * 0.7
-    for i = 0, 2 do
-        local a0 = spin + i / 3 * TAU
-        glow:arc_aa(x, y, r, a0, a0 + 1.3, 2.2,
-                    facets(glow, r, 1.3), pal.a(col, 1))
-    end
-end
-
--- One flag's carry clock. Counterclockwise from noon, so it empties the way a
--- fuse burns down, and the last fifth in the other side's color, because that
--- is who the flag is about to be available to again.
+-- Everything one pilot is carrying, as one mark around their hull.
 --
--- Drawn finer than the arcs on purpose. The arcs are the count and have to
--- survive being small; the rims are a gauge, read when somebody is looking at
--- them. Equal weight put four rims and one collar on the same footing and the
--- count stopped being the first thing anybody saw.
-local function clock(glow, x, y, col, r, left)
-    local hot = left < 0.2
-    glow:ring_aa(x, y, r, 1.0, pal.a(col, 0.10), facets(glow, r, TAU))
-    if left <= 0 then return end
-    glow:arc_aa(x, y, r, -math.pi / 2, -math.pi / 2 - left * TAU, 1.7,
-                facets(glow, r, left * TAU),
-                pal.a(hot and ENEMY or col, hot and 1 or 0.9))
-end
-
--- Riding a hull.
---
--- Everything inside the widest hull in the roster is left to the ship, so the
--- collar is a ring of daylight and then the flag: the hull underneath stays
--- whole and shootable, and a ship wearing this is legible from across a map
--- without hiding what anybody is aiming at.
---
--- `o.n` is how many flags this pilot is holding, one by default. `o.left` is
--- what is left on each of their carry clocks, as a fraction, and is nil in a
--- zone that runs no carry limit. Where there are clocks they are sorted so the
--- one about to expire is outermost: it is the one that turns the other side's
--- color, and it is the answer to the only question a carrier is asking.
-function B.held(fill, glow, x, y, col, o)
+-- `o.n` is how many flags, `o.left` what is on each of their carry clocks as
+-- a fraction, and nil in a zone with no limit. The clock is handed back as
+-- ticks against a limit, which is what the wire carries and what the drawing
+-- divides: writing the fraction straight in would skip the arithmetic this
+-- sheet is meant to be showing.
+function B.held(_, _, x, y, col, o)
     local n = o.n or 1
-    local outer
-    if o.left then
-        collar(glow, x, y, col, ARC0, o.t, 1)
-        local left = {}
-        for i = 1, n do left[i] = o.left[i] or 1 end
-        table.sort(left, function(a, b) return a > b end)
-        for k = 1, n do
-            clock(glow, x, y, col, CLOCK0 + (k - 1) * STEP, left[k])
-        end
-        outer = CLOCK0 + (n - 1) * STEP
-    else
-        for k = 1, n do
-            collar(glow, x, y, col, ARC0 + (k - 1) * STEP, o.t, k)
-        end
-        outer = ARC0 + (n - 1) * STEP
+    local team = TEAM[tostring(col)]
+    stage.carry = o.left and 3000 or 0
+    stage.ships = {[0] = {x = x, y = y}}
+    stage.flags = {}
+    for k = 1, n do
+        local left = o.left and (o.left[k] or 1) or 1
+        stage.flags[k] = {x = x, y = y, team = team, carried = true,
+                          carrier = 0,
+                          held = math.floor(stage.carry * (1 - left))}
     end
-    glow:halo(x, y, outer + 10, 16, pal.a(col, 0.11))
-    ping(glow, x, y, col, 0.5, outer + 3, outer + 25, 1.1, o.t)
-    glow:ring_aa(x, y, CLEAR, 1.2, pal.a(col, 0.7), facets(glow, CLEAR, TAU))
-end
-
--- How far out a carrier's drawing reaches, so the sheet can lay out cells that
--- fit it rather than cells that clip it.
-function B.reach(n, timed)
-    return (timed and CLOCK0 or ARC0) + (n - 1) * STEP + 25
+    world.flags(L_FILL, L_GLOW, 0, o.t)
 end
 
 -- --- the sheet ---------------------------------------------------------------
@@ -435,10 +326,37 @@ local function reach(x, y, col)
 end
 
 -- What a drawing costs the layer it lands on, in triangles.
-local function cost(fn)
+--
+-- Drawn off the page at a screen pixel of one, and then taken off the page
+-- again, because that is the figure the arena pays. Measuring inside a band
+-- would price it at that band's magnification instead: `Layer:seg` and
+-- friends widen a stroke that has fallen under a pixel and dim it to match,
+-- so a drawing blown up four times takes a different branch and answers a
+-- different number.
+--
+-- The worst frame of a whole beat rather than the frame the band happens to
+-- show. The ping travels, a bigger circle wants more facets, and a budget is
+-- sized against the frame that costs the most rather than the one that
+-- photographed well. Two seconds of it, which is the slower of the two beats
+-- the drawing runs: a standing flag pings every two, a carried one every
+-- nine tenths.
+local function cost(draw)
+    local px, worst = L_GLOW.px, 0
+    local mark = {#art_fill, #art_glow}
     local before = tris
-    fn()
-    return tris - before
+    L_FILL.px, L_GLOW.px = 1, 1
+    for i = 0, 31 do
+        local at_ = tris
+        draw(i / 16)
+        local spent = tris - at_
+        if spent > worst then worst = spent end
+    end
+    L_FILL.px, L_GLOW.px = px, px
+    tris = before
+    for i, list in ipairs({art_fill, art_glow}) do
+        for k = #list, mark[i] + 1, -1 do list[k] = nil end
+    end
+    return worst
 end
 
 -- Every still on this sheet is one frame of an animation, and the two states
@@ -475,14 +393,15 @@ for ci, c in ipairs({{NEUTRAL, "unowned"}, {FRIEND, "yours"}, {ENEMY, "theirs"}}
     local cy = y - RH / 2
     at(4, cx, cy, function()
         reach(cx, cy, c[1])
-        ground_cost = cost(function()
-            B.ground(L_FILL, L_GLOW, cx, cy, c[1], {t = T})
+        ground_cost = cost(function(t)
+            B.ground(L_FILL, L_GLOW, cx, cy, c[1], {t = t})
         end)
+        B.ground(L_FILL, L_GLOW, cx, cy, c[1], {t = T})
     end)
     text(cx, y - RH + 32, c[2], 9, "#4a5768")
 end
-text(40, y - RH + 32, string.format("%d triangles", ground_cost), 9,
-     "#3d4a5d", "start")
+text(40, y - RH + 32, string.format("%d triangles, worst frame", ground_cost),
+     9, "#3d4a5d", "start")
 y = y - RH
 
 rule(y + 4)
@@ -494,17 +413,16 @@ head(40, y, "carried, x2.4")
 y = y - 17
 y = note(40, y, "the collar opens to clear the hull rather than sit on it. the"
          .. " dashed circle is the widest reach in the roster, which is the"
-         .. " Cipher at 23 pixels and not the Apex at 21; the inner rim stands"
-         .. " four pixels outside it.")
+         .. " Cipher at 22 pixels and not the Apex at 20 and a half; the inner"
+         .. " rim stands four pixels outside it. both come off the baked hulls"
+         .. " rather than being typed here.")
 
--- The reach the collar is built to clear, drawn so the clearance is a
--- measurement on the sheet rather than a claim in a caption.
--- Dashed, so it reads as a measurement drawn onto the sheet and not as part
--- of the flag.
+-- The reach the collar is built to clear, dashed so it reads as a measurement
+-- drawn onto the sheet rather than as part of the flag.
 local function envelope(x, y_)
     for i = 0, 23 do
         local a0 = i / 24 * TAU
-        L_GLOW:arc_aa(x, y_, HULL_R, a0, a0 + TAU / 48, 0.8,
+        L_GLOW:arc_aa(x, y_, FLAG.HULL, a0, a0 + TAU / 48, 0.8,
                       3, pal.a(pal.WALL_LIT, 0.55))
     end
 end
@@ -520,13 +438,14 @@ for i, s in ipairs(SHOW) do
     at(2.4, cx, cy, function()
         envelope(cx, cy)
         hull(s[1], cx, cy, UP, s[2])
-        held_cost = cost(function()
-            B.held(L_FILL, L_GLOW, cx, cy, s[2], {t = TH})
+        held_cost = cost(function(t)
+            B.held(L_FILL, L_GLOW, cx, cy, s[2], {t = t})
         end)
+        B.held(L_FILL, L_GLOW, cx, cy, s[2], {t = TH})
     end)
     text(cx, y - KH + 34, s[3], 9, "#4a5768")
 end
-text(40, y - KH + 34, string.format("%d triangles", held_cost), 9,
+text(40, y - KH + 34, string.format("%d triangles, worst frame", held_cost), 9,
      "#3d4a5d", "start")
 y = y - KH
 
@@ -627,10 +546,12 @@ for n = 1, 4 do
     local cy = y - MH / 2 + 8
     at(1.35, cx, cy, function()
         hull(1, cx, cy, UP, FRIEND)
-        hand_cost[n] = cost(function()
+        hand_cost[n] = cost(function(t)
             B.held(L_FILL, L_GLOW, cx, cy, FRIEND,
-                   {t = TH, n = n, left = HANDS[n]})
+                   {t = t, n = n, left = HANDS[n]})
         end)
+        B.held(L_FILL, L_GLOW, cx, cy, FRIEND,
+               {t = TH, n = n, left = HANDS[n]})
     end)
     local secs = {}
     for _, f in ipairs(HANDS[n]) do
@@ -755,5 +676,5 @@ f:close()
 print(string.format("hull reach %.0f, collar rim %.0f. standing %d, carried "
                     .. "%d, four with clocks %d, four carriers %d. %d "
                     .. "triangles on the page, %d px of it left -> %s",
-                    HULL_R, CLEAR, ground_cost, held_cost, hand_cost[4],
+                    FLAG.HULL, FLAG.RIM, ground_cost, held_cost, hand_cost[4],
                     hand_cost[1] * 4, tris, y, out_path))

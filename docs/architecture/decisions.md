@@ -8018,3 +8018,102 @@ assists rather than the column that names the side. `band_test` holds the
 band's new whistle, `side_col_test` follows the sheet, and `hud_hits_test`,
 `landing_test`, `marks_test`, `menu_test`, `binds_test` and `column_test` move
 with it. luacheck clean over 108 files.
+
+## 148. A flag is a beacon, and a carrier wears one ring a flag
+
+**Status:** accepted, replacing the drawing that
+[decision 129](#129-a-flag-stands-where-the-map-says) put on the map and
+[decision 133](#133-carrying-the-flag-puts-you-on-the-map) put on the
+instruments.
+
+**What:** the flag stops being a staff with a cloth triangle on it and becomes
+a transponder seen from above: a core, a ring, three arcs standing off it that
+turn, and a ping that leaves on a beat. Carried, it opens into a collar
+outside the hull, and a pilot holding several flags wears one ring per flag.
+Turf and Capture the Flag use the same drawing.
+
+**Why:** asked for. The flags looked silly, and it is worth being precise
+about why, because the answer decided the replacement.
+
+A pennant was the only object in this game drawn in elevation. A turf stand is
+an octagon, a spawn is two rings, a wall is its own lit face, a wormhole is a
+field; the flag alone was drawn as though the camera had turned ninety degrees
+to watch cloth flap in a wind, in a vacuum. That is why it read as a golf pin.
+A pin is the one real object shaped like that.
+
+It also lied about where it was. The cloth hung up and to the right of the
+flag's own position, so the shape a pilot flew at sat a dozen pixels from the
+point `sim_flag` tests, and `flag_radius` at eighteen was wider than the whole
+drawing with nothing saying so. And at the zoom the game is played at, four
+pennants on a map next to three hulls took hunting for.
+
+Five candidates were drawn against it in `.design/flag-graphics` and Chris
+picked the beacon. What a flag has to say is where the game is, so it draws
+the broadcast rather than a piece of cloth.
+
+**Carried is a collar, not a badge.** The first pass drew the mark on the hull
+carrying it and failed twice over: a mark on a hull hides the thing everybody
+in the room is trying to shoot, and at the range where a carried flag decides
+a round it is a smudge on a hull rather than a flag, because the hull's own
+outline is already using that space. Everything inside the widest hull in the
+roster is left to the ship. That number is read off `M.HULLS` after the bake
+rather than typed, because the Cipher is a knife and reaches twenty two down
+its own length while the Apex, which looks like the big one, reaches twenty
+and a half. A clearance picked by eye clears the wrong hull, and it did.
+
+**A stack, because holding the set is the round.** The case that matters is
+not two carriers in one place, it is one carrier holding several flags. With
+no carry limit that is a ring of arcs per flag, alternate rings turning
+against each other, since two turning the same way at the same phase read as
+one thick ring and the point of a stack is being countable. Where a zone runs
+a limit it is one ring of arcs and a draining rim per flag instead, sorted so
+the rim about to expire is outermost: that is the one which turns the other
+side's color, and it is the answer to the only question a carrier is asking.
+Stacking both would put eight rings around a ship and say neither.
+
+**Turf takes the same drawing.** A stand is never carried, so half of it never
+runs there. That is the argument for one flag across the catalog rather than
+two a player has to learn separately, and a transponder pinging on claimed
+ground is what a held stand has to say anyway.
+
+**What the wire owed it.** Three fields. A flag's `held` clock is packed now,
+two bytes after its cooldown: `sim_hash` had always covered it and the hash is
+what a pack round trip is checked against, so a snapshot had been restoring
+carriers whose clock was wound back to nothing, which in a zone with a limit
+hands the flag back to the room late. `flag_at` answers the carrier and the
+clock, because a pilot's flags have to be gathered onto one hull to be drawn
+as one mark and a client that joins mid carry never saw the pickup, so it
+cannot count for itself; that is decision 43's rule and Free Roam's greens
+learned it the hard way. And `flag_carry_ticks` has an accessor, without which
+`held` is a count with nothing to divide by. Protocol 36,
+`SIM_STATE_PACK_MAX` up thirty two bytes, no behavior in the core and no
+golden moved.
+
+**What it costs.** `Layer:arc_fade` is new and is what makes the drawing look
+like the rest of the game rather than like wire: `seg_glow` bent round a
+circle, the bloom every wide stroke here carries. `ring_fade` is the whole
+circle of it rather than a second copy of the arithmetic. Measured over a
+whole beat, since the ping travels and a bigger circle wants more facets, a
+flag on a stand is 366 triangles and a carrier with a clock 930, against the
+twenty the pennant cost. Capture the Flag's worst case is four carriers
+holding one apiece at 3720, and Turf's six stands are 2196, so `GLOW_FIGHT`
+goes from 40960 vertices to 49152. A glow layer that runs out does not report
+it; it stops drawing whatever came last.
+
+The bloom runs at three quarters of the stroke's facets and the ping at all of
+them. Half was the first try and it showed: a circle that is visibly a polygon
+is a defect whatever its alpha, and the ping is the biggest circle in the
+drawing.
+
+**The instruments follow**, because `ui.lua` already said a flag should look
+like a flag on the dial, on the map and pinned to a rim. The dial, the map and
+the strip under the band draw a core inside a ring, which is what the world's
+mark reduces to once there is no room for the arcs. `pennant_test` is
+`flag_mark_test` and probes the ring rather than counting triangles, and
+`band_test` finds the strip by its discs rather than by uprights it no longer
+draws.
+
+`client/tools/flags_svg.lua` is the sheet, and it loads `arena/world.lua` for
+real against a stubbed engine rather than keeping a copy of the drawing: it is
+a view of what ships, triangle counts included, so a change to the flag is a
+change to the sheet.

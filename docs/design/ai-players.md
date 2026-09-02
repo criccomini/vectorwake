@@ -321,7 +321,7 @@ green target above zero is Free Roam. Reading the game off the physics it is
 flying under keeps every input a bot has one a player has too.
 
 **Objectives are map knowledge; greens are sight knowledge.** A player reads
-every flag's ownership off the pennant strip and the map, so a bot restricted
+every flag's ownership off the flag strip and the map, so a bot restricted
 to seeing flags at sixty tiles is playing blinder than the person next to it,
 and the brain reads the set off the state instead. A green is the opposite: it
 is drawn in the world and nowhere else, so a bot wants only the greens a

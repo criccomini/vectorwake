@@ -6,9 +6,12 @@ and make the collar big enough to clear the ship. Then: Turf can use the same
 drawing, and a pilot holding several flags should show several layers, with
 the layers going to the clocks where a zone runs one.
 
-So this is no longer a comparison. It is the sheet that develops one drawing,
-by [client/tools/flags_svg.lua](../../client/tools/flags_svg.lua). Nothing in
-`client/arena/world.lua` has moved yet.
+It shipped, as [decision
+148](../../docs/architecture/decisions.md#148-a-flag-is-a-beacon-and-a-carrier-wears-one-ring-a-flag).
+So this is no longer a comparison and no longer a proposal: the sheet loads
+`arena/world.lua` for real against a stubbed engine and calls `M.flags` the
+way the arena calls it, so what is below is a view of what ships rather than
+a copy of it, triangle counts included.
 
 ```sh
 lua5.1 client/tools/flags_svg.lua /tmp/flags.svg
@@ -29,13 +32,13 @@ out. A flag is the object telling a room where the game is, so it draws the
 broadcast rather than a piece of cloth.
 
 Standing, the arcs sit at twelve pixels, inside the eighteen the core actually
-tests for a pickup, and the ping runs one beat every two seconds. It costs 298
-triangles.
+tests for a pickup, and the ping runs one beat every two seconds. It costs 366
+triangles on its worst frame.
 
 Carried, the whole thing opens into a collar outside the hull and the ping
 comes twice as often. That is a change of rate rather than of shape, which is
 what lets the two states be told apart at a size where shape has stopped
-working. It costs 514, or about 874 with a carry clock on it.
+working. It costs 602, or 930 with a carry clock on it.
 
 Turf uses the same drawing. A stand is never carried, so half of it never runs
 there, and that is fine: a transponder pinging on claimed ground is exactly
@@ -44,16 +47,21 @@ that a player has to learn separately.
 
 ## The collar is built off the roster, not off the eye
 
-The first draft cleared the Apex, which reaches 21 pixels, and that was wrong.
-The Cipher is a knife and reaches 23 down its own length, so the collar sat on
-the nose of the hull it was supposed to be marking.
+The first draft cleared the Apex, which reaches 20 and a half pixels, and that
+was wrong. The Cipher is a knife and reaches 22 down its own length, so the
+collar sat on the nose of the hull it was supposed to be marking. Both figures
+are off the baked table, since `refit` scales every hull into the flight box
+before any of this draws and the polygon in the source is not the polygon on
+screen.
 
-The sheet now reads `M.HULLS` out of `world.lua`, takes the widest reach in the
-roster, and puts the inner rim four pixels outside it. The first ring of arcs
-stands seven beyond that, the first clock rim sixteen, each further flag adds
-eight, and the ping runs from whatever the outermost ring turns out to be to
-twenty five past it. Every number comes off the polygons, so a hull that gets
-recut moves the clearance with it rather than quietly breaking the drawing.
+`M.flags` reads `M.HULLS`, takes the widest reach in the roster, and puts the
+inner rim four pixels outside it. The first ring of arcs stands seven beyond
+that, the first clock rim sixteen, each further flag adds eight, and the ping
+runs from whatever the outermost ring turns out to be to twenty five past it.
+Every number comes off the polygons, so a hull that gets recut moves the
+clearance with it rather than quietly breaking the drawing. The geometry is
+published as `world.FLAG` so this sheet draws the clearance it is claiming
+rather than working it out again and being wrong about it later.
 
 The band called `the whole roster` is the proof: one collar over all seven
 hulls at the size they fly, with each hull's own reach drawn as a dashed
@@ -107,27 +115,30 @@ side's color, and it is the answer to the only question a carrier is asking.
 move together, which is what makes the stack worth reading rather than just
 counting.
 
-The stack is also the cheap case. One pilot holding four with clocks costs 1930
-triangles; four pilots holding one apiece cost 3496, because each of them pays
-for its own ping and its own inner rim.
+The stack is also the cheap case. One pilot holding four with clocks costs 1988
+triangles; four pilots holding one apiece cost 3720, because each of them pays
+for its own ping and its own inner rim. Turf's six stands are 2196, which is
+why `GLOW_FIGHT` went from 40960 vertices to 49152: a glow layer that runs out
+does not report it, it stops drawing whatever came last.
 
-## What the wire owes this
+## What the wire owed this
 
-`M.flags` in `world.lua` still draws the pennant, and three things have to
-arrive before the rest of this can land.
+Three fields, all of them landed with the drawing.
 
-**`carrier` is on the wire and not in Lua.** `pack.c` writes it beside `team`
-and `carried`, but `flag_at` in the extension returns x, y, team and carried
-only. Grouping a pilot's flags into one stack needs it, and it costs one
-`lua_pushnumber`.
+**`carrier` was on the wire and not in Lua.** `pack.c` wrote it beside `team`
+and `carried`, but `flag_at` returned x, y, team and carried only. Grouping a
+pilot's flags into one stack needs it, and it cost one `lua_pushnumber`.
 
-**`held` is on neither.** It is a field of `sim_flag`, it is not packed, and the
-client cannot derive it: a client joining mid carry never saw the pickup, and a
-snapshot would zero whatever it had counted. That is decision 43's rule, and
-[memory 583](../../.optmem/memory) is the last time this repository learned it
-the hard way, with Free Roam's greens. Two bytes a flag and a protocol bump.
+**`held` was on neither.** It is a field of `sim_flag`, it was not packed, and
+the client cannot derive it: a client joining mid carry never saw the pickup,
+and a snapshot would zero whatever it had counted. That is decision 43's rule,
+and Free Roam's greens are the last time this repository learned it the hard
+way. `sim_hash` had always covered `held` and the hash is what a pack round
+trip is checked against, so the field was owed anyway: a snapshot was restoring
+carriers whose clock had been wound back to nothing. Two bytes a flag, and
+protocol 36.
 
-**`flag_carry_ticks` has no accessor.** Without it `held` is a tick count with
+**`flag_carry_ticks` had no accessor.** Without it `held` is a tick count with
 nothing to divide by, and the rim has no full.
 
 ## Still open
@@ -140,10 +151,13 @@ rather than occlude, and it has not been looked at.
 
 `flags_svg.lua` stubs `vwbuf` to write SVG triangles instead of vertex buffers
 and drives `client/render/vec.lua` unchanged, the way `marks_svg.lua` and
-`hud_svg.lua` do. So the sheet is not a picture of a drawing: every shape on it
-went through the same arithmetic the mesh builder runs, in the same two layers,
-in the arena's order, with the glow layer blending additively, which is the
-blend function `vectorwake.render_script` sets for it.
+`hud_svg.lua` do. Since the drawing shipped it goes one further and loads
+`arena/world.lua` itself, answering the five things the flag path asks the
+core, so the sheet is a view of the shipped drawing rather than a copy of it.
+Every shape on it went through the same arithmetic the mesh builder runs, in
+the same two layers, in the arena's order, with the glow layer blending
+additively, which is the blend function `vectorwake.render_script` sets for
+it.
 
 Three things that were wrong in the mock rather than in the drawing, worth
 writing down because the next sheet will hit them too. World y runs down the

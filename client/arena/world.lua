@@ -649,7 +649,20 @@ local FILL_FIGHT = 6144
 -- Raised again for the blooms: every bolt, bomb, hull, engine and shockwave
 -- now sheds a six-segment halo of its own, which is eighteen vertices each
 -- and a few thousand across a busy frame.
-local GLOW_FIGHT = 40960
+--
+-- And again for the flags. A pennant was two shapes; the beacon that replaced
+-- it is arcs, a rim, a pulse and the light off all three, and a carrier wears
+-- one ring per flag held. Measured off `M.flags` over a whole beat, since the
+-- ping travels and a bigger circle wants more facets: 366 triangles for a
+-- flag on a stand and 930 for a carrier with a clock running, against the
+-- twenty the pennant cost. Capture the Flag's worst case is four carriers
+-- holding one apiece, at 3720 triangles or about eleven thousand vertices;
+-- Turf puts six stands out for sixty-six hundred.
+--
+-- Eight thousand of headroom rather than eleven, deliberately: the worst case
+-- has all four flags in the air on four different hulls, and a room where
+-- that is true is a room where nobody is shooting.
+local GLOW_FIGHT = 49152
 
 -- Capacities move in steps of this, so dragging a window edge does not
 -- allocate a new buffer on every frame of the drag.
@@ -3242,9 +3255,13 @@ local FLAG = {
     -- decides a round it is a smudge on a hull rather than a flag. Outside
     -- it, the ship stays whole underneath and the ring reads from across a
     -- map. The rim stands four pixels clear of the longest hull, which is
-    -- filled in below rather than typed here, because the Cipher reaches
-    -- twenty three down its own length against the Apex's twenty one and a
-    -- number picked by eye clears the wrong one.
+    -- measured below rather than typed here: the Cipher is a knife and
+    -- reaches twenty two down its own length while the Apex, which looks like
+    -- the big one, reaches twenty and a half, so a clearance picked by eye
+    -- clears the wrong hull. Measured off the baked table, since `refit`
+    -- scales every hull into the flight box before any of this draws and the
+    -- polygon in the source is not the polygon on screen.
+    HULL = 0,
     RIM = 0,
     ARC = 0,
     CLOCK = 0,
@@ -3257,12 +3274,16 @@ local FLAG = {
 for _, h in ipairs(M.HULLS) do
     for i = 1, #h.poly, 2 do
         local r = math.sqrt(h.poly[i] ^ 2 + h.poly[i + 1] ^ 2)
-        if r > FLAG.RIM then FLAG.RIM = r end
+        if r > FLAG.HULL then FLAG.HULL = r end
     end
 end
-FLAG.RIM = FLAG.RIM + 4
+FLAG.RIM = FLAG.HULL + 4
 FLAG.ARC = FLAG.RIM + 7
 FLAG.CLOCK = FLAG.RIM + 16
+
+-- Published so client/tools/flags_svg.lua can draw the clearance it is
+-- claiming rather than work it out again and be wrong about it later.
+M.FLAG = FLAG
 
 -- How many facets an arc of this radius needs. `round_segs` answers it for a
 -- whole circle and an arc is a fraction of one. Worth deriving rather than
@@ -3276,9 +3297,19 @@ end
 -- One stroke, with the light coming off it. Every other bright thing on this
 -- layer is a bloom and then a hard edge over the top of it, and an arc left
 -- bare is the one that reads as wire.
+--
+-- The bloom runs at three quarters of the stroke's facets. `round_segs` aims
+-- for a fifth of a pixel of sag, which is what an edge somebody can see wants
+-- and more than a soft band at a fifth of the alpha needs, and the bloom is
+-- where the cost is: four triangles a facet against the stroke's six, six
+-- times over on a Turf map. Half was the first try and it showed. A circle
+-- that is visibly a polygon is a defect whatever its alpha, so the discount
+-- is the small one.
 local function lit_arc(glow, x, y, r, a0, span, w, col)
     local n = facets(glow, r, span)
-    glow:arc_fade(x, y, r, a0, a0 + span, w * 3.4, n, pal.a(col, col[4] * 0.22))
+    local soft = math.ceil(n * 0.75)
+    glow:arc_fade(x, y, r, a0, a0 + span, w * 3.4, soft < 3 and 3 or soft,
+                  pal.a(col, col[4] * 0.22))
     glow:arc_aa(x, y, r, a0, a0 + span, w, n, col)
 end
 
@@ -3288,13 +3319,17 @@ end
 
 -- One beat of the broadcast: a ring leaving `r0` and gone by `r1`. This is
 -- what makes the drawing read as something running rather than something lit.
+-- Soft on both sides and no hard edge inside it, which is what a pulse
+-- leaving something actually looks like and also what it can afford: this
+-- runs at the largest radius anything here draws at, so a hard rim under it
+-- would cost more than the three arcs put together. Full facets, for the
+-- same reason: it is the biggest circle in the drawing and the first place a
+-- discount shows up as a polygon.
 local function ping(glow, x, y, col, a, r0, r1, rate, t)
     local ph = (t * rate) % 1
     local r = r0 + (r1 - r0) * ph
-    local k = a * (1 - ph) * (1 - ph)
-    glow:ring_fade(x, y, r, 3.2 * (1 - ph) + 1, facets(glow, r, TAU),
-                   pal.a(col, k * 0.5))
-    glow:ring_aa(x, y, r, 1.4 * (1 - ph), pal.a(col, k), facets(glow, r, TAU))
+    glow:ring_fade(x, y, r, 4.0 * (1 - ph) + 1, facets(glow, r, TAU),
+                   pal.a(col, a * (1 - ph) * (1 - ph) * 1.5))
 end
 
 -- Three arcs at one radius. Alternate rings turn against each other, because
@@ -3317,7 +3352,11 @@ end
 -- equal weight, four rims and one collar sat on the same footing and the
 -- count stopped being the first thing anybody saw.
 local function carry_clock(glow, x, y, col, r, left)
-    glow:ring_aa(x, y, r, 1.0, pal.a(col, 0.10), facets(glow, r, TAU))
+    -- The track the drain runs on, at a tenth of the alpha and three quarters
+    -- of the facets. It is a guide rather than an edge, and a pilot holding
+    -- four flags draws four of them.
+    glow:ring_aa(x, y, r, 1.0, pal.a(col, 0.10),
+                 math.ceil(facets(glow, r, TAU) * 0.75))
     if left <= 0 then return end
     local hot = left < 0.2
     lit_arc(glow, x, y, r, -math.pi / 2, -left * TAU, 1.7,
