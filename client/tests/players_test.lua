@@ -318,6 +318,18 @@ check("and every row says which side it is on",
       exactly("Pylon") .. " Pylon rows")
 check("a watcher is a row like any other, with Watching for a side",
       exactly("Watching") == 1, table.concat(words(), " | "))
+-- But a watcher's row is a reading and not a press. They have no seat, so
+-- there is no card to open, and a press whose only possible answer is silence
+-- is worse than no press: the cursor steps over the row and a hand gets no
+-- light off it. This is what a playtest caught, from the other side -- a
+-- reader tapped a watcher and waited out a card that was never coming.
+do
+    local n = 0
+    for _, r in ipairs(ui.hits) do
+        if r.action == "board_row" then n = n + 1 end
+    end
+    check("only the seated rows are pressable", n == 4, n .. " presses")
+end
 -- And the two words the interface supplies take the interface's case, where
 -- a side's own name keeps the one the zone gave it.
 check("the interface's own words are said, not quoted",

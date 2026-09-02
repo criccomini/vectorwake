@@ -6386,7 +6386,12 @@ local function sheet_row(kx, kw, y, h, r, cols, i)
         end
         x = x - c.w - gap
     end
-    hit(kx, y, kw, h, "board_row", i, nil, 1)
+    -- And the press, for a row that has a card behind it. A watcher has no
+    -- seat, so there is nothing to open and no key to offer: their row reads
+    -- rather than presses, which is a row the cursor steps over and a hand
+    -- gets no light from. A press drawn over nothing is worse than no press,
+    -- since the one answer it can give is silence.
+    if r.i ~= nil then hit(kx, y, kw, h, "board_row", i, nil, 1) end
 end
 
 -- How tall the sheet wants to be: a heading and a row per body in the room.

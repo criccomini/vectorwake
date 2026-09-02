@@ -35,6 +35,18 @@ const ANSWER_MS = 20000
 // asking again. So does this.
 const TRIES = 3
 
+// How long to give a press before deciding the row went out from under it,
+// and how many rows to work through before giving up on the room.
+//
+// A row is numbered by where it sits this frame and the sheet re-sorts every
+// frame it is drawn, so a row number ages: a pilot leaving takes theirs with
+// them, and a press carrying it arrives about nobody. The client answers that
+// with nothing, which is the only honest answer available, so what a reader
+// has to do is notice quickly and take the next row rather than wait out a
+// card that is never coming.
+const CARD_MS = 4000
+const ROWS = 12
+
 const whole = pilot => pilot.until('a full bar to spend on a side',
   s => s.me && s.me.alive && s.me.energy >= s.me.max_energy,
   { timeout: 90000 })
@@ -70,13 +82,13 @@ export async function run (pilot, { log = () => {} } = {}) {
     log(`asking for a side, try ${go}, flying for side ${mine}`)
     const sheet = await openSheet(pilot)
 
-    // Every row of the sheet is a seat, so the room is readable from here. A
-    // room with nobody else in it has nothing to cross to, which is a fact
-    // about the room rather than a fault: the bot server fills these, so it
-    // means the fill has not landed yet.
-    const rows = sheet.boxes.filter(b => b.action === 'board_row')
-    log(`the sheet lists ${rows.length} in the room`)
-    if (rows.length < 2) {
+    // Every pressable row of the sheet is a seat, so the room is readable from
+    // here. A room with nobody else in it has nothing to cross to, which is a
+    // fact about the room rather than a fault: the bot server fills these, so
+    // it means the fill has not landed yet.
+    let seen = sheet.boxes.filter(b => b.action === 'board_row')
+    log(`the sheet lists ${seen.length} in the room`)
+    if (seen.length < 2) {
       throw new Error(
         'the players sheet listed nobody but this pilot. The room fills with ' +
         'bots, so an empty sheet is either a roster that never arrived or a ' +
@@ -85,27 +97,45 @@ export async function run (pilot, { log = () => {} } = {}) {
 
     // Somebody on another side. Their row is where the card comes from, and
     // the card is the only thing in the client that offers a side.
+    //
+    // Worked one row at a time off a fresh reading, because the list under it
+    // moves. What is remembered between rows is the seat each card was about,
+    // which is what the client answers a press with and the one identifier
+    // here that outlives a sort.
     let opened = null
-    for (const row of rows) {
-      await pilot.tap('board_row', { value: row.value })
-      const card = await pilot.until('a pilot card',
-        s => s.screen.pilot_card !== null
-          && s.screen.pilot_card !== undefined)
+    const asked = new Set()
+    for (let row = 0; row < ROWS && !opened; row++) {
+      const now = await openSheet(pilot)
+      const rows = now.boxes.filter(b => b.action === 'board_row')
+      if (rows.length === 0) break
+      const next = rows[row % rows.length]
+
+      await pilot.tap('board_row', { value: next.value })
+      let card = null
+      try {
+        card = await pilot.until('a pilot card',
+          s => s.screen.pilot_card !== null
+            && s.screen.pilot_card !== undefined,
+          { timeout: CARD_MS })
+      } catch {
+        // The row went stale under the press: whoever held that number left
+        // between the reading and the tap. Take another reading and go again.
+        continue
+      }
+      if (asked.has(card.screen.pilot_card)) continue
+      asked.add(card.screen.pilot_card)
+
       const key = card.boxes.find(b => b.action === 'board_join')
       if (key && key.value !== mine) { opened = key; break }
       // Somebody on our own side, or a side the zone will not take us into.
-      // Their card offers nothing, which is the design: back out and try the
-      // next row rather than pressing at a key that is not there.
-      await pilot.tap('menu_back')
-      await pilot.until('the sheet again',
-        s => s.screen.pilot_card === null
-          || s.screen.pilot_card === undefined)
+      // Their card offers nothing, which is the design: the next reading
+      // steps back off it rather than pressing at a key that is not there.
     }
     if (!opened) {
       throw new Error(
-        'no row on the sheet opened a card offering another side. Either the ' +
-        'whole room is on one side, or the card is not drawing the key that ' +
-        'is the only way to cross.')
+        `no row on the sheet opened a card offering another side in ${ROWS} ` +
+        'tries. Either the whole room is on one side, or the card is not ' +
+        'drawing the key that is the only way to cross.')
     }
     const want = opened.value
     log(`the card offers side ${want}`)
