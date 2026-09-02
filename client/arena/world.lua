@@ -1098,8 +1098,44 @@ local V_BORDER = 1
 local V_ROCK_A, V_ROCK_B = 2, 3
 local V_ROCK_BIG, V_ROCK_BODY = 4, 5
 local V_STATION, V_STATION_BODY = 6, 7
+local V_NOTCH_W, V_NOTCH_E = 8, 9
+local V_NOTCH_N, V_NOTCH_S = 10, 11
 
 local function key(tx, ty) return ty * 1024 + tx end
+
+-- The two square sides of a slope's triangle, the ones the face was cut
+-- across. A slope is wall the whole way along these two. Along the other two
+-- it is one corner touching the line and nothing else.
+local LEG = {
+    [0] = {"n", "w"},   -- NW
+    [1] = {"n", "e"},   -- NE
+    [2] = {"s", "e"},   -- SE
+    [3] = {"s", "w"},   -- SW
+}
+-- The one square side a notch does not fill, which is the side its wedge
+-- opens toward. Indexed by V_NOTCH_*.
+local NOTCH_OPEN = {[8] = "w", [9] = "e", [10] = "n", [11] = "s"}
+local TOWARD = {n = {0, -1}, s = {0, 1}, w = {-1, 0}, e = {1, 0}}
+local FACING = {n = "s", s = "n", w = "e", e = "w"}
+
+-- Whether a tile hands its whole `side` edge to the tile beyond it. Square
+-- wall does on all four; a slope only on its legs, and a notch on every side
+-- but the one it opens toward.
+--
+-- This is the question, and "is there anything there" is not it. A wall lying
+-- against the open half of a slope has a face a pilot can see and the tile
+-- beside it does not cover: answering by membership left a tile of unlit wall
+-- wherever a diagonal ran into one, which on the open arena is every place an
+-- arm meets a bracket.
+local function fills(wall, slopes, notches, tx, ty, side)
+    local k = key(tx, ty)
+    if not wall[k] then return false end
+    local var = slopes[k]
+    if var then return LEG[var][1] == side or LEG[var][2] == side end
+    var = notches[k]
+    if var then return NOTCH_OPEN[var] ~= side end
+    return true
+end
 
 -- Maximal straight runs of exposed face, along one side of a set of tiles.
 --
@@ -1107,22 +1143,38 @@ local function key(tx, ty) return ty * 1024 + tx end
 -- boundary, and additively that is a bright bead every sixteen pixels along an
 -- otherwise straight wall. It is the same double-cover the hulls had at their
 -- corners, and merging is both the fix and the cheaper path.
-local function runs(set, cells, side, emit)
+--
+-- Two sets, because the two questions are different. `set` answers whether a
+-- face is covered, and a slope covers the edge it shares with a wall.
+-- `square` answers who can carry the run, and a slope cannot: it draws its
+-- diagonal face instead of four square ones, so a face handed to a slope is a
+-- face nothing draws.
+--
+-- Asking `set` both times cost a chevron's knot every outward edge it had.
+-- The knot is plain wall with a slope run above it and another below, and its
+-- open sides are its ends. Each end lay one step along the run from a slope
+-- whose own side was open, so it took itself for the middle of a longer run
+-- and left the line to a tile that never draws one.
+local function runs(g, cells, side, emit)
     local ax, ay                        -- toward the neighbour being tested
     local px, py                        -- toward the previous tile in a run
     if side == "n" then ax, ay, px, py = 0, -1, -1, 0
     elseif side == "s" then ax, ay, px, py = 0, 1, -1, 0
     elseif side == "w" then ax, ay, px, py = -1, 0, 0, -1
     else ax, ay, px, py = 1, 0, 0, -1 end
+    local back = FACING[side]
+    local function covered(tx, ty)
+        return fills(g.set, g.slopes, g.notches, tx + ax, ty + ay, back)
+    end
     for i = 1, #cells, 2 do
         local tx, ty = cells[i], cells[i + 1]
-        if not set[key(tx + ax, ty + ay)] then
+        if not covered(tx, ty) then
             -- Only the first tile of a run draws it, and it walks to the end.
-            local prev = set[key(tx + px, ty + py)]
-            if not prev or set[key(tx + px + ax, ty + py + ay)] then
+            local prev = g.square[key(tx + px, ty + py)]
+            if not prev or covered(tx + px, ty + py) then
                 local ex, ey = tx, ty
-                while set[key(ex - px, ey - py)]
-                      and not set[key(ex - px + ax, ey - py + ay)] do
+                while g.square[key(ex - px, ey - py)]
+                      and not covered(ex - px, ey - py) do
                     ex, ey = ex - px, ey - py
                 end
                 emit(tx, ty, ex, ey)
@@ -1147,7 +1199,7 @@ end
 local SIDES = {"n", "s", "w", "e"}
 
 -- A block of wall, drawn as one thing rather than as tiles.
-local function wall_mass(bg, glow, set, cells, border)
+local function wall_mass(bg, glow, g, cells, border)
     local lit = pal.WALL_EDGE
     local hotline = pal.a(pal.hot(lit, 0.28, 1), 0.9)
     local bevel = pal.a(lit, 0.26)
@@ -1161,7 +1213,7 @@ local function wall_mass(bg, glow, set, cells, border)
 
     for s = 1, #SIDES do
         local side = SIDES[s]
-        runs(set, cells, side, function(tx, ty, ex, ey)
+        runs(g, cells, side, function(tx, ty, ex, ey)
             local px, py, qx, qy, ox, oy = face_line(side, tx, ty, ex, ey)
             local long = (tx ~= ex) or (ty ~= ey)
             -- The light the face throws back into the wall, and out of it. A
@@ -1195,10 +1247,12 @@ local function wall_mass(bg, glow, set, cells, border)
     for i = 1, #cells, 2 do
         local tx, ty = cells[i], cells[i + 1]
         local x, y = tx * TILE, ty * TILE
-        local n = not set[key(tx, ty - 1)]
-        local s = not set[key(tx, ty + 1)]
-        local w = not set[key(tx - 1, ty)]
-        local e = not set[key(tx + 1, ty)]
+        -- Open by the same measure the faces use, so a corner standing
+        -- against the open half of a slope is chamfered like the corner it is.
+        local n = not fills(g.set, g.slopes, g.notches, tx, ty - 1, "s")
+        local s = not fills(g.set, g.slopes, g.notches, tx, ty + 1, "n")
+        local w = not fills(g.set, g.slopes, g.notches, tx - 1, ty, "e")
+        local e = not fills(g.set, g.slopes, g.notches, tx + 1, ty, "w")
         if n and w then glow:seg(x + 4, y, x, y + 4, 1.1, corner) end
         if n and e then
             glow:seg(x + TILE - 4, y, x + TILE, y + 4, 1.1, corner)
@@ -1241,47 +1295,29 @@ local SLOPE = {
 -- The two square sides of the triangle, the ones the face was cut across. A
 -- slope is wall the whole way along these two. Along the other two it is one
 -- corner touching the line and nothing else.
-local LEG = {
-    [0] = {"n", "w"},   -- NW
-    [1] = {"n", "e"},   -- NE
-    [2] = {"s", "e"},   -- SE
-    [3] = {"s", "w"},   -- SW
-}
-local TOWARD = {n = {0, -1}, s = {0, 1}, w = {-1, 0}, e = {1, 0}}
-local FACING = {n = "s", s = "n", w = "e", e = "w"}
-
--- Whether a tile hands its whole `side` edge to the tile beyond it. Square
--- wall does on all four; a slope only on its legs.
-local function fills(wall, slopes, tx, ty, side)
-    local k = key(tx, ty)
-    if not wall[k] then return false end
-    local var = slopes[k]
-    if not var then return true end
-    return LEG[var][1] == side or LEG[var][2] == side
-end
-
 -- A leg with nothing behind it: the cut end of a diagonal, or the side it
 -- would have handed to a wall that is not there.
-local function open_leg(wall, slopes, tx, ty, side)
+local function open_leg(wall, slopes, notches, tx, ty, side)
     local var = slopes[key(tx, ty)]
     if not var or (LEG[var][1] ~= side and LEG[var][2] ~= side) then
         return false
     end
     local d = TOWARD[side]
-    return not fills(wall, slopes, tx + d[1], ty + d[2], FACING[side])
+    return not fills(wall, slopes, notches, tx + d[1], ty + d[2],
+                     FACING[side])
 end
 
 -- Maximal straight runs of open leg, the way `runs` merges the square faces
 -- and for the same reason: two ends side by side are one end.
-local function cap_runs(wall, slopes, cells, side, emit)
+local function cap_runs(wall, slopes, notches, cells, side, emit)
     local px, py = -1, 0
     if side == "w" or side == "e" then px, py = 0, -1 end
     for i = 1, #cells, 3 do
         local tx, ty = cells[i], cells[i + 1]
-        if open_leg(wall, slopes, tx, ty, side)
-           and not open_leg(wall, slopes, tx + px, ty + py, side) then
+        if open_leg(wall, slopes, notches, tx, ty, side)
+           and not open_leg(wall, slopes, notches, tx + px, ty + py, side) then
             local ex, ey = tx, ty
-            while open_leg(wall, slopes, ex - px, ey - py, side) do
+            while open_leg(wall, slopes, notches, ex - px, ey - py, side) do
                 ex, ey = ex - px, ey - py
             end
             emit(tx, ty, ex, ey)
@@ -1290,7 +1326,7 @@ local function cap_runs(wall, slopes, cells, side, emit)
 end
 
 -- The diagonal half of a wall, drawn as the face it is.
-local function slope_mass(bg, glow, wall, set, cells)
+local function slope_mass(bg, glow, wall, set, notches, cells)
     local lit = pal.WALL_EDGE
     local hotline = pal.a(pal.hot(lit, 0.28, 1), 0.9)
     local inner = pal.a(pal.WALL_LIT, 1)
@@ -1334,11 +1370,92 @@ local function slope_mass(bg, glow, wall, set, cells)
     -- eleven pixels of it would cross the face.
     for s = 1, #SIDES do
         local side = SIDES[s]
-        cap_runs(wall, set, cells, side, function(tx, ty, ex, ey)
+        cap_runs(wall, set, notches, cells, side, function(tx, ty, ex, ey)
             local px, py, qx, qy, ox, oy = face_line(side, tx, ty, ex, ey)
             glow:skirt(px, py, qx, qy, ox * 6, oy * 6, 0.13, outer)
             glow:seg(px, py, qx, qy, 1.4, hotline)
         end)
+    end
+end
+
+-- A notch, by the side its wedge opens toward. Mirrors SIM_SOLID_NOTCH_* in
+-- sim/include/sim/sim.h.
+--
+-- Where two diagonals cross, the concave corner of the crossing lands at the
+-- middle of a tile rather than on a corner of the grid. A slope carries one
+-- face and cannot make a corner, so that tile was plain wall and the X ran its
+-- arms into sixteen pixels of flat. This is that tile with the corner in it:
+-- three quarters solid, and the missing quarter a wedge with its apex at the
+-- center.
+--
+-- `fill` is the solid part as two triangles, in tile fractions. `faces` is the
+-- two sides of the wedge, each as its two ends and the way out of it, which is
+-- what the light is thrown along. `open` is the side the wedge opens toward,
+-- as an offset, so the three square sides can be told from the notched one.
+local NOTCH = {
+    [V_NOTCH_W] = {
+        fill = {0,0, 1,0, 1,1,  0.5,0.5, 1,1, 0,1},
+        faces = {{0,0, 0.5,0.5, -R2, R2}, {0.5,0.5, 0,1, -R2, -R2}},
+        open = {-1, 0},
+    },
+    [V_NOTCH_E] = {
+        fill = {1,0, 0,0, 0,1,  0.5,0.5, 0,1, 1,1},
+        faces = {{1,0, 0.5,0.5, R2, R2}, {0.5,0.5, 1,1, R2, -R2}},
+        open = {1, 0},
+    },
+    [V_NOTCH_N] = {
+        fill = {0,0, 1,1, 0,1,  1,0, 1,1, 0.5,0.5},
+        faces = {{0,0, 0.5,0.5, R2, -R2}, {0.5,0.5, 1,0, -R2, -R2}},
+        open = {0, -1},
+    },
+    [V_NOTCH_S] = {
+        fill = {0,1, 1,0, 0,0,  1,1, 1,0, 0.5,0.5},
+        faces = {{0,1, 0.5,0.5, R2, R2}, {0.5,0.5, 1,1, -R2, R2}},
+        open = {0, 1},
+    },
+}
+
+-- The tiles that carry a corner. Drawn one at a time: there are two to a
+-- crossing and a handful to a map, so there is nothing here worth merging.
+local function notch_mass(bg, glow, g, cells)
+    local lit = pal.WALL_EDGE
+    local hotline = pal.a(pal.hot(lit, 0.28, 1), 0.9)
+    local outer = pal.a(lit, 1)
+
+    for i = 1, #cells, 3 do
+        local tx, ty, var = cells[i], cells[i + 1], cells[i + 2]
+        local n = NOTCH[var]
+        local x, y = tx * TILE, ty * TILE
+        local f = n.fill
+        bg:tri(x + f[1] * TILE, y + f[2] * TILE, x + f[3] * TILE,
+               y + f[4] * TILE, x + f[5] * TILE, y + f[6] * TILE, pal.WALL)
+        bg:tri(x + f[7] * TILE, y + f[8] * TILE, x + f[9] * TILE,
+               y + f[10] * TILE, x + f[11] * TILE, y + f[12] * TILE, pal.WALL)
+        -- The wedge. Both halves of the corner, each lit the way a slope's
+        -- face is, which is what makes the two read as one point rather than
+        -- as a step.
+        for k = 1, 2 do
+            local a = n.faces[k]
+            local px, py = x + a[1] * TILE, y + a[2] * TILE
+            local qx, qy = x + a[3] * TILE, y + a[4] * TILE
+            glow:skirt(px, py, qx, qy, a[5] * 6, a[6] * 6, 0.13, outer)
+            glow:seg(px, py, qx, qy, 1.4, hotline)
+        end
+        -- And whichever of its three square sides has nothing behind it. A
+        -- crossing hands all three to the arms, so this draws nothing there;
+        -- a notch an author puts down on open ground is a whole tile on those
+        -- sides and says so.
+        for s = 1, #SIDES do
+            local side = SIDES[s]
+            local d = TOWARD[side]
+            if (d[1] ~= n.open[1] or d[2] ~= n.open[2])
+               and not fills(g.set, g.slopes, g.notches, tx + d[1], ty + d[2],
+                             FACING[side]) then
+                local ax, ay, bx, by, ox, oy = face_line(side, tx, ty, tx, ty)
+                glow:skirt(ax, ay, bx, by, ox * 6, oy * 6, 0.13, outer)
+                glow:seg(ax, ay, bx, by, 1.4, hotline)
+            end
+        end
     end
 end
 
@@ -1361,7 +1478,9 @@ local function safe_zone(bg, glow, set, cells)
     end
     for s = 1, #SIDES do
         local side = SIDES[s]
-        runs(set, cells, side, function(tx, ty, ex, ey)
+        -- Nothing but safe ground is in this set, so it answers every question.
+        runs({set = set, square = set, slopes = {}, notches = {}}, cells, side,
+             function(tx, ty, ex, ey)
             local px, py, qx, qy, ox, oy = face_line(side, tx, ty, ex, ey)
             local len = math.sqrt((qx - px) * (qx - px) + (qy - py) * (qy - py))
             local ux, uy = (qx - px) / len, (qy - py) / len
@@ -1703,11 +1822,18 @@ end
 local function build_terrain(bg, glow, x0, y0, x1, y1)
     local wall_set, wall_cells = {}, {}
     local bord_cells = {}
+    -- Everything with four square faces, which is the wall set without the
+    -- slopes. A run of face belongs to these and only these.
+    local square_set = {}
     -- Slopes are in the wall set and not in its cells: a wall beside one must
     -- not light the edge they share, and the slope draws its own face rather
     -- than four square ones. The set holds the variant, since a run is a run
     -- of one kind and the light follows the whole of it.
     local slope_set, slope_cells = {}, {}
+    -- Notches sit with the slopes rather than the walls, for the same reason:
+    -- the tile is solid, so it covers the edge a neighbour shares with it, but
+    -- it draws its own faces and cannot carry a neighbour's run of square one.
+    local notch_set, notch_cells = {}, {}
     local safe_set, safe_cells = {}, {}
     local rocks, stations, unders = {}, {}, {}
     local turfs, spawns, goals = {}, {}, {}
@@ -1724,6 +1850,7 @@ local function build_terrain(bg, glow, x0, y0, x1, y1)
             if cls == sim.T_SOLID then
                 if var == V_BORDER then
                     wall_set[key(tx, ty)] = true
+                    square_set[key(tx, ty)] = true
                     bord_cells[#bord_cells + 1] = tx
                     bord_cells[#bord_cells + 1] = ty
                 elseif var == V_ROCK_A or var == V_ROCK_B then
@@ -1737,8 +1864,15 @@ local function build_terrain(bg, glow, x0, y0, x1, y1)
                 elseif var == V_STATION then
                     stations[#stations + 1] = tx
                     stations[#stations + 1] = ty
+                elseif var >= V_NOTCH_W and var <= V_NOTCH_S then
+                    wall_set[key(tx, ty)] = true
+                    notch_set[key(tx, ty)] = var
+                    notch_cells[#notch_cells + 1] = tx
+                    notch_cells[#notch_cells + 1] = ty
+                    notch_cells[#notch_cells + 1] = var
                 elseif var ~= V_ROCK_BODY and var ~= V_STATION_BODY then
                     wall_set[key(tx, ty)] = true
+                    square_set[key(tx, ty)] = true
                     wall_cells[#wall_cells + 1] = tx
                     wall_cells[#wall_cells + 1] = ty
                 end
@@ -1773,9 +1907,12 @@ local function build_terrain(bg, glow, x0, y0, x1, y1)
 
     -- Border tiles are in the wall set, so the two masses agree about which
     -- faces are exposed and neither draws an edge into the other.
-    wall_mass(bg, glow, wall_set, wall_cells, false)
-    wall_mass(bg, glow, wall_set, bord_cells, true)
-    slope_mass(bg, glow, wall_set, slope_set, slope_cells)
+    local g = {set = wall_set, square = square_set, slopes = slope_set,
+               notches = notch_set}
+    wall_mass(bg, glow, g, wall_cells, false)
+    wall_mass(bg, glow, g, bord_cells, true)
+    slope_mass(bg, glow, wall_set, slope_set, notch_set, slope_cells)
+    notch_mass(bg, glow, g, notch_cells)
     safe_zone(bg, glow, safe_set, safe_cells)
 
     for i = 1, #unders, 3 do

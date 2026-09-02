@@ -1118,7 +1118,7 @@ M.page_fields = false
 -- It used to mean something narrower, that this client had walked into the
 -- room rather than merely having it on screen, and it took the radar and the
 -- roster away from anybody who had not pressed play. A watcher is in the room;
--- see decision 153.
+-- see decision 156.
 M.joined = false
 
 -- Where each row of the corner stack, the dial and the feed landed this
@@ -1719,6 +1719,14 @@ function M.clear_payouts()
     M.payouts:clear()
 end
 
+-- A rating change as a pilot reads it, signed in both directions and signed
+-- at zero. Two things print one, the figure off the wreck and the end of the
+-- feed's line about the same death, and a plus that turned up in one and not
+-- the other would read as two different numbers about one kill.
+function M.signed(n)
+    return string.format("%+d", n)
+end
+
 local function nameplates(o)
     if not o.half_w or o.half_w <= 0 then return end
     -- The render script publishes its own half-extents for exactly this, so
@@ -1788,7 +1796,7 @@ local function nameplates(o)
     M.payouts:each(F.now, function(p, f, a)
         local px, py = on_glass(o, scale, p.x, p.y)
         local col = p.n < 0 and pal.HURT or pal.PAID
-        txt((p.n >= 0 and "+" or "") .. p.n, px + 12 * F.scale,
+        txt(M.signed(p.n), px + 12 * F.scale,
             py + 13 * F.scale - M.payouts.RISE * F.scale * f,
             11 * F.scale, pal.a(col, 0.95 * a), nil, nil, true)
     end)
@@ -2809,10 +2817,19 @@ local function safe_note(spent, limit)
     -- while the hull is still there.
     local left = math.ceil((limit - spent) / 100)
     if left < 0 then left = 0 end
+    -- Clocked the way the match clock is. Past a minute nobody reads a bare
+    -- count of seconds as a duration, and the limit is a uint16 of ticks, so
+    -- the longest sit this can be asked to draw is 656 seconds.
+    local clock = string.format("%d:%02d", math.floor(left / 60), left % 60)
     -- Red for the last ten, which is where it stops being information and
     -- starts being a warning.
     local col = left <= 10 and pal.ENEMY or pal.DIM
-    txt("seat released in " .. left, F.w / 2, y + (M.compact and 15 or 20) * F.scale,
+    -- Says where the pilot is about to be rather than what the room is about
+    -- to take, since a seat is the room's word for it. The feed's own line
+    -- once the clock runs out is "moved to spectator: too long in the safe
+    -- zone", and this is that line said in advance.
+    txt("moving to spectator in " .. clock, F.w / 2,
+        y + (M.compact and 15 or 20) * F.scale,
         (M.compact and 10 or 12) * F.scale, pal.a(col, 0.9), "center")
 end
 
@@ -3565,7 +3582,7 @@ end
 -- landing and there is no landing; what the client opens on is a room, with
 -- the same column over it a pilot in that room raises, and it stands upright
 -- on every window. The lockup stayed, because it heads the menu wherever the
--- menu stands. See decisions 153 and 155.
+-- menu stands. See decisions 156 and 158.
 local function column_geom(n)
     local pts_w = F.w / math.max(F.density, 0.0001)
     local narrow = pts_w < 620
@@ -3606,24 +3623,14 @@ end
 -- account, zone, players, ship, settings, always all five.
 local COLUMN_STOPS = 5
 
--- A stop's caret: the two strokes that say a press here opens downward into
--- a list, in the weight the rest of the chrome is drawn at.
-local function land_caret(cx, cy, col)
-    local k = 4 * F.scale
-    F.layer:seg(cx - k, ry(cy - k * 0.6), cx, ry(cy + k * 0.6),
-                1.3 * F.scale, col, true)
-    F.layer:seg(cx, ry(cy + k * 0.6), cx + k, ry(cy - k * 0.6),
-                1.3 * F.scale, col, true)
-end
-
--- One stop of the column: the question at its left edge, the answer it
--- currently holds at its right, and a caret, in the same stroked rectangle
--- every key here wears. `lit` is the stop whose list is open.
+-- One stop of the column: the question at its left edge and the answer it
+-- currently holds at its right, in the same stroked rectangle every key here
+-- wears. `lit` is the stop whose list is open.
 --
 -- It had a second shape, a rail cell that set the question over the answer
 -- the way a gauge sets its caption over its reading, for the screen the
 -- client opened on when the window was too short to stand a column up. That
--- screen was the landing and there is no landing. See decision 153.
+-- screen was the landing and there is no landing. See decision 156.
 --
 -- `raw` says the answer is quoted rather than said: a call sign, a game's
 -- name and a build's name all stand in the case they were given, where the
@@ -3634,10 +3641,11 @@ end
 -- saying it, `warn` puts the guest dot on it, and `value` is what a press on
 -- it reports.
 --
--- Every stop wears a caret, because every one of them opens something. There
--- was a `flat` here for the one that acted instead, which was LEAVE and then
--- SIDE, and a caret is a promise that a list is about to come up: a stop that
--- kept its promise by doing something else should not have been making it.
+-- No stop draws a mark saying it opens. Each wore a caret for two decisions,
+-- two strokes pointing down at the list about to come up, and since every
+-- stop opens something the mark was true of all five and told a hand nothing.
+-- What it cost was the corner, which is where the answers are set, and the
+-- answers are what a pilot is down here reading. See decision 154.
 local function land_stop(x, y, w, h, label, value, action, lit, o)
     o = o or {}
     -- Where a press would land, at the weight every row of the menu is lit
@@ -3661,7 +3669,6 @@ local function land_stop(x, y, w, h, label, value, action, lit, o)
     -- the type column step two points sideways at the moment the panel
     -- replaced the stop, which is the seam the language exists to close.
     local pad = M.ROW_INSET * F.scale
-    local cx = x + w - pad - 3 * F.scale
     local px = TYPE.LABEL * F.scale
     -- A question at the label's weight with the answer beside it at full
     -- strength, which is what every stop of the column is, including the one
@@ -3677,12 +3684,16 @@ local function land_stop(x, y, w, h, label, value, action, lit, o)
     -- is one weight the whole way down.
     local names = value == nil or value == ""
     lbl(label, x + pad, y + h / 2)
-    land_caret(cx, y + h / 2, pal.a(pal.INK, 0.75))
     -- And nothing is set where there is nothing to say. An empty string went
     -- down the type list every frame, which draws nothing and is one more word
     -- for anything reading this frame back to walk past.
+    --
+    -- Flush with the inset the question stands on at the other edge. It ended
+    -- fourteen points short of it while the caret had that corner, and a
+    -- reading stopping short of the glass with nothing after it is a column
+    -- that looks ragged down its right hand side.
     if not names then
-        txt(value, cx - 11 * F.scale, y + h / 2, px,
+        txt(value, x + w - pad, y + h / 2, px,
             pal.a(pal.INK, 0.95), "right", nil, raw)
     end
     -- The guest warning, where a guest has something a lost account would
@@ -3700,7 +3711,7 @@ local function land_stop(x, y, w, h, label, value, action, lit, o)
         -- ends less its own width. Asked of the same measure the drawing uses
         -- rather than guessed at, since a call sign is as long as its pilot
         -- made it.
-        local dx = cx - 11 * F.scale - text_w(value or "", px, nil, raw)
+        local dx = x + w - pad - text_w(value or "", px, nil, raw)
             - 7 * F.scale
         F.layer:disc(dx, ry(y + h / 2), 2.5 * F.scale, 8,
                      pal.a(pal.CHARGE_COL, 0.95))
@@ -4267,11 +4278,10 @@ end
 
 -- One row of the ship stop, at whichever level of it is open.
 --
--- Six kinds and each one is a shape the menu already had: a section opens
--- (the caret every stop wears), a slot steps or switches, a flair row fills
--- its cells, a hull is a name with its flight beside it, and the two that are
--- not rows at all are the bars under the body row and the hairline over the
--- reset.
+-- Six kinds and each one is a shape the menu already had: a section reads
+-- what it holds, a slot steps or switches, a flair row fills its cells, a
+-- hull is a name with its flight beside it, and the two that are not rows at
+-- all are the bars under the body row and the hairline over the reset.
 local function land_row(kx, kw, y, h, r)
     local pad = M.ROW_INSET * F.scale
     if r.kind == "rule" then
@@ -4362,14 +4372,13 @@ local function land_row(kx, kw, y, h, r)
         return
     end
     if r.kind == "sect" then
-        -- A section opens, so it wears the caret, and what it says beside it
-        -- is what it holds rather than what it cost. See `menu.sect_reading`.
+        -- What a section says beside its name is what it holds rather than
+        -- what it cost. See `menu.sect_reading`.
         local on = M.col_sel == "land_sect" and M.col_sel_value == r.sect
         LIT.state(kx, y, kw, h, on, false)
         hit(kx, y, kw, h, "land_sect", r.sect, nil, 1)
         menu_row(kx + pad, y, kw - 2 * pad, h,
-                 {label = r.label, detail = r.detail, verbatim = r.raw,
-                  caret = true}, on)
+                 {label = r.label, detail = r.detail, verbatim = r.raw}, on)
         return
     end
     if r.kind == "reset" then
@@ -4646,8 +4655,8 @@ end
 -- readings over it, the roster and the column all arrive with the game.
 --
 -- The name is the one thing that does not, and it is drawn to the column's own
--- measure so that it does not move when the room arrives. See decisions 153
--- and 155.
+-- measure so that it does not move when the room arrives. See decisions 156
+-- and 158.
 --
 -- A first boot is a directory lookup and a handshake, two seconds of it; a
 -- game picked off the list drops the room on screen and dials the next one.
@@ -4657,7 +4666,7 @@ function M.waiting(note)
     -- The name, in the place the column will put it, off the column's own
     -- measure. Nothing on this screen moves when the room arrives: the stops
     -- and the key come up underneath a mark that was already there, which is
-    -- the one thing a hand-off should never get wrong. See decision 155.
+    -- the one thing a hand-off should never get wrong. See decision 158.
     local g = column_geom(COLUMN_STOPS)
     M.wordmark(g.mark_x, g.mark_y, g.size)
     -- And the dial that is looking for a room, hung directly over the name at
@@ -4795,7 +4804,7 @@ function M.hud(o)
     -- reading this corner is asking, whether or not the hull is theirs. It was
     -- absent for a client that had taken no seat, which left a stranger
     -- watching a fight with no way to tell where in the map it was happening.
-    -- See decision 153.
+    -- See decision 156.
     if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
     -- And the strip over it, which holds for the map as well: it is measured
     -- against the dial at rest, so the readings stay put while a player reads
@@ -5045,9 +5054,8 @@ end
 -- been decided: each was written by whoever wrote the page.
 --
 -- So: one shape. The name at the left in the menu's voice, and the right hand
--- end says what the row does. Six ends and nothing else varies:
+-- end says what the row does. Five ends and nothing else varies:
 --
---   opens     `caret`   -- a panel comes up over this one
 --   reads     `detail`  -- a value, in the mono, with no control
 --   steps     `step`    -- arrows either side of a count
 --   fills     `choice`  -- one cell per value, the word beside them
@@ -5058,6 +5066,11 @@ end
 -- land, `mark` where you already are, `tint` for a side, `offer` for the one
 -- row that is an offer, `dim` for a row that cannot act, and `waiting` for a
 -- game the fleet is not serving yet.
+--
+-- There were six. A row that opened a panel wore a caret at the right edge,
+-- and every row that could be pressed into a panel wore one, so it told a
+-- hand nothing and cost a section the corner its reading wants. A row that
+-- opens is an ordinary reading now, and the panel is the answer to the press.
 --
 -- `x`/`w` are the type column, not the panel: the field a state lights runs
 -- the panel's full width and is laid down by the caller, which is the only
@@ -5154,7 +5167,7 @@ function menu_row(x, y, w, h, r, hot)
     -- answering true here would lose its name entirely.
     local two_line = r.detail and r.detail ~= ""
         and not r.choice and not note
-        and not (r.caret or r.walk or r.toggle or r.step)
+        and not (r.walk or r.toggle or r.step)
         and text_w(r.detail, 12 * F.scale)
             > w - text_w(r.label or "", size, MENU_FONT) - 16 * F.scale
     if r.walk then
@@ -5184,28 +5197,9 @@ function menu_row(x, y, w, h, r, hot)
     -- The right hand side is data, so it stays in the face the numbers in
     -- flight are set in: a call sign, a count, a hull's name.
     --
-    -- The four ends below are the ones that carry a control. They are drawn
+    -- The three ends below are the ones that carry a control. They are drawn
     -- before `choice` and `detail` because a row wears exactly one end, and
     -- these are the ones that publish a press of their own.
-    if r.caret then
-        -- Opens. Two strokes at the right edge saying a panel is about to
-        -- come up over this one, which is the same promise the landing's
-        -- stops make with the same mark.
-        land_caret(x + w - 4 * F.scale, y + h / 2,
-                   pal.a(pal.INK, hot and 0.95 or 0.75))
-        if r.detail and r.detail ~= "" then
-            -- The same color a reading wears on a row that only reads, which
-            -- is what a zone's format is set in on the games list. This end
-            -- was written a step louder and never drawn: nothing wore a caret
-            -- and carried a reading until the ship menu's sections did, so
-            -- the disagreement between the two had never been on a screen.
-            -- Chris asked for the games list's voice here, and that is the
-            -- one every other reading in the menu already speaks.
-            txt(r.detail, x + w - 18 * F.scale, ly, TYPE.BODY * F.scale,
-                r.mark and pal.FRIEND or pal.MUTE, "right", nil, r.verbatim)
-        end
-        return
-    end
     if r.walk then
         -- Walks. The arrows go to the row's own edges and the name stands
         -- between them, because what is being paged is the name: this is the
@@ -5900,7 +5894,7 @@ local page_followed = nil
 -- nothing, and could not be put away, because putting it away left a player
 -- looking at a starfield with no way back. There is a game behind it wherever
 -- it stands now, so it is a panel everywhere and there is nothing left to
--- branch on. See decision 153.
+-- branch on. See decision 156.
 --
 -- What it replaced on the way here was a rail of tabs, a stage, a topbar, a
 -- head row and a preview of the page the rail cursor was resting on: five
@@ -5997,7 +5991,7 @@ function M.menu(v)
     -- same game; a seat with a hull drafted over it, and it is the refit, which
     -- names the hull because that is the whole of what the press does. The
     -- stands need no name on it: `PLAY` already means "in whatever the ship
-    -- stop says". See decisions 143 and 154.
+    -- stop says". See decisions 143 and 157.
     local word = "PLAY"
     if v.key == "fly" then
         word = "FLY " .. string.upper(v.key_ship or "")
@@ -6139,7 +6133,7 @@ function M.menu(v)
     -- way, and it comes back when the panel does. And it rides the column's
     -- own slide, so the two arrive and leave together: it used to be pinned
     -- while the stops sank underneath it, which nobody saw because the screen
-    -- it stood on could not be dismissed. See decision 155.
+    -- it stood on could not be dismissed. See decision 158.
     if at <= 0.001 then M.wordmark(g.mark_x, g.mark_y + rise, g.size) end
 
     -- While the column is going away it still draws, so the fight behind it

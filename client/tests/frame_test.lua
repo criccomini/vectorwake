@@ -45,7 +45,7 @@ eq(menu.open, false, "no world does not open the menu")
 
 -- A watcher: a room on screen that this client holds no seat in. It reads as
 -- a room, because that is what it is. There was a flag for it here, which the
--- interface spent on a whole second screen; see decision 153.
+-- interface spent on a whole second screen; see decision 156.
 state.online = true
 menu.open = false
 eq(frame.live(state, net, sim, menu), true, "the stands are a live world")

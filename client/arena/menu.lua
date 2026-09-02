@@ -5,7 +5,7 @@
 -- what stands over it is the column every pilot in that room raises with the
 -- same key: the same stops in the same order, dismissed the same way, with the
 -- same radar and roster and clock behind it. There is no second screen and no
--- second state to be in. See decision 153.
+-- second state to be in. See decision 156.
 --
 -- One list on screen at a time, a breadcrumb above it, and a stack behind it.
 -- Down and up move, right or enter descends or acts, left or escape goes
@@ -1714,7 +1714,7 @@ function M.stops()
     -- report this whole column exists to avoid: a player opens the client,
     -- looks at a game with fourteen people in it, and finds no way to see who
     -- any of them are. A watcher is exactly who wants that list. See
-    -- decision 153.
+    -- decision 156.
     out[#out + 1] = {stop = "players", label = "players",
                      -- Your side, quoted the way a name is quoted
                      -- everywhere; the interface's own word when you are
@@ -1733,10 +1733,10 @@ function M.stops()
     --
     -- No answer beside the name, because what it opens is a page rather than
     -- a value. It wore a gauge in that slot, drawn by the tab rail's own mark
-    -- table, and a rail is not what this column is: the mark was a seventh
-    -- right end in a language with six, it sat on the caret it was drawn
-    -- beside, and what it said was the word already on the row. The stop puts
-    -- its own name in ink instead. See `land_stop`.
+    -- table, and a rail is not what this column is: the mark was an end of its
+    -- own in a language that has a fixed set of them, and what it said was the
+    -- word already on the row. The stop puts its own name in ink instead. See
+    -- `land_stop`.
     out[#out + 1] = {stop = "settings", label = "settings", go = "settings"}
     return out
 end
@@ -1889,7 +1889,8 @@ function M.toggle()
 end
 
 -- Open one of the column's stops, by name. Pressing the one already open
--- shuts it, which is what the caret on the stop draws.
+-- shuts it: a stop is the panel that climbs off it, so one press works both
+-- directions.
 function M.open_stop(name)
     if M.stack[1] == name then
         M.stack = {}
@@ -2210,7 +2211,7 @@ function M.close()
     -- decision: escape, the menu key and a press on the glass beside the
     -- column all mean "never mind", and the one control that spends a draft
     -- is the key. The panel used to settle on any of the six ways out of it,
-    -- so a hand waved past the glass cost a respawn. See decision 154.
+    -- so a hand waved past the glass cost a respawn. See decision 157.
     --
     -- After the commit paths rather than instead of them: `draft_keep` clears
     -- the draft first, so this is a no-op on the way out of a press that
@@ -2317,7 +2318,7 @@ function M.view()
                  -- own, and it is the way back out to the stands of the same
                  -- game. A seat and a ship drafted over it, and it is the
                  -- refit: the one press that spends the draft, since a
-                 -- dismissal no longer does. See decisions 140 and 154.
+                 -- dismissal no longer does. See decisions 140 and 157.
                  key = M.flying()
                      and (M.drafted() and "fly" or "spectate")
                      or "play",
@@ -2337,8 +2338,8 @@ function M.view()
     for i, s in ipairs(M.stops()) do
         out.stops[i] = {stop = s.stop, label = s.label, value = s.value,
                         named = s.named, warn = s.warn,
-                        -- Lit while its own page is open, which is what the
-                        -- caret on it turns over.
+                        -- Lit while its own page is open, which is the whole
+                        -- of what a stop says about itself.
                         open = M.stack[1] == s.stop}
     end
     local nd = node()

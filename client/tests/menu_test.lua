@@ -188,7 +188,7 @@ end
 -- The players stop was the one exception to that, dropped whenever this
 -- client held no seat on the grounds that the room behind the front page was
 -- somebody else's (decision 108). There is no front page and a watcher is in
--- the room, so the five are unconditional. See decisions 147 and 151.
+-- the room, so the five are unconditional. See decisions 147 and 156.
 --
 -- SIDE is not here either. Crossing to another team is about the room rather
 -- than about you, and the players sheet is where it went: a side is joined
@@ -254,9 +254,9 @@ local machine = stop_of("settings")
 check("the machine stop opens a page", machine.go == "settings",
       tostring(machine.go))
 -- And nothing at all beside its name. It carried a gauge for a while, drawn
--- by the tab rail's mark table: a seventh right end in a language with six,
--- sitting on the caret it was drawn next to and saying the word already on the
--- row. `land_stop` gives a stop with no answer the ink instead.
+-- by the tab rail's mark table: an end of its own in a language that has a
+-- fixed set of them, saying the word already on the row. `land_stop` gives a
+-- stop with no answer the ink instead.
 check("and carries no answer and no mark",
       machine.value == nil and machine.mark == nil,
       tostring(machine.mark))
@@ -282,7 +282,7 @@ menu.watching = false
 -- one press that spends a draft in a match. It names the hull, because that
 -- is the whole of what the press does. From the stands the key already means
 -- "in whatever the ship stop says", so there is nothing to add out there.
--- See decision 154.
+-- See decision 157.
 menu.draft_open()
 menu.pick_profile(1)
 check("a seat with a ship drafted over it is offered the refit",
@@ -329,8 +329,8 @@ check("a bare column has no page open", menu.stop_open() == nil)
 check("pressing a stop opens its page",
       select(2, menu.press_stop("settings")) == true
       and menu.stop_open() == "settings", table.concat(menu.stack, "/"))
--- Pressing the one already open shuts it, which is what the caret on the stop
--- draws.
+-- Pressing the one already open shuts it: a stop is the panel climbing off
+-- it, and there is one press for both directions.
 check("and opening the open one shuts it",
       menu.open_stop("settings") == nil and #menu.stack == 0)
 check("a stop the room is not offering answers nothing",
@@ -1835,7 +1835,7 @@ do
     -- press on the glass beside it, or the back chevron all cost a respawn:
     -- a dismissal is not a decision. What spends a draft now is the column's
     -- key, and everything that puts the column away drops one. See
-    -- decision 154.
+    -- decision 157.
     menu.class = 0
     menu.kit = nil
     menu.open = true

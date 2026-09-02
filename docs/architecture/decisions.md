@@ -8364,7 +8364,224 @@ layout on main a few hours earlier, goes through the same send as every other
 death, so there is one place the message is finished. The podium column is
 unchanged, and rating.md and interface.md say the figure exists again.
 
-## 153. There is no landing
+## 153. A corner takes two faces, so it takes a notch
+
+**Status:** accepted.
+
+**What:** two changes to how a crossed diagonal is drawn, and a new solid
+variant. `fill_dead` in `sim/tools/mapgen.c` no longer walls in a tile with a
+slope beside it, so the crotches of an X and a V stay the open ground they
+were drawn as. `SIM_SOLID_NOTCH_W/E/N/S` is a whole solid tile whose picture
+is three quarters of a square, the missing quarter a wedge with its apex at
+the tile's centre; `m_chevron` writes two of them where its arms collide.
+`expanse.vwmap` is redrawn at seed 61 and carries 46 of them, two to each of
+its 23 crossings.
+
+**Why:** because an X was not reading as one, and it took three goes to find
+out why. Each arm is a band two tiles across stepping one tile a row. Where
+two cross, the crotches narrow past three tiles and the sweep that walls in
+unreachable ground plugged all four with square wall: a flat ledge in each.
+That is the first change, and on its own it left a sixteen pixel flat on each
+side of the waist.
+
+The flat is the real answer. Four faces meet at the middle of an X in two
+pairs, and where those pairs land is fixed by the arms' parity: two corners
+fall on the tile grid, where the diagonals either side already draw them, and
+two fall at the middle of a tile. A slope is one face and cannot make a
+corner. So the tile carries both: a notch is a corner drawn on one tile.
+
+**Solid to the core, and deliberately.** Every `SIM_SOLID_*` variant is a
+picture; the core stops a ship the same way on all of them, which is written
+down beside the enum and was true before this. So the eight pixels inside the
+wedge are wall, and a round bounces off them a little early. No hull reaches
+them: a hull is three tiles across and grounds on the diagonals either side of
+the crossing well before its box could enter, so the mismatch is a round in a
+dead-end corner. The honest version is a second face in `slope_hit`, a second
+triangle test in the collision path, the Rust mirror, and a regenerated
+determinism golden on three architectures, to move a bounce eight pixels
+somewhere nothing with a hull can go.
+
+**What was tried and reverted.** A junction laid by `m_chevron` that widened
+the waist to four tiles and capped each crotch with a pair of slopes meeting
+at a point. It drew a bar with two triangles stuck to it, and because a solid
+wedge is ground the next structure cannot stand on, it moved every structure
+placed after it and redrew the whole map. An X pinches at the waist. Both
+later drafts leave placement alone: the map is the one that shipped with 353
+plugs removed and 46 tiles renamed.
+
+**What is left.** The vertex of a V has the same problem and the other half of
+it too: the inside corner wants a notch, and the outside point wants a
+wedge-shaped solid, which does not exist. Eight tiles on the open arena, left
+alone. `m_chevron` draws only NOTCH_W and NOTCH_E, since an X's two
+middle-of-a-tile corners are always its left and right; N and S exist for the
+editor and for whoever draws the V.
+
+**The renderer had a fault in the same place, and it is a different one.** A
+face is drawn once, by the first tile of its run, and `runs` in
+`client/arena/world.lua` picked that tile with the set that also answers
+whether a face is covered. Slopes belong in that answer and not in this one,
+so every open side of a crossing's knot handed its line to a slope, which
+draws a diagonal face and never a square one. 164 faces on the shipped map
+came out unlit. Fixing that is what made the flats visible enough to argue
+about.
+
+**And the vocabulary is closed there.** A slope's face is `x - y` or `x + y` at
+a whole number and a wall's is `x` or `y` at one, so a diagonal running into a
+wall corners at whole numbers on both axes, on the grid, where the tiles either
+side already draw it. Only two diagonals cross at a half. There is no tile
+wanted for a diagonal meeting a bracket, a bar, or the map's own edge.
+
+What that junction wanted was for the wall to know its face was showing. A tile
+hands its whole shared edge to its neighbour on some sides and not others:
+square wall on all four, a slope only on its two legs, a notch on every side
+but the one it opens toward. `runs` asked whether anything was there instead,
+which answers covered for the half of a diagonal that meets a wall at one
+corner, and left a tile of unlit wall at every such junction on the map. All
+three readers of that question, the face runs, the corner chamfers and the
+diagonal's own end caps, go through `fills` now.
+
+`terrain_style_test.lua` pins the notch on a tile of its own, its apex at the
+centre and no face across the side it opens toward, pins that a crossing's
+waist draws both corners and no flat, and pins that a wall keeps the face a
+diagonal only corners against while handing over the half it lies flush along.
+`constant_drift_test.lua` holds the four numbers level across `sim.h`, the
+renderer and the editor.
+
+## 154. Nothing in the menu promises a panel
+
+**Status:** accepted.
+
+**What:** the caret is gone from every row that opens one. `land_caret` in
+`client/arena/ui.lua` is deleted with its three callers: two on a landing
+stop, one down the column and one on a rail cell, and one on `menu_row`'s
+`caret` end. The end goes with it, so the row language has five right hand
+ends rather than six and a row that opens is an ordinary reading. The four
+stops of the column and the ship menu's five sections are what wore it, and
+the sections set what they hold where it stood. `hud_svg.lua` put one on the
+settings page's Controls and About rows, which the client itself never did.
+
+**Why:** it told a hand nothing. Every stop of the column opens a panel and
+every section of the ship menu opens one, so the mark was true of all nine
+rows and separated none of them from any other. What it cost was the corner.
+A section's reading is the one thing on that row a pilot came for, and it was
+set eighteen points short of the glass to keep clear of two strokes.
+
+**The answers moved out to the inset.** A column stop's answer ended fourteen
+points inside the panel's own inset while the caret held that corner, so the
+right hand side of the column was ragged against a left hand side that was
+not. It is flush with `M.ROW_INSET` now, which is the measure decision 104
+unified the panels on, and the guest dot that hangs off the front of an
+answer is measured from the same edge rather than from where the caret began.
+
+**What is left standing.** The marks that point at something a hand can act
+on, which is the back mark in a panel's head and the arrows: either side of a
+count, either side of the carousel, and at the edges of a row that pages its
+own name. Those tell one row from another. This one did not.
+
+`menu_language_test.lua` holds it cross-surface, on the column's stops and on
+the ship menu's sections both, because the mark was shared and a check on one
+of them would have passed while the other kept it. `column_test.lua` asks the
+same question of the stop it always asked it of.
+
+## 155. A kill says what it did to your rating, and a pickup wears a color
+
+**Status:** accepted, amending
+[decision 152](#152-a-death-floats-what-it-did-to-your-rating), which put the
+figure over the wreck and left the feed line silent, and reopening the last
+paragraph of
+[decision 151](#151-a-green-is-on-the-dial-and-taking-one-says-what-it-was),
+which left a pickup line the color of everything else in that column.
+
+**What:** three changes, all in the top right corner.
+
+The feed's line about a death ends in what the death did to this pilot's
+rating, signed: "OZONE killed KESTREL +12", "KESTREL killed OZONE -9",
+"OZONE killed WREN, you assisted +3". The same deaths that float a figure over
+the wreck are the ones that carry it here, off one condition in
+`drain_announced` rather than two, and both print through `ui.signed`, which
+signs a gain, a loss and a nought alike.
+
+The figure over the wreck stands for two and a half seconds instead of one and
+a half, at full strength for the first 0.9 of them. `M.RISE` is unchanged, so
+it now covers the same 26 points at half the speed.
+
+And the line that says what a green gave you is gold, `#ffd166`, the gold the
+corner stack draws a count in and the hangar prices a build in.
+
+**Why the figure needed a second place.** A kill pays nothing, so the rating is
+the only way two of them differ, and 152 said it in the world: over the wreck,
+for a second and a half, anchored where the death happened. That is the right
+first place, because a pilot who has just taken somebody is looking at the
+explosion. It is a bad only place. The wreck can be behind you, off the edge of
+the glass, or under a bomb going off; the glance that reads a number is the
+second glance, and by the time a player in a fight has one to spare the figure
+has gone. The feed line about the same death stands for nine seconds in a
+corner nothing moves through. So the figure is said in both places, and one
+condition in `drain_announced` writes them, which is what stops a kill floating
+a number the corner disagrees with.
+
+The longer life is Chris's, and it is the same argument one step further:
+notice and read are different lengths of time. Slowing the rise falls out of it
+rather than being chosen, and it is the half worth slowing, since the rise is
+what says the figure is leaving and a number is easier to read when it is not
+travelling.
+
+**Why gold, and why not the obvious green.** 151 left the line uncolored and
+said why: three colors in that corner are the fight, and a feed where every
+line is lit says nothing by lighting one. What that missed is which lines were
+sharing the unlit ink. Arrivals, departures, a refused crossing and a refused
+refit are all in it, and every one of them is a line a player can ignore. The
+pickup is the only line in the column about the pilot's own kit, and it was
+dressed as the five they cannot use.
+
+The obvious color is the prize green the diamond wears on the ground and the
+dot wears on the dial, and it is the one color it cannot be. The two greens in
+this column are what a kill did to your rating, `#8dffb0` for a payout and
+`#5aa874` for an assist, and the prize green sits between them: 1.4 to 1 in
+contrast against the payout, at the same hue, on a thirteen-pixel line. A third
+green there is a third light in one family, told apart by nobody at a glance,
+which is the whole of what a color in this corner is for. The prize green stays
+where it is unambiguous, on the field and on the dial.
+
+Gold is the band that was left, and it also happens to be the one that means
+this. The corner stack has said what you carry is gold since it was drawn, the
+hangar prices a build in the same gold, and a green is a thing you now carry.
+The streak is the neighbor, and what makes a streak line a streak line is the
+shimmer rather than the hue, which is a claim the feed's own code has made since
+that line was written. A still gold beside a moving one reads as a different
+kind of line.
+
+**What was considered and rejected.** Violet, which is free in the feed and
+means "in the world and nobody's" in the palette, the same thing a green is. It
+is ruled out by the note over `M.GREEN`: violet means a place, and a prize is a
+thing you pick up, which is why the diamond is not violet either. Coloring the
+line violet and the diamond green is one thing wearing two colors, and one
+thing per hue is the rule that keeps the palette honest.
+
+The feed's full ink, `#dfe9f5`, which conflicts with nothing because it is not a
+hue. It is what the phone's toast already draws an uncolored line in, so it
+would have closed a real gap between the two surfaces. It was rejected as an
+answer to the wrong question: a brighter slate says "this line matters more",
+where the corner's language is that a color says what kind of line it is.
+
+Dropping the wreck's figure now that the line carries one. The wreck is where a
+pilot is looking on the tick it happens, and the corner is where they are
+looking a second later. Neither covers the other's moment.
+
+**The cost.** A fifth kind of lit line in a column that argued for three, which
+is a real price and is the price Chris asked to pay. Nothing on the wire moved:
+`k.gain` has been on every kill message since protocol 38 and the client was
+already working the change out from the copy it holds.
+
+**Held by** `client/tests/kill_line_test.lua`, which pulls `drain_announced`
+out of the arena and runs it over the three lines that are yours, the ones that
+are not, and a watcher's seat, then sweeps every shape of death asking only
+that the line and the wreck answer together; the figure's clock is at the foot
+of the same file, pinned as what a player can read rather than as the constant
+behind it. `client/tests/greens_test.lua` runs the arena's event loop and pins
+the pickup's color by value, along with the three greens it has to stay out of.
+
+## 156. There is no landing
 
 **Status:** accepted, superseding the landing arm of
 [decision 143](#143-one-menu) and the part of
@@ -8452,7 +8669,7 @@ down under an open column, and the loading screen measured for itself. luacheck
 clean over 109 files. The playtest harness reads `screen.adrift` where it read
 `screen.landing`, and `arrive` waits for a room rather than for a front page.
 
-## 154. A dismissal is not a decision
+## 157. A dismissal is not a decision
 
 **Status:** accepted, amending [decision 136](#136-a-ship-is-one-thing-and-changing-it-costs-a-respawn),
 which made the ship panel an editor and settled its draft on the way out.
@@ -8482,7 +8699,7 @@ a respawn, four of which are the universal gesture for "never mind". A pilot
 who opened the ship stop mid-fight to see what a Lattice does, turned the
 carousel to look, and pressed escape, was respawned in a Lattice.
 
-Decision 153 made it worse before this fixed it, by making everybody a watcher
+Decision 156 made it worse before this fixed it, by making everybody a watcher
 on the way in: a stranger who opened the client and turned the carousel to
 browse hulls was dropped into a live match by clicking outside the panel.
 
@@ -8504,7 +8721,7 @@ Reverting only for a client with no seat was rejected as backwards on cost. An
 accidental commit from the stands means "you are in the game now", which is
 surprising; for a pilot it is a respawn in the middle of a fight, which is
 expensive. It also reads the same rule two ways depending on whether you hold a
-seat, which is the split decision 153 removed.
+seat, which is the split decision 156 removed.
 
 **The cost:** `SPECTATE` is unreachable while a draft stands, since the key is
 wearing the refit. Dropping the draft is escape, and the key is back. That is
@@ -8530,9 +8747,9 @@ it names come off `menu.drafted`. The playtest harness plays it: `ship-change`
 backs out of the panel, checks the pilot is still flying what they were flying,
 and presses the key.
 
-## 155. The name heads the menu
+## 158. The name heads the menu
 
-**Status:** accepted, amending [decision 153](#153-there-is-no-landing), which
+**Status:** accepted, amending [decision 156](#156-there-is-no-landing), which
 took the lockup off the live screen along with the landing it was drawn for.
 
 **What:** the wordmark stands over the column, centered on the column's own
@@ -8544,7 +8761,7 @@ the room arrives.
 
 `column_geom` measures it, next to the stops it heads.
 
-**Why:** because the name belongs to the menu, and decision 153 read it as
+**Why:** because the name belongs to the menu, and decision 156 read it as
 belonging to the landing. It was drawn only at home, so removing the landing
 removed it, and what a client that had just opened said about itself was
 nothing. The page title and the site carry the name, which is not the same as
@@ -8555,7 +8772,7 @@ watcher with the column dismissed is looking at a game, and a name laid over a
 fight is chrome; the menu is the thing that introduces the game, so the name
 heads the menu.
 
-Going down under an open panel is the rule decision 153 inherited and kept
+Going down under an open panel is the rule decision 156 inherited and kept
 without noticing it was still right: the column is one object, and a name left
 hanging over a panel that has climbed to the top of the window is the menu
 refusing to get out of the way. `at <= 0.001` is that test, and it was already
@@ -8567,7 +8784,7 @@ not be dismissed. It can now, so the mark rides `rise` with everything else.
 
 **The cost:** the column is five stops tall and the lockup adds about forty
 points over it, so on a landscape phone the pair reaches well above the middle
-of the screen where the watched hull is. That is the cost decision 153 already
+of the screen where the watched hull is. That is the cost decision 156 already
 accepted for the column, extended by one line of type; the old landing answered
 the same problem by lying the column down into a rail, and the rail went with
 the landing.

@@ -41,11 +41,18 @@ const whole = (pilot, log) => pilot.until('a full bar to spend on a ship',
   { timeout: 90000 })
 
 export async function run (pilot, { log = () => {} } = {}) {
-  const seated = await arrive(pilot, { log })
-  const was = seated.me.class
+  const first = (await arrive(pilot, { log })).me.class
+  let was = first
 
   for (let go = 1; go <= TRIES; go++) {
     await whole(pilot, log)
+    // The hull this try starts on, read now rather than carried down from
+    // arrive. What the check below is about is the turn, so its "before" has
+    // to be from just before the turn: a room seats a pilot and can move them
+    // afterwards, at a whistle or when the build they owe names another hull,
+    // and a figure taken two seconds earlier is then a reading of a ship
+    // nobody is in.
+    was = (await pilot.read()).me.class
     log(`asking for a ship, try ${go}, flying hull ${was}`)
 
     const up = await pilot.read()
@@ -108,7 +115,7 @@ export async function run (pilot, { log = () => {} } = {}) {
     // Out of the body onto the ship menu, then out of the ship stop onto the
     // bare column. None of that spends the draft: a dismissal is not a
     // decision, and the draft stands on the column with the ship stop naming
-    // it. See decision 154.
+    // it. See decision 157.
     log('backing out to the column')
     await pilot.tap('menu_back')
     await pilot.until('the ship menu again', s => !s.screen.section)
@@ -159,6 +166,6 @@ export async function run (pilot, { log = () => {} } = {}) {
     if (!flown.me.alive) throw new Error('the new ship arrived dead')
     log(`flying hull ${flown.me.class} at ` +
         `${flown.me.energy}/${flown.me.max_energy}`)
-    return { was, now: flown.me.class, tries: go }
+    return { was: first, now: flown.me.class, tries: go }
   }
 }

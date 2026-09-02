@@ -5,8 +5,20 @@
 local M = {}
 M.__index = M
 
-local LIFE = 1.4
-local HOLD = 0.25
+-- How long a figure stands, and how much of that it spends at full strength
+-- before it begins to go. It was a second and a half, which is long enough to
+-- notice and not long enough to read: a pilot who has just taken somebody is
+-- still flying, and the glance that finds the number is the second glance
+-- rather than the first. Two and a half seconds is what Chris asked for and
+-- what a figure needs, and the hold grows with it, so the number is solid for
+-- most of a second and then has the rest of its life to leave.
+--
+-- The drift is unchanged, which means it now travels the same distance at
+-- half the speed. That is the right half to slow down: the rise is what says
+-- the figure is leaving, and reading a number is easier when it is not moving
+-- fast.
+local LIFE = 2.5
+local HOLD = 0.35
 
 M.RISE = 26
 

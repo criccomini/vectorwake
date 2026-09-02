@@ -319,6 +319,22 @@ static void m_chevron(int x, int y, int w, int h, uint8_t wall) {
         if (cross || !back) m_slope_step(ox + i, oy + i, LEAN_DOWN, wall);
         if (cross || back) m_slope_step(ox + n - 1 - i, oy + i, LEAN_UP, wall);
     }
+    /* The two tiles the arms land on together carry the crossing's left and
+     * right corners, and a corner falls at the middle of a tile here rather
+     * than on the grid: the four faces meeting at the middle of an X are two
+     * pairs, and only one pair lands on tile corners. `m_slope_step` wrote
+     * these as plain wall, because the second arm found the ground taken, and
+     * plain wall is square, so an X read as two diagonals with a sixteen pixel
+     * flat on each side of its waist. A notch is that tile with the corner
+     * drawn in it. Only where the arms actually collided: `wall` may be a door
+     * or the tiles may belong to something placed first. */
+    if (cross) {
+        int cx = ox + (n - 1) / 2, cy = oy + (n - 1) / 2;
+        if (get(cx, cy) == SIM_TILE_SOLID)
+            put(cx, cy, SIM_TILE(SIM_TILE_SOLID, SIM_SOLID_NOTCH_W));
+        if (get(cx + 1, cy) == SIM_TILE_SOLID)
+            put(cx + 1, cy, SIM_TILE(SIM_TILE_SOLID, SIM_SOLID_NOTCH_E));
+    }
 }
 
 /* A bar with a cap at each end. Blocks along its length, and the caps stop a
@@ -1032,6 +1048,31 @@ static int join_nav(void) {
     return dug;
 }
 
+/* Whether any of the eight tiles around this one is a slope, which makes this
+ * one the inside of an angle rather than a notch. */
+static int beside_slope(int x, int y) {
+    for (int dy = -1; dy <= 1; dy++)
+        for (int dx = -1; dx <= 1; dx++)
+            if ((dx || dy) && SIM_TILE_CLASS(get(x + dx, y + dy)) == SIM_TILE_SLOPE)
+                return 1;
+    return 0;
+}
+
+/* Stranded ground that is not the inside of an angle: what `fill_dead` below
+ * would have filled and did not. The core reports every open tile no hull can
+ * reach and refuses none of them, since an asteroid field is hundreds; this is
+ * the count worth refusing a drawn map over, because a square notch reads as
+ * a way in and the crotch of a V does not. */
+static int dead_squares(const sim_map *m) {
+    static uint32_t *at;
+    if (!at) at = malloc((size_t)TILES * TILES * sizeof *at);
+    if (!at) return -1;
+    int n = sim_map_stranded(m, scratch, at, TILES * TILES), dead = 0;
+    for (int i = 0; i < n; i++)
+        if (!beside_slope((int)(at[i] % m->w), (int)(at[i] / m->w))) dead++;
+    return dead;
+}
+
 /* Wall in the ground no hull can reach even with every door standing open.
  *
  * What is left over after the joining above is the slivers: the tile between
@@ -1042,7 +1083,16 @@ static int join_nav(void) {
  * Filling rather than digging, because a sliver widened to a lane is a hole
  * knocked in a structure that was fine as it stood. Nothing filled here has
  * a hull's tile beside it, since a tile beside one is a tile a hull can
- * reach, so filling cannot take a lane away from anything. */
+ * reach, so filling cannot take a lane away from anything.
+ *
+ * Except the inside of an angle. Two diagonals crossing leave four wedges
+ * around the crossing, and the crotch of a V narrows to nothing: none of it
+ * is anywhere a hull fits, and all of it is what an X or a V looks like.
+ * Plugged with square wall, an X came out with a flat ledge in each of its
+ * four crotches and a bar across its waist, which is not an X. A tile with a
+ * slope beside it is the inside of an angle, and it stays open: a corner
+ * closing to a point does not read as a way in the way a square notch does,
+ * because there is no width at the end of it to be a way. */
 static int fill_dead(void) {
     size_t main_n = 0;
     mark_nav(0);
@@ -1065,6 +1115,7 @@ static int fill_dead(void) {
         if (reach[i] || SIM_TILE_CLASS(T[i]) != SIM_TILE_EMPTY) continue;
         int x = (int)(i % TILES), y = (int)(i / TILES);
         if (x < EDGE || y < EDGE || x >= TILES - EDGE || y >= TILES - EDGE) continue;
+        if (beside_slope(x, y)) continue;
         T[i] = SIM_TILE_SOLID;
         filled++;
     }
@@ -1506,7 +1557,7 @@ static int generate_match(sim_map *m, uint32_t s, match_layout layout, int quiet
             else if (c == SIM_TILE_SLOPE) halves += 1;
         }
     double solid_pct = 100.0 * (double)halves / (double)(2 * ARENA * ARENA);
-    int dead = report.stranded;
+    int dead = dead_squares(m);
     nav_regions = report.regions;
 
     if (!quiet)
@@ -1666,7 +1717,7 @@ static int generate(sim_map *m, uint32_t s, int quiet) {
             if (!seen) stranded++;
         }
 
-    int dead = report.stranded;
+    int dead = dead_squares(m);
     nav_regions = report.regions;
     if (!quiet) {
         printf("seed %u: solid %.2f%% of interior, %zu safe, %zu door (%d in"
@@ -1704,7 +1755,8 @@ static int generate(sim_map *m, uint32_t s, int quiet) {
     }
     /* And nothing left over that looks open and is not. This is the check
      * the single-tile version of all of the above could not make: it counted
-     * a one-tile notch as a way in and passed maps full of them. */
+     * a one-tile notch as a way in and passed maps full of them. The inside
+     * of an angle is not counted, for the reason `fill_dead` leaves it. */
     if (dead) {
         fprintf(stderr, "seed %u: %d open tiles no hull can reach\n", s, dead);
         return 1;

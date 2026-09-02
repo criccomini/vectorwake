@@ -220,7 +220,7 @@ you were in last, and the front end is the watcher's screen with the menu's
 column over its foot. There is no second screen to be on, so a watcher who has
 just opened the client and a pilot the whistle benched are looking at the same
 thing. See [decision 61](../architecture/decisions.md),
-[decision 153](../architecture/decisions.md) and
+[decision 156](../architecture/decisions.md) and
 [menu.md](menu.md#opening-the-client).
 
 Nothing in the rule above changes, which is the point of writing it down as a

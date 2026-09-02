@@ -10,7 +10,7 @@
 > It is not on the screen at all times. A watcher with the column dismissed is
 > looking at a game, and a name laid over a fight is chrome; the menu is what
 > introduces the game, so the name heads the menu. See
-> [decision 155](../architecture/decisions.md).
+> [decision 158](../architecture/decisions.md).
 
 > **A dismissal is not a decision.** The ship panel's draft is spent by one
 > press, the column's key, and by nothing else. Escape, the back chevron, the
@@ -34,7 +34,7 @@
 >
 > Everything below that says the panel settles when it closes is describing
 > what six ways out of one panel used to cost. See
-> [decision 154](../architecture/decisions.md).
+> [decision 157](../architecture/decisions.md).
 
 > **There is no landing.** Opening the client puts you in the stands of the
 > game you were in last, and that is an ordinary watcher's session. One screen,
@@ -57,7 +57,7 @@
 >
 > What is left of `menu.home` is `menu.adrift`: no room on the glass at all.
 > What stands in for one then is a loading screen, not a page. See
-> [decision 153](../architecture/decisions.md).
+> [decision 156](../architecture/decisions.md).
 
 > **There is one menu.** The landing and the in-match column were the same
 > drawing off two models, and this note is where they stop being two. The
@@ -184,10 +184,12 @@
 
 > **The column speaks the menu language too.** The settings stop wears no
 > mark. It carried a gauge, drawn by the tab rail's own mark table, and a rail
-> is not what this column is: it was a seventh right end in a language with
-> six, it said the word already on the row, and it sat on the caret it was
-> drawn beside. What the stop wears now is a caret, like every other stop that
-> opens something.
+> is not what this column is: it was an end of its own in a language with a
+> fixed set of them, and it said the word already on the row. No stop wears a
+> mark saying it opens either. Each carried a caret for two decisions, and
+> since every stop opens something the mark was true of all four and told a
+> hand nothing. The corner it took is the answer's now. See
+> [decision 154](../architecture/decisions.md).
 >
 > A stop with no answer beside it puts its own name in ink. The others are a
 > question at the label's weight with an answer at full strength; settings has
@@ -746,12 +748,13 @@ one key, in the order you would say them.
 The stops are decision 89, and they exist because the drawer went undiscovered:
 a first visit met one key and a hamburger, deployed into whatever the stands
 were showing, and never learned there was another game or another ship to be. A
-row is the question at its left edge and the current answer with a caret at its
-right. Account drops the account acts, which is the whole of that interface
-since decision 99 took the pilot page: sign up or set a password, roll a new
-call sign, log in or log off, with a rule between what you can do to the account
-you are and how to be a different one, and a dot on the stop for a guest with
-something to lose. Zone drops the games list; picking one leaves the room on
+row is the question at its left edge and the current answer at its right, with
+no mark saying it opens: every stop does, so a mark was true of all five and
+told a hand nothing. Account drops the account acts, which is the whole of that
+interface since decision 99 took the pilot page: sign up or set a password, roll
+a new call sign, log in or log off, with a rule between what you can do to the
+account you are and how to be a different one, and a dot on the stop for a guest
+with something to lose. Zone drops the games list; picking one leaves the room on
 screen for the stands of whichever was picked. Players opens the room. Ship
 opens the panel that is the whole of a ship: five parts over the credits they
 are bought with, with the body a carousel of the roster. Settings holds

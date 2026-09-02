@@ -12,16 +12,21 @@
 #   make -C sim build/mapgen
 #   sim/build/mapgen catalog/zones/roam/expanse.vwmap 61
 #
-# What seed 61 draws, checked with sim_map_check:
+# What seed 61 draws, as mapgen itself reports it:
 #
 #   1024 by 1024 tiles          16384 by 16384 px
-#   one region a hull can fly   nothing stranded
-#   4.37% solid                 the research's figure for a 1998 zone is 3%
+#   one region a hull can fly   no feature walled off
+#   2.69% of the interior solid the research's figure for a 1998 zone is 3%
 #   16 starts, 8 per side       one wormhole
 #
 # Four seeds were drawn and this is the one whose wall percentage sits closest
 # to the measured figure while leaving the most ground a hull can reach.
+#
+# Redrawn twice since, both times on the same seed and with nothing moved but
+# the tiles named: once when `fill_dead` stopped plugging the inside of an
+# angle, and once when the two tiles at the middle of an X became notches. The
+# 23 crossings on this map carry 46 of them.
 
 tool = "mapgen"
 seed = 61
-hash = "cd43df5e"
+hash = "df0054b7"

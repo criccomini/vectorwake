@@ -201,7 +201,8 @@ for name, val in editor:gmatch("(S_[%w_]+) = (%d+)") do
 end
 
 for _, name in ipairs({"BORDER", "ROCK_A", "ROCK_B", "ROCK_BIG",
-                       "ROCK_BODY", "STATION", "STATION_BODY"}) do
+                       "ROCK_BODY", "STATION", "STATION_BODY",
+                       "NOTCH_W", "NOTCH_E", "NOTCH_N", "NOTCH_S"}) do
     local want = define(simh, "SIM_SOLID_" .. name)
     check("world.lua's V_" .. name .. " is the core's",
           want ~= nil and variants["V_" .. name] == want,
