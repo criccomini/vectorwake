@@ -488,27 +488,32 @@ ui.debug = false
 -- after: a hull that simply stops being yours reads as a disconnection.
 --
 -- The countdown is read off the drawn text because the arithmetic is the
--- whole of it. Ticks in, seconds out, rounded up so the last second is a 1:
--- a readout that sits on zero while the hull is still there is a readout
--- saying the wrong thing at the one moment anybody is looking at it.
+-- whole of it. Ticks in, minutes and seconds out, rounded up so the last
+-- second is a 1: a readout that sits on zero while the hull is still there is
+-- a readout saying the wrong thing at the one moment anybody is looking at it.
 
 frame()
 check("nothing is said in open space", not says("SAFE ZONE"))
 
 frame({safe = 300, safe_limit = 6000})
 check("a safe zone names itself", says("SAFE ZONE"))
-check("and says what is left", says("seat released in 57"), drawn())
+check("and says what is left", says("moving to spectator in 0:57"), drawn())
+
+frame({safe = 300, safe_limit = 65535})
+check("a wait past a minute is clocked rather than counted",
+      says("moving to spectator in 10:53"), drawn())
 
 frame({safe = 5951, safe_limit = 6000})
 check("the last second is a one rather than a zero",
-      says("seat released in 1"), drawn())
+      says("moving to spectator in 0:01"), drawn())
 
 frame({safe = 6000, safe_limit = 6000})
-check("and it never goes negative", says("seat released in 0"), drawn())
+check("and it never goes negative",
+      says("moving to spectator in 0:00"), drawn())
 
 frame({safe = 300, safe_limit = 0})
 check("a room with no limit still names the zone", says("SAFE ZONE"))
-check("and counts nothing down", not says("seat released"), drawn())
+check("and counts nothing down", not says("moving to spectator"), drawn())
 
 -- --- and the corner says nothing about a room there is only one of --------
 --
