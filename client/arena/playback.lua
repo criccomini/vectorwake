@@ -125,7 +125,6 @@ function M.load(payload, sim, net)
     net.my_team = subject and sim.ship_team(subject) or 255
     net.me = 255
     net.watching = true
-    net.on_air = false
     net.banner = "MATCH REPLAY"
     net.stats.wire = "replay"
     net.stats.rtt = 0

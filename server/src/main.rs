@@ -5291,46 +5291,38 @@ mod tests {
     }
 
     #[test]
-    fn the_tally_means_somebody_is_looking_not_that_a_camera_is_pointed() {
-        // The distinction this pins is the whole of what the mark is worth. A
-        // channel with no audience still picks a subject and still fills its
-        // ring, because a watcher arriving should land in a warm picture; a
-        // pilot alone in that room is being seen by nobody and must be told
-        // nothing. And the channel runs behind, so being picked is seconds
-        // away from being shown.
+    fn being_watched_means_somebody_is_looking_not_that_a_camera_is_pointed() {
+        // The distinction this pins is the whole of what the set is worth,
+        // and it decides who gets a disclosure row in the pilot log. A channel
+        // with no audience still picks a subject and still fills its ring,
+        // because a watcher arriving should land in a warm picture; a pilot
+        // alone in that room is being seen by nobody and nothing about them
+        // has been disclosed. And the channel runs behind, so being picked is
+        // seconds away from being shown.
+        //
+        // Read off the set rather than off the wire. The room told the subject
+        // on `S2C_ONAIR` for as long as the client wore a tally, and the row
+        // in the log is what is left; a unit test cannot see that row, since
+        // filing it wants a database, but the set is what gates it and the
+        // edge it is filed on.
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
-        let (ship, _, mut rx) = seat_rx(&mut a, "starred");
+        let (ship, _, _rx) = seat_rx(&mut a, "starred");
         // Warming the ring takes longer than the lag ladder's patience with a
         // pilot who sends nothing, and a benched pilot is no camera subject.
         a.lag_policy.spectate_silence_ticks = u32::MAX;
         let mut buf = vec![0u8; sim::PACK_MAX];
 
-        // Drained as we go: the outbound queue is bounded and drops rather
-        // than waits, so a test that only looked at the end would be reading
-        // whatever survived instead of what was sent.
-        let mut said: Vec<u8> = Vec::new();
-        let mut run =
-            |a: &mut Room, rx: &mut mpsc::Receiver<Message>, said: &mut Vec<u8>, n: usize| {
-                for _ in 0..n {
-                    for _ in 0..SNAPSHOT_EVERY {
-                        a.tick();
-                    }
-                    a.broadcast_snapshot(&mut buf);
-                    for m in drain(rx) {
-                        if m.first() == Some(&S2C_ONAIR) {
-                            said.push(m[1]);
-                        }
-                    }
+        let mut run = |a: &mut Room, n: usize| {
+            for _ in 0..n {
+                for _ in 0..SNAPSHOT_EVERY {
+                    a.tick();
                 }
-            };
+                a.broadcast_snapshot(&mut buf);
+            }
+        };
 
         // Long enough for the ring to warm and start serving.
-        run(
-            &mut a,
-            &mut rx,
-            &mut said,
-            (CHANNEL_DELAY / SNAPSHOT_EVERY) as usize + 2,
-        );
+        run(&mut a, (CHANNEL_DELAY / SNAPSHOT_EVERY) as usize + 2);
         assert_eq!(a.channel.subject, Some(ship), "the camera did pick them");
         assert_eq!(
             a.channel.showing,
@@ -5338,20 +5330,17 @@ mod tests {
             "and the ring is serving them"
         );
         assert!(a.on_air.is_empty(), "but there is no audience");
-        assert!(said.is_empty(), "so they were told nothing: {said:?}");
 
         // Somebody arrives on the channel.
         let (tx, _keep) = mpsc::channel(OUT_QUEUE);
         let w = a.watch_join(Seat::guest("gallery", false), tx).unwrap();
-        run(&mut a, &mut rx, &mut said, 5);
+        run(&mut a, 5);
         assert!(a.on_air.contains(&ship), "now somebody is looking");
-        assert_eq!(said, vec![1], "told once, on the edge");
 
         // And leaves.
         assert!(a.leave_watcher(w));
-        run(&mut a, &mut rx, &mut said, 5);
-        assert!(a.on_air.is_empty());
-        assert_eq!(said, vec![1, 0], "and told once when it stopped");
+        run(&mut a, 5);
+        assert!(a.on_air.is_empty(), "and the room stops counting them seen");
     }
 
     #[test]

@@ -115,7 +115,7 @@ export async function run (pilot, { log = () => {} } = {}) {
     // Out of the body onto the ship menu, then out of the ship stop onto the
     // bare column. None of that spends the draft: a dismissal is not a
     // decision, and the draft stands on the column with the ship stop naming
-    // it. See decision 159.
+    // it. See decision 160.
     log('backing out to the column')
     await pilot.tap('menu_back')
     await pilot.until('the ship menu again', s => !s.screen.section)

@@ -5,7 +5,7 @@
 -- what stands over it is the column every pilot in that room raises with the
 -- same key: the same stops in the same order, dismissed the same way, with the
 -- same radar and roster and clock behind it. There is no second screen and no
--- second state to be in. See decision 158.
+-- second state to be in. See decision 159.
 --
 -- One list on screen at a time, a breadcrumb above it, and a stack behind it.
 -- Down and up move, right or enter descends or acts, left or escape goes
@@ -1710,7 +1710,7 @@ function M.stops()
     -- report this whole column exists to avoid: a player opens the client,
     -- looks at a game with fourteen people in it, and finds no way to see who
     -- any of them are. A watcher is exactly who wants that list. See
-    -- decision 158.
+    -- decision 159.
     out[#out + 1] = {stop = "players", label = "players",
                      -- Your side, quoted the way a name is quoted
                      -- everywhere; the interface's own word when you are
@@ -2207,7 +2207,7 @@ function M.close()
     -- decision: escape, the menu key and a press on the glass beside the
     -- column all mean "never mind", and the one control that spends a draft
     -- is the key. The panel used to settle on any of the six ways out of it,
-    -- so a hand waved past the glass cost a respawn. See decision 159.
+    -- so a hand waved past the glass cost a respawn. See decision 160.
     --
     -- After the commit paths rather than instead of them: `draft_keep` clears
     -- the draft first, so this is a no-op on the way out of a press that
@@ -2314,7 +2314,7 @@ function M.view()
                  -- own, and it is the way back out to the stands of the same
                  -- game. A seat and a ship drafted over it, and it is the
                  -- refit: the one press that spends the draft, since a
-                 -- dismissal no longer does. See decisions 140 and 159.
+                 -- dismissal no longer does. See decisions 140 and 160.
                  key = M.flying()
                      and (M.drafted() and "fly" or "spectate")
                      or "play",

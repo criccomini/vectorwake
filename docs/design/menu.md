@@ -10,7 +10,7 @@
 > It is not on the screen at all times. A watcher with the column dismissed is
 > looking at a game, and a name laid over a fight is chrome; the menu is what
 > introduces the game, so the name heads the menu. See
-> [decision 160](../architecture/decisions.md).
+> [decision 161](../architecture/decisions.md).
 
 > **A dismissal is not a decision.** The ship panel's draft is spent by one
 > press, the column's key, and by nothing else. Escape, the back chevron, the
@@ -34,7 +34,7 @@
 >
 > Everything below that says the panel settles when it closes is describing
 > what six ways out of one panel used to cost. See
-> [decision 159](../architecture/decisions.md).
+> [decision 160](../architecture/decisions.md).
 
 > **There is no landing.** Opening the client puts you in the stands of the
 > game you were in last, and that is an ordinary watcher's session. One screen,
@@ -57,7 +57,7 @@
 >
 > What is left of `menu.home` is `menu.adrift`: no room on the glass at all.
 > What stands in for one then is a loading screen, not a page. See
-> [decision 158](../architecture/decisions.md).
+> [decision 159](../architecture/decisions.md).
 
 > **There is one menu.** The landing and the in-match column were the same
 > drawing off two models, and this note is where they stop being two. The
@@ -761,13 +761,14 @@ opens the panel that is the whole of a ship: five parts over the credits they
 are bought with, with the body a carousel of the roster. Settings holds
 everything about the machine.
 
-The key breathes on the same slow swell the on-air tally uses, with its edge
-floored well above dark so the trough never reads as a key that stopped
-working. Enter is the same press, because a keyboard should not have to walk to
-the one control the screen exists for. It does what the ship stop says: the hull
-on that stop is the hull this press flies, since turning the carousel is the
-whole of choosing one. What it asks is the room already on the wire, not a new
-one, so it costs a message rather than a handshake.
+The key breathes on a slow swell rather than a blink, with its edge floored
+well above dark so the trough never reads as a key that stopped working. A
+blink held for minutes is something a reader learns to stop seeing. Enter is
+the same press, because a keyboard should not have to walk to the one control
+the screen exists for. It does what the ship stop says: the hull on that stop
+is the hull this press flies, since turning the carousel is the whole of
+choosing one. What it asks is the room already on the wire, not a new one, so
+it costs a message rather than a handshake.
 
 The column comes down. Escape, the menu key, or a press on the glass beside it
 put it away, and `MENU` at the foot of the screen brings it back, which is what

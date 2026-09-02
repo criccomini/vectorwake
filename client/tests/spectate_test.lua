@@ -9,7 +9,7 @@
 -- no rail it lay down into on a short window, and nothing taken off the HUD
 -- because this client has not pressed play yet. What it gets is the five
 -- stops, the one key, the radar and the roster, which is what a benched pilot
--- in the same room gets. See decision 158.
+-- in the same room gets. See decision 159.
 --
 -- It is one column drawn by one function off one view (decision 143). What is
 -- checked here is that column over a room, and the room still being readable
@@ -432,7 +432,7 @@ end
 -- into a rail along the foot. Both the lockup and the rule about the middle
 -- belonged to the landing: the column is a scrim over a fight that does not
 -- pause now, wherever it is raised, and it is the same scrim a pilot in the
--- room raises over the same middle. See decision 158.
+-- room raises over the same middle. See decision 159.
 local SHAPES = {
     {1440, 810, "desktop"},
     {844, 390, "sideways"},
@@ -526,7 +526,7 @@ end
 -- column is one object and a name left hanging over an open panel is the menu
 -- refusing to get out of the way. It comes back when the panel does, and it
 -- goes with the column when the column is dismissed: the name belongs to the
--- menu rather than to the screen. See decision 160.
+-- menu rather than to the screen. See decision 161.
 do
     for _, s in ipairs(SHAPES) do
         local w, h, shape = s[1], s[2], s[3]
@@ -581,7 +581,7 @@ check("and says nothing about the channel it is watching",
 -- watcher, on the reading that the room behind the front page was somebody
 -- else's; what that produced was a stranger looking at fourteen people with
 -- no way to see who any of them were, and a fight with no way to tell where
--- in the map it was happening. See decision 158.
+-- in the map it was happening. See decision 159.
 -- With the column down, which is what dismissing it leaves: an ordinary
 -- watcher's screen, and every instrument on it takes a press.
 frame(1440, 810, {column = false})
@@ -2080,7 +2080,7 @@ check("and a band that opens the roster", box("players_open") ~= nil)
 -- It used to be the landing with those taken off it, laid out to the landing's
 -- own measure so that nothing moved when the stands arrived. There is no
 -- landing to keep still for, so it is measured for itself: this is a loading
--- screen giving way to a game. See decision 158.
+-- screen giving way to a game. See decision 159.
 do
     for _, s in ipairs(SHAPES) do
         local w, h, shape = s[1], s[2], s[3]

@@ -14,7 +14,7 @@ local M = {}
 -- landing: no radar, no roster, no menu key, a wordmark over a column that
 -- could not be put away. A watcher is a watcher wherever it arrived from, so
 -- the second meaning is gone and a client with no seat draws the same game
--- everybody else in the room is looking at. See decision 158.
+-- everybody else in the room is looking at. See decision 159.
 --
 -- Nothing here opens the menu. It used to stand itself up whenever there was
 -- no seat, and later whenever there was no room, so a player who had asked for

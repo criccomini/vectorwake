@@ -282,7 +282,7 @@ menu.watching = false
 -- one press that spends a draft in a match. It names the hull, because that
 -- is the whole of what the press does. From the stands the key already means
 -- "in whatever the ship stop says", so there is nothing to add out there.
--- See decision 159.
+-- See decision 160.
 menu.draft_open()
 menu.pick_profile(1)
 check("a seat with a ship drafted over it is offered the refit",
@@ -1835,7 +1835,7 @@ do
     -- press on the glass beside it, or the back chevron all cost a respawn:
     -- a dismissal is not a decision. What spends a draft now is the column's
     -- key, and everything that puts the column away drops one. See
-    -- decision 159.
+    -- decision 160.
     menu.class = 0
     menu.kit = nil
     menu.open = true

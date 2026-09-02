@@ -4203,9 +4203,8 @@ impl Room {
             } else {
                 Some(pool[(self.channel.next_rand() % pool.len() as u64) as usize])
             };
-            // Who the camera is on. Nobody is told anything here: being
-            // picked is not being seen, and what a pilot is owed is the
-            // second one. See `refresh_on_air`.
+            // Who the camera is on. Being picked is not being seen, and it
+            // is the second one that gets a row. See `refresh_on_air`.
             self.channel.subject = pick;
             self.channel.hold = CHANNEL_HOLD;
         }
@@ -4299,15 +4298,21 @@ impl Room {
         self.refresh_on_air();
     }
 
-    /// Who is being looked at, and telling them when that changes.
+    /// Who is being looked at, for the record of it.
     ///
-    /// The tally has to mean "somebody is seeing you", so it is derived from
-    /// the audience rather than from the camera: the frame going out shows
-    /// you, and there is somebody in the stands to see it. That is not the
-    /// same as the channel having picked you, which is what this used to
-    /// announce: a pilot alone in a room with no watchers at all wore the
-    /// tally, and a pilot the camera had just landed on wore it for the whole
-    /// delay before a single frame of them was served.
+    /// This has to mean "somebody is seeing you", so it is derived from the
+    /// audience rather than from the camera: the frame going out shows you,
+    /// and there is somebody in the stands to see it. That is not the same as
+    /// the channel having picked you, which is what it used to track: a pilot
+    /// alone in a room with no watchers at all counted as watched, and a pilot
+    /// the camera had just landed on counted for the whole delay before a
+    /// single frame of them was served.
+    ///
+    /// It told the pilot too, on `S2C_ONAIR`, and the client wore a tally in
+    /// the corner. Both are gone. What is left is the log row, which is the
+    /// half that was never about the interface: what the room disclosed about
+    /// somebody who did not choose to be watched is worth being able to answer
+    /// for later, whether or not anything on their screen said so at the time.
     pub(crate) fn refresh_on_air(&mut self) {
         let mut lit: std::collections::HashSet<u8> = std::collections::HashSet::new();
         if !self.watchers.is_empty() {
@@ -4318,22 +4323,11 @@ impl Room {
         if lit == self.on_air {
             return;
         }
-        // Edges only. A player who is still being watched hears nothing,
-        // which is what makes this safe to run every snapshot.
-        for ship in self.on_air.difference(&lit) {
-            if let Some(p) = self.players.values().find(|p| p.ship == *ship) {
-                let _ = p.tx.try_send(Message::Binary(vec![S2C_ONAIR, 0]));
-            }
-        }
+        // The rising edge only, so a pilot who goes on being watched files one
+        // row rather than one a snapshot. That is what makes this safe to run
+        // every snapshot, and it is bounded by real spectating: with nobody in
+        // the stands this set is empty and no row is ever written.
         for ship in lit.difference(&self.on_air) {
-            if let Some(p) = self.players.values().find(|p| p.ship == *ship) {
-                let _ = p.tx.try_send(Message::Binary(vec![S2C_ONAIR, 1]));
-            }
-            // The rising edge only. A pilot is told on the wire that they are
-            // being watched, and what the room disclosed about somebody who
-            // did not choose to be watched is worth being able to answer for
-            // later. Bounded by real spectating: with nobody in the stands
-            // this set is empty and no row is ever written.
             if let Some(seat) = self.names.get(ship).cloned() {
                 self.note(pilot::ON_AIR, &seat, serde_json::json!({ "ship": ship }));
             }

@@ -8675,7 +8675,54 @@ leave provisional. The client's death figure is gated on the contributor byte
 the client stops counting games off kills, since in these zones the games are
 matches and come with the roster. No wire change.
 
-## 158. There is no landing
+## 158. Nobody is told they are on camera
+
+**Status:** accepted, amending
+[decision 156](#156-the-corner-is-the-fight), which left the on-air tally
+standing as the one thing in the top left corner.
+
+**What:** the tally is gone, and the corner with it. `corner_row` in
+`client/arena/ui.lua` is deleted whole, along with `TOP.chip_right`, which was
+how far the chips reached across and is nothing now: the map's width cap falls
+back to the plain 124 points it always resolved to, and the clock band gets the
+left of the row back, so two names fit on a slightly narrower window than
+before.
+
+The wire goes with it. `S2C_ONAIR` is not sent, `net.on_air` and the tag it
+parsed are deleted, and tag 13 is retired in `protocol.rs` rather than freed:
+a build in the field still listens on it and would take whatever arrived there
+as that message, so reusing the number wants a bump. `CLIENT_PROTOCOL` does
+not move for this. Nothing misparses, which is what a bump is for; a stale
+build simply never lights a chip, which is what a room with no watchers looked
+like anyway.
+
+**What stays.** `Room::refresh_on_air` keeps its set and keeps filing an
+`on_air` row on the rising edge. That was always two jobs in one function, and
+only one of them was about the interface: what the room disclosed about
+somebody who did not choose to be watched is worth being able to answer for
+later, whether or not anything on their screen said so at the time. The admin
+console's activity filter reads those rows and is untouched.
+
+**Why, and what it costs.** The cost is the honest part, so it goes first: a
+pilot can no longer tell that the room is looking at them. Two minutes on
+camera is something a pilot could play around, and that is gone. The argument
+that takes it anyway is the one that took the other five chips. The corner is
+the part of the screen the fight is in, and every chip that stood there was
+either a control the interface offered somewhere better or a caption on
+something already visible. This one was neither, which is why it outlived the
+others, and it is still a red mark swelling in the corner of a fight for a
+fact a pilot can do very little with. The disclosure it announced is recorded
+either way.
+
+`band_test.lua` measured the top row against whatever stood in that corner,
+first the ROOM chip and then the tally. It reads the row off the clock's own
+foot and the link meter's box now, which meet on one line, and three checks
+about the map that had been silently skipped since the ROOM chip went are
+anchored again and running. `watch_test.lua` pinned the two edges of the
+notice; it pins that a byte on tag 13 now moves nothing. The server test that
+read the sends reads the set, which is what gates the log row.
+
+## 159. There is no landing
 
 **Status:** accepted, superseding the landing arm of
 [decision 143](#143-one-menu) and the part of
@@ -8762,7 +8809,7 @@ down under an open column, and the loading screen measured for itself. luacheck
 clean over 109 files. The playtest harness reads `screen.adrift` where it read
 `screen.landing`, and `arrive` waits for a room rather than for a front page.
 
-## 159. A dismissal is not a decision
+## 160. A dismissal is not a decision
 
 **Status:** accepted, amending [decision 136](#136-a-ship-is-one-thing-and-changing-it-costs-a-respawn),
 which made the ship panel an editor and settled its draft on the way out.
@@ -8792,7 +8839,7 @@ a respawn, four of which are the universal gesture for "never mind". A pilot
 who opened the ship stop mid-fight to see what a Lattice does, turned the
 carousel to look, and pressed escape, was respawned in a Lattice.
 
-Decision 158 made it worse before this fixed it, by making everybody a watcher
+Decision 159 made it worse before this fixed it, by making everybody a watcher
 on the way in: a stranger who opened the client and turned the carousel to
 browse hulls was dropped into a live match by clicking outside the panel.
 
@@ -8814,7 +8861,7 @@ Reverting only for a client with no seat was rejected as backwards on cost. An
 accidental commit from the stands means "you are in the game now", which is
 surprising; for a pilot it is a respawn in the middle of a fight, which is
 expensive. It also reads the same rule two ways depending on whether you hold a
-seat, which is the split decision 158 removed.
+seat, which is the split decision 159 removed.
 
 **The cost:** `SPECTATE` is unreachable while a draft stands, since the key is
 wearing the refit. Dropping the draft is escape, and the key is back. That is
@@ -8840,9 +8887,9 @@ it names come off `menu.drafted`. The playtest harness plays it: `ship-change`
 backs out of the panel, checks the pilot is still flying what they were flying,
 and presses the key.
 
-## 160. The name heads the menu
+## 161. The name heads the menu
 
-**Status:** accepted, amending [decision 158](#158-there-is-no-landing), which
+**Status:** accepted, amending [decision 159](#159-there-is-no-landing), which
 took the lockup off the live screen along with the landing it was drawn for.
 
 **What:** the wordmark stands over the column, centered on the column's own
@@ -8854,7 +8901,7 @@ the room arrives.
 
 `column_geom` measures it, next to the stops it heads.
 
-**Why:** because the name belongs to the menu, and decision 158 read it as
+**Why:** because the name belongs to the menu, and decision 159 read it as
 belonging to the landing. It was drawn only at home, so removing the landing
 removed it, and what a client that had just opened said about itself was
 nothing. The page title and the site carry the name, which is not the same as
@@ -8865,7 +8912,7 @@ watcher with the column dismissed is looking at a game, and a name laid over a
 fight is chrome; the menu is the thing that introduces the game, so the name
 heads the menu.
 
-Going down under an open panel is the rule decision 158 inherited and kept
+Going down under an open panel is the rule decision 159 inherited and kept
 without noticing it was still right: the column is one object, and a name left
 hanging over a panel that has climbed to the top of the window is the menu
 refusing to get out of the way. `at <= 0.001` is that test, and it was already
@@ -8877,7 +8924,7 @@ not be dismissed. It can now, so the mark rides `rise` with everything else.
 
 **The cost:** the column is five stops tall and the lockup adds about forty
 points over it, so on a landscape phone the pair reaches well above the middle
-of the screen where the watched hull is. That is the cost decision 158 already
+of the screen where the watched hull is. That is the cost decision 159 already
 accepted for the column, extended by one line of type; the old landing answered
 the same problem by lying the column down into a rail, and the rail went with
 the landing.

@@ -162,11 +162,16 @@ check("and it is the same one byte",
       string.byte(sent[#sent], 1) == 9 and #sent[#sent] == 1,
       "sent " .. tostring(#sent[#sent]) .. " bytes")
 
--- On air, and off again.
+-- Tag 13 was the on-air notice, which told the channel's subject that somebody
+-- was watching them. The tally it fed came off the HUD with the rest of that
+-- corner and the room stopped sending it; what the disclosure leaves behind is
+-- a row in the pilot log, which is the server's side of it. A build in the
+-- field still listens on 13, so this pins that a byte arriving there now is
+-- read as nothing rather than as some other message.
+local subject_was = net.subject
 deliver(string.char(13, 1))
-check("the channel tells its subject", net.on_air)
-deliver(string.char(13, 0))
-check("and tells them when the camera moves on", not net.on_air)
+check("a tag nobody speaks for any more moves nothing",
+      net.subject == subject_was)
 
 -- The roster's second section: watchers, by name, after the ships.
 -- ship 0, label 1, rating 712, games 3, team 2, then the three score fields

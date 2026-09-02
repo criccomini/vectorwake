@@ -53,7 +53,6 @@ local S2C_MAP, S2C_SETTINGS, S2C_YIELD, S2C_TEAMS = 9, 10, 11, 12
 -- You are the room channel's subject, or you have stopped being it. The
 -- channel's camera picks you without asking, so being told is the one
 -- courtesy it owes: two minutes on air is something a pilot can play around.
-local S2C_ONAIR = 13
 -- One match state: flags, seconds left, a kill count per side, and its optional
 -- result film and Ladder progress. A second's resolution is what the clock
 -- draws, and one packet keeps every part of a transition together.
@@ -132,9 +131,6 @@ M.watching = false
 -- Whose eyes the last snapshot was: whoever the room channel is on. 255 when
 -- the room is empty and the camera holds the middle.
 M.subject = nil
--- Whether this pilot is the channel's subject right now, for the mark that
--- says so.
-M.on_air = false
 -- How this seat came about, off the end of the welcome. Only the two the pilot
 -- did not ask for are named, because those are the ones owed a sentence.
 -- Published, because the words that go with them belong to the feed that
@@ -1133,10 +1129,7 @@ local function adopt_lifecycle(epoch, watching, subject)
     M.watching = watching
     M.me = watching and 255 or subject
     sim.set_mortal(M.me)
-    if not watching then
-        M.subject = nil
-        M.on_air = false
-    end
+    if not watching then M.subject = nil end
     return true
 end
 
@@ -1559,8 +1552,6 @@ local function on_message(s)
         if RETRYABLE[M.deny_code] then
             M.denied = M.denied .. " (another server for this game may have room)"
         end
-    elseif kind == S2C_ONAIR then
-        M.on_air = string.byte(s, 2) == 1
     elseif kind == S2C_MATCH and #s >= 4 then
         on_match(s)
     elseif kind == S2C_SAID and #s >= 3 then
@@ -1799,7 +1790,6 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room, instance)
     -- rather than a pilot, and the next welcome names the real one.
     sim.set_mortal(255)
     M.subject = nil
-    M.on_air = false
     -- A bench belongs to the room it happened in. Carried across, it would be
     -- said over the first frame of the next one.
     M.benched = nil

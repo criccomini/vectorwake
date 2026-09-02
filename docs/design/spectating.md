@@ -78,33 +78,33 @@ with the follow it granted, and nothing in the shipped catalog held it. The
 admin surface wanted a way in here to see a game rather than a number, which
 the channel gives it.
 
-**The subject is told, when somebody is actually looking.** The tally means a
-person is seeing you, not that a camera is pointed at you, and those are two
-different facts here. The channel picks a subject and fills its ring whether
-or not anybody is on it, so an arriving watcher lands in a warm picture rather
-than staring at the delay; and the channel runs behind, so a pilot the camera
-has just landed on is seconds away from being shown. So `S2C_ONAIR` is derived
-from the audience: the frame going out is centered on you, and there is at
-least one person in the stands to see it. Edges only, recomputed every
-snapshot.
+**Being watched is recorded, when somebody is actually looking.** What the
+room counts is that a person is seeing you, not that a camera is pointed at
+you, and those are two different facts here. The channel picks a subject and
+fills its ring whether or not anybody is on it, so an arriving watcher lands in
+a warm picture rather than staring at the delay; and the channel runs behind,
+so a pilot the camera has just landed on is seconds away from being shown. So
+the set is derived from the audience: the frame going out is centered on you,
+and there is at least one person in the stands to see it. Rising edge only,
+recomputed every snapshot, and each edge files an `on_air` row in the pilot
+log.
 
-It is a red tally beside the MENU key, swelling slowly rather
-than blinking, since it has to hold attention for minutes and a blink that
-long is something a player stops seeing. Two minutes on air is something a
-pilot can play around, and only if they know.
+The subject used to be told as well, on `S2C_ONAIR`, and wore a red tally in
+the top left corner of the HUD. Both are gone with the rest of that corner.
+What is left is the log row, which is the half that was never about the
+screen: what the room disclosed about somebody who did not choose to be
+watched is worth being able to answer for later, whether or not anything on
+their screen said so at the time.
 
-Everybody watching is named in the roster, staff included, which is what makes
-the tally worth reading: the room can see who is in the stands and the subject
-can see that the camera is on them. Covert observation is the invisibility
-capability, and when it arrives it should take the roster row and the tally
-together rather than half of each.
+What that costs is real and is worth naming. A pilot can no longer tell they
+are on camera, and two minutes on air is something a pilot could have played
+around. The argument for taking it anyway is the argument that took the rest of
+the corner: it was chrome in the one part of the screen that should be the
+fight, and every hull on screen already wears somebody else's call sign.
 
-It sat at the top of the middle first, and could not stay: that strip carries
-the flag marks and the round's banner, both centered, and a notice laid over
-them read as a fault in the flags rather than as a fact about you. Those are
-about the round; this is about you, like the keys it now sits with. Being on
-that row also means the map opening across the corner keeps clear of it under
-the rule that already keeps it clear of the keys.
+Everybody watching is still named in the roster, staff included, so the room
+can see who is in the stands. Covert observation is the invisibility
+capability.
 
 ## What a watcher receives
 
@@ -170,12 +170,12 @@ this client's to aim. The arrows used to walk it along the occupied seats and
 a tap on either half of a phone screen did the same; both are gone, along with
 the WATCH key the info box used to carry on a teammate. Nothing is left in
 their place. A green play mark and the word CHANNEL sat in the corner row for
-a while, in the slot the on-air tally uses, on the argument that a watcher is
+a while, in the slot the on-air tally used, on the argument that a watcher is
 never on air and the two are the same kind of fact about the connection. They
-are not the same kind of fact. The tally is a warning, because being on air
-changes how you fly; a watcher being a watcher changes nothing, and every hull
-on screen wears somebody else's call sign while none wears yours, which says
-it already.
+were not the same kind of fact: the tally was a warning and a watcher being a
+watcher changes nothing. Every hull on screen wears somebody else's call sign
+while none wears yours, which says it already. The corner is empty now and
+neither is drawn.
 
 The team list goes to watchers too: their side, and no open doors, because a
 watcher crosses nothing until they take a hull again.
@@ -220,7 +220,7 @@ you were in last, and the front end is the watcher's screen with the menu's
 column over its foot. There is no second screen to be on, so a watcher who has
 just opened the client and a pilot the whistle benched are looking at the same
 thing. See [decision 61](../architecture/decisions.md),
-[decision 158](../architecture/decisions.md) and
+[decision 159](../architecture/decisions.md) and
 [menu.md](menu.md#opening-the-client).
 
 Nothing in the rule above changes, which is the point of writing it down as a
@@ -235,9 +235,10 @@ count that used to describe a handful of interested people now describes
 everybody who has opened the site. Two consequences are accepted rather than
 fixed. A room fills its watcher slots before its seats, which arena servers
 answer by opening rooms as they fill. And the roster carries a row for every
-drive-by, so a pilot is on air more of the time than the tally was designed
-for: that dilutes what it says, and the alternative is an unnamed watcher,
-which is the second kind of watcher this design spent real effort deleting.
+drive-by, so a pilot is on air more of the time than the on-air row was
+designed for: that thins out what a row means, and the alternative is an
+unnamed watcher, which is the second kind of watcher this design spent real
+effort deleting.
 
 ## Where the door is
 

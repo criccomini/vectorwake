@@ -2374,9 +2374,6 @@ function update(self, dt)
             -- question every instrument asks is which end of the gun you are
             -- on rather than which end they are.
             side = eye_team(),
-            -- You are the channel's subject: the camera is on you, and the
-            -- mark that says so is the one courtesy the channel owes.
-            on_air = net.on_air,
             watchers = net.watchers,
             -- Whether the column is standing over the room, open or still on
             -- its way down. It is drawn for as long as it is on screen, and
@@ -2531,7 +2528,7 @@ function update(self, dt)
     end
     -- The ship panel coming up, which is where a draft starts. Nothing
     -- happens when it goes: the draft stands on the column, the ship stop
-    -- names what is pending, and the key is what spends it. See decision 159.
+    -- names what is pending, and the key is what spends it. See decision 160.
     local ship_up = menu.open and menu.stop_open() == "ship"
     if ship_up and not self.ship_panel_up then menu.draft_open() end
     self.ship_panel_up = ship_up
@@ -2685,7 +2682,7 @@ end
 -- meanings for the ship stop, two screens with two sets of instruments, and
 -- what it bought was a picture behind a panel. A watcher connection is a
 -- session; the pilot in it has no hull yet, which is the same thing a benched
--- pilot has. See decision 158.
+-- pilot has. See decision 159.
 --
 -- Nothing about a seat is decided here. `menu_go` and the TAKE SEAT chip ask
 -- the room for a hull on the connection this already made, so pressing play
@@ -2751,7 +2748,7 @@ end
 -- And it is the press that spends a draft from the stands: the hull it asks
 -- for is whatever the ship stop names, which is the drafted one where the
 -- panel left something pending. Kept before the close, since closing drops a
--- draft nobody spent. See decision 159.
+-- draft nobody spent. See decision 160.
 --
 -- It used to route through `apply_menu("ship")`, and decision 136 took the
 -- watching arm out of that function when the ship stop learned to draft: both
@@ -2807,7 +2804,7 @@ end
 --
 -- It used to say what *closing* would do, because closing is what settled the
 -- draft. Six ways out of a panel all spending a respawn is a menu that acts on
--- a hand waved past it. See decision 159.
+-- a hand waved past it. See decision 160.
 function ship_foot()
     if not menu.drafted() then return nil end
     if watching then return "PLAY takes a seat in it" end
@@ -3058,7 +3055,7 @@ function menu_act(self, action, value)
     --
     -- Which of the three it is comes off whether this client holds a seat and
     -- whether the ship panel left a hull undecided over it. See decisions 143
-    -- and 159.
+    -- and 160.
     if action == "menu_go" then
         ui.col_sel, ui.col_sel_value = nil, nil
         ui.col_sect, ui.col_hull = nil, nil
