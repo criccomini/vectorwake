@@ -528,6 +528,50 @@ for _, s in ipairs(SHAPES) do
     LAND.zone = was
 end
 
+-- --- the name heads the column ----------------------------------------------
+--
+-- The lockup stands over the column and goes when a stop opens, because the
+-- column is one object and a name left hanging over an open panel is the menu
+-- refusing to get out of the way. It comes back when the panel does, and it
+-- goes with the column when the column is dismissed: the name belongs to the
+-- menu rather than to the screen. See decision 155.
+do
+    for _, s in ipairs(SHAPES) do
+        local w, h, shape = s[1], s[2], s[3]
+        frame(w, h)
+        local name = word("vectorwake")
+        local top = stop("account")
+        check(shape .. " heads the column with the name", name ~= nil,
+              "no wordmark over the stops")
+        if name and top then
+            check(shape .. " sets it clear above the top stop",
+                  name.y < top.y and name.y + name.px / 2 < top.y,
+                  string.format("name at %.0f, top stop at %.0f",
+                                name.y, top.y))
+            check(shape .. " and keeps the whole of it on the screen",
+                  name.y - name.px / 2 > 0,
+                  string.format("reaches %.0f", name.y - name.px / 2))
+            check(shape .. " and centers it on the column's own middle",
+                  math.abs(name.x - (top.x + top.w / 2)) < top.w / 2,
+                  string.format("name at %.0f, column middle %.0f",
+                                name.x, top.x + top.w / 2))
+        end
+        -- A stop opens and the name goes out through the bottom edge with the
+        -- stops it heads.
+        frame(w, h, {col_open = "zone"})
+        check(shape .. " takes it down under an open panel",
+              word("vectorwake") == nil, "the name is still over the panel")
+        -- And it is back on the bare column.
+        frame(w, h)
+        check(shape .. " and puts it back when the panel goes",
+              word("vectorwake") ~= nil)
+        -- And gone with the column when the column is dismissed.
+        frame(w, h, {column = false})
+        check(shape .. " and goes with the column",
+              word("vectorwake") == nil, "the name outlived the menu")
+    end
+end
+
 -- --- the rest of the HUD is the rest of the screen --------------------------
 
 frame(1440, 810)
@@ -2047,6 +2091,10 @@ do
     for _, s in ipairs(SHAPES) do
         local w, h, shape = s[1], s[2], s[3]
 
+        -- Where the name sits once the column is up, and then without one.
+        frame(w, h)
+        local landed = word("vectorwake")
+
         boxes, rects, rings = {}, {}, {}
         state.n = 0
         H = h
@@ -2056,10 +2104,14 @@ do
         local waiting = word("vectorwake")
 
         check(shape .. " waiting says what this is", waiting ~= nil)
-        if waiting then
-            check(shape .. " waiting keeps the name on the screen",
-                  waiting.y > h / 2 and waiting.y < h,
-                  string.format("name at %.0f of %d", waiting.y, h))
+        if landed and waiting then
+            check(shape .. " waiting puts the name where the column will",
+                  math.abs(landed.x - waiting.x) < 0.5
+                  and math.abs(landed.y - waiting.y) < 0.5
+                  and math.abs(landed.px - waiting.px) < 0.5,
+                  string.format("%.1f,%.1f at %.1f against %.1f,%.1f at %.1f",
+                                waiting.x, waiting.y, waiting.px,
+                                landed.x, landed.y, landed.px))
         end
         -- And nothing that needs a room: no way into the menu, no key into a
         -- seat, and none of the instruments that describe one.
@@ -2094,15 +2146,26 @@ do
             -- here counts down from the top, so the dial is flipped to meet
             -- the name.
             local cy = h - rings[1].y
-            check(shape .. " and stands it in the middle of the window",
-                  math.abs(rings[1].x - w / 2) < 1
-                  and math.abs(cy - h / 2) < 1,
-                  string.format("%.0f,%.0f against %.0f,%.0f",
-                                rings[1].x, cy, w / 2, h / 2))
-            check(shape .. " and clear of the name under it",
-                  cy + widest_ring < waiting.y - 8,
-                  string.format("%.0f against a name at %.0f",
-                                cy + widest_ring, waiting.y))
+            -- Over the name and clear of it, which is the one measure that
+            -- works on every window: the name stands where the column will
+            -- head itself, and on a short one that is within a few points of
+            -- the middle. A dial sized against the middle had nowhere to go
+            -- there and came out at its floor.
+            check(shape .. " and stands it on the column's own middle",
+                  math.abs(rings[1].x - w / 2) < 1,
+                  string.format("%.0f against %.0f", rings[1].x, w / 2))
+            check(shape .. " and hangs it over the name, clear of it",
+                  cy + widest_ring < waiting.y - waiting.px / 2
+                  and cy - widest_ring > 0,
+                  string.format("dial %.0f..%.0f, name at %.0f",
+                                cy - widest_ring, cy + widest_ring,
+                                waiting.y))
+            -- And big enough to read as an instrument on every one of them.
+            -- The floor is what a window with nothing to spare gets, and
+            -- nothing the interface claims to support should be at it.
+            check(shape .. " and gives it more than its floor",
+                  widest_ring > 20,
+                  string.format("%.0f across", widest_ring))
         end
     end
 

@@ -1,5 +1,17 @@
 # The menu
 
+> **The name heads the menu.** The wordmark stands over the column, centered on
+> the column's own middle and a line clear of the top stop. It goes when a stop
+> opens a panel and comes back when the panel does, and it rides the column's
+> slide, so it arrives and leaves with the menu rather than being pinned to the
+> screen. The loading screen puts it in the same place off the same measure,
+> so nothing moves when the room arrives.
+>
+> It is not on the screen at all times. A watcher with the column dismissed is
+> looking at a game, and a name laid over a fight is chrome; the menu is what
+> introduces the game, so the name heads the menu. See
+> [decision 155](../architecture/decisions.md).
+
 > **A dismissal is not a decision.** The ship panel's draft is spent by one
 > press, the column's key, and by nothing else. Escape, the back chevron, the
 > stop pressed again and a press on the glass beside the panel all leave it

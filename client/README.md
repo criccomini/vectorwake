@@ -352,6 +352,11 @@ what a benched pilot is, so the same stops, the same radar and the same roster
 are on both. `menu.adrift` says there is no room on the glass at all, and what
 is drawn then is a loading screen. See decision 153.
 
+The wordmark heads the column: over the bare stops, down under a panel one of
+them opens, and gone with the column when it is dismissed. The loading screen
+stands it in the same place off the same measure, so nothing moves when the
+room arrives. See decision 155.
+
 The column's one key reads where this client is sitting and what it is
 holding: `PLAY` with no seat, `SPECTATE` with one, and `FLY WEDGE` with a hull
 drafted over one. That last is the refit, and it is the only press that spends

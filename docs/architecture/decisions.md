@@ -8529,3 +8529,57 @@ it outlives the panel and dies with the column, and that the key and the hull
 it names come off `menu.drafted`. The playtest harness plays it: `ship-change`
 backs out of the panel, checks the pilot is still flying what they were flying,
 and presses the key.
+
+## 155. The name heads the menu
+
+**Status:** accepted, amending [decision 153](#153-there-is-no-landing), which
+took the lockup off the live screen along with the landing it was drawn for.
+
+**What:** the wordmark stands over the column, centered on the column's own
+middle and a line clear of the top stop. It goes when a stop opens a panel and
+comes back when the panel does, and it rides the column's slide, so it arrives
+and leaves with the menu rather than being pinned to the screen. The loading
+screen puts it in the same place, off the same measure, so nothing moves when
+the room arrives.
+
+`column_geom` measures it, next to the stops it heads.
+
+**Why:** because the name belongs to the menu, and decision 153 read it as
+belonging to the landing. It was drawn only at home, so removing the landing
+removed it, and what a client that had just opened said about itself was
+nothing. The page title and the site carry the name, which is not the same as
+the screen carrying it.
+
+Which is also the answer to why it is not simply on the screen at all times. A
+watcher with the column dismissed is looking at a game, and a name laid over a
+fight is chrome; the menu is the thing that introduces the game, so the name
+heads the menu.
+
+Going down under an open panel is the rule decision 153 inherited and kept
+without noticing it was still right: the column is one object, and a name left
+hanging over a panel that has climbed to the top of the window is the menu
+refusing to get out of the way. `at <= 0.001` is that test, and it was already
+written; what it needed was the `home` beside it taken off.
+
+**The slide is new.** The old lockup was drawn at a fixed height while the
+stops sank underneath it, which nobody saw because the screen it stood on could
+not be dismissed. It can now, so the mark rides `rise` with everything else.
+
+**The cost:** the column is five stops tall and the lockup adds about forty
+points over it, so on a landscape phone the pair reaches well above the middle
+of the screen where the watched hull is. That is the cost decision 153 already
+accepted for the column, extended by one line of type; the old landing answered
+the same problem by lying the column down into a rail, and the rail went with
+the landing.
+
+The loading screen's dial came off the middle of the window and hangs over the
+name instead. The middle is where the hull will be, which was the right measure
+while the name sat at the foot; with the name where the column heads itself, a
+1280 by 560 window puts the two within twelve points of each other and the dial
+came out at its floor, a ring the size of a full stop tucked under the type. A
+stack has room on every window, and on the two with height to spare it lands on
+the middle anyway.
+
+**Verified:** `spectate_test` holds the three states on four windows, that the
+name is clear above the top stop and whole on the screen, and that the loading
+screen puts it exactly where the column will.

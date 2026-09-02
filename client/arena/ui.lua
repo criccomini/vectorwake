@@ -3560,10 +3560,12 @@ end
 -- measurement, kept in step by hand and by comment. See decision 143.
 --
 -- And one shape. There was a second, for the screen the client opened on: a
--- lockup over the stops, and where a short window could not hold both, the
--- stops lying down into a rail along the foot beside the key. That screen was
--- the landing and there is no landing; what the client opens on is a room,
--- with the same column over it a pilot in that room raises. See decision 153.
+-- short window that could not hold the lockup over the stops lay them down
+-- into a rail along the foot beside the key instead. That screen was the
+-- landing and there is no landing; what the client opens on is a room, with
+-- the same column over it a pilot in that room raises, and it stands upright
+-- on every window. The lockup stayed, because it heads the menu wherever the
+-- menu stands. See decisions 153 and 155.
 local function column_geom(n)
     local pts_w = F.w / math.max(F.density, 0.0001)
     local narrow = pts_w < 620
@@ -3588,8 +3590,21 @@ local function column_geom(n)
         g.stops[i] = {x = g.kx, y = g.top + (i - 1) * (rh + rgap),
                       w = kw, h = rh}
     end
+    -- And where the lockup that heads it stands: centered on the column's own
+    -- middle, a line clear of the top stop. `txt` sets a string on the middle
+    -- of its line, so half the type goes back to put the baseline where it
+    -- belongs above what it heads.
+    g.size = (M.compact and 20 or 26) * F.scale
+    g.mark_x = mid - M.wordmark_w(g.size) / 2
+    g.mark_y = g.top - (M.compact and 16 or 20) * F.scale - g.size / 2
     return g
 end
+
+-- How many stops the column carries, for the one caller that needs its measure
+-- without a view to build it from: the lockup on the loading screen, which
+-- stands where the column will stand it. A constant because the stops are:
+-- account, zone, players, ship, settings, always all five.
+local COLUMN_STOPS = 5
 
 -- A stop's caret: the two strokes that say a press here opens downward into
 -- a list, in the weight the rest of the chrome is drawn at.
@@ -4622,44 +4637,59 @@ function M.col_go()
     return nil
 end
 
--- Before a room answers: a dial looking for one, the name under it, and a
--- line saying what went wrong when something has.
+-- Before a room answers: a dial looking for one, the name the column will
+-- head itself with, and a line saying what went wrong when something has.
 --
 -- The whole of it. This is the loading screen, held from the moment the page
 -- hands over until a room is on the glass, and everything the client has to
 -- say about a room is about a room it has not found yet: the radar, the
--- readings over it, the roster and the column all arrive with the game. It
--- used to be the landing with those taken off it, drawn to the landing's own
--- measure so that nothing moved when the stands arrived. There is no landing
--- to keep still for, so it is measured for itself. See decision 153.
+-- readings over it, the roster and the column all arrive with the game.
+--
+-- The name is the one thing that does not, and it is drawn to the column's own
+-- measure so that it does not move when the room arrives. See decisions 153
+-- and 155.
 --
 -- A first boot is a directory lookup and a handshake, two seconds of it; a
 -- game picked off the list drops the room on screen and dials the next one.
 -- One wait, one picture.
 function M.waiting(note)
     M.foot_key, M.joined = false, false
-    -- The name, low, where the column will stand. `M.wordmark` sets its
-    -- lockup from the left, so half the run goes back to center it.
-    local size = (M.compact and 20 or 26) * F.scale
-    local mark_y = F.h - F.safe_b - (M.compact and 40 or 52) * F.scale
-    M.wordmark(F.w / 2 - M.wordmark_w(size) / 2, mark_y, size)
-    -- And the dial, standing where the room will stand.
+    -- The name, in the place the column will put it, off the column's own
+    -- measure. Nothing on this screen moves when the room arrives: the stops
+    -- and the key come up underneath a mark that was already there, which is
+    -- the one thing a hand-off should never get wrong. See decision 155.
+    local g = column_geom(COLUMN_STOPS)
+    M.wordmark(g.mark_x, g.mark_y, g.size)
+    -- And the dial that is looking for a room, hung directly over the name at
+    -- whatever size the space above it allows.
     --
-    -- Sized off the shorter side of the window rather than off the height
-    -- alone, so a phone held upright gets a dial that fits across it, and
-    -- capped again by the room between the middle and the name under it.
-    local room = mark_y - size / 2 - 16 * F.scale - F.h / 2
-    pages.sweep_dial(F.w / 2, F.h / 2,
-                     math.max(14 * F.scale,
-                              math.min(56 * F.scale, room,
-                                       math.min(F.w, F.h) * 0.12)))
+    -- Over the name rather than in the middle of the window. The middle is
+    -- where the hull will be, which is what it used to be sized against, and
+    -- that was the right measure while the name sat at the foot. The name
+    -- stands where the column will head itself now, which on a short window is
+    -- within a few points of the middle: the dial had nowhere to go and came
+    -- out at its floor, a ring the size of a full stop tucked under the type.
+    -- A stack has room on every window, and on the two with height to spare it
+    -- puts the dial on the middle anyway.
+    --
+    -- Sized off the shorter side of the window as well, so a phone held
+    -- upright gets one that fits across it.
+    local head = g.mark_y - g.size / 2 - 16 * F.scale
+    -- The band it has to stand in, less a margin at the top: sized against the
+    -- whole of it, the dial on a landscape phone came out touching the edge of
+    -- the window.
+    local band = head - F.safe_t - 12 * F.scale
+    local r = math.max(14 * F.scale,
+                       math.min(56 * F.scale, band / 2,
+                                math.min(F.w, F.h) * 0.12))
+    pages.sweep_dial(F.w / 2, math.max(F.safe_t + r, head - r), r)
     -- A line under the name, but only when something has gone wrong. Waiting
     -- says nothing: the wordmark on a starfield is what this game looks like
     -- and a caption narrating a normal two second wait is noise. A fleet that
     -- is down is different, and silence there would be a client that looks
     -- like it is still trying.
     if note and note ~= "" then
-        txt(note, F.w / 2, mark_y + size * 0.9,
+        txt(note, F.w / 2, g.mark_y + g.size * 0.9,
             (M.compact and 11 or 13) * F.scale,
             pal.a(pal.DIM, 0.9), "center", MENU_FONT, true)
     end
@@ -6101,6 +6131,16 @@ function M.menu(v)
             M.menu_panel(px, pw, top, foot, v)
         end
     end
+
+    -- The lockup, over the column it heads.
+    --
+    -- It goes when a stop opens, because the column is one object and a name
+    -- left hanging over an open panel is the menu refusing to get out of the
+    -- way, and it comes back when the panel does. And it rides the column's
+    -- own slide, so the two arrive and leave together: it used to be pinned
+    -- while the stops sank underneath it, which nobody saw because the screen
+    -- it stood on could not be dismissed. See decision 155.
+    if at <= 0.001 then M.wordmark(g.mark_x, g.mark_y + rise, g.size) end
 
     -- While the column is going away it still draws, so the fight behind it
     -- comes back through a wash that is fading rather than a panel that
