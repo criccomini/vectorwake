@@ -192,6 +192,82 @@ check("a diagonal meeting a wall is not capped there",
 check("its free end is still capped",
       seg_drawn("met-glow:seg", 240, 240, 256, 240))
 
+-- Where two arms cross, the knot is square wall wearing slopes on the sides
+-- it handed away, and the sides it has left over are the only outward edges
+-- the shape has. They were drawn by nobody: a face is emitted once, by the
+-- first tile of its run, and each of these sat one step along the run from a
+-- slope whose own side was open, so every tile in the run left the line to
+-- the tile before it and a slope draws a diagonal face, never a square one.
+-- The knot came out a flat block in the middle of a lit X.
+--
+-- The pattern is the crossing at 752,113 of catalog/zones/roam/expanse.vwmap,
+-- which m_chevron in sim/tools/mapgen.c draws, digits naming the slope
+-- variant the way SIM_SLOPE_* numbers them.
+local CROSSING = {
+    ".............",
+    ".13......20..",
+    "..13....20...",
+    "...13##20....",
+    "....1320.....",
+    "....####.....",
+    "....2013.....",
+    "...20##13....",
+    "..20....13...",
+    ".20......13..",
+    ".............",
+}
+world = reset()
+local knots = {}
+for row, line in ipairs(CROSSING) do
+    for col = 1, #line do
+        local c = line:sub(col, col)
+        local x, y = 9 + col, 9 + row
+        if c == "#" then
+            put(x, y, T_SOLID, 0)
+            knots[#knots + 1] = {x, y}
+        elseif c ~= "." then
+            put(x, y, T_SLOPE, tonumber(c))
+        end
+    end
+end
+world.build_static(writer("knot-fill"), writer("knot-glow"), 6, 6, 26, 24)
+
+-- A run may have merged with the tile beside it, which is the same line said
+-- once, so an edge counts as lit if any drawn line covers it end to end.
+local function covered(x1, y1, x2, y2)
+    for _, g in ipairs(calls["knot-glow:seg"] or {}) do
+        local ax, ay, bx, by = g[1], g[2], g[3], g[4]
+        if ax > bx or ay > by then ax, ay, bx, by = bx, by, ax, ay end
+        if ax == bx and x1 == x2 and ax == x1 and ay <= y1 and by >= y2 then
+            return true
+        end
+        if ay == by and y1 == y2 and ay == y1 and ax <= x1 and bx >= x2 then
+            return true
+        end
+    end
+    return false
+end
+
+local unlit = {}
+for _, k in ipairs(knots) do
+    local x, y = k[1], k[2]
+    local sides = {
+        {"n", 0, -1, x * 16, y * 16, (x + 1) * 16, y * 16},
+        {"s", 0, 1, x * 16, (y + 1) * 16, (x + 1) * 16, (y + 1) * 16},
+        {"w", -1, 0, x * 16, y * 16, x * 16, (y + 1) * 16},
+        {"e", 1, 0, (x + 1) * 16, y * 16, (x + 1) * 16, (y + 1) * 16},
+    }
+    for _, s in ipairs(sides) do
+        if not tiles[key(x + s[2], y + s[3])]
+           and not covered(s[4], s[5], s[6], s[7]) then
+            unlit[#unlit + 1] = s[1] .. " of " .. x .. "," .. y
+        end
+    end
+end
+check("a crossing's knot is square wall", #knots == 8, #knots .. " tiles")
+check("every open side of a crossing's knot is lit", #unlit == 0,
+      table.concat(unlit, ", "))
+
 -- A big rock is still one collision object, but it is no longer one flat
 -- polygon. Facet triangles, ridges, and a mineral seam give it volume.
 --

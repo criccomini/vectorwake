@@ -1107,7 +1107,19 @@ local function key(tx, ty) return ty * 1024 + tx end
 -- boundary, and additively that is a bright bead every sixteen pixels along an
 -- otherwise straight wall. It is the same double-cover the hulls had at their
 -- corners, and merging is both the fix and the cheaper path.
-local function runs(set, cells, side, emit)
+--
+-- Two sets, because the two questions are different. `set` answers whether a
+-- face is covered, and a slope covers the edge it shares with a wall.
+-- `square` answers who can carry the run, and a slope cannot: it draws its
+-- diagonal face instead of four square ones, so a face handed to a slope is a
+-- face nothing draws.
+--
+-- Asking `set` both times cost a chevron's knot every outward edge it had.
+-- The knot is plain wall with a slope run above it and another below, and its
+-- open sides are its ends. Each end lay one step along the run from a slope
+-- whose own side was open, so it took itself for the middle of a longer run
+-- and left the line to a tile that never draws one.
+local function runs(set, square, cells, side, emit)
     local ax, ay                        -- toward the neighbour being tested
     local px, py                        -- toward the previous tile in a run
     if side == "n" then ax, ay, px, py = 0, -1, -1, 0
@@ -1118,10 +1130,10 @@ local function runs(set, cells, side, emit)
         local tx, ty = cells[i], cells[i + 1]
         if not set[key(tx + ax, ty + ay)] then
             -- Only the first tile of a run draws it, and it walks to the end.
-            local prev = set[key(tx + px, ty + py)]
+            local prev = square[key(tx + px, ty + py)]
             if not prev or set[key(tx + px + ax, ty + py + ay)] then
                 local ex, ey = tx, ty
-                while set[key(ex - px, ey - py)]
+                while square[key(ex - px, ey - py)]
                       and not set[key(ex - px + ax, ey - py + ay)] do
                     ex, ey = ex - px, ey - py
                 end
@@ -1147,7 +1159,7 @@ end
 local SIDES = {"n", "s", "w", "e"}
 
 -- A block of wall, drawn as one thing rather than as tiles.
-local function wall_mass(bg, glow, set, cells, border)
+local function wall_mass(bg, glow, set, square, cells, border)
     local lit = pal.WALL_EDGE
     local hotline = pal.a(pal.hot(lit, 0.28, 1), 0.9)
     local bevel = pal.a(lit, 0.26)
@@ -1161,7 +1173,7 @@ local function wall_mass(bg, glow, set, cells, border)
 
     for s = 1, #SIDES do
         local side = SIDES[s]
-        runs(set, cells, side, function(tx, ty, ex, ey)
+        runs(set, square, cells, side, function(tx, ty, ex, ey)
             local px, py, qx, qy, ox, oy = face_line(side, tx, ty, ex, ey)
             local long = (tx ~= ex) or (ty ~= ey)
             -- The light the face throws back into the wall, and out of it. A
@@ -1361,7 +1373,8 @@ local function safe_zone(bg, glow, set, cells)
     end
     for s = 1, #SIDES do
         local side = SIDES[s]
-        runs(set, cells, side, function(tx, ty, ex, ey)
+        -- Nothing but safe ground is in this set, so it answers both questions.
+        runs(set, set, cells, side, function(tx, ty, ex, ey)
             local px, py, qx, qy, ox, oy = face_line(side, tx, ty, ex, ey)
             local len = math.sqrt((qx - px) * (qx - px) + (qy - py) * (qy - py))
             local ux, uy = (qx - px) / len, (qy - py) / len
@@ -1703,6 +1716,9 @@ end
 local function build_terrain(bg, glow, x0, y0, x1, y1)
     local wall_set, wall_cells = {}, {}
     local bord_cells = {}
+    -- Everything with four square faces, which is the wall set without the
+    -- slopes. A run of face belongs to these and only these.
+    local square_set = {}
     -- Slopes are in the wall set and not in its cells: a wall beside one must
     -- not light the edge they share, and the slope draws its own face rather
     -- than four square ones. The set holds the variant, since a run is a run
@@ -1724,6 +1740,7 @@ local function build_terrain(bg, glow, x0, y0, x1, y1)
             if cls == sim.T_SOLID then
                 if var == V_BORDER then
                     wall_set[key(tx, ty)] = true
+                    square_set[key(tx, ty)] = true
                     bord_cells[#bord_cells + 1] = tx
                     bord_cells[#bord_cells + 1] = ty
                 elseif var == V_ROCK_A or var == V_ROCK_B then
@@ -1739,6 +1756,7 @@ local function build_terrain(bg, glow, x0, y0, x1, y1)
                     stations[#stations + 1] = ty
                 elseif var ~= V_ROCK_BODY and var ~= V_STATION_BODY then
                     wall_set[key(tx, ty)] = true
+                    square_set[key(tx, ty)] = true
                     wall_cells[#wall_cells + 1] = tx
                     wall_cells[#wall_cells + 1] = ty
                 end
@@ -1773,8 +1791,8 @@ local function build_terrain(bg, glow, x0, y0, x1, y1)
 
     -- Border tiles are in the wall set, so the two masses agree about which
     -- faces are exposed and neither draws an edge into the other.
-    wall_mass(bg, glow, wall_set, wall_cells, false)
-    wall_mass(bg, glow, wall_set, bord_cells, true)
+    wall_mass(bg, glow, wall_set, square_set, wall_cells, false)
+    wall_mass(bg, glow, wall_set, square_set, bord_cells, true)
     slope_mass(bg, glow, wall_set, slope_set, slope_cells)
     safe_zone(bg, glow, safe_set, safe_cells)
 
