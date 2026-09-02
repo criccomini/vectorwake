@@ -312,32 +312,39 @@ def band_middle(w, room, compact, portrait, state="open"):
                 f'<span style="font-size:{name_px}px;color:{DIM}">Free roam</span>'
                 f'<span class="num" style="font-size:{under_px}px;color:{INK};'
                 f'line-height:1;opacity:.95">31 flying</span></div>')
-    clock = "0:12" if state == "end" else room["clock"]
+    ending = state == "end"
+    clock = "0:12" if ending else room["clock"]
     half = KEY_H * 0.6 * len(clock) / 2
     out.append(
         f'<div class="abs num" style="left:50%;top:{top}px;'
         f'transform:translateX(-50%);font-size:{KEY_H}px;line-height:{KEY_H}px;'
         f'color:{INK};opacity:.95">{clock}</div>')
-    if state == "end":
+    if ending:
         out.append(
             f'<div class="abs hud" style="left:50%;top:{top + KEY_H + 8}px;'
             f'transform:translateX(-50%);font-size:{9 if compact else 11}px;'
             f'color:{DIM};white-space:nowrap">Next match in</div>')
-        return "".join(out)
+    best = max(s.score for s in room["sides"])
     for i, s in enumerate(room["sides"]):
+        # At the whistle the side that took it keeps its ink and the other
+        # stands down to the dim the band already uses for a number that
+        # has stopped moving.
+        dim = .35 if (ending and s.score < best) else 1
         edge = w / 2 - half - side_gap if i == 0 else w / 2 + half + side_gap
         align = "flex-end" if i == 0 else "flex-start"
         pos = (f"right:{w - edge:.0f}px" if i == 0 else f"left:{edge:.0f}px")
         label = "" if portrait else (
             f'<span class="hud" style="font-size:{name_px}px;'
-            f'line-height:{name_px}px;color:{s.col};opacity:.85">{s.name}</span>')
+            f'line-height:{name_px}px;color:{s.col};opacity:{.85 * dim}">'
+            f'{s.name}</span>')
         out.append(
             f'<div class="abs" style="{pos};top:{top}px;height:{KEY_H}px;'
             f'display:flex;flex-direction:column;align-items:{align};'
             f'justify-content:space-between">{label}'
             f'<span class="num" style="font-size:{under_px}px;'
-            f'line-height:{under_px}px;color:{s.col}">{s.score}</span></div>')
-    if room.get("stands"):
+            f'line-height:{under_px}px;color:{s.col};opacity:{dim}">'
+            f'{s.score}</span></div>')
+    if room.get("stands") and not ending:
         flags = "".join(pennants(s, 8) for s in room["sides"])
         loose = room["stands"] - sum(s.held for s in room["sides"])
         flags += "".join(pennant(DIM, 8, .6) for _ in range(loose))
@@ -346,7 +353,7 @@ def band_middle(w, room, compact, portrait, state="open"):
     return "".join(out)
 
 
-def band_thin(w, room, compact, portrait):
+def band_thin(w, room, compact, portrait, state="open"):
     """One line, sixteen points: name and score either side of a smaller
     clock, pennants inline after the name. Less of the top of the arena
     spent, at the cost of a smaller clock and one weight for everything."""
@@ -357,26 +364,35 @@ def band_thin(w, room, compact, portrait):
                 f'transform:translateX(-50%);font-size:12px;line-height:{h}px;'
                 f'color:{INK};opacity:.9">31 flying</div>')
     parts = []
+    ending = state == "end"
+    best = max(s.score for s in room["sides"])
     for i, s in enumerate(room["sides"]):
+        dim = .35 if (ending and s.score < best) else 1
         name = "" if portrait else (
             f'<span class="hud" style="font-size:10px;color:{s.col};'
-            f'opacity:.85">{s.name}</span>')
-        flags = pennants(s, 7)
+            f'opacity:{.85 * dim}">{s.name}</span>')
+        flags = "" if ending else pennants(s, 7)
         bits = [name, flags,
-                f'<span class="num" style="font-size:13px;color:{s.col}">'
-                f'{s.score}</span>']
+                f'<span class="num" style="font-size:13px;color:{s.col};'
+                f'opacity:{dim}">{s.score}</span>']
         if i == 0:
             bits = bits
         else:
             bits = bits[::-1]
         parts.append(f'<span class="row" style="gap:6px">{"".join(bits)}</span>')
+    under = ""
+    if ending:
+        under = (f'<div class="abs hud" style="left:50%;top:{top + h + 4}px;'
+                 f'transform:translateX(-50%);font-size:9px;color:{DIM};'
+                 f'white-space:nowrap">Next match in</div>')
     return (f'<div class="abs row" style="left:50%;top:{top}px;height:{h}px;'
             f'transform:translateX(-50%);gap:{10 if compact else 16}px">'
             f'{parts[0]}<span class="num" style="font-size:16px;color:{INK};'
-            f'opacity:.95">{room["clock"]}</span>{parts[1]}</div>')
+            f'opacity:.95">{"0:12" if ending else room["clock"]}</span>'
+            f'{parts[1]}</div>{under}')
 
 
-def band_corner(w, room, compact, portrait):
+def band_corner(w, room, compact, portrait, state="open"):
     """A stack in the top left corner, broadcast style: the clock, then a
     line per side in its color. The middle of the top edge is the fight's
     again. Cost: the score stops being the first thing a stranger sees,
@@ -387,16 +403,23 @@ def band_corner(w, room, compact, portrait):
         lines.append(f'<span class="hud num" style="font-size:12px;'
                      f'color:{INK};opacity:.9">31 flying</span>')
     else:
+        ending = state == "end"
         lines.append(f'<span class="num" style="font-size:18px;'
                      f'line-height:18px;color:{INK};opacity:.95">'
-                     f'{room["clock"]}</span>')
+                     f'{"0:12" if ending else room["clock"]}</span>')
+        if ending:
+            lines.append(f'<span class="hud" style="font-size:9px;'
+                         f'color:{DIM}">Next match in</span>')
+        best = max(s.score for s in room["sides"])
         for s in room["sides"]:
+            dim = .35 if (ending and s.score < best) else 1
             lines.append(
-                f'<span class="row" style="gap:6px;height:14px">'
+                f'<span class="row" style="gap:6px;height:14px;opacity:{dim}">'
                 f'<span class="num" style="font-size:12px;color:{s.col};'
                 f'width:22px">{s.score}</span>'
                 f'<span class="hud" style="font-size:10px;color:{s.col};'
-                f'opacity:.85">{s.name}</span>{pennants(s, 7)}</span>')
+                f'opacity:.85">{s.name}</span>'
+                f'{"" if ending else pennants(s, 7)}</span>')
     return (f'<div class="abs" style="left:{PAD}px;top:{PAD}px;display:flex;'
             f'flex-direction:column;gap:3px">{"".join(lines)}</div>')
 
@@ -490,10 +513,7 @@ def chrome(w, h, room, compact, portrait, band="Middle", state="open",
     if wash:
         out.append(f'<div class="abs" style="inset:0;'
                    f'background:rgba(5,7,12,{COLUMN_WASH})"></div>')
-    if band == "Middle":
-        out.append(band_middle(w, room, compact, portrait, state))
-    else:
-        out.append(BANDS[band](w, room, compact, portrait))
+    out.append(BANDS[band](w, room, compact, portrait, state))
     if key:
         out.append(menu_key(w, h))
     return "".join(out)
@@ -724,26 +744,6 @@ def m_round(n, who, t, room):
             f'color:{MUTE}">{t}</span></div>')
 
 
-def share_bar(room, h=12, px=15):
-    l, r = sorted(room["sides"], key=lambda s: -s.score)
-    share = l.score / (l.score + r.score) * 100
-
-    def inside(name, right):
-        return (f'<span class="hud" style="font-size:8px;color:{BG};'
-                f'letter-spacing:.1em;position:absolute;'
-                f'{"right" if right else "left"}:6px;top:50%;'
-                f'transform:translateY(-50%);white-space:nowrap">{name}</span>')
-    return (f'<div class="row" style="gap:8px;padding:0 8px">'
-            f'<span class="num" style="font-size:{px}px;color:{l.col}">{l.score}</span>'
-            f'<div style="flex:1;height:{h}px;display:flex;overflow:hidden">'
-            f'<div style="position:relative;width:{share:.1f}%;background:{l.col}">'
-            f'{inside(l.name, False)}</div>'
-            f'<div style="position:relative;flex:1;background:{r.col}">'
-            f'{inside(r.name, True)}</div></div>'
-            f'<span class="num" style="font-size:{px}px;color:{r.col}">{r.score}</span>'
-            '</div>')
-
-
 def stop(label, value, w=STOP_W, h=STOP_H, lit=False, hot=False, raw=True):
     """A stop of the column: the question at the label's weight, the answer
     at full strength, a caret, in the stroked box every key wears."""
@@ -805,9 +805,7 @@ def sheet_body(zone, state="open", portrait=False, naming="Players",
     ending = state == "end"
     body = []
     if ending:
-        winner = max(room["sides"], key=lambda s: s.score)
-        body.append(m_head(f"{winner.name} takes it", winner.col))
-        body.append(f'<div style="padding:10px 6px 6px">{share_bar(room)}</div>')
+        body.append(m_head(naming, sub="0:12"))
     elif zone == "roam":
         body.append(m_head(naming, sub="31 flying"))
     else:
@@ -824,7 +822,7 @@ def sheet_body(zone, state="open", portrait=False, naming="Players",
     return "".join(body)
 
 
-def sheet_height(zone, state, ending_extra=60):
+def sheet_height(zone, state, ending_extra=0):
     room = ROOMS[zone]
     n = sum(len(s.pilots) for s in room["sides"])
     if room.get("watched", True):
@@ -857,8 +855,6 @@ def sheet(zone, form, state="open", naming="Players", band="Middle",
                       key=False) + panel
     want = sheet_height(zone, state)
     top_clear = PAD + KEY_H + (22 if room.get("stands") else 14)
-    if state == "end":
-        top_clear += 12
     roomh = h - PAD - top_clear
     ph = min(want, roomh)
     clip = want > roomh
@@ -948,7 +944,7 @@ def main_sheet():
      background-color:{BG};background-image:{starfield(W, H, 3)};padding:40px 48px">
   <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:28px">
     <div style="font-size:26px;color:{INK}">The players sheet</div>
-    {cap("The menu's panel, holding the room as one list: your own side first, then everyone else, then the watchers, each run by name, with the side in the Team column and in the color of the name. A press on a player opens their card, and the card's one key joins their side. It is a stop in the column, its answer is where you stand, and at the whistle it rises on its own with the result as its head.", 860)}
+    {cap("The menu's panel, holding the room as one list: your own side first, then everyone else, then the watchers, each run by name, with the side in the Team column and in the color of the name. A press on a player opens their card, and the card's one key joins their side. It is a stop in the column, its answer is where you stand, and at the whistle it rises on its own as the same view, with escape and a press working as they do in any menu; the band above is what says who took it.", 860)}
   </div>
   <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:40px">
     <div>
@@ -992,6 +988,12 @@ def band_sheet():
                    f'{BANDS[design](362, ROOMS["turf"], True, True)}'
                    f'<div class="lbl" style="position:absolute;right:8px;'
                    f'bottom:6px;font-size:9px">Turf, upright phone</div></div>')
+        strips += (f'<div style="position:relative;width:420px;height:84px;'
+                   f'background:rgba(5,7,12,.5);overflow:hidden">'
+                   f'{BANDS[design](420, ROOMS["melee"], False, False, "end")}'
+                   f'<div class="lbl" style="position:absolute;right:8px;'
+                   f'bottom:6px;font-size:9px">Team Battle, at the whistle'
+                   f'</div></div>')
         cols += (f'<div style="display:flex;flex-direction:column;gap:10px">'
                  f'{title(design)}{strips}<div style="margin-top:4px">'
                  f'{cap(note, 420)}</div></div>')
@@ -1000,7 +1002,7 @@ def band_sheet():
      background-color:{BG};background-image:{starfield(W, H, 5)};padding:40px 48px">
   <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:28px">
     <div style="font-size:26px;color:{INK}">The band, by zone</div>
-    {cap("Three shapes for the instrument the sheet hangs off, each drawn for every zone. Team Battle counts kills, Turf counts turf and shows the six stands, War counts rounds and shows the four flags, the duel counts rounds under each pilot's call sign, and Free Roam has no clock and no score, so its band is the room's count and nothing else.", 860)}
+    {cap("Three shapes for the instrument the sheet hangs off, each drawn for every zone and at the whistle. Team Battle counts kills, Turf counts turf and shows the six stands, War counts rounds and shows the four flags, the duel counts rounds under each pilot's call sign, and Free Roam has no clock and no score, so its band is the room's count and nothing else. At the whistle the band is what says who took it: both sides stay, the winner at full strength and the loser dimmed, over the clock counting to the next match.", 860)}
   </div>
   <div style="display:flex;gap:40px">{cols}</div>
 </div>'''

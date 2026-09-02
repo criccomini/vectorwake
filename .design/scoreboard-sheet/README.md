@@ -33,9 +33,13 @@ built.
   down and the foot says `Caisson is full`. On your own side's pilot, on
   yourself, and on a watcher, there is no key. That is how an invitation was sent from the
   info box in `docs/design/teams.md`, and joining is the same shape.
-- **At the whistle** it rises on its own with the result as its head, the
-  share bar under it, a rating column, and the MVP mark on the winner's best.
-  The band keeps the clock.
+- **At the whistle** the same view pops up on its own, as the `PLAYERS` stop
+  opened: no result head, no bar. Escape and a press work as they do in any
+  menu. The list gains a rating column and the MVP mark on the winner's best.
+  The band at the top is what says who took it: both sides stay on it, the
+  winner at full strength and the loser dimmed, over the clock counting to
+  the next match. That amends decision 94, which had the band drop its sides
+  for the ending's own head.
 
 What round two had instead, and why it went: a section per side that was
 itself the press that joined it, a new thing for the menu language. Flat
@@ -66,8 +70,8 @@ Roam it is the pact you are in.
 
 ## The band
 
-Three shapes, each drawn for every zone on one sheet and then in a Turf room
-on a monitor and a War room on a phone:
+Three shapes, each drawn for every zone and at the whistle on one sheet, and
+then in a Turf room on a monitor and a War room on a phone:
 
 - **Middle**, the shipped band: the clock one key tall at top center, a side
   either side of it as a name over a number, pennants under. Keeps the first

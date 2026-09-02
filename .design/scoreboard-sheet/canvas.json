@@ -88,7 +88,7 @@
     },
     {
       "file": "TeamBattleEnd.dc.html",
-      "title": "Between rounds",
+      "title": "At the whistle: the Players view, the band says who took it",
       "x": 0,
       "y": 4170,
       "w": 1440,
@@ -97,7 +97,7 @@
     },
     {
       "file": "TeamBattleEndPortrait.dc.html",
-      "title": "Between rounds, phone",
+      "title": "At the whistle, phone",
       "x": 1520,
       "y": 4170,
       "w": 390,
@@ -133,7 +133,7 @@
     },
     {
       "file": "DuelEnd.dc.html",
-      "title": "Duel, between matches",
+      "title": "Duel, at the whistle",
       "x": 1720,
       "y": 950,
       "w": 1440,
@@ -229,7 +229,7 @@
       "y": 0,
       "w": 400,
       "page": "page-1",
-      "text": "The players sheet\n\nRound three, on the sheet, after Chris's notes. The panel is called Players, and so is its stop in the column, whose answer is where you stand: your side, or Watching. The list is flat: your own side first, then everyone else, then the watchers, each run by name Z to A (Chris asked for desc twice; one flag flips it), with the side in the Team column and in the color of the name. A watcher is a row like any other, Watching for a side and zeros for figures; the band that used to divide them is gone. The side line under the head is gone, since the Team column already names every side and the band carries the score. A press on a player (enter, click or tap) opens their card, a panel that stacked, and the card's breathing key is JOIN, named for their side. So a side is joined through one of its players, the way an invitation was sent from the info box.\n\nWhat this costs: a side with nobody on it has no row to press, so it cannot be joined from here; in Free Roam, founding a side needs a door of its own."
+      "text": "The players sheet\n\nRound three, on the sheet, after Chris's notes. The panel is called Players, and so is its stop in the column, whose answer is where you stand: your side, or Watching. The list is flat: your own side first, then everyone else, then the watchers, each run by name Z to A (Chris asked for desc twice; one flag flips it), with the side in the Team column and in the color of the name. A watcher is a row like any other, Watching for a side and zeros for figures; the band that used to divide them is gone. The side line under the head is gone, since the Team column already names every side and the band carries the score. A press on a player (enter, click or tap) opens their card, a panel that stacked, and the card's breathing key is JOIN, named for their side. So a side is joined through one of its players, the way an invitation was sent from the info box.\n\nAt the whistle the same view pops up on its own, as the Players stop opened: no result head, no bar. Escape and a press work as they do in any menu. The band at the top is what says who took it: both sides stay on it, the winner at full strength and the loser dimmed, over the clock counting to the next match.\n\nWhat this costs: a side with nobody on it has no row to press, so it cannot be joined from here; in Free Roam, founding a side needs a door of its own."
     },
     {
       "id": "note-zones",
@@ -245,7 +245,7 @@
       "y": 0,
       "w": 400,
       "page": "page-3",
-      "text": "The band\n\nThe sheet hangs off an instrument, and the instrument can be one of three: the shipped 26-point band at top center, a 16-point line in the same place, or a stack in the top left corner. The big sheet draws all three for every zone; the boards under it put each in a Turf room on a monitor and a War room on a phone, with the corner band once with the sheet up.\n\nMiddle keeps the first glance. Thin spends less of the top edge and makes the clock small. Corner clears the top edge entirely and sits where the room's chips come and go."
+      "text": "The band\n\nThe sheet hangs off an instrument, and the instrument can be one of three: the shipped 26-point band at top center, a 16-point line in the same place, or a stack in the top left corner. The big sheet draws all three for every zone and at the whistle, where the band is what says who took it; the boards under it put each in a Turf room on a monitor and a War room on a phone, with the corner band once with the sheet up.\n\nMiddle keeps the first glance. Thin spends less of the top edge and makes the clock small. Corner clears the top edge entirely and sits where the room's chips come and go."
     }
   ],
   "launch": {
