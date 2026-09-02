@@ -8019,9 +8019,77 @@ band's new whistle, `side_col_test` follows the sheet, and `hud_hits_test`,
 `landing_test`, `marks_test`, `menu_test`, `binds_test` and `column_test` move
 with it. luacheck clean over 108 files.
 
-## 148. A flag is a beacon, and a carrier wears one ring a flag
+---
 
-**Status:** accepted, replacing the drawing that
+## 148. A banking hull shades the wing it drops
+
+**Status:** accepted
+
+**What:** a hull's bank grades the light across its beam. The wing that drops
+turns away and loses most of what it had, the wing that comes up gains a
+little, and every point between them is graded by how far out along the beam
+it sits. At the full bank the client allows, 0.95 radians, the low wingtip
+draws at 0.33 of what it would flat and the high one at 1.24.
+
+Lit surfaces only: the body's wash, the plates and panel lines, the
+silhouette's hot edge and both of the bloom skirts hanging off it. The
+thruster flame, the muzzles, the lamps and the canopy do not take it, being
+lights rather than lit. Neither does the round bloom under the hull, which is
+one soft ball centered on the ship, and lopsiding it would move the ship
+rather than shade it. The opaque base stays flat too: it is a hole in the
+starfield rather than a surface with a lit side.
+
+The grade is on alpha and never on hue.
+
+**Why:** the bank has always been a cosine on local x, which foreshortens the
+wings and moves nothing else. That is the right projection of a roll seen from
+above, and it is also the same number left or right. A hull rolled hard one
+way therefore drew exactly like one rolled hard the other, and with nothing
+breaking the symmetry the eye reads a hull that got thinner rather than one
+that tipped. The sine of that same angle is what says which wing went down,
+and shading is the only thing on the ship that can carry it.
+
+Four to one across the beam is more than the light on a real wing would do,
+and it is meant to be. A hull is about 30 world pixels across and the whole
+tilt has to say what it is at a glance, across a room, on a phone. A first
+pass ran at about two to one, and at the size a player actually sees it you
+had to be told where to look.
+
+Alpha and never hue is the bargain the hurt grade already struck on the same
+stroke. Friend or foe is the call a pilot makes in a tenth of a second, and a
+hard turn may not put a second question inside it. The grade changes how
+bright a rim is, so the side a hull is on survives a bank intact.
+
+Nothing in the simulation moves. A rolled hull's collision radius is whatever
+the core says it is, per
+[decision 5](#5-defold-owns-presentation-only).
+
+**Cost:** a dropped wing's silhouette goes faint, and per
+[decision 50](#50-a-hull-is-a-shape-and-everything-else-is-on-the-shelf) the
+silhouette is the whole identity system. Two hulls are a little harder to tell
+apart while one of them is holding a hard turn. It comes back the moment the
+pilot stops turning, and a bank is a maneuver rather than a state, but it is
+a real reading given up for a real one gained.
+
+The hangar's carousel draws hulls with its own code and is not touched, so a
+hull turning there stays flat. That is a different motion, a yaw about the
+vertical rather than a roll about the long axis, and the two now look
+different for a reason a player has no way to know.
+
+**Verified:** photographed rather than reasoned about. A melee on maelstrom
+through the playtest harness, a held rudder, and a burst of frames paired by
+attitude afterwards, since a screenshot takes about half a second and a
+turning hull sweeps most of a circle inside it. Both turn directions on the
+Chord and the Apex, at the window the game plays in and again at the pixels a
+player actually gets. The client's suite passes and luacheck is clean over 108
+files.
+
+---
+
+## 149. A flag is a beacon, and a carrier wears one ring a flag
+
+**Status:** accepted, was 148 and renumbered behind the banking hull
+at the landing, replacing the drawing that
 [decision 129](#129-a-flag-stands-where-the-map-says) put on the map and
 [decision 133](#133-carrying-the-flag-puts-you-on-the-map) put on the
 instruments.
