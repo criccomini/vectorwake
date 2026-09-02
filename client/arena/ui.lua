@@ -1833,15 +1833,16 @@ end
 -- rather than as somebody not playing. Their rows say `watching` where a side
 -- would be, so the group needs no rule of its own beyond being last.
 --
--- Z to A inside each group, which is what was asked for. Lowercased first so
--- a capital cannot jump a pilot to the top of the room, and the raw name
--- breaks the tie so the order is total and two pilots who differ only in case
--- cannot flicker past each other.
+-- A to Z inside each group. It ran Z to A first, which is what was asked for
+-- then, and a room read backwards is one a hand cannot scan: a list of names
+-- is looked down the way a phone book is. Lowercased first so a capital cannot
+-- jump a pilot to the front, and the raw name breaks the tie so the order is
+-- total and two pilots who differ only in case cannot flicker past each other.
 local function by_column(a, b)
     if a.watch ~= b.watch then return b.watch end
     if a.mine ~= b.mine then return a.mine end
-    if a.lname ~= b.lname then return a.lname > b.lname end
-    return a.name > b.name
+    if a.lname ~= b.lname then return a.lname < b.lname end
+    return a.name < b.name
 end
 
 -- The rooms of this zone, and the way into a different one.

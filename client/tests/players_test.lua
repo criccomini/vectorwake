@@ -301,7 +301,7 @@ end
 -- --- the sheet, mid match ---------------------------------------------------
 --
 -- Your own side first, then everyone else, then the watchers, each run by
--- name Z to A. The partition is "who is with me", which is the question a list
+-- name A to Z. The partition is "who is with me", which is the question a list
 -- of a room is opened with, and the Team column says the side on every row so
 -- the grouping is a reading rather than the only way to tell.
 
@@ -312,7 +312,7 @@ check("the sheet names itself and lists the room",
       said("players") ~= nil and said("Kestrel") ~= nil,
       table.concat(words(), " | "))
 check("your own side runs first, then the rest, then the watchers",
-      order() == "you,Plinth,Vesper,Kestrel,Halyard", order())
+      order() == "Plinth,you,Kestrel,Vesper,Halyard", order())
 check("and every row says which side it is on",
       exactly("Pylon") == 2 and exactly("Caisson") == 2,
       exactly("Pylon") .. " Pylon rows")
@@ -396,7 +396,7 @@ ui.col_pilot = nil
 
 -- --- case decides nothing about the order ----------------------------------
 --
--- A pilot who capitalises their call sign does not get an end of the room for
+-- A pilot who capitalizes their call sign does not get an end of the room for
 -- it. Lowercased for the comparison, with the raw name breaking the tie so
 -- the order is total and two pilots who differ only in case cannot flicker
 -- past each other.
@@ -418,8 +418,8 @@ do
     for i = 1, state.n do
         if known[state.text[i].s] then out[#out + 1] = state.text[i].s end
     end
-    check("your side first, then the rest, each run by name Z to A",
-          table.concat(out, ",") == "zulu,Alpha,Charlie,bravo",
+    check("your side first, then the rest, each run by name A to Z",
+          table.concat(out, ",") == "Alpha,zulu,bravo,Charlie",
           table.concat(out, ","))
 end
 room.teams = {[0] = 0, 1, 0, 1}
