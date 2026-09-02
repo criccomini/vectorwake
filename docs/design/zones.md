@@ -110,7 +110,7 @@ catalog a player could not read from outside the room.
 
 ## Duel
 
-One pilot against one, first to two rounds, on ground ninety-six tiles across.
+One pilot against one, one kill a match, on ground ninety-six tiles across.
 
 The rooms hold two seats and that is what does the matchmaking. A client
 prefers the fullest room below its cap, which for a room of two means the one
@@ -131,19 +131,28 @@ the room, and its thirty-eight tile field covers most of a ninety-six tile map
 besides. See
 [decision 138](../architecture/decisions.md#138-a-duel-is-too-small-to-hold-a-wormhole).
 
-It is played in rounds. A death ends the round, and two seconds later both
-pilots are back on their own starts with a full bar and a full rack. Two
-rounds take the match, level at two plays on, and the three minute clock is
-the backstop: the leader takes it and level is a draw. That two second window
-is the trade rule, and it is also the respawn delay, so a bomb thrown by a
-pilot who is already dead still lands and the round goes to both of them.
+It is played in rounds and one of them takes it. A death ends the round, and
+two seconds later both pilots are back on their own starts with a full bar and
+a full rack. The three minute clock is the backstop: the leader takes it and
+level is a draw. That two second window is the trade rule, and it is also the
+respawn delay, so a bomb thrown by a pilot who is already dead still lands and
+the round goes to both of them.
 
-Rounds are what the word promises, and they buy the thing a tally cannot: a
-pilot who loses the opening exchange is one round from level rather than
-watching out a fight that is already decided. The score is rounds taken, read
-off the other side's deaths, so flying into a wall hands the round across the
-arena instead of taking a point off your own. See
-[decision 142](../architecture/decisions.md#142-a-duel-is-rounds-and-two-of-them-take-it).
+A trade is why the round survives even where one of them is the whole match.
+The match wants a leader rather than a number, so two deaths inside the window
+give both sides a round, neither leads, and it plays on to two-one. That is what
+a first-blood duel could never do and the reason
+[decision 142](../architecture/decisions.md#142-a-duel-is-rounds-and-two-of-them-take-it)
+set the count at two; the window turned out to be the part doing the work, so
+[decision 145](../architecture/decisions.md#145-a-duel-is-one-kill-and-the-room-deals-you-a-rival)
+moved the count back to one. The score is rounds taken, read off the other
+side's deaths, so flying into a wall hands the round across the arena instead
+of taking a point off your own.
+
+A short match is also the unit a rival is dealt on. Fly three of them against
+the same person and the room asks the population for somebody else, near their
+strength and not one of the last few it has had, so an evening in here is
+several opponents rather than whichever pilot the fill happened to seat first.
 
 The match is between the two seats, so a seat changing hands is a new match:
 whole clock, nothing on the board, both pilots home. An arrival lands across
@@ -152,8 +161,10 @@ from whoever is already there. That is
 Without it a person at the door was put into the match the room's bots were
 having, and shown its score at the whistle.
 
-Pairing by rating is not here. That needs a band and a queue and is a decision
-to take on its own.
+Pairing two people by rating is not here. That needs a band and a queue and is
+a decision to take on its own. Choosing which bot you are put across from needs
+neither, because every candidate already exists, and that is
+[decision 145](../architecture/decisions.md#145-a-duel-is-one-kill-and-the-room-deals-you-a-rival).
 
 ## Free Roam
 

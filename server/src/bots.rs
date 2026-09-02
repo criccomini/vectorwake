@@ -30,8 +30,8 @@
 //! answers as an ordinary client; where the bytes land, and who does the
 //! thinking, is this process's own business.
 
-use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures_util::{SinkExt, StreamExt};
@@ -364,6 +364,19 @@ impl Standings {
 
     pub(crate) fn of(&self, ship: u8) -> Option<ai::Standing> {
         self.0.get(ship as usize).copied().flatten()
+    }
+
+    /// The best rating among the people in the room, or `None` where every
+    /// seat is a machine. This is what the director matches an opponent
+    /// against. A duel room holds one person; where a bigger one holds several
+    /// the strongest is who an opponent has to be worth fighting.
+    pub(crate) fn rival(&self) -> Option<i16> {
+        self.0
+            .iter()
+            .flatten()
+            .filter(|standing| !standing.bot)
+            .map(|standing| standing.rating)
+            .max()
     }
 
     /// Hang the roster on a look, which is otherwise entirely the
@@ -814,6 +827,16 @@ struct Live {
     /// good moment rather than at once, per the graceful rules in
     /// docs/design/ai-players.md.
     yielding: Arc<AtomicBool>,
+    /// Set where this pilot is leaving so the room can be dealt a different
+    /// one, rather than because a person took the seat. The seat is still
+    /// wanted, so the room does not read short until this pilot has actually
+    /// gone, and the churn guard, which is about people arriving and leaving,
+    /// stays out of it.
+    swapping: bool,
+    /// Where it sits on the provisional strength order, so the director can
+    /// tell whether it still suits the room.
+    prior: f32,
+    seen: Arc<Seen>,
     task: tokio::task::JoinHandle<FlightEnd>,
 }
 
@@ -845,6 +868,129 @@ impl Accounts {
     }
 }
 
+/// Nobody in the room to be matched against. A rating is signed and every
+/// value of one is real, so the sentinel sits outside the type.
+const NO_RIVAL: i32 = i32::MIN;
+
+/// What a flying pilot has seen of the room it is in, read by the director
+/// that dealt it there.
+///
+/// A connection inside a room is the only thing in this process that can see
+/// one, so the population's questions about who is in there are answered from
+/// the seat rather than over a wire. The arena publishes its bot requests to
+/// anybody who asks, and a room's occupant is not the sort of thing that
+/// belongs on a public status.
+#[derive(Debug)]
+struct Seen {
+    rival: AtomicI32,
+    matches: AtomicU32,
+}
+
+impl Default for Seen {
+    fn default() -> Self {
+        Seen {
+            rival: AtomicI32::new(NO_RIVAL),
+            matches: AtomicU32::new(0),
+        }
+    }
+}
+
+impl Seen {
+    fn note_room(&self, standings: &Standings) {
+        self.rival.store(
+            standings.rival().map_or(NO_RIVAL, i32::from),
+            Ordering::Relaxed,
+        );
+    }
+
+    /// A match opening, which is how this pilot counts how long it has been
+    /// the same person's opponent.
+    fn note_match(&self) {
+        self.matches.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn rival(&self) -> Option<i16> {
+        match self.rival.load(Ordering::Relaxed) {
+            NO_RIVAL => None,
+            rating => Some(rating as i16),
+        }
+    }
+
+    fn matches(&self) -> u32 {
+        self.matches.load(Ordering::Relaxed)
+    }
+}
+
+/// What a rival of each tier is worth flying against, as a window on
+/// `PilotSpec::ordering_prior`.
+///
+/// Wide and overlapping. A band is where to look for an opponent rather than a
+/// bracket to sort people into, and neighboring bands share ground so a pilot
+/// sitting near a boundary meets both sides of it.
+///
+/// This is a designed table and not a measurement. `ordering_prior` is
+/// deliberately not a rating, the generated pool has no calibrated one, and
+/// nothing checked in could derive these numbers. What holds it honest is that
+/// the rows are the tiers in `rating.rs`, and `every_tier_names_a_band` fails
+/// if the two lists ever stop matching.
+const RIVAL_BANDS: [(&str, f32, f32); 5] = [
+    ("Newb", 0.02, 0.35),
+    ("Wing", 0.20, 0.50),
+    ("Lead", 0.35, 0.65),
+    ("Ace", 0.50, 0.80),
+    ("Legend", 0.65, 0.95),
+];
+
+/// Where a room with nobody to measure against looks, which is also where an
+/// unrated pilot's own rating sits.
+const MIDDLE_BAND: (f32, f32) = (RIVAL_BANDS[2].1, RIVAL_BANDS[2].2);
+
+fn band_for(rating: i16) -> (f32, f32) {
+    let tier = crate::rating::tier(f64::from(rating));
+    RIVAL_BANDS
+        .iter()
+        .find(|(named, _, _)| *named == tier)
+        .map_or(MIDDLE_BAND, |(_, low, high)| (*low, *high))
+}
+
+/// Matches a pilot flies against the same person before the room is dealt
+/// somebody else.
+///
+/// Three, because the rating layer discounts a repeated kill on a `1/(1+n)`
+/// curve and by the fourth the ending card has stopped moving with the play.
+/// The fight is still a fight past here; the measurement is not.
+const RIVAL_MATCHES: u32 = 3;
+
+/// How many pilots a room remembers, so the one it is dealt next is not the
+/// one it just had back again.
+const RIVAL_MEMORY: usize = 4;
+
+/// Whether a room should be dealt somebody else.
+///
+/// Two reasons and one guard. A pilot is replaced once it has been the same
+/// person's opponent for `RIVAL_MATCHES`, and at once where it never suited
+/// them, since fill answers a count and cannot know who it is sending anybody
+/// against. The guard is that neither reason counts before a match has been
+/// played, which holds this to one swap a match however wrong the pilot is.
+///
+/// A room with nobody in it wants nothing. Bots fighting bots are the zone
+/// keeping itself warm, and there is no one in there to be matched to.
+fn wants_replacing(played: u32, prior: f32, rival: Option<i16>) -> bool {
+    let Some(rival) = rival else { return false };
+    if played == 0 {
+        return false;
+    }
+    let (low, high) = band_for(rival);
+    played >= RIVAL_MATCHES || prior < low || prior > high
+}
+
+/// What a room has lately been dealt, and what it wants next.
+#[derive(Default)]
+struct RoomMemory {
+    band: Option<(f32, f32)>,
+    recent: VecDeque<pilots::PilotId>,
+}
+
 /// What the supervisor knows about one arena.
 #[derive(Default)]
 struct Instance {
@@ -858,6 +1004,10 @@ struct Instance {
     /// clients into the same outage every second.
     retry_after_ms: u64,
     failures: u32,
+    /// Per room, so a replacement suits the room rather than the instance. It
+    /// outlives the pilot it was learned from, which is the point: the pilot
+    /// that saw the room is usually the one being replaced.
+    rooms: HashMap<u32, RoomMemory>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -868,6 +1018,13 @@ struct Assignment {
 impl Live {
     fn assignment(&self) -> Assignment {
         Assignment { room: self.room }
+    }
+
+    /// Whether this pilot's seat has stopped filling the room's request. A
+    /// pilot standing down for a person has; one leaving to be replaced has
+    /// not, right up until it is gone.
+    fn departing(&self) -> bool {
+        self.yielding.load(Ordering::Relaxed) && !self.swapping
     }
 }
 
@@ -903,12 +1060,15 @@ struct Reconciliation {
 }
 
 /// Match the live population to the final room-scoped population an arena
-/// requested. A yielding bot no longer fills a request.
+/// requested. The flag beside each assignment is whether that pilot has
+/// stopped filling it: a bot standing down for a person has, and one leaving
+/// so the room can be dealt a different rival has not, because its seat is
+/// still wanted and refilling it twice would send two pilots at one chair.
 fn reconcile_assignments(current: &[(Assignment, bool)], desired: &[Assignment]) -> Reconciliation {
     let mut remaining = desired.to_vec();
     let mut kept = vec![false; current.len()];
-    for (index, (assignment, yielding)) in current.iter().enumerate() {
-        if *yielding {
+    for (index, (assignment, departing)) in current.iter().enumerate() {
+        if *departing {
             continue;
         }
         if let Some(at) = remaining.iter().position(|wanted| wanted == assignment) {
@@ -921,8 +1081,8 @@ fn reconcile_assignments(current: &[(Assignment, bool)], desired: &[Assignment])
         missing: remaining,
         ..Reconciliation::default()
     };
-    for (index, (_, yielding)) in current.iter().enumerate() {
-        if *yielding || kept[index] {
+    for (index, (_, departing)) in current.iter().enumerate() {
+        if *departing || kept[index] {
             continue;
         }
         plan.surplus.push(index);
@@ -1076,9 +1236,54 @@ pub async fn run() {
             let current: Vec<(Assignment, bool)> = inst
                 .bots
                 .iter()
-                .map(|bot| (bot.assignment(), bot.yielding.load(Ordering::Relaxed)))
+                .map(|bot| (bot.assignment(), bot.departing()))
                 .collect();
             let plan = reconcile_assignments(&current, &desired);
+
+            // A room the arena has stopped running takes its memory with it.
+            let live: HashSet<u32> = desired
+                .iter()
+                .map(|assignment| assignment.room)
+                .chain(inst.bots.iter().map(|bot| bot.room))
+                .collect();
+            inst.rooms.retain(|room, _| live.contains(room));
+
+            // What each room looks like from inside it, which only a pilot
+            // sitting in one can say. Kept on the instance rather than on the
+            // pilot, because the pilot that saw it is usually the one about to
+            // be replaced.
+            for bot in inst.bots.iter() {
+                if let Some(rival) = bot.seen.rival() {
+                    inst.rooms.entry(bot.room).or_default().band = Some(band_for(rival));
+                }
+            }
+
+            // Deal the room somebody else. A pilot is replaced once it has
+            // been the same person's opponent for long enough, or where it
+            // never suited them: fill answers a count and cannot know who it
+            // is sending anybody against, so the first pilot into a room is
+            // dealt blind and this is where that is put right.
+            //
+            // Only ever at a match boundary, which bounds this to one swap a
+            // match however wrong the pilot is. The departure itself is the
+            // one a yielding bot already takes, at the next intermission, so
+            // the seat changes hands under a podium: per decision 141 a seat
+            // changing hands mid-match starts the match over.
+            for bot in inst.bots.iter_mut() {
+                if bot.yielding.load(Ordering::Relaxed) {
+                    continue;
+                }
+                let played = bot.seen.matches();
+                if !wants_replacing(played, bot.prior, bot.seen.rival()) {
+                    continue;
+                }
+                bot.swapping = true;
+                bot.yielding.store(true, Ordering::Relaxed);
+                println!(
+                    "{addr}: {} leaves room {} after {played} match(es), for another rival",
+                    bot.name, bot.room
+                );
+            }
 
             // Ordinary fill still leaves one pilot at a time and observes the
             // minimum lifetime. Room-scoped requests choose which room loses
@@ -1110,10 +1315,19 @@ pub async fn run() {
                 if sent >= ADD_PER_CYCLE {
                     break;
                 }
-                let Some(who) = claim(&taken, &blocked, now) else {
+                let want = {
+                    let memory = inst.rooms.entry(assignment.room).or_default();
+                    Wanted {
+                        band: memory.band,
+                        recent: memory.recent.iter().copied().collect(),
+                    }
+                };
+                let Some(who) = claim(&taken, &blocked, now, &want) else {
                     break;
                 };
+                let seen: Arc<Seen> = Arc::default();
                 let yielding = Arc::new(AtomicBool::new(false));
+                let prior = who.ordering_prior();
                 let task = tokio::spawn(fly(
                     addr.clone(),
                     who.clone(),
@@ -1121,14 +1335,23 @@ pub async fn run() {
                     Arc::clone(&maps),
                     Arc::clone(&rigs),
                     Arc::clone(&yielding),
+                    Arc::clone(&seen),
                     Arc::clone(&accounts),
                 ));
+                let memory = inst.rooms.entry(assignment.room).or_default();
+                memory.recent.push_back(who.id);
+                while memory.recent.len() > RIVAL_MEMORY {
+                    memory.recent.pop_front();
+                }
                 inst.bots.push(Live {
                     id: who.id,
                     name: who.callsign,
                     room: assignment.room,
                     born_ms: now,
                     yielding,
+                    swapping: false,
+                    prior,
+                    seen,
                     task,
                 });
                 sent += 1;
@@ -1143,10 +1366,39 @@ pub async fn run() {
 /// A room draws from the authored roster and then a large generated
 /// population.
 const PILOT_POOL: usize = pilots::HOUSE_PILOT_POOL;
+/// How far a banded search reads into the generated pool before it settles for
+/// anybody free. The pool is 65,536 and a band covers a good share of it, so
+/// this bounds the arithmetic rather than the choice.
+const BAND_SEARCH: usize = 1_024;
+
+/// What a room wants of the next pilot dealt into it. Empty is what fill has
+/// always asked for: anybody free.
+#[derive(Clone, Debug, Default)]
+struct Wanted {
+    /// The window on `ordering_prior` the room's rival asks for, or none where
+    /// nobody in there has to be matched.
+    band: Option<(f32, f32)>,
+    /// Pilots this room has had lately.
+    recent: Vec<pilots::PilotId>,
+}
+
+impl Wanted {
+    fn suits(&self, spec: &pilots::PilotSpec) -> bool {
+        if self.recent.contains(&spec.id) {
+            return false;
+        }
+        match self.band {
+            None => true,
+            Some((low, high)) => (low..=high).contains(&spec.ordering_prior()),
+        }
+    }
+}
+
 fn claim(
     taken: &Arc<Mutex<HashSet<pilots::PilotId>>>,
     blocked: &Arc<Mutex<HashMap<String, u64>>>,
     now: u64,
+    want: &Wanted,
 ) -> Option<pilots::PilotSpec> {
     let mut t = taken.lock().ok()?;
     let mut blocked = blocked.lock().ok()?;
@@ -1163,6 +1415,35 @@ fn claim(
         }
     };
 
+    // The authored roster first and in order, which is what this was before
+    // any of it was banded. It is also what keeps the pinned anchor in the
+    // air: it holds the whole ladder's scale and does that by fighting rather
+    // than by being written down.
+    let authored = pilots::AUTHORED_PILOT_COUNT;
+    if let Some(spec) = (0..authored)
+        .map(pilots::individual)
+        .filter(|spec| want.suits(spec))
+        .find_map(&mut take)
+    {
+        return Some(spec);
+    }
+
+    // Then the generated pool, entered somewhere random in it. This used to be
+    // one walk from zero, so a room that lost a pilot was handed back the
+    // lowest free index every time, which in a duel zone is one opponent all
+    // night.
+    let span = PILOT_POOL - authored;
+    let from = rand::random::<usize>() % span;
+    if let Some(spec) = (0..BAND_SEARCH.min(span))
+        .map(|step| pilots::individual(authored + (from + step) % span))
+        .filter(|spec| want.suits(spec))
+        .find_map(&mut take)
+    {
+        return Some(spec);
+    }
+
+    // And anybody at all. An empty seat is worse than a mismatched opponent,
+    // so a band is a preference the search gives up on rather than a filter.
     (0..PILOT_POOL).map(pilots::individual).find_map(&mut take)
 }
 
@@ -1369,6 +1650,7 @@ async fn fly(
     maps: Arc<Maps>,
     rigs: Arc<Rigs>,
     yielding: Arc<AtomicBool>,
+    seen: Arc<Seen>,
     accounts: Arc<Accounts>,
 ) -> FlightEnd {
     let cfg = tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
@@ -1403,7 +1685,7 @@ async fn fly(
             return FlightEnd::AuthFailed;
         }
     };
-    fly_socket(addr, who, room, maps, rigs, yielding, identity, ws).await
+    fly_socket(addr, who, room, maps, rigs, yielding, seen, identity, ws).await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1414,6 +1696,7 @@ async fn fly_socket<S>(
     maps: Arc<Maps>,
     rigs: Arc<Rigs>,
     yielding: Arc<AtomicBool>,
+    seen: Arc<Seen>,
     identity: BotIdentity,
     ws: tokio_tungstenite::WebSocketStream<S>,
 ) -> FlightEnd
@@ -1747,12 +2030,15 @@ where
                         if let Sight::Shared(rig) = &sight {
                             if let Ok(mut st) = rig.standings.lock() {
                                 st.read(&data);
+                                seen.note_room(&st);
                             }
                         }
                     }
                     Some(crate::S2C_MATCH) => {
                         let next = data[1] & crate::MATCH_PLAYING != 0;
-                        match_transition(&mut match_playing, &mut match_number, next);
+                        if match_transition(&mut match_playing, &mut match_number, next) {
+                            seen.note_match();
+                        }
                         if let Sight::Shared(rig) = &sight {
                             rig.set_match(ship, me, match_playing, match_number, seconds_left(&data));
                         }
@@ -1909,11 +2195,15 @@ where
                             }
                             snapshot_at = std::time::Instant::now();
                         }
-                        Some(crate::S2C_ROSTER) => standings.read(&data),
+                        Some(crate::S2C_ROSTER) => {
+                            standings.read(&data);
+                            seen.note_room(&standings);
+                        }
                         Some(crate::S2C_MATCH) => {
                             let next = data[1] & crate::MATCH_PLAYING != 0;
                             match_left = seconds_left(&data);
                             if match_transition(&mut match_playing, &mut match_number, next) {
+                                seen.note_match();
                                 b = fresh_brain(ship, who.brain(), match_seed, match_number);
                                 sent = None;
                                 sent_at = 0;
@@ -2240,6 +2530,133 @@ mod tests {
         );
     }
 
+    /// A pilot leaving so the room can be dealt another one is not the room
+    /// getting quieter. Its seat is still wanted, so nothing is claimed for it
+    /// until the pilot has actually gone: refilling early would send a second
+    /// client at a chair the first one is still in.
+    #[test]
+    fn a_pilot_leaving_to_be_replaced_still_fills_its_room() {
+        let assignment = Assignment { room: 4 };
+        let plan = reconcile_assignments(&[(assignment, false)], &[assignment]);
+        assert!(plan.missing.is_empty(), "the room is not short yet");
+        assert!(plan.surplus.is_empty(), "and it is not over-full either");
+    }
+
+    /// The bands are the tiers, in the tiers' own order. Two lists that have to
+    /// agree and live in different files agree because this fails otherwise.
+    #[test]
+    fn every_tier_names_a_band() {
+        let tiers: Vec<&str> = crate::rating::TIERS.iter().map(|(name, _)| *name).collect();
+        let bands: Vec<&str> = RIVAL_BANDS.iter().map(|(name, _, _)| *name).collect();
+        assert_eq!(tiers, bands);
+        for (name, low, high) in RIVAL_BANDS {
+            assert!(low < high, "{name} is a window rather than a point");
+        }
+    }
+
+    /// What a rating asks for. The tier is what a player is shown, so it is
+    /// also what decides who they are shown across from.
+    #[test]
+    fn a_band_follows_the_rival_s_tier() {
+        assert_eq!(band_for(900), (RIVAL_BANDS[0].1, RIVAL_BANDS[0].2));
+        assert_eq!(band_for(1200), MIDDLE_BAND);
+        assert_eq!(band_for(1800), (RIVAL_BANDS[4].1, RIVAL_BANDS[4].2));
+    }
+
+    /// A room asking for a band gets somebody inside it. The pool is 65,536
+    /// pilots and every band covers a wide share of it, so the banded pass
+    /// answers and the fall-through to anybody free is never reached.
+    #[test]
+    fn a_banded_claim_takes_a_pilot_the_room_can_use() {
+        let taken = Arc::new(Mutex::new(HashSet::new()));
+        let blocked = Arc::new(Mutex::new(HashMap::new()));
+        for (_, low, high) in RIVAL_BANDS {
+            let want = Wanted {
+                band: Some((low, high)),
+                recent: Vec::new(),
+            };
+            let got = claim(&taken, &blocked, 0, &want).expect("the pool is not empty");
+            let prior = got.ordering_prior();
+            assert!(
+                (low..=high).contains(&prior),
+                "{} sits at {prior:.2}, outside {low:.2}-{high:.2}",
+                got.callsign
+            );
+        }
+    }
+
+    /// And not the one it just had. This is the whole of the complaint the
+    /// rotation answers: a duel room used to be handed the lowest free index
+    /// every time, which is one opponent for a whole session.
+    #[test]
+    fn a_claim_skips_the_pilots_a_room_has_just_had() {
+        let taken = Arc::new(Mutex::new(HashSet::new()));
+        let blocked = Arc::new(Mutex::new(HashMap::new()));
+        let mut recent = Vec::new();
+        for _ in 0..RIVAL_MEMORY {
+            let want = Wanted {
+                band: None,
+                recent: recent.clone(),
+            };
+            let got = claim(&taken, &blocked, 0, &want).expect("the pool is not empty");
+            assert!(!recent.contains(&got.id), "{} came back", got.callsign);
+            recent.push(got.id);
+        }
+    }
+
+    /// When a room is dealt somebody else, and when it is left alone.
+    #[test]
+    fn a_room_is_dealt_a_new_rival_when_the_old_one_has_run_its_course() {
+        let (low, high) = band_for(1200);
+        let suits = (low + high) / 2.0;
+        assert!(
+            !wants_replacing(0, suits, Some(1200)),
+            "never before a match has been played, whatever else is true"
+        );
+        assert!(
+            !wants_replacing(RIVAL_MATCHES - 1, suits, Some(1200)),
+            "a pilot who suits the room stays for its whole run"
+        );
+        assert!(
+            wants_replacing(RIVAL_MATCHES, suits, Some(1200)),
+            "and is replaced at the end of it"
+        );
+        assert!(
+            wants_replacing(1, high + 0.1, Some(1200)),
+            "a pilot the room was dealt blind goes after one match"
+        );
+        assert!(
+            wants_replacing(1, low - 0.1, Some(1200)),
+            "outclassed either way round"
+        );
+        assert!(
+            !wants_replacing(99, suits, None),
+            "bots keeping an empty room warm are matched to nobody"
+        );
+    }
+
+    /// The rival is the best person in the room and never a machine, which is
+    /// what makes an empty room ask for nobody in particular.
+    #[test]
+    fn the_rival_is_the_best_person_in_the_room() {
+        let standing = |rating: i16, bot: bool| {
+            Some(ai::Standing {
+                rating,
+                games: 40,
+                bot,
+            })
+        };
+        let mut seats: [Option<ai::Standing>; sim::MAX_SHIPS] = std::array::from_fn(|_| None);
+        seats[0] = standing(1600, true);
+        seats[1] = standing(1310, false);
+        seats[2] = standing(1180, false);
+        assert_eq!(Standings(seats).rival(), Some(1310));
+
+        let mut machines: [Option<ai::Standing>; sim::MAX_SHIPS] = std::array::from_fn(|_| None);
+        machines[0] = standing(1600, true);
+        assert_eq!(Standings(machines).rival(), None);
+    }
+
     /// A map change carries the pilot across rather than emptying its seat.
     ///
     /// A match game changes map at every whistle, and a new map keys a new
@@ -2464,6 +2881,7 @@ mod tests {
             Arc::new(Maps::default()),
             Arc::new(Rigs::default()),
             Arc::new(AtomicBool::new(false)),
+            Arc::default(),
             BotIdentity::Unaccounted,
             ws,
         )
@@ -2494,6 +2912,7 @@ mod tests {
                 Arc::new(Maps::default()),
                 Arc::new(Rigs::default()),
                 Arc::new(AtomicBool::new(true)),
+                Arc::default(),
                 BotIdentity::Unaccounted,
                 ws,
             ),
@@ -2585,7 +3004,7 @@ mod tests {
             .lock()
             .unwrap()
             .insert(first.callsign.clone(), 20_000);
-        let got = claim(&taken, &blocked, 10_000).unwrap();
+        let got = claim(&taken, &blocked, 10_000, &Wanted::default()).unwrap();
         assert_ne!(got.callsign, first.callsign);
         assert_eq!(got.callsign, pilots::individual(1).callsign);
     }

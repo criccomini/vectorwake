@@ -438,9 +438,15 @@ report and its current-content fingerprints ship together. See
 [accounts.md](accounts.md) and
 [meta-layer.md](../architecture/meta-layer.md).
 
-**Presence.** Presence follows room demand today. Fill walks the stable roster
-and claims an unused individual when an arena needs a seat. The director does
-not keep hours or a weekly schedule.
+**Presence.** Presence follows room demand today. Fill claims an unused
+individual when an arena needs a seat. The director does not keep hours or a
+weekly schedule.
+
+The authored roster is claimed first and in order, which is what keeps the
+pinned anchor in the air. Past it the generated pool is entered at random. It
+used to be walked from index zero, so a room that lost a pilot was handed back
+the lowest free individual every time, and a two seat zone dealt one opponent
+for a whole session.
 
 **Careers.** Rating changes through ordinary play. Hull, competence and
 behavior remain fixed for a pilot specification version, and the hull is the
@@ -475,8 +481,10 @@ two were uncorrelated: only a third of the pilots whose brains opened the
 bombing gates owned a bomb, and Ozone, whose strategy is Bombardier, flew a
 runner kit with no bomb ladder on it at all.
 
-A bot's rating moves with its record, and fill does not select by rating, so a
-long-lived individual can still meet a first-week player.
+A bot's rating moves with its record. Fill still answers a count rather than a
+question about who, so the first pilot into a room is dealt blind and a
+long-lived individual can meet a first-week player. What the director does about
+that is below.
 
 ## The population director
 
@@ -484,6 +492,26 @@ The director decides how many bots exist and which ones. It is a deployment
 service rather than a per-arena loop: it runs in the bot server, which watches
 the directory's browse reply and flies bots into rooms as ordinary declared
 clients. [ai-runtime.md](../architecture/ai-runtime.md) has the mechanics.
+
+**Deal a rival, not a body.** A room with a person in it gets a new pilot after
+three matches against the same one, and at once where the one it has does not
+suit them at all. The replacement comes from a window on the roster's strength
+order, one window per tier, and is never one of the last few that room has had.
+
+The director can ask that question because a bot is a client: the roster it is
+sent carries every seat's rating and whether that seat is a machine, so a
+connection inside a room can see who it is across from and report it back. None
+of it is published. An arena's bot requests are answerable to anybody without
+joining, and who is sitting in a room is not the sort of thing that belongs on
+a public status; a rival chosen on a player's arrival would also make leaving
+and rejoining a way to roll for a favorable opponent. It is chosen on the room's
+clock, inside the process that flies the pilots. See
+[decision 145](../architecture/decisions.md#145-a-duel-is-one-kill-and-the-room-deals-you-a-rival).
+
+The bands are written down rather than measured. `ordering_prior` is
+deliberately not a rating and the generated pool has no calibrated one, so there
+is nothing to derive them from; what holds them honest is that their rows are
+the tiers in the rating layer and a test fails when the two lists drift apart.
 
 **Fill to a target.** Every zone names how full its rooms should feel:
 `bot_fill`, a share of the room's `max_ships`, 0.8 unless the zone says
@@ -515,6 +543,12 @@ assumption.
 **Resist churn.** A bot lives at least thirty seconds. After a removal, no bot is
 added for a minute. A player joining and leaving repeatedly should not make the
 roster flicker.
+
+A seat changing occupant on purpose is not that, and the guard knows the
+difference. A pilot leaving so its room can be dealt another one keeps filling
+that room's request until it has actually gone, so the room is never counted
+short, nothing is claimed at a chair somebody is still in, and one room rotating
+does not hold refill for every other room on the arena.
 
 **Balance before asking humans to.** If teams are uneven, bots switch sides
 first. Nobody enjoys being told to change teams.

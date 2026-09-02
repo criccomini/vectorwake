@@ -178,16 +178,22 @@ impl ZoneDef {
             // clock is the backstop here, not the referee, but it still gets
             // printed: a match that reaches the whistle level is a draw, so
             // the time is a thing a player can be caught by.
-            "duel" => (
-                teams(),
-                time(),
-                format!(
-                    "first to {}",
-                    self.arena
-                        .first_to
-                        .unwrap_or(crate::modes::DEFAULT_FIRST_TO)
-                ),
-            ),
+            //
+            // A duel to one round says so in words. "first to 1" is arithmetic
+            // a player has to finish, and what it works out to is the shortest
+            // thing this strip has ever had to say.
+            "duel" => {
+                let rounds = self
+                    .arena
+                    .first_to
+                    .unwrap_or(crate::modes::DEFAULT_FIRST_TO);
+                let scoring = if rounds <= 1 {
+                    "first kill".to_string()
+                } else {
+                    format!("first to {rounds}")
+                };
+                (teams(), time(), scoring)
+            }
             // A warzone runs rounds rather than a clock, so it states the
             // sides and what wins and leaves the time blank rather than
             // printing a number it does not have.
@@ -960,13 +966,13 @@ mod tests {
             ("4 v 4".into(), String::new(), "flags".into())
         );
         // And the duel is one pilot a side, which is a fact the strip reads
-        // off the side cap rather than being told, played to rounds rather
-        // than to a tally. The clock is still printed because it still ends
-        // the match, as a draw where nobody reached the rounds.
+        // off the side cap rather than being told, played to one clean kill
+        // rather than to a tally. The clock is still printed because it still
+        // ends the match, as a draw where nobody scored.
         assert_eq!(read("duel").label("duel"), "Duel");
         assert_eq!(
             read("duel").format(),
-            ("1 v 1".into(), "3:00".into(), "first to 2".into())
+            ("1 v 1".into(), "3:00".into(), "first kill".into())
         );
     }
 

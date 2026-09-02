@@ -5,7 +5,7 @@
 # whole of the conflict resolution and a rollback needs a new higher number
 # rather than a reused one.
 
-version = 41
+version = 42
 name = "vectorwake"
 description = "the reference deployment"
 

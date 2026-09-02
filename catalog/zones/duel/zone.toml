@@ -17,7 +17,8 @@ label = "Duel"
 
 # Rounds rather than melee's tally, which is decision 142. A death ends the
 # round and two seconds later both pilots are back on their starts; the
-# scoring, the reset and the trade window are all in `modes::Duel`.
+# scoring, the reset and the trade window are all in `modes::Duel`. One round
+# takes the match here, per decision 145.
 mode = "duel"
 
 # Small rooms, and that is the whole point of them. A duel on a melee map is
@@ -58,17 +59,25 @@ max_bots_per_team = 1
 max_watchers = 8
 
 [arena]
-# Rounds, and two of them take the match. A death ends a round rather than
-# the match, and two seconds later both pilots are back on their own starts
-# with a full bar and a full rack. Level at two plays on, so a match is three
-# rounds at most and losing the opening exchange leaves you one round from
-# level rather than watching out a fight that is already decided.
-first_to = 2
+# One clean kill takes it, which is decision 145 moving the number decision 142
+# set at two. A match is the unit a rival is dealt on, so a short one is how a
+# pilot meets more than one opponent in an evening rather than the same seat all
+# night.
+#
+# A trade is not a clean kill. Both sides take the round, neither leads, and the
+# match plays on to two-one, so the bomb still in the air when its thrower died
+# costs a round instead of the fight. That was the strongest of decision 142's
+# three arguments for two rounds and `Duel::decided` already answers it: the
+# match needs a leader, not a number.
+first_to = 1
 
 # The clock is the backstop rather than the referee: whoever leads at the
 # whistle takes it and level is a draw. Team Battle's three minutes, because
 # a duel is flown on the same economy and what a pilot learns in one room
-# should be worth something in the other.
+# should be worth something in the other. Three minutes is a long backstop for
+# one kill and it stays one: it is the same clock in both zones, and shortening
+# it here would be guessing at a fight length nobody has measured on this
+# ground.
 match_seconds = 180
 intermission_seconds = 15
 
