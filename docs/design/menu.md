@@ -41,8 +41,9 @@
 >
 > Its answer down the column is where you stand: the side you fly for, or
 > `watching`. The band opens the same panel, and at the whistle the arena
-> raises it the way a hand would, with one column added for what the match paid
-> each pilot. Who took the match is said by the band rather than by the sheet.
+> raises it the way a hand would, with one column added for where the ladder
+> has each pilot and what the match paid them. Who took the match is said by
+> the band rather than by the sheet.
 > See [decision 147](../architecture/decisions.md).
 
 > **The ship stop is in a room too, and LEAVE SEAT is gone.** The panel the

@@ -6162,16 +6162,27 @@ local function sheet_row(kx, kw, y, h, r, cols, i)
             local name, tcol, named = pages.sheet_side(r)
             txt(name, x, mid, px, pal.a(tcol, 0.9), "right", nil, named)
         elseif c.key == "moved" then
-            -- What the match paid, and nothing at all for somebody who was
-            -- not in it. A pilot whose rating did not move reads a dim zero,
-            -- because "this match changed nothing for you" is an answer and a
-            -- blank is not.
-            if not r.watch then
+            -- Where the ladder has them, and what the match paid, and nothing
+            -- at all for somebody who was not in it.
+            --
+            -- Two colors, because the two are different kinds of fact. The
+            -- standing is a reading like the three figures beside it and is
+            -- set in their ink; the movement is what this column is added at
+            -- the whistle to say, and it is green up, red down and mute where
+            -- nothing happened. One ink over the pair would have said a
+            -- standing was good or bad, which no rating is.
+            if r.moved_by then
                 local by = r.moved
                 local mcol = pal.a(pal.MUTE, 1)
                 if by and by > 0 then mcol = pal.a(pal.PAID, 0.95)
                 elseif by and by < 0 then mcol = pal.a(pal.HURT, 0.9) end
-                txt(r.moved_at or "0", x, mid, px, mcol, "right")
+                txt(r.moved_by, x, mid, px, mcol, "right")
+                -- In front of the bracket, off the bracket's own width, so
+                -- the pair sits exactly where the column was measured for.
+                if r.rating_at then
+                    txt(r.rating_at, x - text_w(" " .. r.moved_by, px), mid,
+                        px, pal.a(pal.READ, 1), "right")
+                end
             end
         else
             -- A watcher's figures are zeros in the register a reading that
@@ -6204,17 +6215,41 @@ end
 function pages.board_list(kx, kw, top, bottom, rowh)
     local pad = M.ROW_INSET * F.scale
     local n = #rows
-    -- What the match paid each pilot, as a signed figure, worked out before
-    -- the columns are measured because the widest of them is what the column
-    -- is sized to. Written onto the rows rather than looked up twice, since
-    -- the measure and the drawing both want it.
-    local moved = (M.sheet or {}).moved
+    -- Where the ladder has each pilot, and what the match paid them: the
+    -- standing first and the movement after it in brackets, which is the
+    -- order the two are read in. A signed figure on its own says how the
+    -- evening went and not where anybody stands, and where a pilot stands is
+    -- what the column is called.
+    --
+    -- Worked out before the columns are measured, because the widest of them
+    -- is what the column is sized to, and written onto the rows rather than
+    -- looked up twice, since the measure and the drawing both want it. The
+    -- two halves are kept apart as well as joined: they are drawn in
+    -- different ink and the drawing needs the bracket's own width to place
+    -- the standing in front of it.
+    local sheet = M.sheet or {}
+    local moved, scores = sheet.moved, sheet.ratings
     for i = 1, n do
         local r = rows[i]
-        local by = moved and not r.watch and r.i ~= nil and moved[r.i] or nil
+        local seated = not r.watch and r.i ~= nil
+        local by = moved and seated and moved[r.i] or nil
         r.moved = by
-        r.moved_at = by and ((by > 0 and "+" or "") .. tostring(by))
-            or (moved and not r.watch and "0" or nil)
+        -- Rounded the way the card rounds it, so a pilot reading their own
+        -- standing in two places is not told two numbers.
+        local at = scores and seated and scores[r.i] or nil
+        r.rating_at = at and tostring(math.floor(at + 0.5)) or nil
+        -- A pilot whose rating did not move reads a bracketed zero, because
+        -- "this match changed nothing for you" is an answer and a blank is
+        -- not. A watcher was not in the match and reads nothing at all.
+        r.moved_by = moved and seated
+            and ("(" .. ((by and by > 0) and "+" or "")
+                 .. tostring(by or 0) .. ")") or nil
+        if r.moved_by then
+            r.moved_at = r.rating_at
+                and (r.rating_at .. " " .. r.moved_by) or r.moved_by
+        else
+            r.moved_at = nil
+        end
     end
     local cols = pages.sheet_cols(n)
     local heads = 24 * F.scale

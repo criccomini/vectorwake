@@ -401,7 +401,10 @@ The match ending is that sheet, raised by the arena rather than by a hand.
 There is no page of its own and no block over the fight: the whistle opens the
 `players` stop the way a press would, so escape puts it away and the arrows
 walk it exactly as they do the rest of the time. What the sheet gains is one
-column, what the match paid each pilot. Who took the match is the band's to
+column: where the ladder has each pilot, with what the match paid them in
+brackets after it. The standing is set in the ink the figures beside it are,
+since no rating is good or bad; only the movement is green up and red down.
+Who took the match is the band's to
 say, in the pixels that have carried the score for three minutes: both sides
 stay on it, the winner at its own strength and the beaten side stood down to a
 third, over the clock counting to the next one. A draw stands neither down.

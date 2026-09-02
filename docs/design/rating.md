@@ -248,7 +248,9 @@ why the filter exists.
 There is no zone whose rating is the unmarked default any more.
 
 The podium's rating column, per the top of this document, is the match's own
-and needs no label: a match is in one zone by definition.
+and needs no label: a match is in one zone by definition. It carries the
+standing and the movement together, as `1500 (-6)`, because a signed figure
+alone says how the evening went and not where anybody stands.
 
 ## Storage
 
