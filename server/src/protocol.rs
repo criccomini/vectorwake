@@ -258,7 +258,13 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// now that a repel can hand a round its whole life back. A client built for
 /// 34 would read the counter as a weapon count and the rest as records, which
 /// is a misparse, so the number moves.
-pub(crate) const CLIENT_PROTOCOL: u8 = 35;
+///
+/// 36 puts a flag's `held` clock on the wire, two bytes after its cooldown.
+/// `sim_hash` had always covered it, and the hash is what a pack round trip is
+/// checked against, so it was owed; the client needs it to draw the carry
+/// limit, which it cannot count for itself when it joins mid carry. A client
+/// built for 35 would read those two bytes as the head of the next flag.
+pub(crate) const CLIENT_PROTOCOL: u8 = 36;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of

@@ -389,16 +389,21 @@ function Layer:ring(x, y, r, width, segs, col)
     end
 end
 
--- A shockwave: bright on the ring, gone on both sides of it. Every wave the
--- effects layer draws starts wider than it is round, so the clamp above is
--- load-bearing here rather than defensive: this is the first frame or two of
--- every ship death and every bomb.
-function Layer:ring_fade(x, y, r, width, segs, col)
-    local u = unit(segs)
+-- Part of a ring, bright on the radius itself and gone on both sides of it.
+-- This is `seg_glow` bent round a circle, and it is the bloom every wide
+-- stroke in this game carries: an arc stroked hard and left bare reads as a
+-- wire, while a wall face, a goal frame and a hull's outline all throw light.
+--
+-- Every wave the effects layer draws starts wider than it is round, so the
+-- clamp in `inner` is load-bearing here rather than defensive: this is the
+-- first frame or two of every ship death and every bomb.
+function Layer:arc_fade(x, y, r, a0, a1, width, segs, col)
     local ri, ro = inner(r, width), r + width * 0.5
+    local step = (a1 - a0) / segs
     for i = 0, segs - 1 do
-        local c0, s0 = u[i * 2 + 1], u[i * 2 + 2]
-        local c1, s1 = u[i * 2 + 3], u[i * 2 + 4]
+        local b0, b1 = a0 + step * i, a0 + step * (i + 1)
+        local c0, s0 = math.cos(b0), math.sin(b0)
+        local c1, s1 = math.cos(b1), math.sin(b1)
         self:tri_fade(x + c0 * ri, y + s0 * ri, 0,
                       x + c1 * ri, y + s1 * ri, 0,
                       x + c1 * r, y + s1 * r, 1, col)
@@ -412,6 +417,11 @@ function Layer:ring_fade(x, y, r, width, segs, col)
                       x + c1 * ro, y + s1 * ro, 0,
                       x + c0 * ro, y + s0 * ro, 0, col)
     end
+end
+
+-- The whole circle of it: a shockwave, and the glow under a closed rim.
+function Layer:ring_fade(x, y, r, width, segs, col)
+    self:arc_fade(x, y, r, 0, math.pi * 2, width, segs, col)
 end
 
 -- A ring or a part of one, carrying the pixel of falloff every stroke in this

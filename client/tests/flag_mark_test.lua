@@ -1,6 +1,6 @@
 -- Carrying the flag puts you on the map, and the instruments draw it.
 --
---     lua5.1 client/tests/pennant_test.lua
+--     lua5.1 client/tests/flag_mark_test.lua
 --
 -- Decision 132: the wire tells every client where every flag is, carried ones
 -- included, so the client shows it. The dial draws the flags in its window
@@ -10,9 +10,9 @@
 -- because every one of them is a quiet `if` a later change could lose.
 --
 -- Counted inside the instrument's own published box, against a flagless
--- frame. The HUD draws triangles of its own, and every flag also adds one to
--- the pennant strip at the top of the screen, so raw totals say nothing: what
--- is asked is how many landed on the dial, and where.
+-- frame. The HUD draws marks of its own, and every flag also adds one to the
+-- strip at the top of the screen, so raw totals say nothing: what is asked is
+-- how many landed on the dial, and where.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -28,17 +28,23 @@ end
 
 -- --- the engine, as much of it as ui.lua touches ---------------------------
 
-local tris = {}
+-- A flag's mark is a core inside a ring, and that ring is the one thing on
+-- this screen drawn with `ring_aa`, so collecting those is exactly one row
+-- per mark however many land on the same pixel. It was a staff and a triangle
+-- and this counted triangles; the instruments draw what the arena draws, and
+-- the arena stopped drawing cloth.
+local rings = {}
 local layer = {n = 0}
 local function noop(self) self.n = self.n + 1 end
-for _, name in ipairs({"arc", "disc", "flush", "frame", "halo", "outline",
-                       "quad", "rect", "reset", "ring", "seg", "seg_fade",
-                       "seg_flat", "skirt", "tri_fade"}) do
+for _, name in ipairs({"arc", "arc_aa", "arc_fade", "bloom", "disc", "flush",
+                       "frame", "halo", "outline", "quad", "rect", "reset",
+                       "ring", "ring_fade", "seg", "seg_fade", "seg_flat",
+                       "skirt", "tri", "tri_fade"}) do
     layer[name] = noop
 end
-layer.tri = function(self, x1, y1, x2, y2, x3, y3)
+layer.ring_aa = function(self, x, y, r)
     self.n = self.n + 1
-    tris[#tris + 1] = {x = x1, y = y1, x2 = x2, x3 = x3}
+    rings[#rings + 1] = {x = x, y = y, r = r}
 end
 
 local CAM = 5000
@@ -100,9 +106,9 @@ package.loaded["arena.world"] = world
 local ui = require("arena.ui")
 local state = package.loaded["arena.state"]
 
--- One frame on a monitor, and how many triangles it took.
+-- One frame on a monitor, and how many marks it took.
 local function frame(map)
-    tris = {}
+    rings = {}
     state.n = 0
     ui.details = false
     ui.map = map
@@ -132,15 +138,15 @@ local function frame(map)
     for _, r in ipairs(ui.hits) do
         if r.action == "map" then box = r end
     end
-    -- The triangles that landed on the instrument, and the rightmost of
-    -- them. By x alone: a pennant's y goes through `ry` into the layer's
-    -- flipped space while the hit box stays in the interface's, and the two
-    -- do not compare. The x axis is the same in both, and at a monitor's
-    -- width the dial's corner shares no x with the pennant strip at the
-    -- window's center, which is the only other place a flag draws.
+    -- The marks that landed on the instrument, and the rightmost of them. By
+    -- x alone: a mark's y goes through `ry` into the layer's flipped space
+    -- while the hit box stays in the interface's, and the two do not compare.
+    -- The x axis is the same in both, and at a monitor's width the dial's
+    -- corner shares no x with the strip at the window's center, which is the
+    -- only other place a flag draws.
     local inside, right = 0, nil
     if box then
-        for _, t in ipairs(tris) do
+        for _, t in ipairs(rings) do
             if t.x >= box.x and t.x <= box.x + box.w then
                 inside = inside + 1
                 if not right or t.x > right.x then right = t end

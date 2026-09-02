@@ -36,8 +36,9 @@ end
 local rects = {}
 local layer = {n = 0}
 local function noop(self) self.n = self.n + 1 end
-for _, name in ipairs({"arc", "disc", "flush", "halo", "outline", "quad",
-                       "reset", "ring", "seg_fade", "seg_flat",
+for _, name in ipairs({"arc", "arc_aa", "arc_fade", "bloom", "flush", "halo",
+                       "outline", "quad", "reset", "ring", "ring_aa",
+                       "ring_fade", "seg", "seg_fade", "seg_flat",
                        "skirt", "tri", "tri_fade"}) do
     layer[name] = noop
 end
@@ -66,17 +67,18 @@ layer.rect = function(self, x, y, w, h, col)
     self.n = self.n + 1
     rects[#rects + 1] = {x = x, y = y, w = w, h = h, col = col}
 end
--- The pennant strip is drawn as mesh rather than as type, so it is the only
--- thing on the band's column a check cannot find by its words. Every upright
--- segment on the frame is kept; which of them are the strip is `strip`'s
--- question, below, since it takes the window's own size to ask.
-local uprights = {}
-layer.seg = function(self, x1, y1, x2, y2, t)
+-- The flag strip is drawn as mesh rather than as type, so it is the only
+-- thing on the band's column a check cannot find by its words. Every disc on
+-- the frame is kept; which of them are the strip is `strip`'s question,
+-- below, since it takes the window's own size to ask.
+--
+-- Discs rather than upright segments, which is what this collected while a
+-- flag was a staff and a pennant. The mark is a core inside a ring now and
+-- has no upright in it at all.
+local marks = {}
+layer.disc = function(self, x, y, r)
     self.n = self.n + 1
-    if math.abs(x1 - x2) < 0.01 then
-        uprights[#uprights + 1] = {x = x1, top = math.min(y1, y2),
-                                   bottom = math.max(y1, y2), t = t}
-    end
+    marks[#marks + 1] = {x = x, y = y, r = r}
 end
 
 local room = {count = 4, teams = {[0] = 0, 1, 0, 1}}
@@ -164,7 +166,7 @@ local function frame(o)
     o = o or {}
     w_now, h_now = o.w or W, o.h or H
     rects = {}
-    uprights = {}
+    marks = {}
     flags = o.flags or {}
     thinnest = nil
     state.n = 0
@@ -684,9 +686,9 @@ if note and clock then
           note.px <= 13, string.format("%.0f", note.px))
 end
 
--- --- the pennants are a line of their own ----------------------------------
+-- --- the flag strip is a line of its own ------------------------------------
 --
--- A mode with flags hangs one pennant per flag off the band, colored by who
+-- A mode with flags hangs one mark per flag off the band, colored by who
 -- holds it. This is where it goes, and the check is mostly that it goes
 -- anywhere at all: the strip was pinned twenty-five points above where the
 -- room's line lands, which is eight points inside the band, so in Turf and
@@ -702,26 +704,33 @@ local FLAGS = {{100, 100, 0, 0}, {200, 100, 1, 0},
                {300, 100, 255, 0}, {400, 100, 0, 0}}
 
 -- The strip, in the coordinates everything here counts in: down from the top,
--- where the mesh the staffs came off counts up from the bottom.
+-- where the mesh the marks come off counts up from the bottom.
 --
--- Which uprights are the strip's takes two bounds, and both earn their place.
--- The dial draws the same pennant for the same flags in its own corner, and
--- the corner stack draws short uprights down the right side, so asking for
--- upright alone collects the whole screen and asking for near the top alone
--- still collects the dial's, which on a phone hang level with these. What is
--- left after both is the band's column: the middle of the window, above the
--- fight.
+-- Which discs are the strip's takes two bounds, and both earn their place.
+-- The dial draws the same mark for the same flags in its own corner, and the
+-- roster draws a dot per contact, so asking for a disc alone collects the
+-- whole screen and asking for near the top alone still collects the dial's,
+-- which on a phone hang level with these. What is left after both is the
+-- band's column: the middle of the window, above the fight.
+--
+-- Counted by column rather than by disc, because one mark is two of them: a
+-- soft one for the light and a hard core inside it, both on the same x.
 --
 -- Read with the board shut. An open board is a panel standing in that same
--- column, and it rules its own rows and columns with uprights of exactly this
--- kind; where the board goes is asked below by taking its published box on one
--- frame and the strip on another, since neither moves for the other.
+-- column and lays discs of its own; where the board goes is asked below by
+-- taking its published box on one frame and the strip on another, since
+-- neither moves for the other.
 local function strip()
     local reach = {top = nil, bottom = nil, left = nil, right = nil, n = 0}
-    for _, g in ipairs(uprights) do
-        local hi, lo = h_now - g.bottom, h_now - g.top
+    local seen = {}
+    for _, g in ipairs(marks) do
+        local hi, lo = h_now - (g.y + g.r), h_now - (g.y - g.r)
         if math.abs(g.x - w_now / 2) < w_now / 6 and hi < h_now / 4 then
-            reach.n = reach.n + 1
+            local col = string.format("%.1f", g.x)
+            if not seen[col] then
+                seen[col] = true
+                reach.n = reach.n + 1
+            end
             if not reach.top or hi < reach.top then reach.top = hi end
             if not reach.bottom or lo > reach.bottom then reach.bottom = lo end
             if not reach.left or g.x < reach.left then reach.left = g.x end
@@ -739,9 +748,9 @@ do
 
     frame({flags = FLAGS})
     local pennants, tick = strip(), drawn("0:33")
-    check("a mode with flags draws one pennant per flag",
+    check("a mode with flags draws one mark per flag",
           pennants ~= nil and pennants.n == #FLAGS,
-          pennants and (pennants.n .. " staffs for " .. #FLAGS .. " flags")
+          pennants and (pennants.n .. " marks for " .. #FLAGS .. " flags")
               or "no strip at all")
     if pennants and tick then
         local band_low = down(tick) + tick.px / 2
@@ -788,7 +797,7 @@ do
     frame({flags = FLAGS,
            match = {playing = false, left = 21, score = {[0] = 15, [1] = 19}}})
     check("and the whistle takes the strip down", strip() == nil,
-          "the pennants outlived the match")
+          "the flag strip outlived the match")
     local next_up = drawn("NEXT MATCH IN")
     frame({match = {playing = false, left = 21, score = {[0] = 15, [1] = 19}}})
     local flagless = drawn("NEXT MATCH IN")

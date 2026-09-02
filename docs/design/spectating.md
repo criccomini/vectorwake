@@ -100,7 +100,7 @@ capability, and when it arrives it should take the roster row and the tally
 together rather than half of each.
 
 It sat at the top of the middle first, and could not stay: that strip carries
-the flag pennants and the round's banner, both centered, and a notice laid over
+the flag marks and the round's banner, both centered, and a notice laid over
 them read as a fault in the flags rather than as a fact about you. Those are
 about the round; this is about you, like the keys it now sits with. Being on
 that row also means the map opening across the corner keeps clear of it under

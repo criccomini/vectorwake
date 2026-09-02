@@ -51,6 +51,16 @@ end
 function layer:arc(x, y, r, a0, a1, w)
     box(x - r - w, y - r - w, x + r + w, y + r + w)
 end
+function layer:ring_aa(x, y, r, w)
+    box(x - r - w, y - r - w, x + r + w, y + r + w)
+end
+function layer:arc_aa(x, y, r, a0, a1, w)
+    box(x - r - w, y - r - w, x + r + w, y + r + w)
+end
+function layer:arc_fade(x, y, r, a0, a1, w)
+    box(x - r - w, y - r - w, x + r + w, y + r + w)
+end
+function layer:bloom(x, y, r) box(x - r, y - r, x + r, y + r) end
 function layer:rect(x, y, w, h) box(x, y, x + w, y + h) end
 function layer:frame(x, y, w, h) box(x, y, x + w, y + h) end
 function layer:outline(pts, w)

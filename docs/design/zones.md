@@ -82,7 +82,7 @@ stand while the four it left pay somebody else.
 
 The settling window looks like a detail and is not. Without it, two pilots of
 opposite sides sitting on one stand take it from each other a hundred times a
-second: the pennant strobes, and which side the clock happens to pay is decided
+second: the stand strobes, and which side the clock happens to pay is decided
 by the tick the payout lands on rather than by the fight.
 
 Six stands and four a side is deliberate. Two more stands than either team has
@@ -201,7 +201,7 @@ them, and rounds took a third mode later. That is no argument for an ABI, an
 authoring system and a sandbox.
 
 **A mode-aware client.** The client reads the catalog's format strip, draws
-pennants and greens off the wire, and gets the match clock from `match_state`.
+flags and greens off the wire, and gets the match clock from `match_state`.
 Turf and Capture the Flag needed no client change at all beyond the strip;
 greens needed one accessor, one drawing function and a sound that was already
 in the kit.

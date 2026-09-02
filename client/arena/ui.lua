@@ -1403,12 +1403,17 @@ local function own_arrow(ax, ay, ox, oy, side, me)
           pal.WHITE)
 end
 
--- A flag at four pixels: the same pennant wherever an instrument shows one,
--- so a flag looks like a flag on the dial, on the map, and pinned to a rim.
-local function pennant(px, py, s, col)
-    F.layer:seg(px, ry(py + 3 * s, 0), px, ry(py - 3.5 * s, 0), s, pal.a(col, 0.95))
-    F.layer:tri(px, ry(py - 3.5 * s, 0), px + 4 * s, ry(py - 2 * s, 0),
-          px, ry(py - 0.5 * s, 0), pal.a(col, 0.9))
+-- A flag at four pixels: the same mark wherever an instrument shows one, so a
+-- flag looks like a flag on the dial, on the map, and pinned to a rim.
+--
+-- It was a staff and a cloth triangle, matching what the arena drew. The
+-- arena draws a transponder now, so this does too: a bright core inside a
+-- ring, which is what the world's own mark reduces to once there is no room
+-- left for the arcs standing off it.
+local function flag_mark(px, py, s, col)
+    F.layer:disc(px, ry(py, 0), 4.4 * s, 10, pal.a(col, 0.16))
+    F.layer:ring_aa(px, ry(py, 0), 3.1 * s, 0.9 * s, pal.a(col, 0.9), 14)
+    F.layer:disc(px, ry(py, 0), 1.3 * s, 8, pal.a(col, 1))
 end
 
 local function radar(cx, cy, me)
@@ -1497,9 +1502,9 @@ local function radar(cx, cy, me)
         local col = (team == 255) and pal.INK
             or (team == my_team and pal.FRIEND or pal.ENEMY)
         if px then
-            -- A pennant rather than a bar: a flag should look like one even
-            -- at four pixels.
-            pennant(px, py, F.scale, col)
+            -- A core in a ring rather than a bar: a flag should look like
+            -- one even at four pixels.
+            flag_mark(px, py, F.scale, col)
         elseif carried and team ~= my_team then
             -- The runner, as a bearing. Carrying the flag puts you on the
             -- map (decision 133): the wire has always said where a carried
@@ -1514,7 +1519,7 @@ local function radar(cx, cy, me)
                 local ey = iy + (dy * SPAN / m + SPAN) * k
                 ex = math.min(math.max(ex, ix + inset), ix + r - inset)
                 ey = math.min(math.max(ey, iy + inset), iy + r - inset)
-                pennant(ex, ey, F.scale, col)
+                flag_mark(ex, ey, F.scale, col)
             end
         end
     end
@@ -1630,7 +1635,8 @@ local function overview(me)
             local fx, fy, team = sim.flag_at(i)
             local col = (team == 255) and pal.INK
                 or (team == my_team and pal.FRIEND or pal.ENEMY)
-            pennant(ox + (fx / cell) * k, oy + (fy / cell) * k, F.scale, col)
+            flag_mark(ox + (fx / cell) * k, oy + (fy / cell) * k,
+                      F.scale, col)
         end
         if me then
             own_arrow(ox + (sim.ship_x(me) / cell) * k,
@@ -3085,59 +3091,55 @@ M.match_ended = match_ended
 --
 -- This was a sentence, "flags  you 2 - 1 them   1 loose", which is three
 -- numbers, two of them derivable from the third, in enough characters to
--- cross a phone. One pennant per flag, colored by who holds it, says the
--- same thing in a glance and in a fifth of the width: you count shapes, not
--- words, and it scales to whatever number of flags a mode puts out.
+-- cross a phone. One mark per flag, colored by who holds it, says the same
+-- thing in a glance and in a fifth of the width: you count shapes, not words,
+-- and it scales to whatever number of flags a mode puts out.
 --
--- One pennant, from the tip of its staff down: `rise` above the line it hangs
--- on and `drop` below it, with `gap` of air between the band and the staff.
--- Written down because the strip is not the only thing under the band, and
--- everything else down there is placed off how much room this took.
+-- `r` is the mark's own radius and `gap` the air between the band and the top
+-- of it. Written down because the strip is not the only thing under the band,
+-- and everything else down there is placed off how much room this took. It
+-- was a staff and a pennant, measured from the tip of the staff down; the
+-- mark is round now and a radius is the whole of it.
 --
 -- One table holding both the measurements and the reach, rather than three
 -- constants and a function, because ui.lua sits on Lua 5.1's ceiling of 200
 -- locals in a chunk and had exactly one left. A fourth `local` at this level
 -- does not fail a test, it fails to load the file.
-local FLAG = {gap = 8, rise = 8, drop = 9}
+local FLAG = {gap = 9, r = 5}
 
 -- How far the strip pushes the rest of the stack down: nothing in a mode with
 -- no flags, and nothing at the whistle, where the band's own line is what the
 -- clock is counting down to.
 --
 -- The band is the top of a column, and this is what the column is made of: the
--- clock and the two sides, the pennants, the room's line, then the board a
+-- clock and the two sides, the flag strip, the room's line, then the board a
 -- press on the band opens. Each of those used to be placed against the band on
--- its own, and the pennants were placed against neither the band nor the
--- window: they were pinned twenty-five points above where the banner lands,
--- which is a real measurement taken from the wrong end of the stack. The band
--- ends eight points above that line, so the strip was drawn straight through
--- the clock and every flag stood a staff up through a numeral. Nothing showed
--- it until there were flags to draw, and Turf and Capture the Flag are the
--- first modes that put any out.
+-- its own, and the strip was placed against neither the band nor the window:
+-- it was pinned twenty-five points above where the banner lands, which is a
+-- real measurement taken from the wrong end of the stack. The band ends eight
+-- points above that line, so the strip was drawn straight through the clock
+-- and every flag stood a staff up through a numeral. Nothing showed it until
+-- there were flags to draw, and Turf and Capture the Flag are the first modes
+-- that put any out.
 function FLAG.stack(m)
     if match_ended(m) or sim.flag_count() == 0 then return 0 end
-    return (FLAG.gap + FLAG.rise + FLAG.drop) * F.scale
+    return (FLAG.gap + FLAG.r * 2) * F.scale
 end
 
 local function flag_strip(m)
     if FLAG.stack(m) == 0 then return end
     local n = sim.flag_count()
     local my_team = view_team
-    local pitch = 15 * F.scale
+    local pitch = 16 * F.scale
     local x0 = F.w / 2 - (n - 1) * pitch / 2
-    local y = band_bottom() + (FLAG.gap + FLAG.rise) * F.scale
+    local y = band_bottom() + (FLAG.gap + FLAG.r) * F.scale
     for i = 0, n - 1 do
         local _, _, team = sim.flag_at(i)
         local col = (team == 255) and pal.a(pal.DIM, 0.55)
             or (team == my_team and pal.FRIEND or pal.ENEMY)
-        local px = x0 + i * pitch
-        -- The same pennant the radar draws, so a flag looks like a flag
+        -- The same mark the radar draws, so a flag looks like a flag
         -- wherever it is shown.
-        F.layer:seg(px, ry(y + FLAG.drop * F.scale, 0), px,
-                    ry(y - FLAG.rise * F.scale, 0), 1.6 * F.scale, col)
-        F.layer:tri(px, ry(y - FLAG.rise * F.scale, 0),
-                    px + 9 * F.scale, ry(y - 4 * F.scale, 0),
-                    px, ry(y, 0), col)
+        flag_mark(x0 + i * pitch, y, F.scale, col)
     end
 end
 

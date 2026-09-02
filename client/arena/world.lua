@@ -287,6 +287,34 @@ for _, h in ipairs(M.HULLS) do
     end
     h.reach = math.sqrt(far)
 
+    -- Where each vertex sits across the beam, from -1 at the port wingtip to
+    -- +1 at the starboard one. It is what a bank is shaded by: rolled, one
+    -- wing drops away and the other tips up into the light, and how far out
+    -- along the wing a thing sits is how much of that it takes.
+    --
+    -- Normalized per hull rather than in pixels, so an Anvil's wide wing and a
+    -- Cipher's narrow one darken by the same amount at the same angle.
+    local beam = 0
+    for i = 1, #p, 2 do
+        local ax = p[i] < 0 and -p[i] or p[i]
+        if ax > beam then beam = ax end
+    end
+    if beam < 1e-6 then beam = 1 end
+    h.beam = beam
+    h.side = {}
+    for v = 1, n do h.side[v] = p[v * 2 - 1] / beam end
+    -- The same figure for a whole interior plate, taken at its middle. A
+    -- plate is small enough that grading one across itself would be a
+    -- gradient nobody can see on a shape eight pixels wide.
+    if h.plates then
+        h.pside = {}
+        for k = 1, #h.plates do
+            local q, s = h.plates[k], 0
+            for i = 1, #q, 2 do s = s + q[i] end
+            h.pside[k] = s / (#q / 2) / beam
+        end
+    end
+
     -- The outward normal of every edge, and from those, how brightly the edge
     -- draws: a light fixed to the hull's own nose. Fixed to the world instead,
     -- the same ship would look like a different ship depending on which way it
@@ -351,6 +379,10 @@ for _, h in ipairs(M.HULLS) do
     h.ptmp, h.ltmp = {}, {}
     for k = 1, #(h.plates or {}) do h.ptmp[k] = {} end
     for k = 1, #(h.lines or {}) do h.ltmp[k] = {} end
+    -- The bank shade, per vertex and per edge, and the two skirt weights
+    -- already folded into it. Written once per hull per frame and read in the
+    -- same call, for the same reason the point scratches exist.
+    h.stmp, h.etmp, h.wstmp, h.bstmp = {}, {}, {}, {}
 end
 
 
@@ -649,7 +681,20 @@ local FILL_FIGHT = 6144
 -- Raised again for the blooms: every bolt, bomb, hull, engine and shockwave
 -- now sheds a six-segment halo of its own, which is eighteen vertices each
 -- and a few thousand across a busy frame.
-local GLOW_FIGHT = 40960
+--
+-- And again for the flags. A pennant was two shapes; the beacon that replaced
+-- it is arcs, a rim, a pulse and the light off all three, and a carrier wears
+-- one ring per flag held. Measured off `M.flags` over a whole beat, since the
+-- ping travels and a bigger circle wants more facets: 366 triangles for a
+-- flag on a stand and 930 for a carrier with a clock running, against the
+-- twenty the pennant cost. Capture the Flag's worst case is four carriers
+-- holding one apiece, at 3720 triangles or about eleven thousand vertices;
+-- Turf puts six stands out for sixty-six hundred.
+--
+-- Eight thousand of headroom rather than eleven, deliberately: the worst case
+-- has all four flags in the air on four different hulls, and a room where
+-- that is true is a room where nobody is shooting.
+local GLOW_FIGHT = 49152
 
 -- Capacities move in steps of this, so dragging a window edge does not
 -- allocate a new buffer on every frame of the drag.
@@ -2259,6 +2304,21 @@ local lit_col = {0, 0, 0, 1}
 -- never kept, so one table serves every hull in the room.
 local edge_col = {0, 0, 0, 1}
 
+-- How far a bank takes the two wings apart. The dropped one turns away from
+-- the light and loses most of what it had; the raised one tips into it and
+-- gains a little. Not the same number, because a lit wing already near white
+-- has nowhere to go and a hull that brightened as hard as it darkened would
+-- pulse every time a pilot flicked the rudder.
+--
+-- At the full bank in arena.script (0.95 rad) the tip of the low wing draws
+-- at 0.33 and the high one at 1.24, and everything between them is graded, so
+-- a hull leaning hard has a lit edge and a dark edge rather than two sides of
+-- one flat shape. That is about four to one across the beam, which is more
+-- than the light on a real wing would do and is meant to be: the whole tilt
+-- is 22 world pixels wide and has to say what it is at a glance, across a
+-- room, on a phone.
+local BANK_DIM, BANK_LIFT = 0.82, 0.30
+
 function M.ship(fill, glow, cls, x, y, heading, col, opts)
     local h = M.HULLS[cls + 1] or M.HULLS[1]
     -- A blast beside a hull throws its color onto it. Half weight at most, so
@@ -2280,11 +2340,44 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- local x multiplies by this, so the whole ship leans together: hull,
     -- plates, canopy, hardpoints, lamps and the engines, whose plumes stay
     -- on the heading while their nozzles come inboard.
-    local squash = 1
+    --
+    -- `lean` is the other half of the same angle, and it is what says which
+    -- way. A cosine is the same number left or right, so the geometry above
+    -- draws a hull rolled hard one way exactly like one rolled hard the
+    -- other: shading is the only thing on the ship that tells them apart, and
+    -- without it a lean reads as a hull that got thinner rather than one that
+    -- tipped. Positive heading rate is a turn to starboard, so a positive
+    -- roll drops the +x wing.
+    local squash, lean = 1, 0
     if opts and opts.roll and opts.roll ~= 0 then
         squash = math.cos(opts.roll)
+        lean = math.sin(opts.roll)
     end
     local pts = place(h.poly, h.tmp, x, y, ca, sa, 1, squash)
+    -- What the bank does to the light on every part of the hull. Surfaces
+    -- only: the body, its plates and panel lines, the silhouette and the two
+    -- skirts hanging off it. The flame, the muzzles, the lamps and the canopy
+    -- are lights rather than lit, and a light does not dim because the thing
+    -- carrying it leaned.
+    local shade, eshade, wskirt, bskirt
+    if lean ~= 0 then
+        shade, eshade = h.stmp, h.etmp
+        wskirt, bskirt = h.wstmp, h.bstmp
+        local nv = #h.side
+        for v = 1, nv do
+            local t = lean * h.side[v]
+            shade[v] = 1 - (t > 0 and BANK_DIM or BANK_LIFT) * t
+        end
+        -- An edge takes the shade of its two ends, which is the same grade
+        -- the body gets and keeps the outline from stepping where the fill
+        -- is smooth.
+        for v = 1, nv do
+            local s = (shade[v] + shade[v % nv + 1]) * 0.5
+            eshade[v] = s
+            wskirt[v] = h.wide[v] * s
+            bskirt[v] = h.band[v] * s
+        end
+    end
     local mine = opts and opts.mine
     local dim = ((opts and opts.alpha) or 1) * (h.dim or 1)
     local near = not (opts and opts.far)
@@ -2345,38 +2438,61 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- the stern. The wash has to be additive rather than a lighter fill,
     -- because anything the fill layer draws below full alpha lets a star
     -- through the hull.
+    --
+    -- The bank rides on the wash and not on the base. The base is a hole in
+    -- the starfield, and a hole does not have a lit side; the wash is the
+    -- light on the hull, so that is where a wing turning away loses it.
     local body = {col[1] * 0.055 + 0.018, col[2] * 0.055 + 0.026,
                   col[3] * 0.055 + 0.042, 0.95 * dim}
     local tris, lit = h.tris, h.lit
+    local wash = 0.20 * dim
     for i = 1, #tris, 3 do
         local a1, b1, c1 = tris[i], tris[i + 1], tris[i + 2]
+        local sa1, sb1, sc1 = 1, 1, 1
+        if shade then sa1, sb1, sc1 = shade[a1], shade[b1], shade[c1] end
         fill:tri(pts[a1 * 2 - 1], pts[a1 * 2], pts[b1 * 2 - 1], pts[b1 * 2],
                  pts[c1 * 2 - 1], pts[c1 * 2], body)
-        glow:tri_fade(pts[a1 * 2 - 1], pts[a1 * 2], lit[a1] * 0.20 * dim,
-                      pts[b1 * 2 - 1], pts[b1 * 2], lit[b1] * 0.20 * dim,
-                      pts[c1 * 2 - 1], pts[c1 * 2], lit[c1] * 0.20 * dim, col)
+        glow:tri_fade(pts[a1 * 2 - 1], pts[a1 * 2], lit[a1] * sa1 * wash,
+                      pts[b1 * 2 - 1], pts[b1 * 2], lit[b1] * sb1 * wash,
+                      pts[c1 * 2 - 1], pts[c1 * 2], lit[c1] * sc1 * wash, col)
     end
 
     -- Interior structure, under the silhouette so the outline always wins.
     -- Drawn in a neutral instrument gray rather than in the team color: the
     -- team read belongs on the silhouette, and a hull whose every line is the
     -- same color looks cut from one sheet of neon rather than built.
+    --
+    -- Structure banks with the surface it is painted on, a plate at its own
+    -- middle and a panel line a segment at a time. A hull whose plating stayed
+    -- lit on a wing that had gone dark would read as an outline with a
+    -- diagram floating inside it.
     if near then
         if h.plates then
             for k = 1, #h.plates do
                 local q = place(h.plates[k], h.ptmp[k], x, y, ca, sa, 1,
                                 squash)
-                glow:fan(q, pal.a(pal.PANEL_INK, 0.035 * dim))
-                glow:outline(q, 0.85, pal.a(pal.PANEL_INK, 0.36 * dim), true)
+                local s = 1
+                if shade then
+                    local t = lean * h.pside[k]
+                    s = 1 - (t > 0 and BANK_DIM or BANK_LIFT) * t
+                end
+                glow:fan(q, pal.a(pal.PANEL_INK, 0.035 * s * dim))
+                glow:outline(q, 0.85, pal.a(pal.PANEL_INK, 0.36 * s * dim),
+                             true)
             end
         end
         if h.lines then
             for k = 1, #h.lines do
-                local q = place(h.lines[k], h.ltmp[k], x, y, ca, sa, 1,
-                                squash)
+                local src = h.lines[k]
+                local q = place(src, h.ltmp[k], x, y, ca, sa, 1, squash)
                 for i = 1, #q - 3, 2 do
+                    local s = 1
+                    if shade then
+                        local t = lean * (src[i] + src[i + 2]) * 0.5 / h.beam
+                        s = 1 - (t > 0 and BANK_DIM or BANK_LIFT) * t
+                    end
                     glow:seg(q[i], q[i + 1], q[i + 2], q[i + 3], 0.7,
-                             pal.a(pal.PANEL_INK, 0.26 * dim), true)
+                             pal.a(pal.PANEL_INK, 0.26 * s * dim), true)
                 end
             end
         end
@@ -2410,9 +2526,14 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- What the hull throws into the dark around it, under the skirts rather
     -- than instead of them: the skirts hug the silhouette and say what shape
     -- this is, and this says there is something lit here.
+    --
+    -- Both skirts take the bank, the round bloom under them does not. A skirt
+    -- is the hull's own edge and belongs to the wing it hangs off; the bloom
+    -- is one soft ball centered on the ship saying something is lit here, and
+    -- lopsiding that would move the ship rather than shade it.
     glow:bloom(x, y, 30 + flare * 10, (0.085 + flare * 0.16) * dim, col)
-    glow:glow_band(pts, nrm, 9.0, 0.105 * dim, col, h.wide)
-    glow:glow_band(pts, nrm, 3.0, 0.32 * dim, col, h.band)
+    glow:glow_band(pts, nrm, 9.0, 0.105 * dim, col, wskirt or h.wide)
+    glow:glow_band(pts, nrm, 3.0, 0.32 * dim, col, bskirt or h.band)
     -- The hot edge, which is the team color pushed toward white. A hurt hull
     -- pushes it toward HURT instead, so an outline that was cooling to white
     -- runs red as the energy goes.
@@ -2430,6 +2551,12 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- The flare from a fresh hit rides on top, toward white and brighter,
     -- which is the opposite direction and deliberately so: taking a round is
     -- a moment and being wounded is a state, so they must not look alike.
+    --
+    -- The bank grades this too, on alpha alone. It is the strongest read on
+    -- the ship and the one that makes a lean look like depth instead of a
+    -- squash, and it is safe to touch for the same reason the hurt grade is:
+    -- it changes how bright the rim is, never what color, so the side a hull
+    -- is on survives a hard turn intact.
     local edge = pal.hot(col, mine and 0.62 or 0.34, 1)
     if hurt > 0 or flare > 0 then
         local k = hurt * 0.7
@@ -2445,8 +2572,10 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     local e = 1
     for i = 1, n, 2 do
         local j = (i + 1 < n) and i + 2 or 1
+        local w = h.hot[e]
+        if eshade then w = w * eshade[e] end
         glow:seg(pts[i], pts[i + 1], pts[j], pts[j + 1], 1.5 + flare * 1.1,
-                 pal.a(edge, math.min(1, h.hot[e] * ea)), true)
+                 pal.a(edge, math.min(1, w * ea)), true)
         e = e + 1
     end
 
@@ -3215,19 +3344,220 @@ end
 -- layer and its level is on the glow one.
 
 
+-- A flag, as a transponder seen from above.
+--
+-- It was a staff with a cloth triangle hanging off it, waving. That is the
+-- only object in this game drawn in elevation: a stand is an octagon, a spawn
+-- is two rings, a wall is its own lit face, and a flag alone was drawn as
+-- though the camera had turned ninety degrees to watch cloth flap in a wind,
+-- in a vacuum. It read as a golf pin, which is the one real object shaped
+-- like that. It also hung up and to the right of the flag's own position, so
+-- the shape a pilot flew at sat a dozen pixels from the point `sim_flag`
+-- tests, with `flag_radius` at eighteen and nothing drawing it.
+--
+-- What replaces it: a bright core, a ring, three arcs standing off it that
+-- turn, and a ping that leaves the core on a beat and fades on its way out. A
+-- flag is the object telling a room where the game is, so it draws the
+-- broadcast. Mocked in .design/flag-graphics.
+local FLAG = {
+    -- What a stand or a dropped flag wears: arcs at twelve, inside the
+    -- eighteen the core actually tests, so what a pilot flies at is the shape
+    -- they can see.
+    GROUND_R = 12,
+    GROUND_CORE = 6,
+    -- What a carrier wears. Everything inside the widest hull in the roster
+    -- is left to the ship: a mark drawn on a hull hides the thing everybody
+    -- in the room is shooting at, and at the range where a carried flag
+    -- decides a round it is a smudge on a hull rather than a flag. Outside
+    -- it, the ship stays whole underneath and the ring reads from across a
+    -- map. The rim stands four pixels clear of the longest hull, which is
+    -- measured below rather than typed here: the Cipher is a knife and
+    -- reaches twenty two down its own length while the Apex, which looks like
+    -- the big one, reaches twenty and a half, so a clearance picked by eye
+    -- clears the wrong hull. Measured off the baked table, since `refit`
+    -- scales every hull into the flight box before any of this draws and the
+    -- polygon in the source is not the polygon on screen.
+    HULL = 0,
+    RIM = 0,
+    ARC = 0,
+    CLOCK = 0,
+    -- Each further flag a pilot is holding adds a ring at this pitch.
+    STEP = 8,
+    -- How far past the outermost ring the ping travels before it is gone.
+    PING = 25,
+}
+
+for _, h in ipairs(M.HULLS) do
+    for i = 1, #h.poly, 2 do
+        local r = math.sqrt(h.poly[i] ^ 2 + h.poly[i + 1] ^ 2)
+        if r > FLAG.HULL then FLAG.HULL = r end
+    end
+end
+FLAG.RIM = FLAG.HULL + 4
+FLAG.ARC = FLAG.RIM + 7
+FLAG.CLOCK = FLAG.RIM + 16
+
+-- Published so client/tools/flags_svg.lua can draw the clearance it is
+-- claiming rather than work it out again and be wrong about it later.
+M.FLAG = FLAG
+
+-- How many facets an arc of this radius needs. `round_segs` answers it for a
+-- whole circle and an arc is a fraction of one. Worth deriving rather than
+-- picking: a count chosen by hand cost nine hundred and sixty triangles for
+-- one standing flag, almost all of it facets under a tenth of a pixel across.
+local function facets(glow, r, span)
+    local n = math.ceil(glow:round_segs(r) * math.abs(span) / TAU)
+    return n < 3 and 3 or n
+end
+
+-- One stroke, with the light coming off it. Every other bright thing on this
+-- layer is a bloom and then a hard edge over the top of it, and an arc left
+-- bare is the one that reads as wire.
+--
+-- The bloom runs at three quarters of the stroke's facets. `round_segs` aims
+-- for a fifth of a pixel of sag, which is what an edge somebody can see wants
+-- and more than a soft band at a fifth of the alpha needs, and the bloom is
+-- where the cost is: four triangles a facet against the stroke's six, six
+-- times over on a Turf map. Half was the first try and it showed. A circle
+-- that is visibly a polygon is a defect whatever its alpha, so the discount
+-- is the small one.
+local function lit_arc(glow, x, y, r, a0, span, w, col)
+    local n = facets(glow, r, span)
+    local soft = math.ceil(n * 0.75)
+    glow:arc_fade(x, y, r, a0, a0 + span, w * 3.4, soft < 3 and 3 or soft,
+                  pal.a(col, col[4] * 0.22))
+    glow:arc_aa(x, y, r, a0, a0 + span, w, n, col)
+end
+
+local function lit_ring(glow, x, y, r, w, col)
+    lit_arc(glow, x, y, r, 0, TAU, w, col)
+end
+
+-- One beat of the broadcast: a ring leaving `r0` and gone by `r1`. This is
+-- what makes the drawing read as something running rather than something lit.
+-- Soft on both sides and no hard edge inside it, which is what a pulse
+-- leaving something actually looks like and also what it can afford: this
+-- runs at the largest radius anything here draws at, so a hard rim under it
+-- would cost more than the three arcs put together. Full facets, for the
+-- same reason: it is the biggest circle in the drawing and the first place a
+-- discount shows up as a polygon.
+local function ping(glow, x, y, col, a, r0, r1, rate, t)
+    local ph = (t * rate) % 1
+    local r = r0 + (r1 - r0) * ph
+    glow:ring_fade(x, y, r, 4.0 * (1 - ph) + 1, facets(glow, r, TAU),
+                   pal.a(col, a * (1 - ph) * (1 - ph) * 1.5))
+end
+
+-- Three arcs at one radius. Alternate rings turn against each other, because
+-- two turning the same way at the same phase read as one thick ring and the
+-- whole point of a stack is being countable.
+local function collar(glow, x, y, col, r, t, layer)
+    local spin = t * 1.9 * ((layer % 2 == 0) and -1 or 1) + layer * 0.7
+    for i = 0, 2 do
+        lit_arc(glow, x, y, r, spin + i / 3 * TAU, 1.3, 1.9, col)
+    end
+end
+
+-- One flag's carry clock, where the zone runs one. Counterclockwise from
+-- noon, so it empties the way a fuse burns down, and the last fifth in the
+-- other side's color, because that is who the flag is about to be available
+-- to again.
+--
+-- Drawn finer than the arcs on purpose. The arcs are the count and have to
+-- survive being small; a rim is a gauge, read by somebody looking at it. At
+-- equal weight, four rims and one collar sat on the same footing and the
+-- count stopped being the first thing anybody saw.
+local function carry_clock(glow, x, y, col, r, left)
+    -- The track the drain runs on, at a tenth of the alpha and three quarters
+    -- of the facets. It is a guide rather than an edge, and a pilot holding
+    -- four flags draws four of them.
+    glow:ring_aa(x, y, r, 1.0, pal.a(col, 0.10),
+                 math.ceil(facets(glow, r, TAU) * 0.75))
+    if left <= 0 then return end
+    local hot = left < 0.2
+    lit_arc(glow, x, y, r, -math.pi / 2, -left * TAU, 1.7,
+            pal.a(hot and pal.ENEMY or col, hot and 1 or 0.9))
+end
+
+-- A flag on its stand, or lying where its carrier died.
+local function flag_ground(fill, glow, x, y, col, t)
+    local r = FLAG.GROUND_R
+    ping(glow, x, y, col, 0.45, r * 0.5, r * 1.5, 0.5, t)
+    for i = 0, 2 do
+        lit_arc(glow, x, y, r, t * 0.5 + i / 3 * TAU, 1.15, 1.7,
+                pal.a(col, 0.8))
+    end
+    lit_ring(glow, x, y, FLAG.GROUND_CORE, 1.2, pal.a(col, 0.65))
+    fill:disc(x, y, 3.4, 16, pal.a(col, 0.2))
+    glow:disc(x, y, 1.9, 12, pal.a(pal.WHITE, 0.8))
+    glow:halo(x, y, 10, 12, pal.a(col, 0.22))
+    glow:bloom(x, y, 26, 0.10, col)
+end
+
+-- Everything one pilot is carrying, as one mark around their hull.
+--
+-- `left` is what is on each of their carry clocks, longest first, or nil in a
+-- zone with no limit. With no clocks the count is a ring of arcs per flag;
+-- with them it is one ring of arcs and a rim per flag, since stacking both
+-- would put eight rings around a ship and say neither. The rims are sorted so
+-- the one about to expire is outermost: it is the one that turns the other
+-- side's color, and it is the answer to the only question a carrier is
+-- asking.
+local function flag_held(glow, x, y, col, t, n, left)
+    local outer
+    if left then
+        collar(glow, x, y, col, FLAG.ARC, t, 1)
+        for k = 1, n do
+            carry_clock(glow, x, y, col, FLAG.CLOCK + (k - 1) * FLAG.STEP,
+                        left[k])
+        end
+        outer = FLAG.CLOCK + (n - 1) * FLAG.STEP
+    else
+        for k = 1, n do
+            collar(glow, x, y, col, FLAG.ARC + (k - 1) * FLAG.STEP, t, k)
+        end
+        outer = FLAG.ARC + (n - 1) * FLAG.STEP
+    end
+    ping(glow, x, y, col, 0.5, outer + 3, outer + FLAG.PING, 1.1, t)
+    lit_ring(glow, x, y, FLAG.RIM, 1.2, pal.a(col, 0.7))
+    glow:bloom(x, y, outer + 12, 0.09, col)
+end
+
+-- Scratch, so a frame with four flags on one hull allocates nothing.
+local carriers, carried_n, carried_left = {}, {}, {}
+
 function M.flags(fill, glow, my_team, t)
-    local wave = math.sin(t * 2.2) * 1.6
-    for i = 0, sim.flag_count() - 1 do
-        local x, y, team, carried = sim.flag_at(i)
+    local n = sim.flag_count()
+    if n == 0 then return end
+    local limit = sim.flag_carry_ticks()
+    -- Gather the carried ones onto their carriers first. A pilot holding
+    -- three flags is one mark with three rings, not three marks in the same
+    -- place, and in Capture the Flag holding the set is the whole round.
+    for k in pairs(carriers) do carriers[k] = nil end
+    for k in pairs(carried_n) do carried_n[k] = nil end
+    for k in pairs(carried_left) do carried_left[k] = nil end
+    for i = 0, n - 1 do
+        local x, y, team, carried, carrier, held = sim.flag_at(i)
         local col = (team == 255) and pal.INK
             or (team == my_team and pal.FRIEND or pal.ENEMY)
-        local top = y - (carried and 26 or 13)
-        local base = y + (carried and -10 or 6)
-        glow:seg(x, base, x, top, 1.6, pal.a(col, 0.9))
-        local pts = {x, top, x + 12 + wave, top + 4.5, x, top + 9}
-        fill:fan(pts, pal.a(col, carried and 0.6 or 0.25))
-        glow:outline(pts, 1.3, pal.a(col, carried and 1 or 0.7))
-        glow:halo(x, top + 4, carried and 22 or 14, 10, pal.a(col, 0.13))
+        if carried then
+            carriers[carrier] = col
+            carried_n[carrier] = (carried_n[carrier] or 0) + 1
+            if limit > 0 then
+                local row = carried_left[carrier]
+                if not row then row = {} carried_left[carrier] = row end
+                row[#row + 1] = math.max(0, math.min(1, 1 - held / limit))
+            end
+        else
+            flag_ground(fill, glow, x, y, col, t)
+        end
+    end
+    for who, col in pairs(carriers) do
+        local left = carried_left[who]
+        -- Longest first, so the rim about to expire lands outermost.
+        if left then table.sort(left, function(a, b) return a > b end) end
+        flag_held(glow, sim.ship_x(who), sim.ship_y(who), col, t,
+                  carried_n[who], left)
     end
 end
 

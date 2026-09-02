@@ -286,8 +286,9 @@ earns a picture it can have one.
 A drawing that appears in two places is one function. The weapon marks live
 in `marks.lua` because the corner stack and the touch pads both draw them,
 and two copies once disagreed about which add-ons a hull was wearing. The
-pennant is the same pennant on the radar, in the flag strip, and on the team
-mark. The helmet and the machine, a person and a bot, are the same pair in
+flag mark is the same mark on the radar, in the flag strip, and on the map:
+a core inside a ring, which is what the arena's own transponder reduces to
+once there is no room for the arcs standing off it. The helmet and the machine, a person and a bot, are the same pair in
 the games list, the players sheet, and the nameplates: a round crowned shell with a wrapped visor against a squared shell with two lamps and
 an antenna. Curved is grown, boxed is built, and that difference survives
 being drawn at eleven points.
@@ -398,7 +399,7 @@ over a number, a team over its score, the two lines of a side adding up to the
 clock's own height so the whole
 thing reads as one line. The clock is one key tall, the same at every window
 size, so the band and the way into the menu are the same height and the top
-row reads as a row. Under it, the flag pennants and whatever the room
+row reads as a row. Under it, the flag strip and whatever the room
 has to say. The band is also the control, in a room you are in: a press opens
 the players sheet, which is a panel of the menu rather than a column of its
 own. While that sheet is up the fight behind it is washed and every other

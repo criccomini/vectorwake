@@ -1045,7 +1045,20 @@ int FlagAt(lua_State* L) {
     lua_pushnumber(L, same ? blend(p->y, f->y) : f->y / 256.0);
     lua_pushnumber(L, f->team);
     lua_pushboolean(L, f->carried);
-    return 4;
+    // Who is holding it, and for how long. Both are wire fields rather than
+    // anything the client works out: a pilot's flags have to be gathered onto
+    // one hull to be drawn as one mark, and a client that joined mid carry
+    // never saw the pickup that would let it count `held` for itself.
+    lua_pushnumber(L, f->carrier);
+    lua_pushnumber(L, f->held);
+    return 6;
+}
+
+// How long a zone lets one pilot keep a flag, in ticks, or zero where it
+// lets them keep it. Without it `held` is a count with nothing to divide by.
+int FlagCarryTicks(lua_State* L) {
+    lua_pushnumber(L, g_cfg.flag_carry_ticks);
+    return 1;
 }
 
 int GreenCount(lua_State* L) {
@@ -1343,6 +1356,7 @@ const luaL_reg kFunctions[] = {
     {"predicted_death_at", PredictedDeathAt},
     {"flag_count", FlagCount},
     {"flag_at", FlagAt},
+    {"flag_carry_ticks", FlagCarryTicks},
     {"green_count", GreenCount},
     {"green_at", GreenAt},
     {"ship_x_raw", ShipXRaw},
