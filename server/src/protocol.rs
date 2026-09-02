@@ -162,7 +162,7 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// build is stale rather than left to misparse a snapshot.
 ///
 /// 6 added spectating: the watcher section on the roster, the subject byte's
-/// wider meaning, and `S2C_ONAIR`.
+/// wider meaning, and the on-air notice, since retired.
 ///
 /// 8 filtered snapshots: a presence bitmap ahead of the ship records, rounds
 /// culled to the interest radius, and the scores moved onto the roster so a
@@ -369,13 +369,14 @@ pub(crate) const S2C_YIELD: u8 = 11;
 /// as one buffer, because the last of those is a different answer for every
 /// pilot: a private side is a door only the invited can see open.
 pub(crate) const S2C_TEAMS: u8 = 12;
-/// `[S2C_ONAIR, 0|1]`: the frame going out is centered on you and somebody is
-/// in the stands to see it, or that has stopped being true. Sent to the
-/// subject and nobody else. The channel is a shared feed whose subject does
-/// not choose to be watched, so the least the room owes them is knowing it:
-/// two minutes on camera is something a pilot can play around, and only if
-/// they are told.
-pub(crate) const S2C_ONAIR: u8 = 13;
+// Tag 13 was `S2C_ONAIR`, which told the channel's subject that somebody was
+// watching them so the client could wear a tally in the corner. The tally went
+// with the rest of that corner and nothing read the message, so it is not sent
+// any more. The number is retired rather than free: a build in the field still
+// listens on 13 and would take whatever arrived there as that message, so
+// reuse it only behind a protocol bump. The room still keeps the set and files
+// a log row on the rising edge, which is the half that was never about the
+// screen. See `Room::refresh_on_air`.
 /// `[S2C_MATCH, flags, seconds left, sides, score per side as u16,
 /// optional artifact id as u64]`.
 ///

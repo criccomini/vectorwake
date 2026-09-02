@@ -348,12 +348,16 @@ The constants that repeat, from ui.lua:
 | ROW_PAD | 16 | how far a lit row reaches past its column of type |
 | KEY_H | 26 | a button's height |
 
-The HUD has a fixed geography, and it is the prototype's. Top left: the on-air
-tally, and nothing else. It was a row of chips, and each turned out to be a
-second way to do something the interface already offered: TAKE SEAT, which the
-ship stop says better, and ROOM n, which named which copy of the game you were
-in and opened a list of the others. Both are gone, and so is the rooms panel
-that hung under them, so in an ordinary match that corner is the fight.
+The HUD has a fixed geography, and it is the prototype's. Top left: nothing.
+It was a row of chips and they have gone one at a time, each because it was a
+second way to do something the interface already offered or a label on the
+obvious. MENU, when the column moved to the foot. PLAYERS, when a press on the
+clock band opened the roster. CHANNEL. Then TAKE SEAT, which the ship stop says
+better, and ROOM n, which named which copy of the game you were in and opened a
+list of the others, and the rooms panel that hung under it. Last the on-air
+tally, which was the only one of them that told a pilot something nothing else
+did; the record of who was watched is kept in the pilot log instead of on the
+screen. That corner is the fight.
 Bottom middle: the faint `MENU` key, and the column it raises, in a room you
 are in. Top left held MENU until decision 102 moved it to the foot, where the
 panel it opens stands. The front page carries the column and not the key: out

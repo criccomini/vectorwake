@@ -708,9 +708,9 @@ included, the same way the clock band stands down under the drawer. Down the
 column that is the stops above the open one; along the rail nothing stands
 above an open cell, so all three stay and only the name comes off.
 
-The key breathes on the same slow swell the on-air tally uses, with its edge
-floored well above dark so the trough never reads as a key that stopped
-working. It is the one press this screen exists for. Enter is the same press,
+The key breathes on a slow swell rather than a blink, with its edge floored
+well above dark so the trough never reads as a key that stopped working. A
+blink held for minutes is something a reader learns to stop seeing. It is the one press this screen exists for. Enter is the same press,
 because a keyboard should not have to open a menu to start the game. It does
 what the ship stop says: the hull on that stop is the hull this press flies,
 since turning the carousel is the whole of choosing one.

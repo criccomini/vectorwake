@@ -1174,26 +1174,21 @@ end
 -- The top row: where its line is, and how far the things standing in it are
 -- allowed to reach.
 --
--- One table rather than four names at this scope, because the file is at
+-- One table rather than three names at this scope, because the file is at
 -- Lua's ceiling of two hundred locals in a chunk and because these are one
--- fact between them. The row is the way into the menu at the left, the clock
--- band in the middle and the dial itself at the right; it has a center the
--- key and the band share, and an end at each side where an instrument stands
--- and the band stops.
-local TOP = {
-    -- How far the corner keys reach across the top left, filed by the thing
-    -- that draws them rather than written down twice. It is a word's width,
-    -- and PLAYERS grew the row the day it stopped being INFO.
-    chip_right = 0,
-}
+-- fact between them. The row is the clock band in the middle and the dial at
+-- the right, over an empty left corner; it has a center everything standing
+-- in it shares, and a right end where the dial stands and the band stops.
+local TOP = {}
 
 -- The middle of the row, which everything standing in it lines up on.
 --
--- A key's height sets it: the corner key is KEY_H tall and the band is drawn
--- to match. The readouts each worked out a baseline of their own from the
--- padding, which left them four points high on a monitor and ten on a phone,
--- and the padding is a horizontal measurement that has no business setting a
--- vertical one.
+-- A key's height sets it. There is no key up here any more, but the height is
+-- still what the band was drawn to and what the dial's readouts hang off, so
+-- it stays the one number the row is measured from. They each worked out a
+-- baseline of their own from the padding once, which left them four points
+-- high on a monitor and ten on a phone, and the padding is a horizontal
+-- measurement that has no business setting a vertical one.
 function TOP.mid()
     return F.safe_t + PAD * F.scale + KEY_H * F.scale / 2
 end
@@ -1234,17 +1229,17 @@ end
 --
 -- The map is about a quarter of the frame, capped three ways: against the
 -- window's width so it cannot run off the left edge, against its height so
--- there is still room for the feed under it, and against the corner the MENU
--- and PLAYERS keys stand in, since a hit box over those is two controls a
--- pointer can no longer reach.
+-- there is still room for the feed under it, and at 124 points from the far
+-- margin so it stops short of the opposite corner. That last cap was measured
+-- against whatever chips stood over there and is a plain number now, since
+-- nothing does.
 local function dial()
     local pad = PAD * F.scale
     local side = RADAR.side * RADAR.factor() * F.scale
     -- Under the top row, both of them. The strip up there is the dial's own
-    -- readouts' again: how the line is and where you are, standing over the
+    -- readouts: how the line is and where you are, standing over the
     -- instrument they are about (see `over_dial`). The radar sat hard in the
-    -- corner for as long as that strip was empty, which is what the corner is
-    -- for, and it is not empty now.
+    -- corner for as long as that strip was empty, and it is not empty now.
     --
     -- It is the line the map has to start on in any case. The map is two
     -- thirds of the window's short side, so on an upright phone it reaches
@@ -1255,8 +1250,7 @@ local function dial()
     if M.map then
         side = math.max(side,
                         math.min(math.min(F.w, F.h) * 0.66, F.h * 0.66,
-                                 F.w - F.safe_r - pad - math.max(TOP.chip_right + 8 * F.scale,
-                                                         124 * F.scale)))
+                                 F.w - F.safe_r - pad - 124 * F.scale))
     end
     -- Whole pixels. The dial snaps its contents to its own origin, so an
     -- origin landing on a half pixel would put the fraction back into every
@@ -2696,46 +2690,6 @@ end
 -- a phone they were a line of text laid over the thumbs. They are in the
 -- menu now, under `help`, which is where a thing you consult belongs.
 
--- The top left corner, which holds one thing: the tally, when the room's
--- channel is pointed at you.
---
--- Nothing to press lives here any more. It was a row of keys, and they have
--- gone one at a time as each turned out to be a second way to do something the
--- interface already offered: MENU, when the column moved to the foot; PLAYERS,
--- when a press on the clock band opened the roster; CHANNEL, which labelled the
--- obvious; TAKE SEAT, which the ship stop says better, since that is where a
--- pilot picks the hull they are coming back in; and ROOM N, which named the
--- copy of the game you were in and opened a list of the others.
---
--- What is left is not navigation and is not a control. Being on air changes
--- how you fly and nothing else on screen says so, which is the whole reason a
--- corner of the arena is spent on it. In an ordinary match the corner is
--- empty, and empty is the fight.
---
--- `KEY_H` is what a caller lays out around, so it lives out here with this
--- rather than being repeated at each call.
-local function corner_row(on_air)
-    local cx = F.safe_l + PAD * F.scale
-    local y = F.safe_t + PAD * F.scale
-    -- Counted into `TOP.chip_right`, so the map that opens across this corner
-    -- keeps clear of it.
-    if on_air then
-        local mid = y + KEY_H * F.scale / 2
-        -- A slow swell rather than a blink. It has to hold attention for as
-        -- long as the camera holds you, which is minutes, and a blink that
-        -- long is something a player learns to stop seeing.
-        local beat = 0.55 + 0.45 * math.sin(F.now * 3.2)
-        local r = 3.4 * F.scale
-        F.layer:disc(cx + r, ry(mid, 0), r, 10, pal.a(pal.HURT, beat))
-        local label = "ON AIR"
-        local size = key_size()
-        txt(label, cx + 2 * r + 5 * F.scale, mid, size, pal.a(pal.HURT, 0.9))
-        cx = cx + 2 * r + 5 * F.scale + text_w(label, size) + KEY_GAP * F.scale
-    end
-    -- Where the corner ends, which off air is where it starts.
-    TOP.chip_right = cx - KEY_GAP * F.scale
-end
-
 -- What stands over the dial: how good the line is, and where you are.
 --
 -- One strip, on the top row's own line, as wide as the instrument under it.
@@ -3145,21 +3099,21 @@ local function match_clock(o, m, names, alone)
     -- How much room a name has, which is the tighter of the row's two ends
     -- rather than each end's own.
     --
-    -- The two ends are not the same width and never were: the way into the
-    -- menu is a small key and the dial is a square a third of a phone across.
-    -- Asking each side against the end it happens to face therefore dropped
-    -- the right name at widths where the left one still drew, which reads as
-    -- a fault rather than as a band running out of room, and an upright phone
-    -- hit it every match once the dial came up into the corner and took the
-    -- right end back. One measure for both sides means two names of a size
-    -- go together.
+    -- The two ends are not the same width and never were: the left one is the
+    -- window's own edge now that the corner is empty, and the dial at the
+    -- right is a square a third of a phone across. Asking each side against
+    -- the end it happens to face therefore dropped the right name at widths
+    -- where the left one still drew, which reads as a fault rather than as a
+    -- band running out of room, and an upright phone hit it every match once
+    -- the dial came up into the corner and took the right end back. One
+    -- measure for both sides means two names of a size go together.
     --
     -- Two names of very different lengths still part company, and should: a
     -- name that will not fit is a name that will not fit. What this stops is
     -- the same name fitting on one side of the clock and not the other.
     local gap = (M.compact and 14 or 22) * F.scale
     local room = math.min(
-        F.w / 2 - half - gap - TOP.chip_right,
+        F.w / 2 - half - gap,
         TOP.row_right() - (F.w / 2 + half + gap)) - KEY_GAP * F.scale
     for i, side in ipairs(sides) do
         local ours = side.team == mine
@@ -4773,13 +4727,6 @@ function M.hud(o)
     if not (o.watch or M.touching or ending) then
         status(me, o.charges, lift)
     end
-    -- A watcher is never the subject, so the tally can only be about a pilot
-    -- who is flying, and the two never contend for the slot.
-    --
-    -- It keeps its line under an open menu. The column stands at the foot and
-    -- reaches no corner, so nothing up here has to stand down for it: a pilot
-    -- in settings can still see that the room is watching them.
-    corner_row(o.on_air and not o.watch)
     vignette(o.hurt or 0)
     -- After the stack, because it is hung off the rows the stack published,
     -- and after the tint so a hurt frame does not wash out the words.

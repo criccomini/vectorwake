@@ -2421,9 +2421,6 @@ function update(self, dt)
             -- question every instrument asks is which end of the gun you are
             -- on rather than which end they are.
             side = eye_team(),
-            -- You are the channel's subject: the camera is on you, and the
-            -- mark that says so is the one courtesy the channel owes.
-            on_air = net.on_air,
             watchers = net.watchers,
             -- Whether the column is standing over a room this client is in,
             -- open or still on its way down. It is drawn for as long as it is
