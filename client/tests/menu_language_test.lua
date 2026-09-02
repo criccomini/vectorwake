@@ -42,6 +42,14 @@ layer.rect = function(_, x, y, w, h, col)
     rects[#rects + 1] = {x = x, y = H - y - h, w = w, h = h, col = col}
 end
 
+-- And every stroke, for the one rule below that is about what is not drawn.
+-- Kept in the same top-down space the hit boxes are recorded in, so a stroke
+-- can be asked which row it landed in.
+local segs = {}
+layer.seg = function(_, x0, y0, x1, y1)
+    segs[#segs + 1] = {x = (x0 + x1) / 2, y = H - (y0 + y1) / 2}
+end
+
 package.loaded["arena.net"] = {
     teams = {}, my_team = 0, transport = function() return {} end,
     my_team_name = function() return "" end, protocol = 5,
@@ -186,6 +194,7 @@ end
 local function frame(o)
     o = o or {}
     rects = {}
+    segs = {}
     state.n = 0
     ui.details = false
     ui.col_sel, ui.col_sel_value = o.sel, o.sel_value
@@ -538,6 +547,53 @@ do
     check("the ship menu heads itself once and opens five parts",
           backs == 1 and opens == 5, backs .. " ways back, " .. opens
           .. " parts")
+end
+
+-- --- nothing promises a panel -----------------------------------------------
+--
+-- A row that opens says so by opening. It used to say so twice: the column's
+-- four stops and the ship menu's five sections all wore a caret at the right
+-- edge, two strokes pointing down at the list about to come up. Every row
+-- that could be pressed into a panel wore one, which is a mark that sorts
+-- nothing from anything, and the corner it stood in is what a section has to
+-- say about what it holds.
+--
+-- Cross-surface because the mark was: the stop and the section shared it, so
+-- a check on one of them would pass while the other kept it.
+
+do
+    -- The right hand end of a row, where the caret stood. Counting strokes
+    -- there counts carets: nothing else in this language is drawn as a stroke
+    -- in that corner, and the rule over the ship menu's reset runs the panel's
+    -- whole width on a row of its own.
+    local function strokes_at(box)
+        local n = 0
+        for _, sg in ipairs(segs) do
+            if sg.x > box.x + box.w - 30 and sg.x < box.x + box.w
+               and sg.y > box.y and sg.y < box.y + box.h then
+                n = n + 1
+            end
+        end
+        return n
+    end
+    frame({})
+    local worn, stops = 0, 0
+    for _, r in ipairs(ui.hits) do
+        if r.action == "menu_stop" then
+            stops = stops + 1
+            worn = worn + strokes_at(r)
+        end
+    end
+    check("no stop of the column wears a caret", stops > 0 and worn == 0,
+          stops .. " stops, " .. worn .. " strokes in the corner")
+    LAND.panel = SHIP_MENU
+    frame({open = "ship"})
+    worn = 0
+    for _, r in ipairs(ui.hits) do
+        if r.action == "land_sect" then worn = worn + strokes_at(r) end
+    end
+    check("and neither does a section of the ship menu", worn == 0,
+          worn .. " strokes in the corner")
 end
 
 print(fails == 0 and "all menu language checks passed"

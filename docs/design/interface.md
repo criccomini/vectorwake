@@ -263,7 +263,7 @@ chip: a small stroked box with its word inside, on or off, lit when held.
 
 **Everything that points is drawn.** Sort order is a triangle, never a caret
 character or a letter v. The wake stepper's arrows, the week stepper, the back
-caret on a page a phone has drilled into, the "you are here" wedge in a row's
+mark on a page a phone has drilled into, the "you are here" wedge in a row's
 gutter, the watching play-mark, the board's arrow keys: all triangles from
 the mesh layer, weighted like the line work around them. A "<" set in type is
 a picture of a mathematical symbol, not of going back. The gui font's glyphs
@@ -280,9 +280,11 @@ rail's destinations, and decision 102 deleted the rail. The gauge outlived it
 by a few decisions on the settings stop, which was the one stop with no word
 to put where the others put an answer, until decision 109 took it off: a mark
 that repeats the label is the label said twice, and in a column whose rows end
-in one of six things it was a seventh. A stop that opens wears the caret. The
-rule that removed the gauge is not that a stop may not have a mark, so if one
-earns a picture it can have one.
+in a fixed set of things it was one more. A stop that opens wore a caret after
+that, until decision 154 found the same fault in it: every stop opens
+something, so a mark on every one of them separates nothing, and the corner is
+better spent on the answer. The rule is not that a stop may not have a mark,
+so if one earns a picture it can have one.
 
 A drawing that appears in two places is one function. The weapon marks live
 in `marks.lua` because the corner stack and the touch pads both draw them,
