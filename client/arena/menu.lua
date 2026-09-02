@@ -5,7 +5,7 @@
 -- what stands over it is the column every pilot in that room raises with the
 -- same key: the same stops in the same order, dismissed the same way, with the
 -- same radar and roster and clock behind it. There is no second screen and no
--- second state to be in. See decision 156.
+-- second state to be in. See decision 158.
 --
 -- One list on screen at a time, a breadcrumb above it, and a stack behind it.
 -- Down and up move, right or enter descends or acts, left or escape goes
@@ -56,10 +56,6 @@ M.watching = false      -- sitting out, set by the arena each frame
 M.side = nil
 M.pending = nil         -- the hull a row just asked for
 M.chosen = nil          -- the game a row just asked for
--- Which of its rooms, by the number the server gave that room, when a row
--- named one. Nil is what every arrival through the games list says, and it
--- means "wherever the fill ladder puts me".
-M.chosen_room = nil
 -- How deep into the column's pages a hand has walked. Empty is the bare three
 -- stops, which is the ordinary state: one entry is the page a stop opened, two
 -- is a page that page opened. That is the whole depth of this tree.
@@ -1714,7 +1710,7 @@ function M.stops()
     -- report this whole column exists to avoid: a player opens the client,
     -- looks at a game with fourteen people in it, and finds no way to see who
     -- any of them are. A watcher is exactly who wants that list. See
-    -- decision 156.
+    -- decision 158.
     out[#out + 1] = {stop = "players", label = "players",
                      -- Your side, quoted the way a name is quoted
                      -- everywhere; the interface's own word when you are
@@ -2211,7 +2207,7 @@ function M.close()
     -- decision: escape, the menu key and a press on the glass beside the
     -- column all mean "never mind", and the one control that spends a draft
     -- is the key. The panel used to settle on any of the six ways out of it,
-    -- so a hand waved past the glass cost a respawn. See decision 157.
+    -- so a hand waved past the glass cost a respawn. See decision 159.
     --
     -- After the commit paths rather than instead of them: `draft_keep` clears
     -- the draft first, so this is a no-op on the way out of a press that
@@ -2318,7 +2314,7 @@ function M.view()
                  -- own, and it is the way back out to the stands of the same
                  -- game. A seat and a ship drafted over it, and it is the
                  -- refit: the one press that spends the draft, since a
-                 -- dismissal no longer does. See decisions 140 and 157.
+                 -- dismissal no longer does. See decisions 140 and 159.
                  key = M.flying()
                      and (M.drafted() and "fly" or "spectate")
                      or "play",

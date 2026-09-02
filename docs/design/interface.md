@@ -342,16 +342,18 @@ The constants that repeat, from ui.lua:
 | name | value | what it measures |
 |---|---|---|
 | PAD | 14 | the margin instruments keep from the screen edge |
-| COL_W | 248 | the left column's panels: the rooms list and the run log |
 | LINE | 18 | one row of a HUD list |
 | RADAR | 168 | the dial's side at rest |
 | GUTTER | 22 | the inset a menu row's type keeps from both of its edges |
 | ROW_PAD | 16 | how far a lit row reaches past its column of type |
 | KEY_H | 26 | a button's height |
 
-The HUD has a fixed geography, and it is the prototype's. Top left: the chip
-row (TAKE SEAT, ROOM, the on-air or watching chip) and the rooms panel under
-it, all of which come and go, so in an ordinary match that corner is the fight.
+The HUD has a fixed geography, and it is the prototype's. Top left: the on-air
+tally, and nothing else. It was a row of chips, and each turned out to be a
+second way to do something the interface already offered: TAKE SEAT, which the
+ship stop says better, and ROOM n, which named which copy of the game you were
+in and opened a list of the others. Both are gone, and so is the rooms panel
+that hung under them, so in an ordinary match that corner is the fight.
 Bottom middle: the faint `MENU` key, and the column it raises, in a room you
 are in. Top left held MENU until decision 102 moved it to the foot, where the
 panel it opens stands. The front page carries the column and not the key: out
@@ -399,7 +401,10 @@ The match ending is that sheet, raised by the arena rather than by a hand.
 There is no page of its own and no block over the fight: the whistle opens the
 `players` stop the way a press would, so escape puts it away and the arrows
 walk it exactly as they do the rest of the time. What the sheet gains is one
-column, what the match paid each pilot. Who took the match is the band's to
+column: where the ladder has each pilot, with what the match paid them in
+brackets after it. The standing is set in the ink the figures beside it are,
+since no rating is good or bad; only the movement is green up and red down.
+Who took the match is the band's to
 say, in the pixels that have carried the score for three minutes: both sides
 stay on it, the winner at its own strength and the beaten side stood down to a
 third, over the clock counting to the next one. A draw stands neither down.

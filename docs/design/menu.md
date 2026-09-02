@@ -10,7 +10,7 @@
 > It is not on the screen at all times. A watcher with the column dismissed is
 > looking at a game, and a name laid over a fight is chrome; the menu is what
 > introduces the game, so the name heads the menu. See
-> [decision 158](../architecture/decisions.md).
+> [decision 160](../architecture/decisions.md).
 
 > **A dismissal is not a decision.** The ship panel's draft is spent by one
 > press, the column's key, and by nothing else. Escape, the back chevron, the
@@ -34,7 +34,7 @@
 >
 > Everything below that says the panel settles when it closes is describing
 > what six ways out of one panel used to cost. See
-> [decision 157](../architecture/decisions.md).
+> [decision 159](../architecture/decisions.md).
 
 > **There is no landing.** Opening the client puts you in the stands of the
 > game you were in last, and that is an ordinary watcher's session. One screen,
@@ -57,7 +57,7 @@
 >
 > What is left of `menu.home` is `menu.adrift`: no room on the glass at all.
 > What stands in for one then is a loading screen, not a page. See
-> [decision 156](../architecture/decisions.md).
+> [decision 158](../architecture/decisions.md).
 
 > **There is one menu.** The landing and the in-match column were the same
 > drawing off two models, and this note is where they stop being two. The
@@ -100,8 +100,9 @@
 >
 > Its answer down the column is where you stand: the side you fly for, or
 > `watching`. The band opens the same panel, and at the whistle the arena
-> raises it the way a hand would, with one column added for what the match paid
-> each pilot. Who took the match is said by the band rather than by the sheet.
+> raises it the way a hand would, with one column added for where the ladder
+> has each pilot and what the match paid them. Who took the match is said by
+> the band rather than by the sheet.
 > See [decision 147](../architecture/decisions.md).
 
 > **The ship stop is in a room too, and LEAVE SEAT is gone.** The panel the
@@ -438,9 +439,9 @@ settings and a page away from the game it was about. It is a button at the
 right hand end of that game's own row now, and it hands the seat back rather
 than the room: what a pilot leaving a match wants is to stop flying, not to
 lose the arena they were flying in. So the row that carries it is the room's
-own, the panel stays standing over the result, and the corner offers TAKE SEAT
-for going back in. Right is the arrow that reaches the button, which is where
-it is drawn and the one thing right had no other use for on a list of games.
+own, the panel stays standing over the result, and the ship stop is the way
+back in. Right is the arrow that reaches the button, which is where it is drawn
+and the one thing right had no other use for on a list of games.
 
 That leaves one press on this list with one meaning: be in this game. Three
 states answer it three ways, and all three are `M.want_zone`.
@@ -775,11 +776,12 @@ has just loaded has nothing else naming the game, and after that it is the
 player's.
 
 Nothing else is added. Every reading a panel would carry is one the HUD already
-draws, to the people in the room, in code that has to be right anyway. The
-corner keeps `MENU` and `TAKE SEAT`, which is the same act the column's key is:
-two controls for one thing, offered because the column is a press away and the
-chip is not, and because a watcher reading the corner instruments is already
-looking there.
+draws, to the people in the room, in code that has to be right anyway.
+
+The corner holds nothing. `TAKE SEAT` was there for a pilot the room benched,
+and it was the offer made twice: the ship stop is where a pilot picks the hull
+they are coming back in, and the column's key says the same act in one word.
+See decision 156.
 
 ### Before a room answers
 

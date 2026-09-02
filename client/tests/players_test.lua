@@ -178,14 +178,9 @@ local function frame(o)
                  snap_missed = 1, snap_reordered = 2,
                  snaps = 120, rx = 0, tx = 0},
         zone = "chaos",
-        rooms = o.rooms, room = o.room,
         safe = o.safe, safe_limit = o.safe_limit,
         fps = 60, frame_ms = 16.7, rx_rate = 31000, tx_rate = 700,
     })
-    -- Where the frame loop draws it, and the placement is the point: the card
-    -- drops every box published before it, so it has to come after everything
-    -- that publishes one.
-    ui.room_card(o.rooms)
     ui.finish()
 end
 
@@ -213,6 +208,15 @@ local function counted(what)
         if string.lower(s) == string.lower(what) then n = n + 1 end
     end
     return n
+end
+
+-- The whole record a string was drawn as, for the one column that draws two
+-- kinds of fact side by side and has to keep them apart in ink and in place.
+local function entry(what)
+    for i = 1, state.n do
+        if state.text[i].s == what then return state.text[i] end
+    end
+    return nil
 end
 
 local NAMES = {[0] = "Pylon", [1] = "Caisson"}
@@ -503,13 +507,33 @@ local ENDED = {playing = false, left = 18, score = {[0] = 4, [1] = 7}}
 sheet({match = ENDED,
        ratings = {[0] = 1500, [1] = 1620, [2] = 1400, [3] = 1310},
        rated_from = {[0] = 1506, [1] = 1611, [2] = 1400, [3] = 1315}})
-check("the whistle adds what the match paid", at("RATING") ~= nil,
+check("the whistle adds where the ladder has everybody", at("RATING") ~= nil,
       table.concat(words(), " | "))
-check("and says it as a signed figure, either way",
-      said("-6") ~= nil and said("+9") ~= nil,
+check("and the column carries the standing itself",
+      counted("1500") == 1 and counted("1620") == 1,
       table.concat(words(), " | "))
-check("a rating that did not move reads a zero rather than a blank",
-      counted("0") >= 1)
+check("with what the match paid in brackets after it, either way",
+      counted("(-6)") == 1 and counted("(+9)") == 1,
+      table.concat(words(), " | "))
+-- The two are different kinds of fact and are set in different ink: a
+-- standing is a reading like the three figures beside it, and no rating is
+-- good or bad. Only the movement is colored.
+local stood, paid = entry("1500"), entry("(-6)")
+check("the standing is not colored by the way the match went",
+      stood and paid and stood.col[1] ~= paid.col[1],
+      "the standing and its movement are the same ink")
+-- And they are one reading rather than two: the bracket follows the standing
+-- along the row's own line, which is what the column was measured for.
+check("and the bracket follows it on one line",
+      stood and paid and stood.x < paid.x
+          and math.abs(stood.y - paid.y) < 0.01,
+      stood and paid
+          and string.format("standing at %.1f,%.1f against %.1f,%.1f",
+                            stood.x, stood.y, paid.x, paid.y)
+          or "one of them was not drawn")
+check("a rating that did not move reads a bracketed zero, not a blank",
+      counted("(0)") == 1 and counted("1400") == 1,
+      table.concat(words(), " | "))
 check("and a watcher, who was not in the match, reads nothing at all",
       exactly("Watching") == 1, table.concat(words(), " | "))
 -- The head is the panel's own name, not a result: who took the match is the

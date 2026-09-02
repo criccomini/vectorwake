@@ -349,7 +349,7 @@ pub(crate) async fn serve_client(
                                 break;
                             }
                         };
-                        let rated_spool = z.spools.rated.clone();
+                        let spools = z.spools.clone();
                         drop(z);
                         let claimed = RatedLease::claim(
                             base,
@@ -357,7 +357,7 @@ pub(crate) async fn serve_client(
                             instance,
                             account,
                             session.id.clone(),
-                            rated_spool,
+                            spools,
                         )
                         .await;
                         let lease = match claimed {
@@ -684,7 +684,7 @@ pub(crate) async fn serve_client(
                                     .filter(|s| s.account.is_some())
                                     .map(|_| {
                                         z.rated_lease_args().map(|(base, token, instance)| {
-                                            (base, token, instance, z.spools.rated.clone())
+                                            (base, token, instance, z.spools.clone())
                                         })
                                     })
                                     .transpose()
@@ -695,7 +695,7 @@ pub(crate) async fn serve_client(
                         };
                         let mut candidate = None;
                         let mut standing = None;
-                        if let Some((base, pool_token, instance, rated_spool)) = match lease_args {
+                        if let Some((base, pool_token, instance, spools)) = match lease_args {
                             Ok(v) => v,
                             Err(e) => {
                                 let mut m = vec![S2C_DENIED, DENY_RATED_SESSION];
@@ -713,7 +713,7 @@ pub(crate) async fn serve_client(
                                 instance,
                                 account,
                                 session.id.clone(),
-                                rated_spool,
+                                spools,
                             )
                             .await
                             {

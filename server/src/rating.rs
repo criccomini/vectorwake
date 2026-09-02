@@ -134,6 +134,31 @@ pub struct Rating {
     /// arena is where a delta is decided, and deciding it anywhere else would
     /// leave the log saying one thing and the ladder another.
     ai_gain: HashMap<Id, (f64, u32)>,
+    /// Whether this room rates the match rather than the death. A flag game
+    /// is won by holding ground, and a death in it is a fact about the
+    /// fight and not about the game, so the ledger stays empty and the only
+    /// exchange is the one `matched` runs at the whistle. See decision 157.
+    by_match: bool,
+}
+
+/// One pilot's part in a rated match: which side they were on and what the
+/// result did to them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Standing {
+    pub who: Id,
+    pub team: u8,
+    pub before: f64,
+    pub after: f64,
+}
+
+/// One rated match. Filed once per whistle in a zone that rates by match,
+/// and every seat that played to the end is on it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RatedMatch {
+    pub tick: u32,
+    /// The final score, per public side, as the mode reported it.
+    pub score: Vec<u16>,
+    pub standings: Vec<Standing>,
 }
 
 impl Rating {
@@ -148,7 +173,18 @@ impl Rating {
             anchors: HashSet::new(),
             bots: HashSet::new(),
             ai_gain: HashMap::new(),
+            by_match: false,
         }
+    }
+
+    /// Rate the match and not the death. Set once, when the room learns its
+    /// mode, and never unset: a room changes mode only by being rebuilt.
+    pub fn rate_by_match(&mut self) {
+        self.by_match = true;
+    }
+
+    pub fn rates_by_match(&self) -> bool {
+        self.by_match
     }
 
     pub fn rating_of(&self, who: &str) -> f64 {
@@ -202,8 +238,11 @@ impl Rating {
         amount: i32,
         same_team: bool,
     ) {
-        // Self damage and teammate damage never earn credit.
-        if attacker == victim || same_team || amount <= 0 {
+        // Self damage and teammate damage never earn credit, and in a zone
+        // rated by match no damage does: with nothing in the ledger, `death`
+        // and `quit` find nothing to settle, which is the whole of how a
+        // flag game keeps its deaths off the ladder.
+        if self.by_match || attacker == victim || same_team || amount <= 0 {
             return;
         }
         let hl = self.half_life;
@@ -306,6 +345,105 @@ impl Rating {
         };
         self.log.push(ev.clone());
         Some(ev)
+    }
+
+    /// Settle a match between sides, which is how a flag game is rated.
+    ///
+    /// Team Elo, the shape every objective game that has kept a ladder
+    /// settled on: a side's strength is the mean rating of the pilots on it,
+    /// each pair of sides is one contest decided by the score, and every
+    /// pilot on a side takes the same signed result at their own K. With more
+    /// than two sides the pairwise results are averaged, so a side that beat
+    /// two others and lost to one is paid for a win and two thirds of one.
+    /// A tie between two sides is a draw and moves nobody at equal strength.
+    ///
+    /// `sides` is indexed by public team, and a seat is on it only if the
+    /// room decided they played: a pilot who arrived for the closing seconds
+    /// is not there, and neither is anybody on a private side, which cannot
+    /// win. A side with nobody on it is not a side, and fewer than two of
+    /// those is not a match; `None` says so and nothing moves.
+    ///
+    /// The anchor stays put and a bot moves at its own K, as on a death. The
+    /// farm brake applies when everybody a pilot beat was a machine, which is
+    /// the only match a person can arrange for themselves.
+    pub fn matched(&mut self, tick: u32, sides: &[Vec<Id>], score: &[u16]) -> Option<RatedMatch> {
+        let live: Vec<usize> = (0..sides.len().min(score.len()))
+            .filter(|&t| !sides[t].is_empty())
+            .collect();
+        if live.len() < 2 {
+            return None;
+        }
+        let strength: Vec<f64> = sides
+            .iter()
+            .map(|side| {
+                if side.is_empty() {
+                    UNRATED
+                } else {
+                    side.iter().map(|who| self.rating_of(who)).sum::<f64>() / side.len() as f64
+                }
+            })
+            .collect();
+        let all_bots: Vec<bool> = sides
+            .iter()
+            .map(|side| side.iter().all(|who| self.bots.contains(who)))
+            .collect();
+        // Every "before" is read before anything moves, so the order the
+        // sides are walked in cannot leak into what anybody is paid.
+        let before: HashMap<Id, f64> = live
+            .iter()
+            .flat_map(|&t| {
+                sides[t]
+                    .iter()
+                    .map(|who| (who.clone(), self.rating_of(who)))
+            })
+            .collect();
+        let mut standings = Vec::new();
+        for &s in &live {
+            let mut base = 0.0;
+            let mut against_bots_only = true;
+            for &t in &live {
+                if t == s {
+                    continue;
+                }
+                let actual = match score[s].cmp(&score[t]) {
+                    std::cmp::Ordering::Greater => 1.0,
+                    std::cmp::Ordering::Equal => 0.5,
+                    std::cmp::Ordering::Less => 0.0,
+                };
+                let expected = 1.0 / (1.0 + 10f64.powf((strength[t] - strength[s]) / 400.0));
+                base += actual - expected;
+                against_bots_only &= all_bots[t];
+            }
+            base /= (live.len() - 1) as f64;
+            for who in &sides[s] {
+                let was = before[who];
+                let delta = (self.k_for(who) * base).clamp(-EVENT_CAP, EVENT_CAP);
+                let delta = if against_bots_only && !self.bots.contains(who) {
+                    self.throttle_ai_gain(tick, who, was, delta)
+                } else {
+                    delta
+                };
+                let after = if self.anchors.contains(who) {
+                    was
+                } else {
+                    let v = was + delta;
+                    self.score.insert(who.clone(), v);
+                    v
+                };
+                *self.games.entry(who.clone()).or_insert(0) += 1;
+                standings.push(Standing {
+                    who: who.clone(),
+                    team: s as u8,
+                    before: was,
+                    after,
+                });
+            }
+        }
+        Some(RatedMatch {
+            tick,
+            score: score.to_vec(),
+            standings,
+        })
     }
 
     /// Trim a gain taken from the AI, once the AI has stopped measuring this
@@ -751,5 +889,158 @@ mod tests {
             r.rating_of("fav") - 1900.0 < 1.0,
             "the favorite gains almost nothing"
         );
+    }
+
+    #[test]
+    fn a_zone_rated_by_match_keeps_deaths_off_the_ladder() {
+        let mut r = Rating::new();
+        r.rate_by_match();
+        r.damage(100, "victim", "killer", 1000, false);
+        assert!(
+            r.death(101, "victim").is_none(),
+            "no ledger, nothing to settle"
+        );
+        assert!(r.quit(101, "victim").is_none());
+        assert_eq!(r.rating_of("victim"), UNRATED);
+        assert_eq!(r.rating_of("killer"), UNRATED);
+        assert_eq!(r.games_of("killer"), 0);
+    }
+
+    #[test]
+    fn a_match_pays_the_winning_side_and_charges_the_other() {
+        let mut r = Rating::new();
+        r.rate_by_match();
+        let sides = vec![
+            vec!["a1".to_string(), "a2".to_string()],
+            vec!["b1".to_string(), "b2".to_string()],
+        ];
+        let m = r.matched(1000, &sides, &[7, 3]).expect("a match");
+        assert_eq!(m.standings.len(), 4);
+        // Equal strength, so a win is worth half of K to everybody on it,
+        // and every pilot on a side moves the same.
+        let gain = r.rating_of("a1") - UNRATED;
+        assert!((gain - K_NEW / 2.0).abs() < 1e-9, "gain {gain}");
+        assert_eq!(r.rating_of("a1"), r.rating_of("a2"));
+        assert_eq!(r.rating_of("b1"), r.rating_of("b2"));
+        assert!(
+            (r.rating_of("b1") - UNRATED + gain).abs() < 1e-9,
+            "zero-sum at equal K"
+        );
+        for who in ["a1", "a2", "b1", "b2"] {
+            assert_eq!(r.games_of(who), 1, "a match is one game for {who}");
+        }
+        let a1 = m.standings.iter().find(|s| s.who == "a1").unwrap();
+        assert_eq!(a1.team, 0);
+        assert_eq!(a1.before, UNRATED);
+        assert_eq!(a1.after, r.rating_of("a1"));
+    }
+
+    #[test]
+    fn a_draw_between_equals_moves_nobody_and_still_counts() {
+        let mut r = Rating::new();
+        let sides = vec![vec!["a".to_string()], vec!["b".to_string()]];
+        r.matched(1000, &sides, &[4, 4]).expect("a match");
+        assert_eq!(r.rating_of("a"), UNRATED);
+        assert_eq!(r.rating_of("b"), UNRATED);
+        assert_eq!(r.games_of("a"), 1);
+    }
+
+    #[test]
+    fn a_side_is_judged_by_its_mean_and_the_favorite_gains_little() {
+        let mut r = Rating::new();
+        r.score.insert("strong".into(), 1600.0);
+        r.score.insert("weak".into(), 1200.0);
+        // A side of one strong and one weak against two average pilots is
+        // the stronger side on the mean, and pays little for beating them.
+        let sides = vec![
+            vec!["strong".to_string(), "weak".to_string()],
+            vec!["c".to_string(), "d".to_string()],
+        ];
+        r.matched(1000, &sides, &[5, 1]).expect("a match");
+        let strong = r.rating_of("strong") - 1600.0;
+        let weak = r.rating_of("weak") - 1200.0;
+        assert!(
+            strong > 0.0 && strong < K_NEW / 2.0,
+            "a favorite gains less than even money"
+        );
+        assert_eq!(
+            strong, weak,
+            "one side, one result, one K: the same movement"
+        );
+        // And the upset is worth more than the even win.
+        let mut u = Rating::new();
+        u.score.insert("strong".into(), 1600.0);
+        u.score.insert("weak".into(), 1200.0);
+        u.matched(1000, &sides, &[1, 5]).expect("a match");
+        assert!(
+            u.rating_of("c") - UNRATED > K_NEW / 2.0,
+            "an upset pays more than even money"
+        );
+    }
+
+    #[test]
+    fn an_empty_side_is_not_a_side_and_one_side_is_not_a_match() {
+        let mut r = Rating::new();
+        let one = vec![vec!["a".to_string()], Vec::new()];
+        assert!(r.matched(1000, &one, &[3, 0]).is_none());
+        assert_eq!(r.games_of("a"), 0);
+        // Three sides declared, one empty: the two that played settle it
+        // between them and the empty one is never a contest.
+        let three = vec![vec!["a".to_string()], Vec::new(), vec!["c".to_string()]];
+        let m = r.matched(1000, &three, &[3, 0, 1]).expect("two live sides");
+        assert_eq!(m.standings.len(), 2);
+        assert!(r.rating_of("a") > UNRATED);
+        assert!(r.rating_of("c") < UNRATED);
+    }
+
+    #[test]
+    fn the_anchor_holds_and_a_bot_moves_slowly_in_a_match() {
+        let mut r = Rating::new();
+        r.set_anchor("anchor", 1200.0);
+        r.mark_bot("bot");
+        let sides = vec![vec!["anchor".to_string()], vec!["bot".to_string()]];
+        r.matched(1000, &sides, &[0, 3]).expect("a match");
+        assert_eq!(r.rating_of("anchor"), 1200.0, "pinned");
+        assert!((r.rating_of("bot") - 1200.0 - K_BOT / 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn beating_a_side_of_bots_past_ace_is_on_the_daily_allowance() {
+        let mut r = Rating::new();
+        r.score.insert("ace".into(), AI_FARM_FLOOR + 10.0);
+        r.mark_bot("b1");
+        r.mark_bot("b2");
+        r.score.insert("b1".into(), AI_FARM_FLOOR + 10.0);
+        r.score.insert("b2".into(), AI_FARM_FLOOR + 10.0);
+        let sides = vec![
+            vec!["ace".to_string()],
+            vec!["b1".to_string(), "b2".to_string()],
+        ];
+        let mut taken = 0.0;
+        for n in 0..10 {
+            let was = r.rating_of("ace");
+            r.matched(n * 1000, &sides, &[3, 0]).expect("a match");
+            taken += r.rating_of("ace") - was;
+        }
+        assert!(
+            taken <= AI_GAIN_PER_DAY + 1e-9,
+            "took {taken} from bots in a day"
+        );
+        assert!(taken > AI_GAIN_PER_DAY - 1.0, "the allowance was paid out");
+        // With a person on the other side there is no brake.
+        let mut open = Rating::new();
+        open.score.insert("ace".into(), AI_FARM_FLOOR + 10.0);
+        open.mark_bot("b1");
+        let mixed = vec![
+            vec!["ace".to_string()],
+            vec!["b1".to_string(), "human".to_string()],
+        ];
+        let mut taken = 0.0;
+        for n in 0..10 {
+            let was = open.rating_of("ace");
+            open.matched(n * 1000, &mixed, &[3, 0]).expect("a match");
+            taken += open.rating_of("ace") - was;
+        }
+        assert!(taken > AI_GAIN_PER_DAY, "an unbraked run of wins");
     }
 }

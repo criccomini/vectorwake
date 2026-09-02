@@ -270,7 +270,7 @@ local function reading(self, dt, html5, touch, ui, menu)
 
         screen = {
             -- No room on screen at all, which is the loading picture. It said
-            -- something else until decision 156, that this client had a room
+            -- something else until decision 158, that this client had a room
             -- but no seat, and the journeys that read it read it for that.
             adrift = menu.adrift and true or false,
             joined = ui.joined and true or false,
@@ -291,7 +291,7 @@ local function reading(self, dt, html5, touch, ui, menu)
             depth = #menu.stack,
             -- A card takes every box on screen, so a harness that finds no
             -- box it wanted should look here before calling it a fault.
-            card = (menu.ask ~= nil) or (ui.room_ask ~= nil),
+            card = menu.ask ~= nil,
             note = menu.note,
         },
 

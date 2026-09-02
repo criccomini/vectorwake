@@ -11,11 +11,11 @@
 -- time.
 --
 -- The corner row is not the way into the menu either. That key is at the foot
--- now (see column_test.lua), and what is left up there is chips about this
--- room and this pilot: a held seat, a room number, the ON AIR tally. None of
--- the three is drawn in an ordinary match, so the checks that need something
--- standing on the row ask for a zone holding a second room, which is what
--- draws the ROOM chip.
+-- now (see column_test.lua), and what is left up there is the ON AIR tally and
+-- nothing else: the held seat and the room number have gone, since the ship
+-- stop and the games list already offer both. So the checks that need
+-- something standing on the row ask for a pilot the room's channel is pointed
+-- at, which is what draws the tally.
 --
 -- Against the real `M.hud` and a stubbed engine.
 
@@ -43,24 +43,14 @@ for _, name in ipairs({"arc", "arc_aa", "arc_fade", "bloom", "flush", "halo",
     layer[name] = noop
 end
 
--- How thin the thinnest outline on the row came out.
---
--- A hard-edged rect thinner than a pixel covers a pixel center or misses it on
--- where the row happens to sit, so the same edge goes missing on every chip
--- that shares the row at once. It is arithmetic no assertion about strings can
--- see and no screenshot in CI would catch, so the thickness is recorded rather
--- than trusted.
---
--- This lived in podium_test, guarding the saying chips on the match ending.
--- Those chips went, and the check spent a while satisfied by the corner MENU
--- key's own box, which was the last outline on that frame; when the key
--- stopped wearing a box there was nothing left for it to measure at all. The
--- chips it is really about are the ones in this corner.
-local thinnest = nil
-layer.frame = function(self, _, _, _, _, t)
-    self.n = self.n + 1
-    if t and (not thinnest or t < thinnest) then thinnest = t end
-end
+-- Outlines were measured here for a while: a hard-edged rect thinner than a
+-- pixel covers a pixel center or misses it depending on where the row happens
+-- to sit, so the same edge goes missing on every chip sharing the row at once.
+-- The check moved from the podium's saying chips to the corner MENU key to the
+-- corner chips, and each time the thing it measured was deleted under it.
+-- Nothing on this row wears an outline now, so it is gone rather than pointed
+-- at a fourth subject.
+layer.frame = noop
 -- Recorded rather than counted: the wash the board lays over the fight is a
 -- rect the size of the window, and nothing else on screen is.
 layer.rect = function(self, x, y, w, h, col)
@@ -155,13 +145,14 @@ local PILOTS = {
 
 local w_now, h_now = W, H
 
--- A zone holding more than one room, which is what puts a ROOM chip in the
--- corner. The chip is what this file measures the row against: it publishes a
--- box at exactly a key's height, on exactly the row's line. The band's own box
--- is a few points taller than the row on purpose, so a finger can find it, and
--- reading the row's line off that box would be reading the padding.
-local ROOMS = {{n = 1, players = 3, bots = 20},
-               {n = 2, players = 0, bots = 51}}
+-- The corner's tally is what this file measures the row against. It is set on
+-- the row's own middle, so the word says where the line is; the band's own hit
+-- box is a few points taller than the row on purpose, so a finger can find it,
+-- and reading the row's line off that box would be reading the padding.
+--
+-- Nothing up there publishes a box any more, which is why this is a word
+-- rather than a rectangle.
+local ON_AIR = "ON AIR"
 
 local function frame(o)
     o = o or {}
@@ -169,7 +160,6 @@ local function frame(o)
     rects = {}
     marks = {}
     flags = o.flags or {}
-    thinnest = nil
     state.n = 0
     ui.begin(layer, w_now, h_now, 1, false, o.now)
     ui.hud({
@@ -192,7 +182,7 @@ local function frame(o)
         banner = o.banner or "",
         rtt = 4,
         zone = "melee",
-        rooms = o.rooms, room = o.room,
+        on_air = o.on_air,
         fps = 60, frame_ms = 16.7, rx_rate = 0, tx_rate = 0,
     })
     ui.finish()
@@ -282,31 +272,21 @@ if pylon and fifteen and caisson and nineteen and clock then
     check("a side is as tall as the clock",
           tall <= clock.px + 0.5 and tall > clock.px * 0.9,
           string.format("%.1f against %.1f", tall, clock.px))
-    -- And one key tall. The band, the corner chips and the dial are what the
-    -- top row carries, so the row has one height and the clock is measured
-    -- against a chip rather than against a number written down here:
-    -- `corner_row` publishes that box at exactly a key's own size.
+    -- And on the row's own line. The band and the corner are what the top row
+    -- carries, so both stand on one middle, and the clock is measured against
+    -- what the corner draws rather than against a number written down here.
     --
-    -- Drawn with a second room in the zone, because an ordinary match leaves
-    -- that corner empty and there is then nothing up there to hold a ruler
-    -- against. The reading being compared was taken above and copied out, so
-    -- redrawing the window does not disturb it.
-    frame({rooms = ROOMS, room = 1})
-    local key = box("rooms")
-    check("the clock is as tall as a corner chip", key ~= nil
-              and math.abs(clock.px - key.h) < 0.5,
-          key and string.format("%.1f against %.1f", clock.px, key.h)
-              or "no room chip")
-end
-
--- --- the outlines up there hold a pixel -------------------------------------
-
-do
-    frame({rooms = ROOMS, room = 1})
-    check("the corner chips are outlined at all", thinnest ~= nil,
-          "nothing on the row drew an outline")
-    check("and no outline on the row is thinner than a pixel",
-          thinnest ~= nil and thinnest >= 1, tostring(thinnest))
+    -- Drawn on air, because an ordinary match leaves that corner empty and
+    -- there is then nothing up there to hold a ruler against. The reading
+    -- being compared was taken above and copied out, so redrawing the window
+    -- does not disturb it.
+    frame({on_air = true})
+    local tally = drawn(ON_AIR)
+    check("the clock stands on the corner's own line", tally ~= nil
+              and math.abs(down(clock) - down(tally)) < 0.5,
+          tally and string.format("%.1f against %.1f",
+                                  down(clock), down(tally))
+              or "no tally in the corner")
 end
 
 -- --- the top row is a row ---------------------------------------------------
@@ -322,15 +302,15 @@ end
 -- instrument they are about: the link meter at the far corner and the tile
 -- you are on beside it. The dial itself hangs on the line under them.
 --
--- Measured against a chip's published box, because that is the height the row
--- takes from and the one thing here that cannot drift out of step with
--- itself. The window is redrawn with a second room in the zone so there is a
--- chip to measure. A match with one room puts nothing in that corner at all,
--- which the section on the band as a control checks on its own.
+-- Measured against the corner's tally, which `corner_row` sets on the row's
+-- own middle: it is the one word up there whose vertical is the row's rather
+-- than its own. The window is drawn on air so there is a tally to measure. A
+-- match nobody is watching puts nothing in that corner at all, which the
+-- section on the band as a control checks on its own.
 local function row_shares_a_center(where, w, h)
-    frame({w = w, h = h, rooms = ROOMS, room = 1})
-    local key, tick = box("rooms"), drawn("0:33")
-    if not (key and tick) then
+    frame({w = w, h = h, on_air = true})
+    local tally, tick = drawn(ON_AIR), drawn("0:33")
+    if not (tally and tick) then
         check("the row is drawn on " .. where, false,
               table.concat(words(), " | "))
         return
@@ -344,12 +324,12 @@ local function row_shares_a_center(where, w, h)
     check("and where you are is written out on " .. where,
           drawn("POS") ~= nil and drawn("6,6") ~= nil,
           table.concat(words(), " | "))
-    local mid = key.y + key.h / 2
+    local mid = down(tally)
     check("the row shares one center on " .. where,
           math.abs(down(tick) - mid) < 0.5,
           string.format("%.1f off a center of %.1f", down(tick), mid))
     -- The readout at the far end stands on it too, which is the whole of what
-    -- the row is: a chip, a clock and two readings on one line. It took its
+    -- the row is: a tally, a clock and two readings on one line. It took its
     -- own vertical off the padding once and came out four points high on a
     -- monitor and ten on a phone.
     local pos = drawn("POS")
@@ -363,10 +343,10 @@ local function row_shares_a_center(where, w, h)
     -- them.
     local press, corner = box("players_open"), box("map")
     if press then
-        check("and the band keeps out of the chip on " .. where,
-              press.x > key.x + key.w,
-              string.format("band starts %.0f, chip ends %.0f",
-                            press.x, key.x + key.w))
+        check("and the band keeps out of the tally on " .. where,
+              press.x > tally.x,
+              string.format("band starts %.0f, tally at %.0f",
+                            press.x, tally.x))
         check("and off the right edge on " .. where,
               press.x + press.w <= w_now + 0.5,
               string.format("band ends %.0f, window is %.0f",
@@ -383,31 +363,30 @@ end
 -- --- the dial hangs under its own readouts ---------------------------------
 
 -- The corner is a stack: the meter and the tile readout on the row, the
--- instrument they are about on the line under it. Both stand at the margin the
--- chips keep from the corner opposite, which is what makes it one column of
--- furniture rather than two things that happen to be near each other.
+-- instrument they are about on the line under it. What holds it together is
+-- that the meter's own box ends where the dial starts, so the row has one
+-- bottom edge and the two are one column of furniture rather than two things
+-- that happen to be near each other.
 --
 -- Everything is asked for its own published box rather than for a number
--- written down here, because the check is that the margins match. A `PAD` that
--- moved on one of them and not the others would pass against a constant and
--- still look wrong on the screen. The chip stands for the near corner, so the
--- window is redrawn with a second room in the zone.
+-- written down here. This used to pair the dial's margin off the right edge
+-- against the corner chip's off the left, and there is no chip in that corner
+-- any more: nothing over there publishes a box, and the tally that is left
+-- sits a lead right of the margin rather than on it, so the pairing would be
+-- a constant copied out of `corner_row`. The line the two share is what is
+-- checked instead.
 local function dial_hangs_under_its_row(where, w, h)
-    frame({w = w, h = h, rooms = ROOMS, room = 1})
-    local key, corner, meter = box("rooms"), box("map"), box("debug")
-    if not (key and corner and meter) then
+    frame({w = w, h = h, on_air = true})
+    local tally, corner, meter = drawn(ON_AIR), box("map"), box("debug")
+    if not (tally and corner and meter) then
         check("the corner is drawn on " .. where, false,
-              "no dial, no meter or no room chip")
+              "no dial, no meter or no tally")
         return
     end
-    check("the dial starts under the chip's own row on " .. where,
-          corner.y >= key.y + key.h - 0.5,
-          string.format("dial at %.1f, row ends %.1f",
-                        corner.y, key.y + key.h))
-    check("and keeps the chip's own margin from its corner on " .. where,
-          math.abs((w - (corner.x + corner.w)) - key.x) < 0.5,
-          string.format("gap %.1f right against the chip's %.1f",
-                        w - (corner.x + corner.w), key.x))
+    check("the dial starts under the row's own line on " .. where,
+          corner.y > down(tally),
+          string.format("dial at %.1f, the row's line at %.1f",
+                        corner.y, down(tally)))
     -- The meter is in the row above it, in the same corner, and reaches the
     -- screen's own edge: a thumb aimed at a corner cannot overshoot off it, and
     -- four bars are narrower than a fingertip.
@@ -530,10 +509,10 @@ do
     -- the band this compares. A room chip stands in the corner throughout, so
     -- the row it hangs under has an edge and a height that were published
     -- rather than worked out here.
-    frame({rooms = ROOMS, room = 1})
+    frame({on_air = true})
     local before, pos_before = box("players_open"), drawn("POS")
     ui.map = true
-    frame({rooms = ROOMS, room = 1})
+    frame({on_air = true})
     local corner, key, press = box("map"), box("rooms"), box("players_open")
     check("the map stands in the dial's corner", corner ~= nil)
     -- The strip over it belongs to the corner rather than to whichever
@@ -566,7 +545,7 @@ do
           table.concat(words(), " | "))
     -- A phone's map is the case that forced the line: on the row it would
     -- start left of the clock.
-    frame({w = 390, h = 844, rooms = ROOMS, room = 1})
+    frame({w = 390, h = 844, on_air = true})
     local small, small_key = box("map"), box("rooms")
     if small and small_key then
         check("a phone's map reaches past the middle of the window",

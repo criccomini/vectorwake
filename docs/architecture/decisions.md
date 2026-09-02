@@ -8581,7 +8581,101 @@ of the same file, pinned as what a player can read rather than as the constant
 behind it. `client/tests/greens_test.lua` runs the arena's event loop and pins
 the pickup's color by value, along with the three greens it has to stay out of.
 
-## 156. There is no landing
+## 156. The corner is the fight
+
+**Status:** accepted.
+
+**What:** the two chips left in the top left corner are gone, and the panel
+one of them opened goes with them. `TAKE SEAT`, which a benched pilot pressed
+to get back in a hull, and `ROOM n`, which named which copy of the game you
+were in and opened a list of the others. What is left up there is the on-air
+tally, which is not a control and is drawn only while the room's channel is
+pointed at you. In an ordinary match that corner holds nothing at all.
+
+**Why:** each of them was a second way to do something already offered.
+Pressing `TAKE SEAT` set the pilot's current class and opened the ship stop,
+which is exactly what opening the ship stop does: the panel's foot reads "you
+take a seat in it" from the bench, and settling it sends the class and the
+build together. The chip was the ship stop with the hull picked for you, in a
+corner, and it had already been taken off the landing for the same reason
+(decision 143's column key says it better there).
+
+`ROOM n` is the same argument one step out. A game is what a player picks, and
+which copy of it seats them is the fill ladder's business: that is why the
+number never travels with a row of the games list. The chip put the seam back
+on screen, and the panel behind it made moving between copies a reconnect, a
+fresh spawn, and a confirm card asking whether the pilot meant it. A zone
+holding one room, which is most of them, drew nothing.
+
+**What went with the panel.** `rooms_panel`, `M.room_card` and their state in
+`ui.lua`; `zone_rooms` in `directory.lua` and the `rooms` field it put on every
+row of the games list; `menu.chosen_room`, whose only writer was the card's
+answer; the `rooms`, `rooms_list`, `room`, `room_answer` and `take_seat`
+actions in `arena.script`, with the wheel and drag paths that scrolled the
+list. `in_list` went too: it tested for `scores` as well, which nothing has
+published since the scoreboard became a panel of the menu, so the row-scrolling
+half of the drag has been unreachable for a while. Dragging is the menu's page
+and the column now, which is what a phone actually needed. The key cap
+(`key_w`, `key_frame`, `key_cap`) had no other caller, nor did `population`,
+which set a count of people beside a count of machines and was the last reader
+of `COL_W`.
+
+**A room is still nameable**, by a deep link, which carries zone, instance and
+number and is the one thing that ever asked for a particular one. `net.room` is
+still on the wire and `session.enter` still takes a room; nothing in the
+interface names one.
+
+`hud_hits_test.lua` holds the corner empty in every state a room has.
+`band_test.lua` and `landing_test.lua` measured the top row against the chip's
+published box, which was the one thing up there at a key's own height; they
+read the row off the on-air tally and off the link meter's box instead, since
+neither corner publishes a box any more. `marks_test.lua` read the pilot and
+bot marks off a row of the rooms list, and reads them off the players sheet.
+
+## 157. A flag game rates the whistle and not the wreck
+
+**Status:** accepted, amending
+[decision 131](#131-a-duel-is-a-two-seat-zone-and-nothing-else), which filed
+a rating under the zone's key and left every zone rating by the death.
+
+**What:** Turf and Capture the Flag rate the match. A death in either moves
+nobody: `rating.damage` keeps no ledger in a room rated by match, so `death`
+and `quit` find nothing to settle and the kill feed's line is the whole of
+what a death does. At the whistle the room runs one exchange over every seat
+that was on a public side for thirty seconds or more, the same field time the
+participation grant asks for. It is team Elo: a side's strength is the mean of
+its pilots, each pair of sides is a contest decided by the score, and every
+pilot on a side takes the same signed result at their own K, capped by the
+same constant a death is. A level score is a draw. The anchor holds, a bot
+moves at its K, and the farm brake applies where everybody on the other side
+was a machine. A match is one game toward provisional.
+
+The exchange travels as its own record, `spool::MatchEvent`, on its own spool
+and route, `/v1/rated-matches`, into its own table, `rated_matches`, and
+through the receipt table a death already uses, since the arena mints every id
+from one space. The week's swing reads both tables. The release barrier a
+rated session settles through posts both spools.
+
+Team Battle, Duel and Free Roam are untouched: kills and deaths, as before.
+`modes::rated_by_match` is the one place that says which zones are which.
+
+**Why:** a rating filed under `turf` was a rating about the dogfights on turf
+maps, since deaths were the only thing it saw, and a pilot who held four stands
+all match and traded two deaths doing it went down. The ladders of every
+objective game that has kept one work the way this now does: the match result
+moves rating, and per-action credit stays a stat, because a stat can be padded
+and a win cannot. Per-flag credit was the alternative and is what rating.md's
+open question warned would be farmed in an empty arena; a win over a side of
+bots pays nothing once you outrate them and the brake caps the rest.
+
+**Cost:** two ways of being rated, meeting in one function on the room and one
+flag on `Rating`. A pilot in a flag zone waits ten matches, not ten deaths, to
+leave provisional. The client's death figure is gated on the contributor byte
+`S2C_KILL` already carried, so a death that rated nobody floats nothing, and
+the client stops counting games off kills, since in these zones the games are
+matches and come with the roster. No wire change.
+
+## 158. There is no landing
 
 **Status:** accepted, superseding the landing arm of
 [decision 143](#143-one-menu) and the part of
@@ -8592,8 +8686,7 @@ that took the room's instruments off a client with no seat.
 last, and that is an ordinary watcher's session. One screen, and it is the
 screen a benched pilot in the same room is looking at: the five stops of the
 column over the menu key, the radar in its corner with `POS` over it, the band
-that opens the players sheet, `TAKE SEAT` in the corner row, the ending at the
-whistle. The column starts up, because it names the game behind it and holds
+that opens the players sheet, the ending at the whistle. The column starts up, because it names the game behind it and holds
 the key that gets you into it, and it is dismissed the way it is dismissed
 mid-match.
 
@@ -8607,7 +8700,7 @@ there is none, preferring the zone the pilot was last in over the deployment's
 own front door, and the connection it makes is the session. Pressing the
 column's key no longer promotes anything: `session.take_seat` asks the room for
 a hull on the socket already standing, which is what `TAKE SEAT` in the corner
-has always meant.
+meant until [decision 156](#156-the-corner-is-the-fight) emptied that corner.
 
 **Why:** Chris opened the client and could not find the players list. It was
 not a bug in the sheet. Decision 108 had reasoned that the room behind the
@@ -8664,12 +8757,12 @@ not playing, and it is the account of the match they have been watching.
 
 **Verified:** the client's suite, with `landing_test` rewritten as
 `spectate_test`: the five stops over the key on four windows, the radar, the
-roster press, `POS` and `TAKE SEAT` on a watcher's screen, the presses standing
+roster press and `POS` on a watcher's screen, the presses standing
 down under an open column, and the loading screen measured for itself. luacheck
 clean over 109 files. The playtest harness reads `screen.adrift` where it read
 `screen.landing`, and `arrive` waits for a room rather than for a front page.
 
-## 157. A dismissal is not a decision
+## 159. A dismissal is not a decision
 
 **Status:** accepted, amending [decision 136](#136-a-ship-is-one-thing-and-changing-it-costs-a-respawn),
 which made the ship panel an editor and settled its draft on the way out.
@@ -8699,7 +8792,7 @@ a respawn, four of which are the universal gesture for "never mind". A pilot
 who opened the ship stop mid-fight to see what a Lattice does, turned the
 carousel to look, and pressed escape, was respawned in a Lattice.
 
-Decision 156 made it worse before this fixed it, by making everybody a watcher
+Decision 158 made it worse before this fixed it, by making everybody a watcher
 on the way in: a stranger who opened the client and turned the carousel to
 browse hulls was dropped into a live match by clicking outside the panel.
 
@@ -8721,7 +8814,7 @@ Reverting only for a client with no seat was rejected as backwards on cost. An
 accidental commit from the stands means "you are in the game now", which is
 surprising; for a pilot it is a respawn in the middle of a fight, which is
 expensive. It also reads the same rule two ways depending on whether you hold a
-seat, which is the split decision 156 removed.
+seat, which is the split decision 158 removed.
 
 **The cost:** `SPECTATE` is unreachable while a draft stands, since the key is
 wearing the refit. Dropping the draft is escape, and the key is back. That is
@@ -8747,9 +8840,9 @@ it names come off `menu.drafted`. The playtest harness plays it: `ship-change`
 backs out of the panel, checks the pilot is still flying what they were flying,
 and presses the key.
 
-## 158. The name heads the menu
+## 160. The name heads the menu
 
-**Status:** accepted, amending [decision 156](#156-there-is-no-landing), which
+**Status:** accepted, amending [decision 158](#158-there-is-no-landing), which
 took the lockup off the live screen along with the landing it was drawn for.
 
 **What:** the wordmark stands over the column, centered on the column's own
@@ -8761,7 +8854,7 @@ the room arrives.
 
 `column_geom` measures it, next to the stops it heads.
 
-**Why:** because the name belongs to the menu, and decision 156 read it as
+**Why:** because the name belongs to the menu, and decision 158 read it as
 belonging to the landing. It was drawn only at home, so removing the landing
 removed it, and what a client that had just opened said about itself was
 nothing. The page title and the site carry the name, which is not the same as
@@ -8772,7 +8865,7 @@ watcher with the column dismissed is looking at a game, and a name laid over a
 fight is chrome; the menu is the thing that introduces the game, so the name
 heads the menu.
 
-Going down under an open panel is the rule decision 156 inherited and kept
+Going down under an open panel is the rule decision 158 inherited and kept
 without noticing it was still right: the column is one object, and a name left
 hanging over a panel that has climbed to the top of the window is the menu
 refusing to get out of the way. `at <= 0.001` is that test, and it was already
@@ -8784,7 +8877,7 @@ not be dismissed. It can now, so the mark rides `rise` with everything else.
 
 **The cost:** the column is five stops tall and the lockup adds about forty
 points over it, so on a landscape phone the pair reaches well above the middle
-of the screen where the watched hull is. That is the cost decision 156 already
+of the screen where the watched hull is. That is the cost decision 158 already
 accepted for the column, extended by one line of type; the old landing answered
 the same problem by lying the column down into a rail, and the rail went with
 the landing.

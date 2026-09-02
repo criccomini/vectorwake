@@ -69,7 +69,6 @@ local TYPE = {LABEL = 12, BODY = 14, ROW = 17, LEAD = 21}
 -- Two triggers, one line each in the status panel. Read once rather than
 -- from `sim` per frame: the panel's height needs it before it draws.
 local SIM_TRIGGERS = 2
-local COL_W = 248      -- the width of the three stacked side panels
 
 -- The dial, and the smaller one a phone draws.
 --
@@ -107,26 +106,6 @@ M.col_pilot = nil
 -- default and on no page, because it is for whoever is working on the client
 -- rather than for whoever is flying.
 M.debug = false
--- Whether the rooms panel is down. Its key lives in the corner, and it is the
--- one panel left that opens here rather than as a stop of the menu.
-M.rooms_open = false
--- How far down the rooms list is scrolled. Its own, not the scoreboard's: the
--- two panels share a slot and never a position, so carrying one scroll between
--- them would open a five-room list halfway down.
-M.room_scroll = 0
--- Which room has been pressed and is waiting to be told twice, by number.
---
--- Asked inline rather than by opening the menu's card, the way inviting a
--- pilot is asked inside the box that names them: the panel is a corner of the
--- screen and a question about a row belongs on the row. Opening the whole menu
--- to answer a press in a corner would also put the arena away, which is the
--- thing the press was trying not to do.
---
--- It is worth asking at all because a move is a reconnect and a reconnect is a
--- fresh spawn, so it costs a pilot everything they are carrying, and bounty
--- here is derived from holdings. One stray click in a corner should not empty
--- a hold.
-M.room_ask = nil
 -- Which part of a ship the ship stop has open over its own menu: "body",
 -- "guns", "bombs", "specials", "flair", or nil for the menu itself.
 --
@@ -898,26 +877,6 @@ clip_run = function(s, x, px, font, pivot)
     return s, left
 end
 
--- A key with a word in it: the shape every page presses to do a thing.
---
-local function population(x, y, players, bots, col)
-    local right = x
-    if bots and bots > 0 then
-        txt(tostring(bots), right, y, 12 * F.scale, pal.a(pal.DIM, 0.9), "right")
-        bot_mark(right - text_w(tostring(bots), 12 * F.scale) - 16 * F.scale, y,
-                 pal.a(pal.DIM, 0.75))
-        right = right - text_w(tostring(bots), 12 * F.scale) - 26 * F.scale
-    end
-    local pc = players > 0 and col or pal.a(pal.DIM, 0.8)
-    txt(tostring(players), right, y, 13 * F.scale, pc, "right")
-    -- A helmet rather than the plain dot this used to draw. The dot said
-    -- "some number of somethings" and left the row's two counts looking like
-    -- a bullet and a picture; the pair is one shell now, and which of them a
-    -- player is looking at is the face in it.
-    pilot_mark(right - text_w(tostring(players), 13 * F.scale) - 12 * F.scale, y, pc)
-end
-
-
 -- A line somebody types into: the box, what is in it, the caret and the mark
 -- that empties it.
 --
@@ -978,37 +937,13 @@ end
 
 local KEY_H, KEY_PAD, KEY_GAP = 26, 9, 6
 local function key_size() return (FONT - 1) * F.scale end
-local function key_w(label) return text_w(label, key_size()) + 2 * KEY_PAD * F.scale end
--- The outline is the whole of what says a key is there, so it draws at full
--- weight in a color that can carry the job: `pal.KEY_EDGE` off and the team
--- blue on. It was one color at two alphas, 0.55 of DIM when off, worth 2.12:1
--- against the column, which is a button you have to already know about. The
--- wash inside stays thin, because a wash is ground rather than structure.
-local function key_frame(x, y, w, on)
-    local col = on and pal.FRIEND or pal.DIM
-    local h = KEY_H * F.scale
-    key_box(x, y, w, h, pal.a(col, on and 0.16 or 0.07),
-            on and pal.FRIEND or pal.KEY_EDGE)
-    return col, h
-end
-local function key_cap(x, y, w, label, on)
-    local col, h = key_frame(x, y, w, on)
-    -- A key in flight is shouted: it is a thing to press rather than something
-    -- the interface is saying, and upper case mono is what an instrument
-    -- labels a button with. See `menu_key` for the other half of this.
-    txt(string.upper(label), x + w / 2, y + h / 2, key_size(),
-        on and pal.FRIEND or pal.INK, "center", nil, true)
-    return col
-end
-
--- The same key in the menu, which is a different object.
+-- A key in the menu, which is the only kind there is now that the corner
+-- holds nothing to press.
 --
--- A key in the corner is glanced at over a fight. A key in the menu is a word
--- you read before you press it, so it takes the face and the case the rest of
--- the menu is set in. This is the one place the face rule splits on where a
--- thing is drawn rather than on what it says, and it splits exactly the way
--- interface.md already splits a call sign: the same name beside a nameplate in
--- flight is mono, because everything in flight is.
+-- A key in the menu is a word you read before you press it, so it takes the
+-- face and the case the rest of the menu is set in. Anything drawn in flight
+-- is mono instead, the way interface.md already splits a call sign: the same
+-- name beside a nameplate is mono, because everything in flight is.
 local function menu_key_w(label)
     return text_w(label, TYPE.BODY * F.scale, MENU_FONT) + 2 * KEY_PAD * F.scale
 end
@@ -1118,7 +1053,7 @@ M.page_fields = false
 -- It used to mean something narrower, that this client had walked into the
 -- room rather than merely having it on screen, and it took the radar and the
 -- roster away from anybody who had not pressed play. A watcher is in the room;
--- see decision 156.
+-- see decision 158.
 M.joined = false
 
 -- Where each row of the corner stack, the dial and the feed landed this
@@ -1828,18 +1763,9 @@ end
 --
 -- The menu's row, since every list a hand can drag is a panel of the menu
 -- now: the players sheet, the settings page, the ship panel. The HUD's own
--- eighteen-point line is what the feed and the rooms list are set on and
--- neither is dragged.
+-- eighteen-point line is what the feed is set on, and the feed is not dragged.
 function M.row_pitch()
     return (M.compact and 40 or 44) * F.scale
-end
-
--- Where the left column starts: under the menu chip, since the chip owns the
--- corner. The rooms list is what stands there now; the scoreboard moved out
--- from under the corner keys and into the column under the band that opens
--- it. See `board` below.
-local function top_y()
-    return F.safe_t + PAD * F.scale + 32 * F.scale
 end
 
 -- The band's own measurements, in one place because three things need them:
@@ -1915,94 +1841,6 @@ local function by_column(a, b)
     if a.mine ~= b.mine then return a.mine end
     if a.lname ~= b.lname then return a.lname < b.lname end
     return a.name < b.name
-end
-
--- The rooms of this zone, and the way into a different one.
---
--- Every room the zone is holding, across every arena server serving it, which
--- is why this is drawn from the directory's answer rather than from the arena
--- we are connected to: that process knows its own rooms and nothing about
--- anybody else's. A room on another server is a different address and joining
--- it is a reconnect, the same as changing game, and none of that is said here.
--- A player never sees an address, so a player never sees which process a room
--- belongs to either.
---
--- In the scoreboard's slot rather than beside it, and mutually exclusive with
--- it, because the left column has room for one panel and the top right corner
--- already works this way: it holds the radar or the map, never both.
-
--- Rows of it on screen at once. The scoreboard shared this cap while it was a
--- panel in the same column; it is a menu panel now and takes whatever height
--- the glass has, so this bounds the rooms list and nothing else.
-local SHOWN = 9
-
-local function rooms_panel(rooms, here)
-    if not M.rooms_open or not rooms or #rooms == 0 then return 0 end
-    local n = #rooms
-    -- A zone may hold a hundred rooms, so this list is not bounded by anything
-    -- the layout can assume. Clamped here rather than where the wheel is read,
-    -- for the same reason the scoreboard clamps here: this is the only place
-    -- that knows how many rooms there are, and a room is reclaimed the moment
-    -- its last pilot leaves, which can happen while somebody is scrolled to
-    -- the bottom of the list.
-    local max_scroll = math.max(0, n - SHOWN)
-    if M.room_scroll > max_scroll then M.room_scroll = max_scroll end
-    if M.room_scroll < 0 then M.room_scroll = 0 end
-    local shown = math.min(n, SHOWN)
-    local w = COL_W * F.scale
-    local head = 24 * F.scale
-    local rowh = LINE * F.scale
-    local h = head + shown * rowh + 8 * F.scale
-    local x = F.safe_l + PAD * F.scale
-    local y = top_y()
-    rect(x, y, w, h, pal.a(pal.BG, 0.62))
-    vrule(x, y, h, pal.a(pal.RADAR_TILE, 0.7))
-    txt("ROOMS", x + 12 * F.scale, y + 15 * F.scale, (FONT - 2) * F.scale, pal.a(pal.INK, 0.75))
-    -- The zone, once, at the head. The rows are numbers and a number needs
-    -- saying what it is a number of; the corner chip has no space for it and
-    -- this does.
-    txt(M.zone_name or "", x + w - 12 * F.scale, y + 15 * F.scale, (FONT - 3) * F.scale,
-        pal.a(pal.DIM, 0.85), "right")
-    for i = 1 + M.room_scroll, math.min(n, M.room_scroll + shown) do
-        local rm = rooms[i]
-        local ry0 = y + head + (i - 1 - M.room_scroll) * rowh
-        local mid = ry0 + rowh / 2
-        local mine = rm.n == here
-        local col = pal.INK
-        if rm.full and not mine then col = pal.a(pal.DIM, 0.75) end
-        if mine then
-            -- The one you are in, lit the way the scoreboard lights your own
-            -- row: this list is mostly read to answer "where am I", and the
-            -- answer should not need counting down the rows.
-            wash(x + 1 * F.scale, ry0, w - 2 * F.scale, rowh, pal.a(pal.FRIEND, 0.13))
-            col = pal.FRIEND
-        end
-        txt("ROOM " .. rm.n, x + 12 * F.scale, mid, (FONT - 1) * F.scale, col)
-        population(x + w - 12 * F.scale, mid, rm.players, rm.bots,
-                   pal.a(mine and pal.FRIEND or pal.INK, 0.9))
-        -- A full room is a row you can read and not a row you can press. The
-        -- one you are in is the same: pressing it would be a disconnect and a
-        -- handshake to arrive where you already are.
-        if not rm.full and not mine then
-            hit(x, ry0, w, rowh, "room", rm.n)
-        end
-    end
-    -- Only when there is something to scroll to, as the scoreboard's is: a bar
-    -- on a list that fits is a control that does nothing.
-    if n > shown then
-        local track = shown * rowh
-        local ty = y + head
-        local bar = math.max(10 * F.scale, track * (shown / n))
-        local at = (M.room_scroll / math.max(1, n - shown)) * (track - bar)
-        F.layer:seg(x + w - 3 * F.scale, ry(ty + at), x + w - 3 * F.scale, ry(ty + at + bar),
-              2 * F.scale, pal.a(pal.RADAR_TILE, 0.8))
-    end
-    -- The whole panel takes the wheel, rather than a strip beside it, which is
-    -- how the scoreboard behaves: a list is the thing you point at when you
-    -- mean to scroll it. A backdrop by declaration, so the rows in front of it
-    -- win the press whatever order anything was published in.
-    hit(x, y, w, h, "rooms_list", nil, nil, -1)
-    return y + h
 end
 
 -- Is this seat in the snapshot?
@@ -2859,84 +2697,29 @@ end
 -- a phone they were a line of text laid over the thumbs. They are in the
 -- menu now, under `help`, which is where a thing you consult belongs.
 
--- One thing to press, wherever the thing to press turns up: a frame with a
--- hint of fill, lit in the color of what it does, and its word in capitals in
--- the face the numbers are set in. The corner keys and a question's answers
--- are the same object, so they are one drawing rather than two functions
--- agreeing on seven numbers by hand.
+-- The top left corner, which holds one thing: the tally, when the room's
+-- channel is pointed at you.
 --
--- `KEY_H` and `KEY_SIZE` are the two of them a caller has to lay out around,
--- so they live out here with it rather than being repeated at each call.
-local function corner_row(on_air, watch, room)
-    -- Keys drawn the way the help page draws a key. They were bare words over
-    -- a shared rule, which asked a player to know that a word in that corner
-    -- was a thing to press, and the board has taught the same hand what a key
-    -- looks like already.
-    --
-    -- MENU is not among them any more, and with PLAYERS already folded into
-    -- the clock band this row is chips about you and this room rather than
-    -- navigation: the seat being held, which copy of the game you are in, and
-    -- whether the camera is on you. In an ordinary match it is empty, and the
-    -- corner is the fight.
-    --
-    -- MENU stood first here for as long as there was a drawer for it to pull
-    -- out. A key in the top left corner opening a panel at the bottom of the
-    -- screen is a control detached from what it does; it is at the foot now,
-    -- where the column stands. See `burger_cap`.
-    local x, y = F.safe_l + PAD * F.scale, F.safe_t + PAD * F.scale
-    -- Each key is as wide as its own word. A slot cut for four letters is a
-    -- slot the longer of the two runs out of.
-    local cx = x
-    local keys = {}
-    -- The way into a hull, for anybody watching: a benched pilot, and a
-    -- client that has just opened and is looking at the room it was in last.
-    -- One act, two controls, which is the offer made twice: the column's key
-    -- says it too. It stays because the column is a press away and this is
-    -- not, and because a watcher looking at the corner instruments is looking
-    -- here.
-    if watch then
-        keys[#keys + 1] = {"TAKE SEAT", "take_seat", false}
-    end
-    -- Which copy of this game you are in, and the way to a different one.
-    --
-    -- Only when the zone is holding more than one, which is the caller's
-    -- reading of `rooms` rather than anything this number can say. A zone with
-    -- one room seats everybody in room 1, so the chip said ROOM 1 over a
-    -- distinction that did not exist, next to a key that opened a list of the
-    -- room the player was already in. Both are drawn from the same fact now.
-    --
-    -- The number is still the server's answer rather than the row that was
-    -- pressed. A room can fill in the moment between a list being drawn and a
-    -- key landing, and the join is then seated somewhere else; a chip
-    -- repeating what was asked for would be the one thing on screen still
-    -- claiming it worked.
-    if room then
-        keys[#keys + 1] = {"ROOM " .. room, "rooms", M.rooms_open}
-    end
-    for _, c in ipairs(keys) do
-        local ww = key_w(c[1])
-        key_cap(cx, y, ww, c[1], c[3])
-        hit(cx, y, ww, KEY_H * F.scale, c[2])
-        cx = cx + ww + KEY_GAP * F.scale
-    end
-    -- No PLAYERS key. It carried the head count and opened the roster, and the
-    -- band across the top of the screen does both now: the score and the clock
-    -- are what a player looks up there for, the roster is what a press on them
-    -- opens, and two keys for one panel is the offer made twice. What the chip
-    -- said about who was in the room, the rows in that panel say about each of
-    -- them. See `match_clock`.
-    -- The tally, when the room channel is pointed at you.
-    --
-    -- It sits on this row rather than at the top of the middle, which is where
-    -- it started and where it could not stay: that strip already carries the
-    -- flag pennants and the round's banner, both of them centered, and a notice
-    -- laid over them read as a fault in the flags. Those two are about the
-    -- round. This is about you, like the keys beside it, and it is chrome
-    -- rather than anything happening in the arena.
-    --
-    -- Counted into `TOP.chip_right` like the keys are, so the map that opens
-    -- across this corner keeps clear of it by the rule that already keeps it
-    -- clear of them.
+-- Nothing to press lives here any more. It was a row of keys, and they have
+-- gone one at a time as each turned out to be a second way to do something the
+-- interface already offered: MENU, when the column moved to the foot; PLAYERS,
+-- when a press on the clock band opened the roster; CHANNEL, which labelled the
+-- obvious; TAKE SEAT, which the ship stop says better, since that is where a
+-- pilot picks the hull they are coming back in; and ROOM N, which named the
+-- copy of the game you were in and opened a list of the others.
+--
+-- What is left is not navigation and is not a control. Being on air changes
+-- how you fly and nothing else on screen says so, which is the whole reason a
+-- corner of the arena is spent on it. In an ordinary match the corner is
+-- empty, and empty is the fight.
+--
+-- `KEY_H` is what a caller lays out around, so it lives out here with this
+-- rather than being repeated at each call.
+local function corner_row(on_air)
+    local cx = F.safe_l + PAD * F.scale
+    local y = F.safe_t + PAD * F.scale
+    -- Counted into `TOP.chip_right`, so the map that opens across this corner
+    -- keeps clear of it.
     if on_air then
         local mid = y + KEY_H * F.scale / 2
         -- A slow swell rather than a blink. It has to hold attention for as
@@ -2950,13 +2733,7 @@ local function corner_row(on_air, watch, room)
         txt(label, cx + 2 * r + 5 * F.scale, mid, size, pal.a(pal.HURT, 0.9))
         cx = cx + 2 * r + 5 * F.scale + text_w(label, size) + KEY_GAP * F.scale
     end
-    -- Nothing in this slot for a watcher. A green play mark and the word
-    -- CHANNEL sat here, on the argument that what you are looking at is the
-    -- same kind of fact about the connection as the tally beside it. It is
-    -- not: the tally is a warning, because being on air changes how you fly,
-    -- and this was a label on the obvious. Every hull on screen wears somebody
-    -- else's call sign and none of them wears yours, which is the whole of
-    -- what the word was there to say. Removed at Chris's request.
+    -- Where the corner ends, which off air is where it starts.
     TOP.chip_right = cx - KEY_GAP * F.scale
 end
 
@@ -3582,7 +3359,7 @@ end
 -- landing and there is no landing; what the client opens on is a room, with
 -- the same column over it a pilot in that room raises, and it stands upright
 -- on every window. The lockup stayed, because it heads the menu wherever the
--- menu stands. See decisions 156 and 158.
+-- menu stands. See decisions 158 and 160.
 local function column_geom(n)
     local pts_w = F.w / math.max(F.density, 0.0001)
     local narrow = pts_w < 620
@@ -3630,7 +3407,7 @@ local COLUMN_STOPS = 5
 -- It had a second shape, a rail cell that set the question over the answer
 -- the way a gauge sets its caption over its reading, for the screen the
 -- client opened on when the window was too short to stand a column up. That
--- screen was the landing and there is no landing. See decision 156.
+-- screen was the landing and there is no landing. See decision 158.
 --
 -- `raw` says the answer is quoted rather than said: a call sign, a game's
 -- name and a build's name all stand in the case they were given, where the
@@ -4655,8 +4432,8 @@ end
 -- readings over it, the roster and the column all arrive with the game.
 --
 -- The name is the one thing that does not, and it is drawn to the column's own
--- measure so that it does not move when the room arrives. See decisions 156
--- and 158.
+-- measure so that it does not move when the room arrives. See decisions 158
+-- and 160.
 --
 -- A first boot is a directory lookup and a handshake, two seconds of it; a
 -- game picked off the list drops the room on screen and dials the next one.
@@ -4666,7 +4443,7 @@ function M.waiting(note)
     -- The name, in the place the column will put it, off the column's own
     -- measure. Nothing on this screen moves when the room arrives: the stops
     -- and the key come up underneath a mark that was already there, which is
-    -- the one thing a hand-off should never get wrong. See decision 158.
+    -- the one thing a hand-off should never get wrong. See decision 160.
     local g = column_geom(COLUMN_STOPS)
     M.wordmark(g.mark_x, g.mark_y, g.size)
     -- And the dial that is looking for a room, hung directly over the name at
@@ -4743,18 +4520,17 @@ function M.hud(o)
     -- and every instrument around it recede while it is up. See the wash under
     -- the board below, which is the mesh half of the same move.
     -- `o.card` is the menu's own question, which is raised from the landing's
-    -- account stop and drawn by `M.land_card` after this returns. The room's
-    -- question beside it has always been read off `M.room_ask`, and this one
-    -- was not read at all: a sign-up card washed the meshes behind it and left
-    -- every instrument's label at full brightness, which is the exact fault
-    -- the paragraph above is about. It went unnoticed while the only card the
-    -- interface raised stood inside a drawer that was always up.
+    -- account stop and drawn by `M.land_card` after this returns. It was not
+    -- read here at all for a while: a sign-up card washed the meshes behind it
+    -- and left every instrument's label at full brightness, which is the exact
+    -- fault the paragraph above is about. It went unnoticed while the only
+    -- card the interface raised stood inside a drawer that was always up.
     --
     -- The board used to be the third case here, drawn in a column of its own
     -- with its own wash. It is a panel of the menu now, so `o.menu_open`
     -- covers it and there is nothing separate to dim for. The ending stays,
     -- because the sheet the whistle raises is that same menu.
-    F.text_dim = (o.menu_open or o.card or M.room_ask) and 0.34 or 1
+    F.text_dim = (o.menu_open or o.card) and 0.34 or 1
 
     -- On a touchscreen the bottom of the screen belongs to the thumbs. The
     -- stick sits in the bottom left corner and the pads in the bottom right,
@@ -4762,13 +4538,6 @@ function M.hud(o)
     -- everything else moves up out of the way of them.
     local lift = M.touching and 150 * F.scale or 0
 
-    -- One panel in this column at a time. The rooms list stands in the
-    -- scoreboard's slot, so whichever is up is the one drawn.
-    M.zone_name = o.zone or ""
-    -- The rooms list keeps the left column, under the key that opens it. The
-    -- board is its own column now, under the band, so the two no longer stand
-    -- in one slot and neither has to put the other away.
-    rooms_panel(o.rooms, o.room)
     -- Names hanging off ships, but not under anything being read over the
     -- arena. Glyphs come from the gui and the gui draws over every mesh, so
     -- nothing a panel lays down can cover them: a panel with six pilots'
@@ -4786,7 +4555,7 @@ function M.hud(o)
     -- build a pilot was reading. `o.panel` is that case, and it is a separate
     -- question from `o.menu_open`: the bare column is five rows at the foot
     -- and covers nothing.
-    if not (o.menu_open or ending or o.panel or o.card or M.room_ask) then
+    if not (o.menu_open or ending or o.panel or o.card) then
         nameplates(o)
     end
     -- One corner, one instrument. The map is the radar pulled back to the
@@ -4804,7 +4573,7 @@ function M.hud(o)
     -- reading this corner is asking, whether or not the hull is theirs. It was
     -- absent for a client that had taken no seat, which left a stranger
     -- watching a fight with no way to tell where in the map it was happening.
-    -- See decision 156.
+    -- See decision 158.
     if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
     -- And the strip over it, which holds for the map as well: it is measured
     -- against the dial at rest, so the readings stay put while a player reads
@@ -4841,7 +4610,7 @@ function M.hud(o)
     -- you read; the feed is news rather than an instrument, and the corner
     -- feed is already off on a touchscreen for the same kind of reason.
     if M.touching
-       and not (o.menu_open or ending or o.panel or o.card or M.room_ask)
+       and not (o.menu_open or ending or o.panel or o.card)
     then
         toast(o.feed, o.pad_top)
     end
@@ -4876,17 +4645,11 @@ function M.hud(o)
     end
     -- A watcher is never the subject, so the tally can only be about a pilot
     -- who is flying, and the two never contend for the slot.
-    -- The room chip only where there is a room to move to. `rooms` is the
-    -- zone's whole list and the directory already drops it to nil below two,
-    -- which is the one place that decision is made; this reads it rather than
-    -- making it again from a number.
-    local several = o.rooms and #o.rooms > 1
-    -- The corner row keeps its line under an open menu. The column stands at
-    -- the foot and reaches no corner, so nothing up here has to stand down for
-    -- it any more: PLAYERS, the seat and the room chip are all readable while
-    -- a pilot is in settings, which is the point of a menu that does not
-    -- pause.
-    corner_row(o.on_air and not o.watch, o.watch, several and o.room or nil)
+    --
+    -- It keeps its line under an open menu. The column stands at the foot and
+    -- reaches no corner, so nothing up here has to stand down for it: a pilot
+    -- in settings can still see that the room is watching them.
+    corner_row(o.on_air and not o.watch)
     vignette(o.hurt or 0)
     -- After the stack, because it is hung off the rows the stack published,
     -- and after the tint so a hurt frame does not wash out the words.
@@ -5552,9 +5315,9 @@ end
 -- Pressing back is pressing cancel: the two were always the same act, and one
 -- of them had no button.
 --
--- A question with no lines to fill in is not this. `M.room_card` asks whether
--- to move room, and a question about a destructive act with two equal answers
--- is a confirm rather than a menu: it stays a card, deliberately, and says so.
+-- A question with no lines to fill in is not this. A confirm with two equal
+-- answers stays an `ask_card`, deliberately: it is a question about an act
+-- rather than a place to be, and it belongs over whatever raised it.
 --
 -- The caller decides when: while the menu column is up or sliding, `M.menu`
 -- draws the card and this must not, or the wash goes down twice and the second
@@ -5621,30 +5384,6 @@ function M.land_card(a)
     F.case = was_case
 end
 
--- The question a pressed room raises, over the whole screen.
---
--- A card rather than something inside the panel. A room-change question should
--- not be answerable by a stray click in the corner where it was asked: the wash
--- puts the arena behind it and `ask_card` drops every hit box already published,
--- so nothing else on screen can be pressed while it stands.
---
--- Drawn from the frame loop after everything else for that same reason: the
--- boxes it clears are the ones published before it.
-function M.room_card(rooms)
-    if not M.room_ask or not rooms then return end
-    local rm
-    for _, r in ipairs(rooms) do
-        if r.n == M.room_ask then rm = r end
-    end
-    if not rm then M.room_ask = nil return end
-    ask_card(0, 0, F.w, F.h, {
-        head = "move to room " .. rm.n .. "?",
-        note = "MOVING RESPAWNS YOU",
-        action = "room_answer",
-        keys = {{label = "move"}, {label = "stay"}},
-        sel = 1,
-    })
-end
 
 -- The mark is a top-down ship built from an orange Lambda and a cyan W. The
 -- orange outside is one uninterrupted /\, while the shared five-point
@@ -5894,7 +5633,7 @@ local page_followed = nil
 -- nothing, and could not be put away, because putting it away left a player
 -- looking at a starfield with no way back. There is a game behind it wherever
 -- it stands now, so it is a panel everywhere and there is nothing left to
--- branch on. See decision 156.
+-- branch on. See decision 158.
 --
 -- What it replaced on the way here was a rail of tabs, a stage, a topbar, a
 -- head row and a preview of the page the rail cursor was resting on: five
@@ -5923,11 +5662,10 @@ function M.menu(v)
     -- to `ship_count`, and `M.hud` returns before the dim on an empty world.
     --
     -- Unless something stands over the column in turn, in which case the dim
-    -- is meant for this too and is kept: the menu's own card, and the room's
-    -- question, both of which are drawn after this and cannot reach back to
-    -- quiet what they cover.
+    -- is meant for this too and is kept: the menu's own card, which is drawn
+    -- after this and cannot reach back to quiet what it covers.
     local was_dim = F.text_dim
-    if not (v.ask or M.room_ask) then F.text_dim = 1 end
+    if not v.ask then F.text_dim = 1 end
     local g = column_geom(n)
     column_x, column_w = g.kx, g.kw
     -- The slide, which is how the column arrives and leaves.
@@ -5991,7 +5729,7 @@ function M.menu(v)
     -- same game; a seat with a hull drafted over it, and it is the refit, which
     -- names the hull because that is the whole of what the press does. The
     -- stands need no name on it: `PLAY` already means "in whatever the ship
-    -- stop says". See decisions 143 and 157.
+    -- stop says". See decisions 143 and 159.
     local word = "PLAY"
     if v.key == "fly" then
         word = "FLY " .. string.upper(v.key_ship or "")
@@ -6133,7 +5871,7 @@ function M.menu(v)
     -- way, and it comes back when the panel does. And it rides the column's
     -- own slide, so the two arrive and leave together: it used to be pinned
     -- while the stops sank underneath it, which nobody saw because the screen
-    -- it stood on could not be dismissed. See decision 158.
+    -- it stood on could not be dismissed. See decision 160.
     if at <= 0.001 then M.wordmark(g.mark_x, g.mark_y + rise, g.size) end
 
     -- While the column is going away it still draws, so the fight behind it
@@ -6282,16 +6020,27 @@ local function sheet_row(kx, kw, y, h, r, cols, i)
             local name, tcol, named = pages.sheet_side(r)
             txt(name, x, mid, px, pal.a(tcol, 0.9), "right", nil, named)
         elseif c.key == "moved" then
-            -- What the match paid, and nothing at all for somebody who was
-            -- not in it. A pilot whose rating did not move reads a dim zero,
-            -- because "this match changed nothing for you" is an answer and a
-            -- blank is not.
-            if not r.watch then
+            -- Where the ladder has them, and what the match paid, and nothing
+            -- at all for somebody who was not in it.
+            --
+            -- Two colors, because the two are different kinds of fact. The
+            -- standing is a reading like the three figures beside it and is
+            -- set in their ink; the movement is what this column is added at
+            -- the whistle to say, and it is green up, red down and mute where
+            -- nothing happened. One ink over the pair would have said a
+            -- standing was good or bad, which no rating is.
+            if r.moved_by then
                 local by = r.moved
                 local mcol = pal.a(pal.MUTE, 1)
                 if by and by > 0 then mcol = pal.a(pal.PAID, 0.95)
                 elseif by and by < 0 then mcol = pal.a(pal.HURT, 0.9) end
-                txt(r.moved_at or "0", x, mid, px, mcol, "right")
+                txt(r.moved_by, x, mid, px, mcol, "right")
+                -- In front of the bracket, off the bracket's own width, so
+                -- the pair sits exactly where the column was measured for.
+                if r.rating_at then
+                    txt(r.rating_at, x - text_w(" " .. r.moved_by, px), mid,
+                        px, pal.a(pal.READ, 1), "right")
+                end
             end
         else
             -- A watcher's figures are zeros in the register a reading that
@@ -6324,17 +6073,41 @@ end
 function pages.board_list(kx, kw, top, bottom, rowh)
     local pad = M.ROW_INSET * F.scale
     local n = #rows
-    -- What the match paid each pilot, as a signed figure, worked out before
-    -- the columns are measured because the widest of them is what the column
-    -- is sized to. Written onto the rows rather than looked up twice, since
-    -- the measure and the drawing both want it.
-    local moved = (M.sheet or {}).moved
+    -- Where the ladder has each pilot, and what the match paid them: the
+    -- standing first and the movement after it in brackets, which is the
+    -- order the two are read in. A signed figure on its own says how the
+    -- evening went and not where anybody stands, and where a pilot stands is
+    -- what the column is called.
+    --
+    -- Worked out before the columns are measured, because the widest of them
+    -- is what the column is sized to, and written onto the rows rather than
+    -- looked up twice, since the measure and the drawing both want it. The
+    -- two halves are kept apart as well as joined: they are drawn in
+    -- different ink and the drawing needs the bracket's own width to place
+    -- the standing in front of it.
+    local sheet = M.sheet or {}
+    local moved, scores = sheet.moved, sheet.ratings
     for i = 1, n do
         local r = rows[i]
-        local by = moved and not r.watch and r.i ~= nil and moved[r.i] or nil
+        local seated = not r.watch and r.i ~= nil
+        local by = moved and seated and moved[r.i] or nil
         r.moved = by
-        r.moved_at = by and ((by > 0 and "+" or "") .. tostring(by))
-            or (moved and not r.watch and "0" or nil)
+        -- Rounded the way the card rounds it, so a pilot reading their own
+        -- standing in two places is not told two numbers.
+        local at = scores and seated and scores[r.i] or nil
+        r.rating_at = at and tostring(math.floor(at + 0.5)) or nil
+        -- A pilot whose rating did not move reads a bracketed zero, because
+        -- "this match changed nothing for you" is an answer and a blank is
+        -- not. A watcher was not in the match and reads nothing at all.
+        r.moved_by = moved and seated
+            and ("(" .. ((by and by > 0) and "+" or "")
+                 .. tostring(by or 0) .. ")") or nil
+        if r.moved_by then
+            r.moved_at = r.rating_at
+                and (r.rating_at .. " " .. r.moved_by) or r.moved_by
+        else
+            r.moved_at = nil
+        end
     end
     local cols = pages.sheet_cols(n)
     local heads = 24 * F.scale

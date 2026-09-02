@@ -625,7 +625,7 @@ end
 -- Three states of one control: no seat, a seat, and a seat with a hull drafted
 -- over it. The third names the hull, because naming it is the whole of what
 -- the press does, and the longest name in the roster is what says whether a
--- word that long fits the key it is set in. See decision 157.
+-- word that long fits the key it is set in. See decision 159.
 do
     for _, s in ipairs({{1440, 810, "desktop"}, {390, 844, "portrait"},
                         {320, 480, "small"}}) do
@@ -665,7 +665,7 @@ end
 -- landing, where the column was up and could not be put away; a faint control
 -- offering to open what was already open would have done nothing. The column
 -- comes down everywhere now, so the way back is on every screen that has a
--- room behind it. See decision 156.
+-- room behind it. See decision 158.
 do
     frame(1440, 810, {watch = {subject = 1}})
     check("a spectator gets the key", hit_of("open") ~= nil)

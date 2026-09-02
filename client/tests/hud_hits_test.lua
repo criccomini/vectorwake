@@ -165,14 +165,9 @@ local function frame(o)
                  snap_missed = 1, snap_reordered = 2,
                  snaps = 120, rx = 0, tx = 0},
         zone = "chaos",
-        rooms = o.rooms, room = o.room,
         safe = o.safe, safe_limit = o.safe_limit,
         fps = 60, frame_ms = 16.7, rx_rate = 31000, tx_rate = 700,
     })
-    -- Where the frame loop draws it, and the placement is the point: the card
-    -- drops every box published before it, so it has to come after everything
-    -- that publishes one.
-    ui.room_card(o.rooms)
     ui.finish()
 end
 
@@ -182,15 +177,6 @@ end
 local function press(x, y, finger)
     local r = ui.pick(x, y, finger)
     if r then return r.action, r.value end
-    return nil
-end
-
--- Where a box with this action was published, or nil. Used to compare the
--- standing of two boxes that do not overlap on this screen.
-local function rank(action)
-    for i, r in ipairs(ui.hits) do
-        if r.action == action then return i end
-    end
     return nil
 end
 
@@ -369,44 +355,6 @@ frame({menu_open = true})
 check("nor is the open readout under the menu", box("debug") == nil)
 ui.debug = false
 
--- --- the rooms list, and the question it raises ----------------------------
---
--- The panel stands in the scoreboard's slot and behaves the way it does: rows
--- before the box that takes the wheel, and the row you are already in is read
--- rather than pressed. The question is the part worth pinning. It dims the
--- whole readout while it stands, and it shipped once with nothing drawing it,
--- so a press on a room darkened the instruments and offered nothing to answer.
-
-local ROOMS = {{n = 1, players = 3, bots = 20},
-               {n = 2, players = 0, bots = 51},
-               {n = 4, players = 9, bots = 12, full = true}}
-
-ui.rooms_open = true
-frame({rooms = ROOMS, room = 1})
-check("a room you are not in is a room you can press", box("room", 2) ~= nil)
-check("the room you are in is not", box("room", 1) == nil)
-check("nor is a full one", box("room", 4) == nil)
-check("rows are tested before the panel that holds them",
-      rank("room") ~= nil and rank("rooms_list") ~= nil
-      and rank("room") < rank("rooms_list"))
-
-ui.room_ask = 2
-frame({rooms = ROOMS, room = 1})
-check("pressing a room asks about it", box("room_answer") ~= nil)
-check("and the question is the only thing on screen that can be pressed",
-      box("rooms_list") == nil and box("room") == nil)
-local move = box("room_answer")
-check("the first answer is the one that moves",
-      move ~= nil and press(move.x + 4, move.y + 4) == "room_answer")
-
--- A question about a room that is gone by the time it is drawn puts itself
--- away, rather than dimming the screen over a card naming nothing.
-ui.room_ask = 7
-frame({rooms = ROOMS, room = 1})
-check("a question about a reclaimed room clears itself", ui.room_ask == nil)
-check("and the list underneath comes back", box("rooms_list") ~= nil)
-ui.rooms_open = false
-
 -- --- the feed is bounded ---------------------------------------------------
 
 -- Twelve lines offered, five drawn. The cap is the interface's, and the arena
@@ -515,31 +463,19 @@ frame({safe = 300, safe_limit = 0})
 check("a room with no limit still names the zone", says("SAFE ZONE"))
 check("and counts nothing down", not says("moving to spectator"), drawn())
 
--- --- and the corner says nothing about a room there is only one of --------
+-- --- the corner says nothing about which copy of the game you are in ------
 --
--- A zone that holds one room seats everybody in room 1, so the chip drew
--- "ROOM 1" beside a key that opened a list of the room the player was already
--- standing in. The number cannot tell: it is 1 either way. What tells is the
--- zone's room list, which the directory drops to nil below two.
+-- The chip named the room and opened a list of the others. A zone holding one
+-- room seats everybody in room 1, so it drew "ROOM 1" over a distinction that
+-- did not exist; a zone holding several offered a move that the games list
+-- already offers. It is gone, and so is the panel behind it.
 
-ui.rooms_open = false
 frame({room = 1})
-check("one room is not worth a chip", not says("ROOM"), drawn())
+check("a room is not something the corner names", not says("ROOM"), drawn())
 check("and there is nothing to press for it", box("rooms") == nil)
 
-frame({room = 1, rooms = ROOMS})
-check("several rooms bring it back", says("ROOM 1"))
-check("with a way into the list", box("rooms") ~= nil)
-
--- The server's answer, not the row that was pressed: a room can fill between
--- a list being drawn and a key landing.
-frame({room = 3, rooms = ROOMS})
-check("and it says the room the server seated us in", says("ROOM 3"))
-
--- A welcome that has not landed leaves nothing to say, however many rooms the
--- zone is holding.
-frame({rooms = ROOMS})
-check("no answer yet is no chip", not says("ROOM"), drawn())
+frame({room = 4})
+check("nor is any other one", not says("ROOM"), drawn())
 
 -- --- the match clock ---------------------------------------------------------
 --

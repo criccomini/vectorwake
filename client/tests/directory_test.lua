@@ -256,73 +256,18 @@ dir.rows = {{zone = "chaos", name = "chaos", count = "",
 check("and neither does one with games in it",
       games_on(menu.view()) == 0, games_on(menu.view()) .. " games")
 
--- --- the rooms of a zone, across the servers holding them ------------------
+-- --- a room the directory did not number ------------------------------------
 --
--- The panel in the corner lists these and a click on one joins it, so what
--- matters here is that a room's number is the one the server gave it and not
--- anything this file worked out. A directory sorts its instances by how full
--- they are, so a number read off arrival order would move whenever anybody
--- joined anything, and the whole point of a room number is to survive being
--- said out loud.
-
-_G.NEXT_REPLY = {zones = {{
-    name = "pit",
-    players = 6, bots = 0,
-    instances = {
-        -- Fullest first, which is the order a directory sends and deliberately
-        -- not the order these come out in.
-        {id = "a7", address = "wss://x/a7", wt = "https://x/a7", rooms = {
-            {number = 4, players = 3, bots = 1, full = false},
-            {number = 2, players = 2, bots = 0, full = true},
-        }},
-        {id = "a3", address = "wss://x/a3", rooms = {
-            {number = 1, players = 1, bots = 5, full = false},
-        }},
-    },
-}}}
-message(last(), "ignored")
-local rm = dir.rows[1] and dir.rows[1].rooms
-check("every room of the zone is listed, whichever server holds it",
-      rm ~= nil and #rm == 3, "rooms: " .. tostring(rm and #rm))
-check("in the order the servers named them, not the order they arrived",
-      rm and rm[1].n == 1 and rm[2].n == 2 and rm[3].n == 4,
-      rm and table.concat({rm[1].n, rm[2].n, rm[3].n}, ",") or "none")
-check("each carrying the address of the server it is on",
-      rm and rm[1].address == "wss://x/a3" and rm[3].address == "wss://x/a7",
-      rm and (rm[1].address .. " " .. rm[3].address) or "none")
-check("each carrying the stable instance named by a room link",
-      rm and rm[1].instance == "a3" and rm[3].instance == "a7",
-      rm and (tostring(rm[1].instance) .. " " .. tostring(rm[3].instance)) or "none")
-check("and what the server said about it",
-      rm and rm[2].full == true and rm[3].players == 3 and rm[3].bots == 1)
-
--- A zone whose processes hold one room each has no list. A list of the room
--- you are already in is a list of one thing you cannot leave for.
-_G.NEXT_REPLY = {zones = {{
-    name = "solo", players = 1, bots = 0,
-    instances = {{address = "wss://x/a1", rooms = {
-        {number = 1, players = 1, bots = 0, full = false},
-    }}},
-}}}
-message(last(), "ignored")
-check("one room in the whole zone is not a list",
-      dir.rows[1] and dir.rows[1].rooms == nil,
-      tostring(dir.rows[1] and dir.rows[1].rooms))
-
--- And the fleet as it stands today, which sends no rooms at all.
-_G.NEXT_REPLY = {zones = {{
-    name = "old", players = 0, bots = 0,
-    instances = {{address = "wss://x/a1"}},
-}}}
-message(last(), "ignored")
-check("a directory that says nothing about rooms is not an error",
-      dir.rows[1] ~= nil and dir.rows[1].rooms == nil)
-
--- A room with no number cannot be drawn and must not reach the sort, which
--- compares numbers: a nil there raises out of the message handler, past the
--- one pcall around the decode, before the rows are replaced. The list would
--- then keep the counts it had at that moment for the life of the process,
+-- The games list flattened every room of a zone into a list of its own for as
+-- long as the corner chip opened one, and it sorted that list by number: a
+-- room the directory sent without one raised out of the message handler, past
+-- the one pcall around the decode, before the rows were replaced. The list
+-- then kept the counts it had at that moment for the life of the process,
 -- reasking every three seconds and throwing on every answer.
+--
+-- The chip and its panel are gone and nothing sorts rooms any more, but the
+-- reply still carries them and the row still reads the first one for its
+-- clock, so a malformed room must still not take the list down with it.
 _G.NEXT_REPLY = {zones = {{
     name = "torn", players = 2, bots = 0,
     instances = {{address = "wss://x/a1", rooms = {
@@ -332,13 +277,18 @@ _G.NEXT_REPLY = {zones = {{
     }}},
 }}}
 message(last(), "ignored")
-check("a room the directory did not number is dropped, not thrown over",
+check("a room the directory did not number is not thrown over",
       dir.rows[1] ~= nil and dir.rows[1].name == "torn",
       "row: " .. tostring(dir.rows[1] and dir.rows[1].name))
-local torn = dir.rows[1] and dir.rows[1].rooms
-check("and the rooms that were numbered are still listed",
-      torn ~= nil and #torn == 2 and torn[1].n == 1 and torn[2].n == 3,
-      "rooms: " .. tostring(torn and #torn))
+
+-- And the fleet as it stands today, which sends no rooms at all.
+_G.NEXT_REPLY = {zones = {{
+    name = "old", players = 0, bots = 0,
+    instances = {{address = "wss://x/a1"}},
+}}}
+message(last(), "ignored")
+check("a directory that says nothing about rooms is not an error",
+      dir.rows[1] ~= nil and dir.rows[1].name == "old")
 
 -- --- the format words -------------------------------------------------------
 --

@@ -71,7 +71,9 @@ pub(crate) struct RatedLease {
     pub(crate) instance: String,
     pub(crate) account: u64,
     pub(crate) session: String,
-    pub(crate) spool: std::sync::Arc<std::sync::Mutex<spool::Spool<spool::Event>>>,
+    /// Both spools a standing can move through, deaths and matches, so the
+    /// release barrier settles every exchange this account is part of.
+    pub(crate) spools: spool::Spools,
     pub(crate) touched: std::time::Instant,
 }
 
@@ -99,7 +101,7 @@ impl RatedLease {
         instance: String,
         account: u64,
         session: String,
-        spool: std::sync::Arc<std::sync::Mutex<spool::Spool<spool::Event>>>,
+        spools: spool::Spools,
     ) -> Result<Option<(RatedLease, Vec<token::ClassRating>)>, String> {
         // A reconnect can reach the door just before the old connection's
         // cleanup releases its row. Give that settlement a brief chance to
@@ -124,7 +126,7 @@ impl RatedLease {
                     instance,
                     account,
                     session,
-                    spool,
+                    spools,
                     touched: std::time::Instant::now(),
                 },
                 ratings,
@@ -152,7 +154,7 @@ impl RatedLease {
     pub(crate) async fn release_after_settlement(mut self) {
         let mut attempts = 0u32;
         loop {
-            match spool::settle_account(&self.spool, &self.base, &self.pool_token, self.account)
+            match spool::settle_account(&self.spools, &self.base, &self.pool_token, self.account)
                 .await
             {
                 Ok(()) => break,
@@ -481,6 +483,7 @@ impl ArenaServer {
         fresh.spool = self.spools.rated.clone();
         fresh.pilots = self.spools.pilots.clone();
         fresh.matches = self.spools.matches.clone();
+        fresh.results = self.spools.results.clone();
         prime_ratings(&mut fresh.rating, &self.ladder);
         self.rooms.push(fresh);
         let n = self.rooms.len();
@@ -802,6 +805,9 @@ impl ArenaServer {
             room.world.state.flag_count = want.min(room.world.state.flag_count);
         }
         room.mode = modes::build(&z.mode, &room.mode_setup(&def.arena));
+        if modes::rated_by_match(&z.mode) {
+            room.rating.rate_by_match();
+        }
         room.bot_fill = def.bot_fill();
         room.lag_policy = def.arena.lag.clone();
         room.max_watchers = def.max_watchers.unwrap_or(DEFAULT_MAX_WATCHERS);
@@ -1166,6 +1172,7 @@ impl ArenaServer {
         room.spool = self.spools.rated.clone();
         room.pilots = self.spools.pilots.clone();
         room.matches = self.spools.matches.clone();
+        room.results = self.spools.results.clone();
         prime_ratings(&mut room.rating, &self.ladder);
         // Tell the bots before the room they are in stops existing. Rule 1 means
         // no human is here to tell, but bots are: an instance with only bots in
@@ -1409,6 +1416,7 @@ impl ArenaServer {
         room.spool = self.spools.rated.clone();
         room.pilots = self.spools.pilots.clone();
         room.matches = self.spools.matches.clone();
+        room.results = self.spools.results.clone();
         prime_ratings(&mut room.rating, &self.ladder);
         self.rooms = vec![room];
     }

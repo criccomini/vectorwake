@@ -8,8 +8,8 @@
 -- second screen: no landing, no lockup over a column that cannot be put away,
 -- no rail it lay down into on a short window, and nothing taken off the HUD
 -- because this client has not pressed play yet. What it gets is the five
--- stops, the one key, the radar, the roster and TAKE SEAT, which is what a
--- benched pilot in the same room gets. See decision 156.
+-- stops, the one key, the radar and the roster, which is what a benched pilot
+-- in the same room gets. See decision 158.
 --
 -- It is one column drawn by one function off one view (decision 143). What is
 -- checked here is that column over a room, and the room still being readable
@@ -274,13 +274,6 @@ local function land_in(sect)
     return out
 end
 
--- A zone holding more than one room, for the checks that need something
--- standing in the top left corner. The row holds nothing at all in an ordinary
--- match, and the ROOM chip is the one thing there that publishes a box at the
--- row's own line and a key's own height.
-local ROOMS = {{n = 1, players = 3, bots = 20},
-               {n = 2, players = 0, bots = 51}}
-
 -- The column as the arena hands it over: four stops, whichever one is open,
 -- and the rows or the panel behind it. `menu.view()` builds this for real off
 -- `menu.stops()`; here the answers come from the fixture so the layout checks
@@ -359,7 +352,6 @@ local function frame(w, h, o)
         banner = "",
         link_bars = 4,
         zone = "melee",
-        rooms = o.rooms, room = o.room,
         fps = 60, frame_ms = 16.7, rx_rate = 0, tx_rate = 0,
     })
     -- And the column over it, which the arena draws after the HUD because the
@@ -440,7 +432,7 @@ end
 -- into a rail along the foot. Both the lockup and the rule about the middle
 -- belonged to the landing: the column is a scrim over a fight that does not
 -- pause now, wherever it is raised, and it is the same scrim a pilot in the
--- room raises over the same middle. See decision 156.
+-- room raises over the same middle. See decision 158.
 local SHAPES = {
     {1440, 810, "desktop"},
     {844, 390, "sideways"},
@@ -534,7 +526,7 @@ end
 -- column is one object and a name left hanging over an open panel is the menu
 -- refusing to get out of the way. It comes back when the panel does, and it
 -- goes with the column when the column is dismissed: the name belongs to the
--- menu rather than to the screen. See decision 158.
+-- menu rather than to the screen. See decision 160.
 do
     for _, s in ipairs(SHAPES) do
         local w, h, shape = s[1], s[2], s[3]
@@ -589,7 +581,7 @@ check("and says nothing about the channel it is watching",
 -- watcher, on the reading that the room behind the front page was somebody
 -- else's; what that produced was a stranger looking at fourteen people with
 -- no way to see who any of them were, and a fight with no way to tell where
--- in the map it was happening. See decision 156.
+-- in the map it was happening. See decision 158.
 -- With the column down, which is what dismissing it leaves: an ordinary
 -- watcher's screen, and every instrument on it takes a press.
 frame(1440, 810, {column = false})
@@ -648,12 +640,11 @@ do
     end
 end
 
--- TAKE SEAT, which the landing took away on the grounds that the column's key
--- said the same thing. Both are offered to a benched pilot and this client is
--- one: the same offer in the same two places, learned once.
+-- No chip offering the seat a second time. The corner is empty: the way into a
+-- hull is the column's key, and the ship stop is where the hull is picked. See
+-- decision 156.
 frame(1440, 810)
-check("a watcher is offered a seat in the corner too",
-      box("take_seat") ~= nil)
+check("a watcher is offered no seat in the corner", box("take_seat") == nil)
 
 -- --- what a stop lets through ----------------------------------------------
 --
@@ -2006,28 +1997,30 @@ end
 -- The band keeps its measure whatever is in the far corner: `TOP.row_right()`
 -- is where the dial stands rather than whether one is drawn.
 --
--- The chip is the ruler here, so these frames are drawn with a second room in
--- the zone. A zone with one room puts nothing in that corner at all, and the
--- band's own box is a few points taller than the row on purpose so a thumb can
--- find it: reading the row's line off that box would be reading padding.
+-- The near corner is empty too: what stood there was a held seat and a room
+-- number, and both have gone. So the ruler is the meter's own box at the far
+-- end, which spans the row from the top of the safe area down to where the
+-- dial starts. The band's own box is a few points taller than the row on
+-- purpose so a thumb can find it, and reading the row's line off that box
+-- would be reading padding.
 --
 -- Drawn with the column down, which is what a phone spends most of its time
 -- looking at: `F.menu_up` stands the corner's own presses down while the
 -- column is up, and these are about the presses.
 do
-    frame(390, 844, {rooms = ROOMS, room = 1, column = false})
-    local chip, clock = box("rooms"), word("1:47")
-    check("portrait draws the corner chip and the clock",
-          chip and clock, "missing one of them")
-    if chip and clock then
-        check("portrait keeps the band on the corner row's own line",
-              math.abs(clock.y - (chip.y + chip.h / 2)) < 1,
-              string.format("clock at %.0f, chip mid %.0f",
-                            clock.y, chip.y + chip.h / 2))
-        check("and to the right of the chip rather than through it",
-              clock.x > chip.x + chip.w,
-              string.format("clock at %.0f, chip ends %.0f",
-                            clock.x, chip.x + chip.w))
+    frame(390, 844, {column = false})
+    local meter, clock = box("debug"), word("1:47")
+    check("portrait draws the meter and the clock",
+          meter and clock, "missing one of them")
+    if meter and clock then
+        check("portrait keeps the band on the row the meter spans",
+              clock.y > meter.y and clock.y < meter.y + meter.h,
+              string.format("clock at %.0f, row %.0f to %.0f",
+                            clock.y, meter.y, meter.y + meter.h))
+        check("and left of the meter rather than through it",
+              clock.x < meter.x,
+              string.format("clock at %.0f, meter starts %.0f",
+                            clock.x, meter.x))
     end
     check("and gives up the side names, the row being 390 points",
           word("PYLON") == nil and word("CAISSON") == nil,
@@ -2052,22 +2045,23 @@ do
           word("1:47") ~= nil)
 
     -- A window with room keeps the same band on the same line.
-    frame(1440, 810, {rooms = ROOMS, room = 1, column = false})
-    local wide_chip, wide_clock = box("rooms"), word("1:47")
-    check("a wide window keeps the clock on the corner row's own line",
-          wide_chip and wide_clock
-              and math.abs(wide_clock.y - (wide_chip.y + wide_chip.h / 2)) < 24,
-          string.format("clock at %s, chip mid %s",
+    frame(1440, 810, {column = false})
+    local wide_meter, wide_clock = box("debug"), word("1:47")
+    check("a wide window keeps the clock on the row the meter spans",
+          wide_meter and wide_clock
+              and wide_clock.y > wide_meter.y
+              and wide_clock.y < wide_meter.y + wide_meter.h,
+          string.format("clock at %s, row ends %s",
                         tostring(wide_clock and wide_clock.y),
-                        tostring(wide_chip and wide_chip.y + wide_chip.h / 2)))
+                        tostring(wide_meter
+                                 and wide_meter.y + wide_meter.h)))
     check("and keeps the side names", word("PYLON") ~= nil)
 end
 
 -- With the column dismissed, the screen is the room and nothing else: no key,
 -- no name over it, and every instrument a pilot in that room reads.
 frame(1440, 810, {column = false})
-check("a watcher with the column down still gets TAKE SEAT",
-      box("take_seat") ~= nil)
+check("no chip offering the seat a second time", box("take_seat") == nil)
 check("and no column key on a screen with no column",
       box("menu_go") == nil)
 check("and no name over the fight", word("vectorwake") == nil)
@@ -2086,7 +2080,7 @@ check("and a band that opens the roster", box("players_open") ~= nil)
 -- It used to be the landing with those taken off it, laid out to the landing's
 -- own measure so that nothing moved when the stands arrived. There is no
 -- landing to keep still for, so it is measured for itself: this is a loading
--- screen giving way to a game. See decision 156.
+-- screen giving way to a game. See decision 158.
 do
     for _, s in ipairs(SHAPES) do
         local w, h, shape = s[1], s[2], s[3]
