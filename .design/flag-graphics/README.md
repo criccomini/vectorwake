@@ -1,137 +1,120 @@
-# Flags that are not golf pins
+# The beacon
 
-Chris's ask: the flags look silly, come up with cooler ones, mocked up.
+Chris's ask, twice. First: the flags look silly, come up with cooler ones,
+mocked up. Then, off the first sheet: the beacon, only the beacon, and make
+the collar big enough to clear the ship.
 
-Five candidates against what ships, on one sheet, drawn by
-[client/tools/flags_svg.lua](../../client/tools/flags_svg.lua). Nothing has
-been picked and nothing in `client/arena/world.lua` has moved.
+So this is no longer a comparison. It is the sheet that develops one drawing,
+by [client/tools/flags_svg.lua](../../client/tools/flags_svg.lua). Nothing in
+`client/arena/world.lua` has moved yet.
 
 ```sh
 lua5.1 client/tools/flags_svg.lua /tmp/flags.svg
-chromium --headless --screenshot=/tmp/flags.png --window-size=1240,4360 \
+chromium --headless --screenshot=/tmp/flags.png --window-size=1240,2060 \
   file:///tmp/flags.svg
 ```
 
-Artifact: [Flag Graphics](https://claude.ai/code/artifact/082df40a-1937-4796-8873-0dc620c07b3c)
+Artifact: [The Beacon](https://claude.ai/code/artifact/082df40a-1937-4796-8873-0dc620c07b3c)
 
-## What ships, and what is wrong with it
+The four it beat, and the argument against the pennant, are in this file's
+history and in the artifact's earlier version.
 
-`M.flags` in `client/arena/world.lua` draws a vertical staff and a triangle
-of cloth hanging off the top of it, the triangle's tip moved by a sine so it
-waves. Three things about that.
+## What it is
 
-**It is the only object in the game drawn in elevation.** Everything else on
-the ground is a plan view. A turf stand is an octagon with a knob in the
-middle. A spawn is two rings. A wall is its own lit face. A wormhole is a
-field. The flag alone is drawn as though the camera had turned ninety degrees
-to look at it side on, which is why it reads as a golf pin: a pin is the one
-real object shaped like that.
+A transponder seen from above. A bright core, a ring, three arcs standing off
+it that turn, and a ping: a ring that leaves the core and fades on its way
+out. A flag is the object telling a room where the game is, so it draws the
+broadcast rather than a piece of cloth.
 
-**Nothing here has a wind, and the flag is waving in one.** The sine on the
-tip is a fabric cue, and it is the tell that gives the whole drawing away.
+Standing, the arcs sit at twelve pixels, inside the eighteen the core actually
+tests for a pickup, and the ping runs one beat every two seconds. It costs 298
+triangles.
 
-**It is off center, and the flag is not.** The cloth hangs up and to the
-right of the flag's own position, so the shape a pilot flies at sits a dozen
-pixels from the point `sim_flag` actually tests. `flag_radius` is eighteen
-pixels, wider than the entire drawing, and no part of it says so.
+Carried, the whole thing opens into a collar outside the hull and the ping
+comes twice as often. That is a change of rate rather than of shape, which is
+what lets the two states be told apart at a size where shape has stopped
+working. It costs 490.
 
-There is a fourth, and it only shows up in the last band of the sheet: at the
-zoom the game is played at, a pennant is close to invisible. Put four of them
-on a map next to three hulls and you have to hunt for them.
+## The collar is built off the roster, not off the eye
 
-## The five
+The first draft cleared the Apex, which reaches 21 pixels, and that was wrong.
+The Cipher is a knife and reaches 23 down its own length, so the collar sat on
+the nose of the hull it was supposed to be marking.
 
-Each is a pair: a flag standing on its stand or lying where somebody dropped
-it, and the same flag riding a hull.
+The sheet now reads `M.HULLS` out of `world.lua`, takes the widest reach in the
+roster, and puts the inner rim four pixels outside it. The arcs stand seven
+pixels beyond that and the ping runs from the rim out to twenty five past it.
+Every number below the arcs comes from the polygons, so a hull that gets recut
+moves the clearance with it rather than quietly breaking the drawing.
 
-| | what it is | standing | carried |
-|---|---|---|---|
-| | | triangles | triangles |
-| pennant | what ships | 35 | 35 |
-| beacon | a transponder: arcs that turn, and a ping leaving the core | 280 | 344 |
-| sigil | three blades and a binding ring, as a faction mark | 165 | 143 |
-| sweep | a scanning face, one wedge of light turning with a tail | 240 | 258 |
-| streamer | a ribbon trailing the carrier, coiled on its stand | 154 | 174 |
-| cage | a core inside two counter turning frames | 74 | 50 |
+The band called `the whole roster` is the proof: one collar over all seven
+hulls at the size they fly, with each hull's own reach drawn as a dashed
+circle. Nothing touches.
 
-The counts are measured on the sheet by the same layer code the arena runs.
-They matter because the glow layer has a hard ceiling it shares with every
-hull and every round in flight, and whatever falls past the cap that frame
-simply vanishes. Four flags of any of these is affordable; four of the first
-draft of the beacon, at nine hundred and sixty triangles each, was not, and
-almost all of it was arc facets under a tenth of a pixel across. Every arc on
-the sheet is now faceted off `Layer:round_segs`, which is where that number
-should have come from in the first place.
+## Why the collar is outside the ship at all
 
-## Two rules that came out of drawing them
+Two reasons, and the first sheet had it wrong on both. A mark drawn on a hull
+hides the thing everybody in the room is trying to shoot. And at the range
+where a carried flag decides a round, a mark on a hull is a smudge on a hull
+rather than a flag: the ship's own outline is already using that space.
 
-**Carried is a collar, not a badge.** The first pass drew each mark on the
-hull carrying it, and both halves failed: the mark hides the ship everybody
-in the room is trying to shoot, and at the range where a carried flag decides
-a round it is a smudge on a hull rather than a flag. All five now leave the
-inner thirteen pixels alone and live from there out. The ship stays whole
-underneath, and a hull wearing a bright collar is unmistakable from across a
-map.
+Outside it, the ship stays whole and shootable underneath, and a hull wearing a
+bright ring is unmistakable from across a map. The `in a room` band at the foot
+of the sheet is where that gets judged, because it is the only one drawn at the
+zoom the game is actually played at.
 
-**Round leaves somewhere to put the clock.** Capture the Flag drops a carried
-flag after thirty seconds, per
+## The carry clock
+
+Capture the Flag drops a carried flag after thirty seconds, per
 [zones.md](../../docs/design/zones.md#capture-the-flag), and nothing on screen
-counts them down. Every candidate here is drawn round, so all of them have a
-rim to drain. The last band of the sheet shows it on the beacon: a full track,
-an arc emptying counterclockwise from noon, and the last fifth in the other
-side's color, because that is who the flag is about to be available to again.
-It costs one arc.
+counts them down. The collar is round, so the clock is a rim to drain, and it
+costs one arc.
 
-## What I would ship, and what I would ask first
+It sits fourteen pixels outside the inner rim, which is far enough out that it
+cannot be read as a fourth arc. It empties counterclockwise from noon, the way
+a fuse burns down, and the last five seconds turn to the other side's color,
+because that is who the flag is about to be available to again.
 
-**Sigil**, if one drawing has to serve both modes. It is the only one of the
-five that reads as heraldry rather than as instrumentation, which is what a
-flag is: a thing a side owns. It is cheap, it holds its shape at play zoom
-better than anything else here, and taken it turns into an unmistakable
-splayed mark around the hull without changing color to say so.
+## What is still open
 
-**Beacon** is the better answer for Turf on its own, and that is the question
-worth putting to you before anything is built. A turf stand is a place, not a
-thing you carry: `flag_carry` is clear there, the flag never leaves, and what
-the drawing has to say is "this ground is being held." A transponder pinging
-on a claimed stand says that exactly, and a heraldic mark on a stand nobody
-can pick up says it less well. Capture the Flag is the opposite: the flag is
-an object with a life of its own and the sigil is right for it.
+**Turf may want its own mark.** A turf stand is a place rather than a thing you
+carry: `flag_carry` is clear there, the flag never leaves its tile, and what
+the drawing has to say is that this ground is being held. A transponder pinging
+on a claimed stand says that well, which is the argument for using the same
+drawing in both zones. It is also the argument for giving Turf something that
+never opens into a collar, since a turf flag is never carried and half of this
+drawing is therefore dead there.
 
-So: one mark for both, or one for each. Two costs a second drawing and about
-three hundred triangles; one costs Turf a little of the read.
+**Two carriers close together overlap.** Four flags and eight seats means it
+will happen. The collars are rings rather than fills, so they cross rather than
+occlude, but it has not been looked at with two ships in one place.
 
-**Sweep** is the strongest looking of the five in isolation and the weakest in
-the room. A turning wedge with a tail reads as a gauge, and this game already
-puts gauges on the interface layer. Worth having on the sheet; I would not
-ship it.
-
-**Streamer** is the honest one, and the one I most wanted to work. It is the
-only candidate that answers the question the pennant is pretending to answer:
-what a flag does when the thing holding it moves. Trailing the carrier's own
-heading is right where a wave is wrong. On its stand it has nothing to trail
-from and coils instead, and that state is the weakest thing on the sheet.
-
-**Cage** is the cheapest by a factor of three and has the hardest silhouette
-of the five. It is a good drawing of a prize under guard, which is a slightly
-different game than the one we have.
+**Nothing is wired up.** `M.flags` in `world.lua` still draws the pennant. What
+lands from here is that function, the two states, and the clock, which needs
+`flag_carry_ticks` and the carrier's `held` count on the wire where the client
+can read them.
 
 ## How the sheet is made
 
-`flags_svg.lua` stubs `vwbuf` to write SVG triangles instead of vertex
-buffers and drives `client/render/vec.lua` unchanged, the way `marks_svg.lua`
-and `hud_svg.lua` do. So the sheet is not a picture of a drawing: every shape
-on it went through the same arithmetic the mesh builder runs, in the same two
-layers, in the arena's order, and with the glow layer blending additively,
-which is the blend function `vectorwake.render_script` sets for it.
+`flags_svg.lua` stubs `vwbuf` to write SVG triangles instead of vertex buffers
+and drives `client/render/vec.lua` unchanged, the way `marks_svg.lua` and
+`hud_svg.lua` do. So the sheet is not a picture of a drawing: every shape on it
+went through the same arithmetic the mesh builder runs, in the same two layers,
+in the arena's order, with the glow layer blending additively, which is the
+blend function `vectorwake.render_script` sets for it.
 
-Three things that were wrong in the mock rather than in the drawings, worth
+Three things that were wrong in the mock rather than in the drawing, worth
 writing down because the next sheet will hit them too. World y runs down the
-screen, which the render script does by swapping top and bottom, so an SVG
-tool that flips for its own layout has to flip back or every flag hangs
-upside down. `place` in `world.lua` negates the polygon's y, so a hull at a
-heading of zero points up the screen and not along +x. And under ordinary
-alpha compositing an arc beads into a dotted line, because an arc is a run of
-quads whose falloff ramps meet at every facet and are meant to sum;
-`mix-blend-mode: plus-lighter` is what the GPU is doing and it is the
+screen, which the render script does by swapping top and bottom, so an SVG tool
+that flips for its own layout has to flip back or every drawing hangs upside
+down. `place` in `world.lua` negates the polygon's y, so a hull at a heading of
+zero points up the screen and not along +x. And under ordinary alpha
+compositing an arc beads into a dotted line, because an arc is a run of quads
+whose falloff ramps meet at every facet and are meant to sum;
+`mix-blend-mode: plus-lighter` is what the GPU is doing, and it is the
 difference between judging a drawing and judging the mock.
+
+One more, learned on this pass. Every still on the sheet is one frame of an
+animation, and the two states ping at different rates, so a single clock for
+the whole page catches neither mid flight and the ping renders as a second rim
+sitting on the first. Each band picks its own.
