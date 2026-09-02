@@ -147,29 +147,24 @@ export async function run (pilot, { log = () => {} } = {}) {
         s => s.me && s.me.class === want,
         { timeout: ANSWER_MS })
     } catch (why) {
-      // Refused. The client says so where it can: its own gate mirrors the
-      // core's, so a bar it can see is short names a reason in the menu's
-      // note, and a ship dropped in silence is a menu that did nothing.
+      // Refused, and that is the design rather than a fault. The client will
+      // not send on a part bar and the core reads the bar again when the ask
+      // lands, so the two checks bracket a flight time: press whole, take a
+      // round while the ask is in the air, and the room keeps you in the hull
+      // you were in. A player answers that by waiting a moment and asking
+      // again, and so does this, on the budget the loop already carries.
       //
-      // The room's gate cannot say it yet. The client will not send on a part
-      // bar and the core will not move a hurt pilot's hull, so the two checks
-      // bracket a flight time: press whole, take a round while the ask is in
-      // the air, and the room keeps you where you are without a word. That is
-      // the hole decision 150 closed for crossing sides and has not closed for
-      // ships. So one silence is retried on the budget this loop already
-      // carries, and only a run of them is a fault worth stopping on.
+      // The room says which of the gates it was, since decision 162. Where it
+      // lands is the feed, because the key that spends a draft closes the
+      // column on its way out, and this reads a screen rather than a feed: so
+      // what is checked here is the client's own note, which carries a refusal
+      // the client saw for itself. A run of refusals with no ship at the end
+      // of it is what stops the journey.
       const after = await pilot.read()
       log(after.screen.note
         ? `refused: ${after.screen.note}`
-        : 'refused, and nothing was said: a round landed during the ask')
-      if (go === TRIES) {
-        if (!after.screen.note) {
-          throw new Error(
-            `hull ${want} never arrived and the client said nothing about it, ` +
-            `${TRIES} tries running. A refused ship has to name its reason.`)
-        }
-        throw why
-      }
+        : 'refused: a round landed while the ask was in the air')
+      if (go === TRIES) throw why
       continue
     }
 

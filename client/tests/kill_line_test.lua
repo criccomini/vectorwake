@@ -63,7 +63,7 @@ local function drain(kill, watching)
         net = {kills = {kill}},
         me = ME,
         watching = watching or false,
-        drain_no_team = function() end,
+        drain_refusals = function() end,
         pilot_named = function(i) return {"P" .. i} end,
         notify = function(text, col, mine)
             lines[#lines + 1] = {text = text, col = col, mine = mine}

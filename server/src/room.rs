@@ -1941,13 +1941,39 @@ impl Room {
     /// spends what a player spends. What it cannot do is refill: a build
     /// dealt either way clamps the rack down and never up, which is what
     /// stops a pilot reloading by opening a menu.
-    pub(crate) fn set_ship_kit(&mut self, ship: u8, class: u8, kit: &[u8; sim::SLOT_COUNT]) {
-        let sh = &self.world.state.ships[ship as usize];
-        if sh.alive != 0 || sh.cls != class {
-            self.world.set_ship_class(ship, class, Some(kit));
-        } else {
-            self.world.set_ship_kit(ship, kit);
+    ///
+    /// Answers whether the ship was dealt, and tells the pilot when it was
+    /// not. That used to be silent, on the grounds that the next snapshot
+    /// carries the hull either way, which is the same reasoning a refused
+    /// crossing was left on until decision 150 and wrong for the same reason:
+    /// the client checks the bar before it sends and the core checks it again
+    /// when the ask lands, so the two bracket a flight time, and the refusal
+    /// a player actually meets is a round arriving inside it. What they saw
+    /// was a panel closing on nothing. See decision 162.
+    pub(crate) fn set_ship_kit(
+        &mut self,
+        ship: u8,
+        class: u8,
+        kit: &[u8; sim::SLOT_COUNT],
+    ) -> bool {
+        // A hull this zone does not fly is a malformed ask rather than a
+        // refusal, and there is no sentence to say to the player behind it:
+        // every hull a client offers comes off this zone's own roster. The
+        // core would refuse it too, and reporting the pilot's bar for it
+        // would be answering a question nobody asked.
+        if class >= self.world.cfg.class_count {
+            return false;
         }
+        let sh = &self.world.state.ships[ship as usize];
+        let dealt = if sh.alive != 0 || sh.cls != class {
+            self.world.set_ship_class(ship, class, Some(kit))
+        } else {
+            self.world.set_ship_kit(ship, kit)
+        };
+        if !dealt {
+            self.send_refusal(ship, S2C_NOSHIP, self.why_refused(ship));
+        }
+        dealt
     }
 
     /// One of the fixed things, said to the room.
@@ -2325,7 +2351,7 @@ impl Room {
     /// reason a pilot is given is the clause that actually stopped them.
     fn why_not_team(&self, ship: u8, team: u8) -> u8 {
         let Some(t) = self.teams.get(&team) else {
-            return NOTEAM_GONE;
+            return REFUSED_GONE;
         };
         if !t.public && !self.invites.get(&ship).is_some_and(|s| s.contains(&team)) {
             return NOTEAM_PRIVATE;
@@ -2333,24 +2359,30 @@ impl Room {
         NOTEAM_FULL
     }
 
-    /// And why the core would not let them leave where they stand. It refuses
-    /// a seat that is not there, a pilot who is down, and a pilot who is hurt,
-    /// so an active pilot who was refused is one of the last two.
-    fn why_not_leave(&self, ship: u8) -> u8 {
+    /// And why the core would not move them. It refuses a seat that is not
+    /// there, a pilot who is down, and a pilot who is hurt, so an active pilot
+    /// who was refused is one of the last two.
+    ///
+    /// One reading for both asks it gates. A crossing and a ship are the same
+    /// question to the core, which hands out a fresh start and a full bar for
+    /// either, so a pilot refused one would have been refused the other for
+    /// the same reason and is told it in the same words.
+    fn why_refused(&self, ship: u8) -> u8 {
         let sh = &self.world.state.ships[ship as usize];
         if sh.active == 0 {
-            NOTEAM_GONE
+            REFUSED_GONE
         } else if sh.alive == 0 {
-            NOTEAM_DOWN
+            REFUSED_DOWN
         } else {
-            NOTEAM_HURT
+            REFUSED_HURT
         }
     }
 
-    /// Tell the one pilot who asked why they are still where they were.
-    pub(crate) fn send_noteam(&self, ship: u8, why: u8) {
+    /// Tell the one pilot who asked why the room did not do it. `tag` names
+    /// the ask, and the byte after it is what stopped that one.
+    pub(crate) fn send_refusal(&self, ship: u8, tag: u8, why: u8) {
         if let Some(p) = self.players.values().find(|p| p.ship == ship) {
-            let _ = p.tx.try_send(Message::Binary(vec![S2C_NOTEAM, why]));
+            let _ = p.tx.try_send(Message::Binary(vec![tag, why]));
         }
     }
 
@@ -2369,7 +2401,7 @@ impl Room {
         let bot = self.names.get(&ship).is_some_and(|s| s.bot);
         if !self.may_join(ship, team, bot) {
             self.send_teams(ship);
-            self.send_noteam(ship, self.why_not_team(ship, team));
+            self.send_refusal(ship, S2C_NOTEAM, self.why_not_team(ship, team));
             return false;
         }
         let from = self.world.state.ships[ship as usize].team;
@@ -2392,7 +2424,7 @@ impl Room {
             self.broadcast_roster();
         } else {
             self.send_teams(ship);
-            self.send_noteam(ship, self.why_not_leave(ship));
+            self.send_refusal(ship, S2C_NOTEAM, self.why_refused(ship));
         }
         moved
     }

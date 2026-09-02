@@ -414,6 +414,43 @@ do
               tostring(here[why]) .. " in the client, "
               .. tostring(there) .. " in the zone")
     end
+
+    -- The two refusals, and the reasons they carry.
+    --
+    -- The same fault in a quieter place. Only the byte crosses the wire and
+    -- the words are the client's, so a reason renumbered on one side would
+    -- not fail to parse: it would tell a player the wrong thing about a key
+    -- they just pressed, which is worse than saying nothing and is what these
+    -- messages exist to stop. See decisions 150 and 162.
+    for _, tag in ipairs({"S2C_NOTEAM", "S2C_NOSHIP"}) do
+        local there = tonumber(proto:match(tag .. ":%s*u8%s*=%s*(%d+)"))
+        local mine = tonumber(wire:match("local " .. tag .. "%s*=%s*(%d+)"))
+        check(tag .. " is the same tag on both sides",
+              there ~= nil and there == mine,
+              tostring(mine) .. " in the client, " .. tostring(there)
+              .. " in the zone")
+    end
+
+    -- The core refuses a crossing and a ship on one rule, so its three
+    -- reasons have words in both tables at the byte the zone names them by.
+    for _, why in ipairs({"GONE", "DOWN", "HURT"}) do
+        local byte = tonumber(proto:match("REFUSED_" .. why .. ":%s*u8%s*=%s*(%d+)"))
+        check("REFUSED_" .. why .. " has words for a crossing",
+              byte ~= nil and net.NO_TEAM[byte] ~= nil, tostring(byte))
+        check("REFUSED_" .. why .. " has words for a ship",
+              byte ~= nil and net.NO_SHIP[byte] ~= nil, tostring(byte))
+    end
+
+    -- And the two the room adds are a side's alone. A hull is always there
+    -- and has no seats of its own, so words for one on a ship would be the
+    -- client answering a question the zone cannot ask.
+    for _, why in ipairs({"PRIVATE", "FULL"}) do
+        local byte = tonumber(proto:match("NOTEAM_" .. why .. ":%s*u8%s*=%s*(%d+)"))
+        check("NOTEAM_" .. why .. " has words for a crossing",
+              byte ~= nil and net.NO_TEAM[byte] ~= nil, tostring(byte))
+        check("and none for a ship",
+              byte ~= nil and net.NO_SHIP[byte] == nil, tostring(byte))
+    end
 end
 
 if fails > 0 then

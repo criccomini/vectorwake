@@ -278,7 +278,12 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// keep the fleet and the page on one wire field, and because the quit kill
 /// was two bytes longer than the ordinary one until now and a stale build
 /// read that one wrong.
-pub(crate) const CLIENT_PROTOCOL: u8 = 38;
+///
+/// 39 answers a refused ship, which is the other half of what 37 started.
+/// `S2C_NOSHIP` is a new tag, so a client built for 38 would skip it rather
+/// than misread anything, and the number moves for 37's reason: a build that
+/// cannot hear the answer goes on showing the silence it exists to end.
+pub(crate) const CLIENT_PROTOCOL: u8 = 39;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
@@ -438,17 +443,36 @@ pub(crate) const S2C_STREAK: u8 = 19;
 /// to answer, and telling those apart by waiting is the kind of conclusion
 /// about the shared world that decision 40 says a client does not draw.
 pub(crate) const S2C_NOTEAM: u8 = 20;
-/// No such side. It was reaped between the reading and the ask, which a
-/// private side with one member does the moment they leave it.
-pub(crate) const NOTEAM_GONE: u8 = 1;
-/// A private side that has not invited you.
+/// `[S2C_NOSHIP, why]`: the ship you asked for is not the one you are flying,
+/// and this is what stopped it. Sent to the one pilot who asked.
+///
+/// The same hole as the one above, in the other message a menu sends. A ship
+/// costs a full bar and a respawn, the client will not ask on less, and the
+/// core reads the bar again when the ask lands: press whole, take a round
+/// while the message is in the air, and the room kept you in the hull you
+/// were in without a word. What the player saw was a panel that closed on
+/// nothing. See decision 162.
+///
+/// Three reasons rather than five, and they are the three the crossing shares
+/// with it, because what refuses both is one rule in the core. A side can be
+/// gone, private or full; a hull is always there.
+pub(crate) const S2C_NOSHIP: u8 = 21;
+/// Why the core would not move this pilot, on `S2C_NOTEAM` and `S2C_NOSHIP`
+/// alike: the two asks are gated by one rule, so they are answered out of one
+/// set of reasons rather than two that would have to be kept in step.
+///
+/// No seat there at all. It was reaped between the reading and the ask, which
+/// a private side with one member does the moment they leave it, and which a
+/// dropped connection does to a ship.
+pub(crate) const REFUSED_GONE: u8 = 1;
+/// A private side that has not invited you. The room's own, not the core's.
 pub(crate) const NOTEAM_PRIVATE: u8 = 2;
-/// Every seat on it is taken.
+/// Every seat on it is taken. The room's own too.
 pub(crate) const NOTEAM_FULL: u8 = 3;
-/// You are waiting to respawn. Crossing hands out a fresh start and a full
+/// You are waiting to respawn. Both asks hand out a fresh start and a full
 /// bar, so a pilot who is already down would be taking the better of two
 /// respawns.
-pub(crate) const NOTEAM_DOWN: u8 = 4;
+pub(crate) const REFUSED_DOWN: u8 = 4;
 /// Your bar is not full. This is the one that arrives after a client thought
 /// it had checked: the bar was full when the key went down.
-pub(crate) const NOTEAM_HURT: u8 = 5;
+pub(crate) const REFUSED_HURT: u8 = 5;
