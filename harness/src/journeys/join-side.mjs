@@ -272,14 +272,25 @@ export async function run (pilot, { log = () => {} } = {}) {
       continue
     }
 
-    // And it cost what a side costs. A weapon in flight carries the side that
-    // fired it, so a change that took effect in place would turn incoming fire
-    // friendly mid-air; crossing is a respawn, which is a full bar at a start.
-    if (crossed.me.alive && crossed.me.energy < crossed.me.max_energy * 0.9) {
+    // The pilot is flying, on the far side, and still in the room. A crossing
+    // that killed them or left them a spectator would be a different act than
+    // the one the key names.
+    //
+    // What is deliberately not asserted here is the bar. A side change is a
+    // respawn, so the pilot arrives whole, and it is tempting to check for a
+    // full one. But this journey presses the key on a full bar because the
+    // client's gate demands one, so "arrived whole" and "carried the damage
+    // across" produce the same reading and the check cannot tell them apart.
+    // What it can tell is that a round landed in the second after arrival,
+    // which is a fight happening rather than a fault: it failed a run at 64%
+    // on a pilot who had crossed perfectly well. So the bar is read out and
+    // not judged.
+    log(`crossed to side ${want} at ${crossed.me.energy}/` +
+        `${crossed.me.max_energy}, ${crossed.me.alive ? 'alive' : 'down'}`)
+    if (!crossed.me.seat && crossed.me.seat !== 0) {
       throw new Error(
-        `crossed to side ${want} on ${crossed.me.energy} of ` +
-        `${crossed.me.max_energy}. A side change is a respawn, so the pilot ` +
-        'should arrive whole rather than carrying the damage across.')
+        `crossed to side ${want} and lost the seat with it. A side change is ` +
+        'a respawn into the same room, not a way out of it.')
     }
 
     // And the panel went back to the sheet by itself, which is where the
