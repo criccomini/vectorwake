@@ -8308,7 +8308,24 @@ draws a diagonal face and never a square one. 164 faces on the shipped map
 came out unlit. Fixing that is what made the flats visible enough to argue
 about.
 
+**And the vocabulary is closed there.** A slope's face is `x - y` or `x + y` at
+a whole number and a wall's is `x` or `y` at one, so a diagonal running into a
+wall corners at whole numbers on both axes, on the grid, where the tiles either
+side already draw it. Only two diagonals cross at a half. There is no tile
+wanted for a diagonal meeting a bracket, a bar, or the map's own edge.
+
+What that junction wanted was for the wall to know its face was showing. A tile
+hands its whole shared edge to its neighbour on some sides and not others:
+square wall on all four, a slope only on its two legs, a notch on every side
+but the one it opens toward. `runs` asked whether anything was there instead,
+which answers covered for the half of a diagonal that meets a wall at one
+corner, and left a tile of unlit wall at every such junction on the map. All
+three readers of that question, the face runs, the corner chamfers and the
+diagonal's own end caps, go through `fills` now.
+
 `terrain_style_test.lua` pins the notch on a tile of its own, its apex at the
-centre and no face across the side it opens toward, and pins that a crossing's
-waist draws no flat. `constant_drift_test.lua` holds the four numbers level
-across `sim.h`, the renderer and the editor.
+centre and no face across the side it opens toward, pins that a crossing's
+waist draws both corners and no flat, and pins that a wall keeps the face a
+diagonal only corners against while handing over the half it lies flush along.
+`constant_drift_test.lua` holds the four numbers level across `sim.h`, the
+renderer and the editor.

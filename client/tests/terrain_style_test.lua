@@ -200,9 +200,13 @@ check("its free end is still capped",
 -- the tile before it and a slope draws a diagonal face, never a square one.
 -- The knot came out a flat block in the middle of a lit X.
 --
--- The pattern is the crossing at 752,113 of catalog/zones/roam/expanse.vwmap,
--- which m_chevron in sim/tools/mapgen.c draws, digits naming the slope
--- variant the way SIM_SLOPE_* numbers them.
+-- The pattern is the crossing at 752,113 as the open arena shipped it before
+-- the notch, when the sweep that walls in unreachable ground plugged the
+-- crotches: square wall wearing slopes, which is the arrangement that hides
+-- the fault. No map draws it now, and the fault it catches is about square
+-- wall beside a diagonal rather than about crossings, so it is kept as the
+-- case rather than rewritten to a shape that no longer occurs. Digits name
+-- the slope variant the way SIM_SLOPE_* numbers them.
 local CROSSING = {
     ".............",
     ".13......20..",
@@ -299,27 +303,79 @@ check("the wedge's halves meet at the centre",
 check("a notch draws no face across the side it opens toward",
       not seg_drawn("one-glow:seg", 20 * 16, 20 * 16, 20 * 16, 21 * 16))
 
--- In a crossing all three square sides are handed to the arms, so the wedge
--- is the whole of what the waist draws.
+-- The crossing as mapgen draws it, at 752,113 of the shipped open arena: two
+-- arms and the two notches they collided on, and no square wall anywhere in
+-- it. All three square sides of each notch are handed to the arms, so the
+-- wedge is the whole of what the waist draws.
+local X = {
+    ".............",
+    ".13......20..",
+    "..13....20...",
+    "...13..20....",
+    "....1320.....",
+    ".....WE......",
+    "....2013.....",
+    "...20..13....",
+    "..20....13...",
+    ".20......13..",
+    ".............",
+}
 world = reset()
-for row, line in ipairs(CROSSING) do
+for row, line in ipairs(X) do
     for col = 1, #line do
         local c = line:sub(col, col)
         local x, y = 9 + col, 9 + row
-        if c == "#" then put(x, y, T_SOLID, 0)
+        if c == "W" then put(x, y, T_SOLID, NOTCH_W)
+        elseif c == "E" then put(x, y, T_SOLID, NOTCH_E)
         elseif c ~= "." then put(x, y, T_SLOPE, tonumber(c)) end
     end
 end
-put(14, 15, T_SOLID, NOTCH_W)
-put(15, 15, T_SOLID, NOTCH_E)
 world.build_static(writer("waist-fill"), writer("waist-glow"), 6, 6, 26, 24)
 check("a crossing's waist draws no flat on either side",
-      not seg_drawn("waist-glow:seg", 14 * 16, 15 * 16, 14 * 16, 16 * 16)
-      and not seg_drawn("waist-glow:seg", 16 * 16, 15 * 16, 16 * 16, 16 * 16))
+      not seg_drawn("waist-glow:seg", 15 * 16, 15 * 16, 15 * 16, 16 * 16)
+      and not seg_drawn("waist-glow:seg", 17 * 16, 15 * 16, 17 * 16, 16 * 16))
+-- Both halves of both corners, meeting at the middle of their own tile.
+local waist = {
+    {15 * 16, 15 * 16, 15 * 16 + 8, 15 * 16 + 8},
+    {15 * 16 + 8, 15 * 16 + 8, 15 * 16, 16 * 16},
+    {17 * 16, 15 * 16, 16 * 16 + 8, 15 * 16 + 8},
+    {16 * 16 + 8, 15 * 16 + 8, 17 * 16, 16 * 16},
+}
+local missing = {}
+for i, w in ipairs(waist) do
+    if not seg_drawn("waist-glow:seg", w[1], w[2], w[3], w[4]) then
+        missing[#missing + 1] = i
+    end
+end
+check("a crossing's waist lights both halves of both corners",
+      #missing == 0, "half " .. table.concat(missing, ", ") .. " undrawn")
 
 check("a crossing's knot is square wall", #knots == 8, #knots .. " tiles")
 check("every open side of a crossing's knot is lit", #unlit == 0,
       table.concat(unlit, ", "))
+
+-- A diagonal running into a wall, which on the open arena is every place an
+-- arm meets a bracket. The arm's first pair lies against the wall's face: one
+-- half of the pair is flush with it and the other touches it at a corner only,
+-- so half that face is open ground a pilot can see. Asking "is there a slope
+-- there" answered covered for both and left a tile of wall unlit against every
+-- such junction.
+--
+-- Nothing new is needed to draw one. A slope's face is x - y or x + y at a
+-- whole number and a wall's is x or y at one, so the two always cross on a
+-- corner of the grid; only two diagonals cross at a half.
+world = reset()
+for x = 4, 24 do put(x, 12, T_SOLID, 0) end
+arm(14, 13, 5, "down")
+world.build_static(writer("meet-fill"), writer("meet-glow"), 2, 8, 28, 22)
+-- The wall's face along the arm: flush over the leaning half, open over the
+-- other, so the run stops at 15 and picks up again at 16.
+check("a wall keeps the face a diagonal only corners against",
+      seg_drawn("meet-glow:seg", 15 * 16, 13 * 16, 25 * 16, 13 * 16),
+      "the run right of the junction")
+check("and hands over the half the diagonal is flush against",
+      not seg_drawn("meet-glow:seg", 14 * 16, 13 * 16, 15 * 16, 13 * 16),
+      "a face drawn into solid ground")
 
 -- A big rock is still one collision object, but it is no longer one flat
 -- polygon. Facet triangles, ridges, and a mineral seam give it volume.

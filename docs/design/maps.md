@@ -166,6 +166,23 @@ problem and the opposite half of it as well: its inside corner wants a notch,
 and its outside point wants a wedge-shaped solid, which is a primitive that
 does not exist. Eight tiles on the open arena, and left as they are.
 
+**Nothing else needs a shape.** A slope's face is `x - y` or `x + y` at a whole
+number and a wall's is `x` or `y` at one, so wherever a diagonal meets a wall
+the two cross at whole numbers on both axes: a corner of the grid, which the
+tiles either side already draw. Only two diagonals cross at a half. So the
+vocabulary is closed at the slope, the notch, and the wedge that is still
+missing, and a diagonal running into a bracket needs no tile that a diagonal
+running into open space does not.
+
+What it needs is for the wall to know its face is showing. A tile hands its
+whole shared edge to its neighbour on some sides and not others: square wall
+on all four, a slope only on its two legs, a notch on every side but the one
+it opens toward. Asking instead whether *anything* is there answered "covered"
+for the half of a diagonal that touches a wall at one corner, and left a tile
+of unlit wall against every junction on the map. `fills` in
+`client/arena/world.lua` is that question, and the face runs, the corner
+chamfers and the diagonal's own end caps all ask it.
+
 The match maps draw from that vocabulary now too. They used to build their
 cover from two shapes, a filled rectangle and a hollow room, so every piece of
 it was a box; there was never an argument for the smaller maps having a smaller
