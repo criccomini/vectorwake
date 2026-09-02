@@ -264,6 +264,59 @@ for _, k in ipairs(knots) do
         end
     end
 end
+-- The two tiles the arms land on together carry the crossing's left and right
+-- corners, and a corner falls at the middle of a tile here rather than on the
+-- grid. A slope is one face and cannot make a corner, so those two are
+-- notches: three quarters of a tile with a wedge cut into one side, apex at
+-- the centre. Drawn as blocks they gave the X sixteen pixels of flat on each
+-- side of its waist.
+local NOTCH_W, NOTCH_E = 8, 9
+world = reset()
+put(20, 20, T_SOLID, NOTCH_W)
+world.build_static(writer("one-fill"), writer("one-glow"), 16, 16, 24, 24)
+check("a notch is filled as two triangles, not a block",
+      count("one-fill:tri") == 2 and count("one-fill:rect") == 0,
+      count("one-fill:tri") .. " triangles, " .. count("one-fill:rect")
+          .. " rects")
+local function tri_at(name, cx, cy)
+    for _, g in ipairs(calls[name] or {}) do
+        for i = 1, 5, 2 do
+            if g[i] == cx and g[i + 1] == cy then return true end
+        end
+    end
+    return false
+end
+check("its wedge has its apex at the tile's centre",
+      tri_at("one-fill:tri", 20 * 16 + 8, 20 * 16 + 8))
+-- The two halves of the corner, and the three square sides that have nothing
+-- behind them. A notch standing alone is a whole tile on those three.
+check("a lone notch lights both halves of its corner and its three flats",
+      count("one-glow:seg") == 5, count("one-glow:seg") .. " lit lines")
+check("the wedge's halves meet at the centre",
+      seg_drawn("one-glow:seg", 20 * 16, 20 * 16, 20 * 16 + 8, 20 * 16 + 8)
+      and seg_drawn("one-glow:seg", 20 * 16 + 8, 20 * 16 + 8,
+                    20 * 16, 21 * 16))
+check("a notch draws no face across the side it opens toward",
+      not seg_drawn("one-glow:seg", 20 * 16, 20 * 16, 20 * 16, 21 * 16))
+
+-- In a crossing all three square sides are handed to the arms, so the wedge
+-- is the whole of what the waist draws.
+world = reset()
+for row, line in ipairs(CROSSING) do
+    for col = 1, #line do
+        local c = line:sub(col, col)
+        local x, y = 9 + col, 9 + row
+        if c == "#" then put(x, y, T_SOLID, 0)
+        elseif c ~= "." then put(x, y, T_SLOPE, tonumber(c)) end
+    end
+end
+put(14, 15, T_SOLID, NOTCH_W)
+put(15, 15, T_SOLID, NOTCH_E)
+world.build_static(writer("waist-fill"), writer("waist-glow"), 6, 6, 26, 24)
+check("a crossing's waist draws no flat on either side",
+      not seg_drawn("waist-glow:seg", 14 * 16, 15 * 16, 14 * 16, 16 * 16)
+      and not seg_drawn("waist-glow:seg", 16 * 16, 15 * 16, 16 * 16, 16 * 16))
+
 check("a crossing's knot is square wall", #knots == 8, #knots .. " tiles")
 check("every open side of a crossing's knot is lit", #unlit == 0,
       table.concat(unlit, ", "))

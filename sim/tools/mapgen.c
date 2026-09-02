@@ -319,6 +319,22 @@ static void m_chevron(int x, int y, int w, int h, uint8_t wall) {
         if (cross || !back) m_slope_step(ox + i, oy + i, LEAN_DOWN, wall);
         if (cross || back) m_slope_step(ox + n - 1 - i, oy + i, LEAN_UP, wall);
     }
+    /* The two tiles the arms land on together carry the crossing's left and
+     * right corners, and a corner falls at the middle of a tile here rather
+     * than on the grid: the four faces meeting at the middle of an X are two
+     * pairs, and only one pair lands on tile corners. `m_slope_step` wrote
+     * these as plain wall, because the second arm found the ground taken, and
+     * plain wall is square, so an X read as two diagonals with a sixteen pixel
+     * flat on each side of its waist. A notch is that tile with the corner
+     * drawn in it. Only where the arms actually collided: `wall` may be a door
+     * or the tiles may belong to something placed first. */
+    if (cross) {
+        int cx = ox + (n - 1) / 2, cy = oy + (n - 1) / 2;
+        if (get(cx, cy) == SIM_TILE_SOLID)
+            put(cx, cy, SIM_TILE(SIM_TILE_SOLID, SIM_SOLID_NOTCH_W));
+        if (get(cx + 1, cy) == SIM_TILE_SOLID)
+            put(cx + 1, cy, SIM_TILE(SIM_TILE_SOLID, SIM_SOLID_NOTCH_E));
+    }
 }
 
 /* A bar with a cap at each end. Blocks along its length, and the caps stop a

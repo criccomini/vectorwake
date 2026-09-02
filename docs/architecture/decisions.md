@@ -8247,39 +8247,57 @@ against the gate that produces it, and `client/tests/no_team_test.lua`
 pins the parse, the read-once, and the silence on a byte this build does not
 know.
 
-## 151. The inside of an angle stays open
+## 151. A corner takes two faces, so it takes a notch
 
 **Status:** accepted.
 
-**What:** `fill_dead` in `sim/tools/mapgen.c` no longer walls in a tile that
-has a slope beside it. The sweep still plugs every square notch no hull can
-reach; the crotch of a V and the four wedges around a crossing, which are
-bounded by diagonals, are left as the open ground they were drawn as. Both of
-mapgen's own gates count stranded ground the same way, through
-`dead_squares`. `expanse.vwmap` is redrawn at seed 61 with the 353 tiles
-that sweep used to add taken back out, and nothing else in it moved.
+**What:** two changes to how a crossed diagonal is drawn, and a new solid
+variant. `fill_dead` in `sim/tools/mapgen.c` no longer walls in a tile with a
+slope beside it, so the crotches of an X and a V stay the open ground they
+were drawn as. `SIM_SOLID_NOTCH_W/E/N/S` is a whole solid tile whose picture
+is three quarters of a square, the missing quarter a wedge with its apex at
+the tile's centre; `m_chevron` writes two of them where its arms collide.
+`expanse.vwmap` is redrawn at seed 61 and carries 46 of them, two to each of
+its 23 crossings.
 
-**Why:** because an X was not reading as one. Each arm is a band two tiles
-across stepping one tile a row, so where two cross, the crotches narrow to
-two tiles and then to nothing, and the waist has a one-tile pocket on either
-side. A hull is three tiles across and reaches none of that, so the sweep
-plugged all of it with square wall: a flat ledge in each crotch and a bar
-across the waist. Chris found it by flying at one.
+**Why:** because an X was not reading as one, and it took three goes to find
+out why. Each arm is a band two tiles across stepping one tile a row. Where
+two cross, the crotches narrow past three tiles and the sweep that walls in
+unreachable ground plugged all four with square wall: a flat ledge in each.
+That is the first change, and on its own it left a sixteen pixel flat on each
+side of the waist.
 
-The union of the two arms was already the X. The sweep exists because a
-square notch reads as a way in and is not, which is true of a notch with
-width at the end of it; the inside of an angle closes to a point and reads as
-a corner. The core's own validator had said as much for a while:
-`sim_map_playable` reports stranded ground and refuses none of it, since two
-rocks a tile apart strand the tile between them and an asteroid field is
-hundreds of those. mapgen's gate was the stricter one, and now it counts what
-the sweep would have filled rather than everything a hull cannot stand on.
+The flat is the real answer. Four faces meet at the middle of an X in two
+pairs, and where those pairs land is fixed by the arms' parity: two corners
+fall on the tile grid, where the diagonals either side already draw them, and
+two fall at the middle of a tile. A slope is one face and cannot make a
+corner. So the tile carries both: a notch is a corner drawn on one tile.
 
-**What was tried first and reverted:** a junction laid by `m_chevron` that
-widened the waist to four tiles and capped each crotch with a pair of slopes
-meeting at a point. It made a shape with a bar across its middle and two
-small triangles stuck to it, and it moved every structure placed after it, so
-the map redrew wholesale. An X pinches at the waist. That is the shape.
+**Solid to the core, and deliberately.** Every `SIM_SOLID_*` variant is a
+picture; the core stops a ship the same way on all of them, which is written
+down beside the enum and was true before this. So the eight pixels inside the
+wedge are wall, and a round bounces off them a little early. No hull reaches
+them: a hull is three tiles across and grounds on the diagonals either side of
+the crossing well before its box could enter, so the mismatch is a round in a
+dead-end corner. The honest version is a second face in `slope_hit`, a second
+triangle test in the collision path, the Rust mirror, and a regenerated
+determinism golden on three architectures, to move a bounce eight pixels
+somewhere nothing with a hull can go.
+
+**What was tried and reverted.** A junction laid by `m_chevron` that widened
+the waist to four tiles and capped each crotch with a pair of slopes meeting
+at a point. It drew a bar with two triangles stuck to it, and because a solid
+wedge is ground the next structure cannot stand on, it moved every structure
+placed after it and redrew the whole map. An X pinches at the waist. Both
+later drafts leave placement alone: the map is the one that shipped with 353
+plugs removed and 46 tiles renamed.
+
+**What is left.** The vertex of a V has the same problem and the other half of
+it too: the inside corner wants a notch, and the outside point wants a
+wedge-shaped solid, which does not exist. Eight tiles on the open arena, left
+alone. `m_chevron` draws only NOTCH_W and NOTCH_E, since an X's two
+middle-of-a-tile corners are always its left and right; N and S exist for the
+editor and for whoever draws the V.
 
 **The renderer had a fault in the same place, and it is a different one.** A
 face is drawn once, by the first tile of its run, and `runs` in
@@ -8287,9 +8305,10 @@ face is drawn once, by the first tile of its run, and `runs` in
 whether a face is covered. Slopes belong in that answer and not in this one,
 so every open side of a crossing's knot handed its line to a slope, which
 draws a diagonal face and never a square one. 164 faces on the shipped map
-came out unlit. That fix stays: the knot's two waist faces are the only square
-faces an X has, and they are lit now.
+came out unlit. Fixing that is what made the flats visible enough to argue
+about.
 
-`every open side of a crossing's knot is lit` in
-`client/tests/terrain_style_test.lua` builds the shipped crossing from its own
-tiles and names each face that goes dark.
+`terrain_style_test.lua` pins the notch on a tile of its own, its apex at the
+centre and no face across the side it opens toward, and pins that a crossing's
+waist draws no flat. `constant_drift_test.lua` holds the four numbers level
+across `sim.h`, the renderer and the editor.

@@ -133,6 +133,39 @@ arena goes from 3.06% solid to 2.91%. A thick diagonal reading as a smear at
 radar scale was the reason these stayed single stepped tiles for so long, and
 it turns out not to be a cost that had to be paid.
 
+### A corner takes two faces, so it takes a notch
+
+Four faces meet at the middle of an X, and they meet in two pairs. Where those
+pairs land is decided by the arms' parity rather than by anything an author
+chooses: two of the corners fall on a corner of the tile grid, where the
+diagonals either side already draw them, and two fall at the *middle* of a
+tile. A slope carries one face and cannot make a corner, so those two tiles
+were plain square wall, and an X ran its arms into sixteen pixels of flat on
+each side of its waist. Widening the waist and capping the crotches was tried
+and is worse: it draws a bar with triangles stuck to it, and an X pinches at
+the waist.
+
+A `SIM_SOLID_NOTCH_*` is that tile with the corner drawn in it: a whole solid
+tile whose picture is three quarters of a square, the missing quarter a wedge
+with its apex at the centre, named by the side it opens toward. Two faces on
+one tile, meeting at a point, which is what a corner is.
+
+**It is solid to the simulation, and that is deliberate.** Every
+`SIM_SOLID_*` variant is a picture and nothing else; the core stops a ship the
+same way on all of them. So the eight pixels inside the wedge are wall a round
+bounces off a little early. No hull reaches them: a hull is three tiles across
+and grounds on the diagonals either side of the crossing long before its box
+could enter, so the mismatch is a round in a dead-end corner. Buying those
+eight pixels honestly means a second face in `slope_hit`, a second triangle
+test in the collision path, both mirrored in Rust, and a regenerated
+determinism golden across three architectures. The picture is worth a variant.
+It is not worth the core.
+
+Only the crossing of an X draws one today. The vertex of a V has the same
+problem and the opposite half of it as well: its inside corner wants a notch,
+and its outside point wants a wedge-shaped solid, which is a primitive that
+does not exist. Eight tiles on the open arena, and left as they are.
+
 The match maps draw from that vocabulary now too. They used to build their
 cover from two shapes, a filled rectangle and a hollow room, so every piece of
 it was a box; there was never an argument for the smaller maps having a smaller
@@ -601,8 +634,9 @@ on exactly one tile. The crotches of an X and of a V are left open: they are
 narrower than a hull, and the sweep that walls in unreachable ground used to
 plug them with square wall, which ran every X's arms into flat ledges. It
 skips the inside of an angle now, because a corner closing to a point does
-not read as a way in the way a square notch does. A hall's four ways in are
-the same width and each sits in the middle of the wall it goes through.
+not read as a way in the way a square notch does. The two tiles at the middle
+of an X are notches, for the reason below. A hall's four ways in are the same
+width and each sits in the middle of the wall it goes through.
 
 The arithmetic under that is parity. A run centers exactly in a span only
 when the two are both odd or both even, so a gap's width is moved to its

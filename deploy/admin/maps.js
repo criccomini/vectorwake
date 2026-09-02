@@ -36,6 +36,11 @@ const T_SLOPE = 10;
 // zero could draw a room with no rock in it.
 const S_WALL = 0, S_BORDER = 1, S_ROCK_A = 2, S_ROCK_B = 3;
 const S_ROCK_BIG = 4, S_ROCK_BODY = 5, S_STATION = 6, S_STATION_BODY = 7;
+// A whole solid tile drawn with a wedge cut into one side, apex at its centre,
+// named by the side the wedge opens toward. It is the corner where two
+// diagonals cross: that corner lands at the middle of a tile rather than on
+// the grid, and a slope carries one face, so it takes two on one tile.
+const S_NOTCH_W = 8, S_NOTCH_E = 9, S_NOTCH_N = 10, S_NOTCH_S = 11;
 
 // What you can put down. `v` is the variant, which means a different thing per
 // class: what kind of solid, a channel for a door, a side for a start or a
@@ -62,6 +67,14 @@ const PAINTS = [
   { key: "ne", cls: T_SLOPE, v: 1, label: "slope NE", group: "ground" },
   { key: "se", cls: T_SLOPE, v: 2, label: "slope SE", group: "ground" },
   { key: "sw", cls: T_SLOPE, v: 3, label: "slope SW", group: "ground" },
+  { key: "notchw", cls: T_SOLID, v: S_NOTCH_W, label: "notch, opens west",
+    name: "notch", group: "ground" },
+  { key: "notche", cls: T_SOLID, v: S_NOTCH_E, label: "notch, opens east",
+    name: "notch", group: "ground" },
+  { key: "notchn", cls: T_SOLID, v: S_NOTCH_N, label: "notch, opens north",
+    name: "notch", group: "ground" },
+  { key: "notchs", cls: T_SOLID, v: S_NOTCH_S, label: "notch, opens south",
+    name: "notch", group: "ground" },
 
   { key: "rocka", cls: T_SOLID, v: S_ROCK_A, label: "rock", group: "objects" },
   { key: "rockb", cls: T_SOLID, v: S_ROCK_B, label: "rock, the other one", group: "objects" },
@@ -130,6 +143,10 @@ const SOLID_INK = {
   [S_ROCK_BODY]: "#8a8794",
   [S_STATION]: "#7c8fa8",
   [S_STATION_BODY]: "#7c8fa8",
+  [S_NOTCH_W]: "#8494ab",
+  [S_NOTCH_E]: "#8494ab",
+  [S_NOTCH_N]: "#8494ab",
+  [S_NOTCH_S]: "#8494ab",
 };
 
 // The open map. `tiles` is one byte per tile in row order, which is the order
@@ -208,6 +225,11 @@ const at = (x, y) => doc.tiles[y * doc.w + x];
 function turned(byte) {
   const cls = byte & 15, v = byte >> 4;
   if (cls === T_SLOPE) return cls | ((v ^ 2) << 4);
+  // A notch turns the same way for the same reason, and on this numbering the
+  // opposite side is one bit again: W and E are a pair, N and S the next.
+  if (cls === T_SOLID && v >= S_NOTCH_W && v <= S_NOTCH_S) {
+    return cls | ((v ^ 1) << 4);
+  }
   // A start or a goal belongs to a side, and the far half of a symmetric map
   // belongs to the other one. Anything else turns unchanged.
   if (cls === T_SPAWN || cls === T_GOAL) return cls | ((v ^ 1) << 4);
@@ -504,7 +526,25 @@ function tile(g, x, y, b) {
   if (cls === T_EMPTY) return;
   g.fillStyle = inkOf(cls, v);
   const px = x * zoom, py = y * zoom;
-  if (cls === T_SLOPE) {
+  if (cls === T_SOLID && v >= S_NOTCH_W && v <= S_NOTCH_S) {
+    // Three quarters of the tile, with the wedge left out. The simulation
+    // collides against the whole square, so this is the one paint whose
+    // drawing is smaller than its wall; it is drawn as the shape rather than
+    // as a block because the shape is the entire reason it exists.
+    const pts = [
+      [[0, 0], [1, 0], [1, 1], [0, 1], [0.5, 0.5]],
+      [[1, 0], [0, 0], [0, 1], [1, 1], [0.5, 0.5]],
+      [[0, 0], [0, 1], [1, 1], [1, 0], [0.5, 0.5]],
+      [[0, 1], [0, 0], [1, 0], [1, 1], [0.5, 0.5]],
+    ][v - S_NOTCH_W];
+    g.beginPath();
+    g.moveTo(px + pts[0][0] * zoom, py + pts[0][1] * zoom);
+    for (let i = 1; i < pts.length; i++) {
+      g.lineTo(px + pts[i][0] * zoom, py + pts[i][1] * zoom);
+    }
+    g.closePath();
+    g.fill();
+  } else if (cls === T_SLOPE) {
     // The filled corner, and the two beside it. Drawn as the triangle the
     // simulation collides against, so what you see is the wall there is.
     const pts = [

@@ -143,6 +143,21 @@ typedef enum {
 #define SIM_SOLID_ROCK_BODY 5
 #define SIM_SOLID_STATION 6      /* corner of a 6x6 station */
 #define SIM_SOLID_STATION_BODY 7
+/* A whole solid tile drawn with a wedge cut into one side, apex at the tile's
+ * center, named by the side it opens toward. Where two diagonals cross, the
+ * concave corner of the crossing lands at the middle of a tile rather than on
+ * a corner of the grid, and a slope is one face: it cannot make a corner. So
+ * the two faces that meet there are drawn on one tile, and an X reads as an X
+ * instead of running its arms into a flat.
+ *
+ * Solid to the core, like every other variant here, so the eight pixels inside
+ * the wedge stop a round that a drawn point would have let past. No hull
+ * reaches them: a hull is three tiles across and grounds on the diagonals
+ * either side of the crossing well before its box could enter. */
+#define SIM_SOLID_NOTCH_W 8      /* the wedge opens toward -x */
+#define SIM_SOLID_NOTCH_E 9      /* +x */
+#define SIM_SOLID_NOTCH_N 10     /* -y */
+#define SIM_SOLID_NOTCH_S 11     /* +y */
 
 /* Doors run on one clock with eight phases, and a door's variant picks which.
  * A map that wants two sets opening against each other puts them four apart. */

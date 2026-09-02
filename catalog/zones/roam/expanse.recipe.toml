@@ -22,11 +22,11 @@
 # Four seeds were drawn and this is the one whose wall percentage sits closest
 # to the measured figure while leaving the most ground a hull can reach.
 #
-# Redrawn once since, on the same seed, when `fill_dead` stopped plugging the
-# inside of an angle: the 353 tiles it used to wall in around crossed and
-# meeting diagonals are open again, and nothing else moved, since that sweep
-# runs after every structure is placed.
+# Redrawn twice since, both times on the same seed and with nothing moved but
+# the tiles named: once when `fill_dead` stopped plugging the inside of an
+# angle, and once when the two tiles at the middle of an X became notches. The
+# 23 crossings on this map carry 46 of them.
 
 tool = "mapgen"
 seed = 61
-hash = "8f227be7"
+hash = "df0054b7"

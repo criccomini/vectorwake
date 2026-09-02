@@ -39,6 +39,12 @@ pub(crate) const ROCK_BIG: u8 = 4;
 pub(crate) const ROCK_BODY: u8 = 5;
 pub(crate) const STATION: u8 = 6;
 pub(crate) const STATION_BODY: u8 = 7;
+/// A solid tile drawn with a wedge cut into one side, `SIM_SOLID_NOTCH_*`.
+/// Mapforge draws none: they are the corner where two diagonals cross, and
+/// only `sim/tools/mapgen.c` draws those. Named here so the measure counts
+/// one as the whole tile of wall it is rather than as nothing at all.
+pub(crate) const NOTCH_W: u8 = 8;
+pub(crate) const NOTCH_S: u8 = 11;
 
 pub(crate) fn tile(class: u8, variant: u8) -> u8 {
     class | variant << 4
@@ -750,7 +756,7 @@ fn materials(map: &sim::sim_map) -> MaterialCounts {
             let value = map.tile[y * sim::MAP_TILES + x];
             let (class, variant) = (value & 15, value >> 4);
             match class {
-                SOLID if variant == WALL => out.wall += 1,
+                SOLID if variant == WALL || (NOTCH_W..=NOTCH_S).contains(&variant) => out.wall += 1,
                 SOLID if matches!(variant, ROCK_A | ROCK_B | ROCK_BIG | ROCK_BODY) => {
                     out.rocks += 1
                 }

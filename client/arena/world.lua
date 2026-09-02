@@ -1098,6 +1098,8 @@ local V_BORDER = 1
 local V_ROCK_A, V_ROCK_B = 2, 3
 local V_ROCK_BIG, V_ROCK_BODY = 4, 5
 local V_STATION, V_STATION_BODY = 6, 7
+local V_NOTCH_W, V_NOTCH_E = 8, 9
+local V_NOTCH_N, V_NOTCH_S = 10, 11
 
 local function key(tx, ty) return ty * 1024 + tx end
 
@@ -1351,6 +1353,86 @@ local function slope_mass(bg, glow, wall, set, cells)
             glow:skirt(px, py, qx, qy, ox * 6, oy * 6, 0.13, outer)
             glow:seg(px, py, qx, qy, 1.4, hotline)
         end)
+    end
+end
+
+-- A notch, by the side its wedge opens toward. Mirrors SIM_SOLID_NOTCH_* in
+-- sim/include/sim/sim.h.
+--
+-- Where two diagonals cross, the concave corner of the crossing lands at the
+-- middle of a tile rather than on a corner of the grid. A slope carries one
+-- face and cannot make a corner, so that tile was plain wall and the X ran its
+-- arms into sixteen pixels of flat. This is that tile with the corner in it:
+-- three quarters solid, and the missing quarter a wedge with its apex at the
+-- center.
+--
+-- `fill` is the solid part as two triangles, in tile fractions. `faces` is the
+-- two sides of the wedge, each as its two ends and the way out of it, which is
+-- what the light is thrown along. `open` is the side the wedge opens toward,
+-- as an offset, so the three square sides can be told from the notched one.
+local NOTCH = {
+    [V_NOTCH_W] = {
+        fill = {0,0, 1,0, 1,1,  0.5,0.5, 1,1, 0,1},
+        faces = {{0,0, 0.5,0.5, -R2, R2}, {0.5,0.5, 0,1, -R2, -R2}},
+        open = {-1, 0},
+    },
+    [V_NOTCH_E] = {
+        fill = {1,0, 0,0, 0,1,  0.5,0.5, 0,1, 1,1},
+        faces = {{1,0, 0.5,0.5, R2, R2}, {0.5,0.5, 1,1, R2, -R2}},
+        open = {1, 0},
+    },
+    [V_NOTCH_N] = {
+        fill = {0,0, 1,1, 0,1,  1,0, 1,1, 0.5,0.5},
+        faces = {{0,0, 0.5,0.5, R2, -R2}, {0.5,0.5, 1,0, -R2, -R2}},
+        open = {0, -1},
+    },
+    [V_NOTCH_S] = {
+        fill = {0,1, 1,0, 0,0,  1,1, 1,0, 0.5,0.5},
+        faces = {{0,1, 0.5,0.5, R2, R2}, {0.5,0.5, 1,1, -R2, R2}},
+        open = {0, 1},
+    },
+}
+
+-- The tiles that carry a corner. Drawn one at a time: there are two to a
+-- crossing and a handful to a map, so there is nothing here worth merging.
+local function notch_mass(bg, glow, set, cells)
+    local lit = pal.WALL_EDGE
+    local hotline = pal.a(pal.hot(lit, 0.28, 1), 0.9)
+    local outer = pal.a(lit, 1)
+
+    for i = 1, #cells, 3 do
+        local tx, ty, var = cells[i], cells[i + 1], cells[i + 2]
+        local n = NOTCH[var]
+        local x, y = tx * TILE, ty * TILE
+        local f = n.fill
+        bg:tri(x + f[1] * TILE, y + f[2] * TILE, x + f[3] * TILE,
+               y + f[4] * TILE, x + f[5] * TILE, y + f[6] * TILE, pal.WALL)
+        bg:tri(x + f[7] * TILE, y + f[8] * TILE, x + f[9] * TILE,
+               y + f[10] * TILE, x + f[11] * TILE, y + f[12] * TILE, pal.WALL)
+        -- The wedge. Both halves of the corner, each lit the way a slope's
+        -- face is, which is what makes the two read as one point rather than
+        -- as a step.
+        for k = 1, 2 do
+            local a = n.faces[k]
+            local px, py = x + a[1] * TILE, y + a[2] * TILE
+            local qx, qy = x + a[3] * TILE, y + a[4] * TILE
+            glow:skirt(px, py, qx, qy, a[5] * 6, a[6] * 6, 0.13, outer)
+            glow:seg(px, py, qx, qy, 1.4, hotline)
+        end
+        -- And whichever of its three square sides has nothing behind it. A
+        -- crossing hands all three to the arms, so this draws nothing there;
+        -- a notch an author puts down on open ground is a whole tile on those
+        -- sides and says so.
+        for s = 1, #SIDES do
+            local side = SIDES[s]
+            local d = TOWARD[side]
+            if (d[1] ~= n.open[1] or d[2] ~= n.open[2])
+               and not set[key(tx + d[1], ty + d[2])] then
+                local ax, ay, bx, by, ox, oy = face_line(side, tx, ty, tx, ty)
+                glow:skirt(ax, ay, bx, by, ox * 6, oy * 6, 0.13, outer)
+                glow:seg(ax, ay, bx, by, 1.4, hotline)
+            end
+        end
     end
 end
 
@@ -1724,6 +1806,10 @@ local function build_terrain(bg, glow, x0, y0, x1, y1)
     -- than four square ones. The set holds the variant, since a run is a run
     -- of one kind and the light follows the whole of it.
     local slope_set, slope_cells = {}, {}
+    -- Notches sit with the slopes rather than the walls, for the same reason:
+    -- the tile is solid, so it covers the edge a neighbour shares with it, but
+    -- it draws its own faces and cannot carry a neighbour's run of square one.
+    local notch_cells = {}
     local safe_set, safe_cells = {}, {}
     local rocks, stations, unders = {}, {}, {}
     local turfs, spawns, goals = {}, {}, {}
@@ -1754,6 +1840,11 @@ local function build_terrain(bg, glow, x0, y0, x1, y1)
                 elseif var == V_STATION then
                     stations[#stations + 1] = tx
                     stations[#stations + 1] = ty
+                elseif var >= V_NOTCH_W and var <= V_NOTCH_S then
+                    wall_set[key(tx, ty)] = true
+                    notch_cells[#notch_cells + 1] = tx
+                    notch_cells[#notch_cells + 1] = ty
+                    notch_cells[#notch_cells + 1] = var
                 elseif var ~= V_ROCK_BODY and var ~= V_STATION_BODY then
                     wall_set[key(tx, ty)] = true
                     square_set[key(tx, ty)] = true
@@ -1794,6 +1885,7 @@ local function build_terrain(bg, glow, x0, y0, x1, y1)
     wall_mass(bg, glow, wall_set, square_set, wall_cells, false)
     wall_mass(bg, glow, wall_set, square_set, bord_cells, true)
     slope_mass(bg, glow, wall_set, slope_set, slope_cells)
+    notch_mass(bg, glow, wall_set, notch_cells)
     safe_zone(bg, glow, safe_set, safe_cells)
 
     for i = 1, #unders, 3 do
