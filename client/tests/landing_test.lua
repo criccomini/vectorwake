@@ -628,7 +628,7 @@ check("and offers no menu, this being a room nobody here is in",
 -- and the score, which are the fight itself reading out, and gives up the one
 -- thing it is a control for.
 check("and no way into the roster, this being a room nobody here is in",
-      box("details") == nil)
+      box("players_open") == nil)
 -- Nor a radar. It answers what is near you, and there is no you on this
 -- screen: the camera is a seat in the stands and the hulls on it are somebody
 -- else's. The square published that box, so an absent box is an absent
@@ -645,13 +645,6 @@ frame(1440, 810)
 check("and the strip under the corner starts at the row instead",
       bare < dialled - 100,
       string.format("%.0f on the landing, %.0f in a room", bare, dialled))
--- And nothing appears if the flag behind the board is set anyway, which is
--- what a key still bound to it would do. The panel is gated where it draws
--- rather than only where it is toggled, so there is one answer and not two.
-frame(1440, 810, {details = true})
-check("and no board even with the roster flag set", word("PILOTS") == nil)
-check("and the fight behind it is not washed for a panel nobody can see",
-      not washed(1440, 810))
 -- Nor at the whistle, which is the same roster arriving by another door. The
 -- ending is the board with a head over it, so a landing that turned it away
 -- at the band and took it at the whistle would show a stranger the roster of
@@ -667,10 +660,12 @@ check("and the band still counts to the next one",
 check("and the way in is still the way in",
       box("menu_go") ~= nil and word("vectorwake") ~= nil)
 -- A pilot in the room gets it, which is the half of the rule that has to keep
--- working: the ending is theirs to read.
+-- working: the band there says who took the match rather than only what the
+-- clock is counting to. The sheet itself is the menu's, raised by the arena
+-- at the whistle, and players_test holds it.
 frame(1440, 810, {landing = false, match = ENDED})
-check("but a pilot in the room reads their own ending",
-      word("PILOTS") ~= nil)
+check("but a pilot in the room reads a result on the band",
+      word("PYLON") ~= nil and word("CAISSON") ~= nil)
 frame(1440, 810)
 
 -- --- and no way into the menu ----------------------------------------------
@@ -1710,9 +1705,9 @@ do
             ui = {},
             sfx = {ui = function() end},
             ship_sect_back = function() return false end,
+            board_card_back = function() return false end,
             menu_cursor = function() rang.cursor = true end,
             toggle_menu = function() rang.menu = true end,
-            toggle_details = function() rang.details = true end,
         }
         local chunk = assert(loadstring(
             "return function()" .. esc .. "\nend", "escape"))
@@ -2120,12 +2115,9 @@ do
     -- And the band is a reading rather than a control. It says what the fight
     -- behind the name is doing; the roster it opens everywhere else is a list
     -- of a room, and this is not a room anybody here is in.
-    check("the band offers no press on a phone either", box("details") == nil)
+    check("the band offers no press on a phone either", box("players_open") == nil)
 
-    -- Which holds however the flag behind the board is set. The panel is
-    -- gated where it draws, so a key still bound to it lands on nothing.
-    frame(390, 844, {details = true})
-    check("portrait draws no roster on the landing", word("PILOTS") == nil)
+    -- And still draws the clock the band is standing under.
     check("and still draws the clock it is standing under",
           word("1:47") ~= nil)
 
@@ -2156,9 +2148,7 @@ check("and no name over the fight they are already in",
 -- what "before you have joined" means.
 check("and a radar over a room they are in", box("map") ~= nil)
 check("and POS over the corner it stands in", word("POS") ~= nil)
-check("and a band that opens the roster", box("details") ~= nil)
-frame(1440, 810, {landing = false, details = true})
-check("and the board itself when they ask for it", word("PILOTS") ~= nil)
+check("and a band that opens the roster", box("players_open") ~= nil)
 
 -- --- before a room answers ---------------------------------------------------
 --
@@ -2209,7 +2199,7 @@ do
         -- instruments that describe one.
         check(shape .. " waiting offers no key to a room it has not found",
               box("menu_go") == nil)
-        check(shape .. " waiting draws no roster key", box("details") == nil)
+        check(shape .. " waiting draws no roster key", box("players_open") == nil)
         check(shape .. " waiting draws no radar", box("map") == nil)
         -- The name, and nothing beside it, on every window. The count was two
         -- on a desktop while this screen drew a menu key with MENU written on

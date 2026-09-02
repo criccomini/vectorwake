@@ -280,6 +280,10 @@ local function reading(self, dt, html5, touch, ui, menu)
             panel = menu.stop_open(),
             section = ui.col_sect,
             hull_shown = ui.col_hull,
+            -- And which pilot's card is open over the players sheet, by seat,
+            -- which is that panel's own second level the way a section is the
+            -- ship panel's.
+            pilot_card = ui.col_pilot,
             page = menu.at(),
             depth = #menu.stack,
             -- A card takes every box on screen, so a harness that finds no

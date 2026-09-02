@@ -46,11 +46,6 @@ local vec = require("render.vec")
 local TUNE = {}
 TUNE.CONTROL = require("arena.control_actions").new(hash, sim)
 
--- The two navigation controls are read together each frame. Kept on the shared
--- constant table rather than built inside update so moving through a list
--- allocates nothing and costs no extra upvalue.
-TUNE.PLAYER_MOVES = TUNE.CONTROL.players
-
 TUNE.TICK_HZ = 100
 TUNE.DT = 1 / TUNE.TICK_HZ
 TUNE.MAX_CATCHUP = 8      -- ticks per frame; a long stall must not stampede
@@ -528,12 +523,14 @@ end
 -- HUD pass existed to stop, arrived at from a different direction.
 -- One slab of text at a time, and the rule holds in both directions or it
 -- holds in neither. The left column draws one panel: the rooms list stands in
--- the scoreboard's slot and wins it, so a scoreboard opened over an open rooms
--- list is a lit key with nothing under it. The menu is the same argument a
--- layer up, and its hit boxes are published after the panel's, so a panel left
--- open under it swallows every press that lands in its rectangle.
+-- that slot and wins it. The menu is the same argument a layer up, and its hit
+-- boxes are published after the panel's, so a panel left open under it
+-- swallows every press that lands in its rectangle.
+--
+-- The players sheet is not in this list any more, because it is not a panel
+-- of its own: it is a stop of the menu, so opening the menu is what opens it
+-- and this closes it by closing the menu.
 local function shut_panels()
-    ui.details = false
     -- The controls table belongs in this list for the same reason the
     -- scoreboard does: the toggles below treat the two as one slot, and help
     -- was the half that opening the menu forgot. It is not drawn under an open
@@ -600,6 +597,18 @@ end
 --
 -- What the cursor is left standing on is the part it came out of, which is
 -- what took the panel's place on the screen.
+-- Out of a pilot's card onto the players sheet, which is one level like any
+-- other: the card is a panel that stacked on the sheet, so back steps off it
+-- before it steps out of the stop. The cursor lands on the row it opened
+-- from, which is where it stood when the card came up.
+local function board_card_back()
+    if menu.stop_open() ~= "players" or not ui.col_pilot then return false end
+    ui.col_sel, ui.col_sel_value = "board_row", ui.board_row_of(ui.col_pilot)
+    ui.col_pilot = nil
+    ui.page_scroll = 0
+    return true
+end
+
 local function ship_sect_back()
     if menu.stop_open() ~= "ship" or not ui.col_sect then return false end
     ui.col_sel, ui.col_sel_value = "land_sect", ui.col_sect
@@ -612,20 +621,37 @@ local function toggle_menu()
     if menu.toggle() then shut_panels() end
 end
 
-local function show_details()
-    ui.details = true
-    menu.close()
-    ui.help = false
-    ui.rooms_open = false
-    ui.room_ask = nil
+-- The players sheet, raised at its own stop.
+--
+-- It was a board with its own key, its own column and its own panel; it is a
+-- stop of the menu now, so what the key does is open the menu already standing
+-- on it. Everything else about it follows from that: escape walks out of it
+-- the way it walks out of any panel, the arrows walk its rows, and a press
+-- opens the card the way a press opens any row. See decision 145.
+--
+-- Not at home: the front page has no players stop to open, since the room out
+-- there is somebody else's (decision 108).
+local function open_players()
+    if menu.home then return false end
+    shut_panels()
+    menu.open = true
+    menu.stack = {"players"}
+    -- On the list rather than on a card left open from last time, and at the
+    -- top of it: a stop opens where the room is rather than where the last
+    -- reader left off.
+    ui.col_pilot = nil
+    ui.page_scroll = 0
+    menu_cursor("players")
+    return true
 end
 
-local function toggle_details()
-    if ui.details then
-        ui.details = false
-    else
-        show_details()
+local function toggle_players()
+    if menu.open and menu.stop_open() == "players" then
+        menu.close()
+        ui.col_sel, ui.col_sel_value = nil, nil
+        return
     end
+    open_players()
 end
 
 -- The controls table. A slab of text like the scoreboard, so it shuts the
@@ -638,7 +664,6 @@ local function toggle_help()
     ui.help = not ui.help
     if ui.help then
         menu.close()
-        ui.details = false
         ui.rooms_open = false
         ui.room_ask = nil
     end
@@ -704,12 +729,8 @@ TUNE.PANEL_HANDLERS = {
         -- Escape dismisses the innermost open panel before opening the menu.
         if ui.room_ask then
             ui.room_ask = nil
-        elseif ui.inspect then
-            ui.inspect = nil
         elseif ui.help then
             ui.help = false
-        elseif ui.details then
-            toggle_details()
         elseif ui.rooms_open then
             ui.rooms_open = false
         else
@@ -722,22 +743,8 @@ TUNE.PANEL_HANDLERS = {
     end,
     details = function(_, live)
         if in_room(live) then
-            toggle_details()
+            toggle_players()
             sfx.ui("ui_move")
-        end
-    end,
-    players = function(taps, live)
-        for _, move in ipairs(TUNE.PLAYER_MOVES) do
-            local action = move.action
-            if taps[action] then
-                taps[action] = nil
-                if in_room(live) then
-                    show_details()
-                    ui.player_step(move.direction, net.pilots, net.watchers,
-                                   eye_team(), menu.name)
-                    sfx.ui("ui_move")
-                end
-            end
         end
     end,
     map = function(_, live)
@@ -992,7 +999,6 @@ local function leave_world()
     marks.hold(nil)
     -- A box about somebody in the room you just left describes a seat number
     -- that the next room will have dealt to a stranger.
-    ui.inspect = nil
     -- The next zone deals these seats to different pilots.
     for k in pairs(rolls) do rolls[k] = nil end
     fx.reset()
@@ -1005,7 +1011,6 @@ local function leave_world()
     sim.init(0x5eed)
     clear_static()
     me = 0
-    ui.details = false
     ui.help = false
     ui.help_prompt = false
     ui.map = false
@@ -1708,19 +1713,19 @@ function update(self, dt)
     -- than at the dial, because a socket starting is not a room answering:
     -- what the panel is waiting for is a game on the glass behind it.
     if net.connected and live then menu.arrived(menu.zone) end
-    -- And who is in it, for the column beside the page: the same roster and
-    -- sides the scoreboard reads, plus the watched subject's team, which is
-    -- the perspective every ship in the glass is already colored from.
-    if menu.scenery then
-        menu.live_pilots = net.pilots
-        menu.live_watchers = net.watchers
-        menu.live_side = eye_team()
-        menu.live_sides = side_names()
-    else
-        menu.live_pilots = nil
-        menu.live_watchers = nil
-        menu.live_side = nil
-        menu.live_sides = nil
+    -- And where this client stands in the room, which is what the players
+    -- stop answers with: the side you fly for, by the name the zone gave it,
+    -- or nothing at all while you are watching. Told every frame, like the
+    -- class, because a side can change under you: the whistle benches
+    -- everybody and a room being rebalanced moves bots between sides.
+    --
+    -- The zone's own word for it. A side the zone will not name reads as the
+    -- number it is, which is the same answer the sheet's Team column gives
+    -- for a private side somebody else is on.
+    menu.side = nil
+    if not menu.home and not net.watching and net.my_team ~= nil then
+        local named = net.my_team_name()
+        menu.side = (named ~= "" and named) or ("team " .. net.my_team)
     end
 
     -- The landing's backdrop: while the home menu stands with nothing
@@ -2505,6 +2510,36 @@ function update(self, dt)
     -- column's key, escape, the glass beside the panel, and a socket that
     -- dropped. A draft that outlived any one of them would be a menu holding
     -- a ship the pilot had walked away from.
+    -- The whistle, which raises the players sheet by itself.
+    --
+    -- There is no ending page any more. The account of a match that just
+    -- finished is the sheet, and what the sheet gains at the whistle is the
+    -- rating column: the match's own arithmetic, which is the one thing about
+    -- it a mid-fight list has no business carrying. Who took it is said by
+    -- the band, in the pixels that have carried the score for three minutes.
+    -- See decision 145.
+    --
+    -- Raised the way a hand raises it, so escape, a press beside it and the
+    -- menu key all put it away exactly as they do the rest of the time.
+    -- Put away again when the next match opens, but only if nobody has walked
+    -- off it: a pilot who went to the ship stop during the intermission keeps
+    -- the panel they went to, and one who is still reading the sheet when the
+    -- whistle for the next match goes gets their fight back.
+    local ended = ui.match_ended(net.match) and not self.attract
+        and net.connected
+    if ended ~= self.whistle_up then
+        self.whistle_up = ended
+        if ended then
+            self.whistle_raised = open_players()
+        else
+            if self.whistle_raised and menu.open
+               and menu.stop_open() == "players" then
+                menu.close()
+                ui.col_sel, ui.col_sel_value = nil, nil
+            end
+            self.whistle_raised = false
+        end
+    end
     local ship_up = menu.open and not self.attract
         and menu.stop_open() == "ship"
     if ship_up ~= self.ship_panel_up then
@@ -3117,6 +3152,14 @@ end
 -- Answers whether it recognized the action, so the pointer's own handler can
 -- carry on down its list of everything else on the screen.
 function menu_act(self, action, value)
+    -- A hand has touched the menu, so the whistle no longer owns it.
+    --
+    -- The sheet the whistle raises is put away again when the next match
+    -- opens, which is right for a pilot who read it and left it standing and
+    -- wrong the moment they do anything with it: a panel taken away mid-press
+    -- is the interface deciding it knows better. One press of anything in here
+    -- hands it back, and after that it goes away when they say so.
+    if self and self.whistle_raised then self.whistle_raised = false end
     -- The column's one key: into a seat, or out of one.
     --
     -- Which of the two it is comes off where this client is sitting, and the
@@ -3173,7 +3216,7 @@ function menu_act(self, action, value)
     -- it standing.
     if action == "menu_shut" then
         local stop = menu.stack[1]
-        if ship_sect_back() then
+        if ship_sect_back() or board_card_back() then
             sfx.ui("ui_move")
             return true
         end
@@ -3200,6 +3243,9 @@ function menu_act(self, action, value)
             ui.col_sect, ui.col_hull = nil, nil
             ui.col_scroll = 0
         end
+        -- And the players stop opens on the sheet rather than on a card left
+        -- open the last time somebody read one.
+        if value == "players" then ui.col_pilot = nil end
         -- And standing on the page's own head. Pressing the stop that is
         -- already open shuts it instead, and then the cursor belongs on the
         -- stop, which is what took the page's place on the screen.
@@ -3247,9 +3293,10 @@ function menu_act(self, action, value)
     -- the stop shutting, which leaves the bare column standing.
     if action == "menu_back" then
         local stop = menu.stack[1]
-        -- Out of a part of the ship onto the ship menu first, which is one
-        -- level like any other. See `ship_sect_back`.
-        if ship_sect_back() then
+        -- Out of a part of the ship onto the ship menu first, or off a
+        -- pilot's card onto the sheet it stands on, which is one level like
+        -- any other. See `ship_sect_back` and `board_card_back`.
+        if ship_sect_back() or board_card_back() then
             sfx.ui("ui_move")
             return true
         end
@@ -3258,6 +3305,53 @@ function menu_act(self, action, value)
             menu_cursor(stop)
             sfx.ui("ui_move")
         end
+        return true
+    end
+    -- The band, which is the other way into the players sheet and the one a
+    -- stranger finds: pressing the score opens the room the score is about.
+    if action == "players_open" then
+        if open_players() then sfx.ui("ui_go") end
+        return true
+    end
+    -- A row of that sheet, which opens the card about that pilot. Pressing
+    -- the row whose card is already open steps back onto the sheet, which is
+    -- how every other toggle in this interface behaves.
+    if action == "board_row" then
+        local seat = ui.board_seat_of(value)
+        if seat == nil then return true end
+        if ui.col_pilot == seat then
+            board_card_back()
+            sfx.ui("ui_move")
+            return true
+        end
+        ui.col_pilot = seat
+        ui.page_scroll = 0
+        ui.col_sel, ui.col_sel_value = "menu_back", nil
+        sfx.ui("ui_go")
+        return true
+    end
+    -- And the one act the card offers: fly for that pilot's side.
+    --
+    -- Gated exactly as a hull change is, and for the same reason: a weapon in
+    -- flight carries the side that fired it, so a change that took effect in
+    -- place would turn incoming fire friendly mid-air. Refused with the reason
+    -- rather than in silence.
+    --
+    -- Asking steps back onto the sheet, because that is where the answer is:
+    -- your own row crosses into the first group and their side becomes yours.
+    -- A card left standing is a panel whose one key has just gone, since a
+    -- pilot on your own side has nothing left to offer, and a reader is left
+    -- looking at the one place in the client that cannot show them what they
+    -- asked for.
+    if action == "board_join" then
+        if value == nil then return true end
+        if not full_bar("changing sides") then
+            sfx.ui("ui_deny")
+            return true
+        end
+        net.set_team(value)
+        board_card_back()
+        sfx.ui("ui_go")
         return true
     end
     -- The panel's own glass. It swallows a press that missed a row so that one
@@ -3412,11 +3506,7 @@ function on_input(self, action_id, action)
             -- The menu's own controls, which the keyboard reaches through
             -- the same function. See `menu_act`.
             if menu_act(self, r.action, r.value) then return true end
-            if r.action == "details" then
-                toggle_details()
-                sfx.ui("ui_move")
-                return true
-            end
+
             if r.action == "map" then
                 toggle_map()
                 sfx.ui("ui_move")
@@ -3427,7 +3517,6 @@ function on_input(self, action_id, action)
             -- other away rather than drawing both into the same pixels.
             if r.action == "rooms" then
                 ui.rooms_open = not ui.rooms_open
-                if ui.rooms_open then ui.details = false end
                 ui.room_scroll = 0
                 ui.room_ask = nil
                 sfx.ui("ui_move")
@@ -3481,22 +3570,8 @@ function on_input(self, action_id, action)
                 end
                 return true
             end
-            -- Who that is. Clicking the pilot already being read about
-            -- closes the box, which is how every other toggle in here
-            -- behaves and saves aiming at the X.
-            if r.action == "pilot" then
-                ui.inspect = (ui.inspect ~= r.value) and r.value or nil
-                sfx.ui(ui.inspect and "ui_go" or "ui_move")
-                return true
-            end
-            if r.action == "uninspect" then
-                ui.inspect = nil
-                sfx.ui("ui_move")
-                return true
-            end
-            -- Ask the pilot the box is about to fly with you. The box
-            -- stays open: the reply is the word under it changing, and
-            -- closing it would take that away before it could be read.
+            -- Ask a pilot to fly with you, which is the one act a private
+            -- side has and is still sent from the card a row opens.
             if r.action == "invite" then
                 net.invite(r.value)
                 sfx.ui("ui_go")
@@ -3520,24 +3595,11 @@ function on_input(self, action_id, action)
                 sfx.ui("ui_go")
                 return true
             end
-            -- A heading picks the column and takes the list back to the
-            -- top, because the row somebody was looking at is not the row
-            -- that will be there after a re-sort.
-            local sort = string.match(r.action or "", "^sort_(%a+)$")
-            if sort then
-                if ui.sort ~= sort then
-                    ui.sort = sort
-                    ui.scroll = 0
-                    sfx.ui("ui_move")
-                end
-                return true
-            end
-            -- The list itself swallows the click so a tap meant for a
-            -- pilot's row does not fall through to whatever is behind it.
-            -- The run log under it is the same kind of surface: nothing in it
-            -- is a control, and a press that fell through a solid panel would
-            -- fire into a wall.
-            if r.action == "scores" or r.action == "run_log" then return true end
+            -- The run log swallows the click so a tap that lands on it does
+            -- not fall through to whatever is behind it: nothing in it is a
+            -- control, and a press through a solid panel would fire into a
+            -- wall.
+            if r.action == "run_log" then return true end
             -- A card stands with the column shut, and it is the only thing
             -- on screen that can be pressed while it is up: `ask_card` drops
             -- every box published before it. So the handlers below answer for
@@ -3640,7 +3702,7 @@ function on_input(self, action_id, action)
                     list_drag = {id = t.id, x = sx, y = sy, rooms = rooms,
                                  page = page, column = which == "column",
                                  at = page and ui.page_scroll
-                                      or (rooms and ui.room_scroll or ui.scroll),
+                                      or ui.room_scroll,
                                  moved = false}
                     dragged = t.id
                 elseif list_drag and (list_drag.page or list_drag.column)
@@ -3717,11 +3779,7 @@ function on_input(self, action_id, action)
                     local rows = dy / pitch
                     rows = (rows < 0) and math.ceil(rows) or math.floor(rows)
                     local to = list_drag.at + rows
-                    if list_drag.rooms then
-                        ui.room_scroll = to
-                    else
-                        ui.scroll = to
-                    end
+                    ui.room_scroll = to
                     if t.released then
                         if not list_drag.moved then hit(sx, sy, true) end
                         list_drag = nil
@@ -3800,8 +3858,6 @@ function on_input(self, action_id, action)
                 land_slid()
             elseif ui.rooms_open then
                 ui.room_scroll = ui.room_scroll + d
-            elseif ui.details then
-                ui.scroll = ui.scroll + d
             end
         end
         return

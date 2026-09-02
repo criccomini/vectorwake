@@ -878,6 +878,17 @@ do
         setfenv(sb, env)
         env.ship_sect_back = sb()
 
+        -- And the way back off a pilot's card onto the sheet it stands on,
+        -- which is the same kind of step and reached by the same two hands.
+        local card_back = src:match(
+            "local function board_card_back%(%)(.-)\nend\n")
+        check("the arena has a board_card_back to run", card_back ~= nil)
+        local cb = loadstring(
+            "return function()" .. (card_back or " return false") .. "\nend",
+            "card_back")
+        setfenv(cb, env)
+        env.board_card_back = cb()
+
         local function branch(pattern)
             local body = src:match(pattern)
             if not body then return nil end

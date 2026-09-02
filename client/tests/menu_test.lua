@@ -179,14 +179,20 @@ end
 
 -- --- the column's stops --------------------------------------------------
 --
--- Who you are, where you are, what you fly, and the machine, top down in that
--- order, and the same four wherever the column is standing. There is one menu
--- (decision 143): the landing and the in-match column were the same drawing
--- off two models, each carrying the stop the other lacked, so the settings
--- lived only in a match and the account only on the front page.
+-- Who you are, where you are, who else is here, what you fly, and the
+-- machine, top down in that order. There is one menu (decision 143): the
+-- landing and the in-match column were the same drawing off two models, each
+-- carrying the stop the other lacked, so the settings lived only in a match
+-- and the account only on the front page.
 --
--- SIDE is not here. Crossing to another team is about the room rather than
--- about you, and it comes back with the scoreboard and the room list.
+-- The players stop is the one exception to that, and it is a room's rather
+-- than a screen's: the front page watches somebody else's game, and decision
+-- 108 took the instruments of a room nobody is in off it. So there are five
+-- stops in a room and four at home. See decision 145.
+--
+-- SIDE is not here either. Crossing to another team is about the room rather
+-- than about you, and the players sheet is where it went: a side is joined
+-- from the card of somebody already on it.
 
 menu.open = true
 menu.home = false
@@ -196,8 +202,22 @@ menu.class = 0
 menu.stack = {}
 net.teams = {}
 
-check("the column is the same four stops wherever it stands",
-      stop_names() == "account/zone/ship/settings", stop_names())
+check("the column is five stops in a room",
+      stop_names() == "account/zone/players/ship/settings", stop_names())
+
+-- Where you stand in the room, which is what that stop answers with: your
+-- side by the name the zone gave it, or the interface's own word when you
+-- are on none. A side's name is quoted; "watching" is the interface talking.
+menu.side = "Pylon"
+local who_with = stop_of("players")
+check("the players stop opens a panel and says which side you fly for",
+      who_with.panel == true and who_with.value == "Pylon"
+      and who_with.named == true, tostring(who_with.value))
+menu.side = nil
+check("and says so in its own word when you fly for none",
+      stop_of("players").value == "watching"
+      and stop_of("players").named == false,
+      tostring(stop_of("players").value))
 
 -- The answer on a stop is a name rather than a sentence about the stop, which
 -- is the grammar every stop in this column speaks: the label asks and the
@@ -217,10 +237,10 @@ check("the ship stop opens a panel and says what you fly",
       tostring(ship_stop.value))
 
 menu.watching = true
-check("and the column is the same stops from the bench",
-      stop_names() == "account/zone/ship/settings", stop_names())
+check("and the same five from the bench",
+      stop_names() == "account/zone/players/ship/settings", stop_names())
 menu.home = true
-check("and the same four at home",
+check("and four at home, where the room on screen is somebody else's",
       stop_names() == "account/zone/ship/settings", stop_names())
 menu.home, menu.watching = false, false
 
@@ -251,8 +271,8 @@ check("and carries no answer and no mark",
 open()
 local v = menu.view()
 check("the view carries the stops the column is drawn from",
-      #v.stops == 4 and v.stops[1].stop == "account"
-      and v.stops[4].stop == "settings", #v.stops .. " stops")
+      #v.stops == 5 and v.stops[1].stop == "account"
+      and v.stops[5].stop == "settings", #v.stops .. " stops")
 -- And what the one key does, which is the one thing on the column that reads
 -- where this client is sitting rather than setting it.
 check("a pilot with a seat is offered the stands",
@@ -270,8 +290,8 @@ check("and none of them is open over the bare column",
 open("settings")
 v = menu.view()
 check("the stop whose page is up is the lit one",
-      v.stops[4].open == true and v.stops[1].open == false,
-      tostring(v.stops[4].open))
+      v.stops[5].open == true and v.stops[1].open == false,
+      tostring(v.stops[5].open))
 check("and the view still names who is reading, for the pages that need it",
       v.pilot ~= nil and v.pilot.name == menu.name,
       tostring(v.pilot and v.pilot.name))

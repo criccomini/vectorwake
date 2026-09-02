@@ -7733,3 +7733,114 @@ harvest knows the last coasted position of every enemy hull and could pin the
 blast to the one the round's flight crossed, as the expire event already pins
 a landed hit to its victim. Or if bullets start drawing hits the zone takes
 back often enough to notice, which would be the same fix one weapon over.
+
+---
+
+## 145. The players sheet is the menu's, and the band says who won
+
+**Status:** accepted, superseding
+[decision 67](#67-the-scoreboard-is-a-band-you-press) below the band and
+[decision 68](#68-the-match-ending-is-the-board) entirely, and amending
+[decision 94](#94-the-ending-has-no-foot-and-the-clock-never-moves) and
+[decision 143](#143-one-menu)
+
+**What:** the scoreboard, the roster, the pilot box, the side picker and the
+match ending are one panel, and that panel is a stop of the menu. `PLAYERS`
+sits between `ZONE` and `SHIP`, and its answer is where you stand: the side
+you fly for by the name the zone gave it, or `watching`. The band opens it,
+the key that opened the old board opens it, and at the whistle the arena
+raises it the way a hand would.
+
+It is one flat list. Every player in the room gets a row: their name in their
+side's color, the seat's mark after it, then the side in a `TEAM` column and
+the figures the zone counts. Your own side runs first, then everyone else,
+then the watchers, each of those three by name. A watcher is a row like any
+other, with `Watching` where a side would be and zeros for figures, so the
+list has no divider in it. The band above carries the score and the Team
+column names every side, so the sheet says neither again.
+
+A press on a row opens that pilot's card, which is a panel that stacked: the
+pilot's name in their color on the head, rows reading their side, what the
+zone vouches for the seat as, where the ladder has them and what they have
+done this match, and one breathing key at the foot, `JOIN <side>`. That is how
+a side is joined now. On your own side's pilot, on yourself and on a watcher
+there is no key; on a side the zone will not take you into, the foot says so
+instead of drawing a key that would be refused.
+
+At the whistle the sheet gains one column, what the match paid each pilot, and
+nothing else. Who took the match is the band's to say: both sides stay on it,
+the winner at its own strength and the beaten side stood down to a third, over
+the clock counting to the next one. A draw stands neither down.
+
+**Why:** asked for, over four rounds of drawings in `.design/one-board` and
+`.design/scoreboard-sheet`, and the ask each time was the same one from a
+different angle. Five things on the glass were about who is in the room and
+how it is going, and they were five drawings: a band, a 340-point column under
+it with four pressable headings, a box that opened under a pressed row, a side
+list that had been sitting outside the menu since decision 143, and an ending
+block that zoomed the column 1.45 times over a wash of the whole window.
+
+Nothing about that was one object. The board had its own column, its own
+scroll, its own wash, its own row height and its own sort; the ending had a
+second copy of all of it at a second size; the pilot box had a third. Three
+panels, three geometries, three sets of state to keep in step, all of them
+saying things about the same room. The menu had already solved this once, for
+the zone list and the ship and the settings, and decision 104 wrote down what
+the answer looked like: one glass, one head, rows at the touch floor, a panel
+that stacked. The room is a list. This is that list, in that language.
+
+What falls out of moving it there is most of the work. Escape walks out of it
+because escape walks out of every panel. The arrows walk its rows because they
+walk every panel's rows. A thumb drags it and a wheel scrolls it because the
+menu's own page already answers both. A press on a row opens a stacked panel
+because that is what a press on a row does. Four hundred lines of drawing and
+a dozen pieces of state went, and the two controls that stepped a selection
+through the roster went with them: Page Up and Page Down were an arrow walk
+written a second time for one panel.
+
+The Team column is what made the flattening possible, and it is the change
+Chris asked for that carries the rest. Sections grouped by side meant a side's
+head was a row that was also a control, which the language had no name for and
+would have had to grow one. A column that names the side on every row says the
+same thing without a new shape, orders the list by something other than the
+grouping, and works in the two zones grouping never did: a duel, where a side
+is one pilot, and Free Roam, where eight sides cannot be told apart by color.
+
+The ending is the part with the longest argument behind it, and it ends up
+where decision 68 was heading. That decision made the ending the board with a
+head over it; decision 94 took the foot off; this takes the head off too. What
+is left is the board, which is the sheet, which is a panel a player can already
+open. The head was a line naming the winner and a bar carrying the score, and
+both were readings the band had been making for three minutes in the same
+pixels. So the band makes them for one minute longer, by standing the beaten
+side down, and the whistle stops being a screen with a layout of its own.
+
+The stop is the fifth, which decision 143 named as the number to watch, and it
+is the one thing this column does not say the same way in both places: there
+is no players stop at home. Decision 108 took the instruments of a room nobody
+is in off the front page, and a roster is the clearest example of one. That
+makes the front page four stops and a room five, which is a real cost and the
+right one: the alternative is a stop that opens a list of strangers a stranger
+has no business in.
+
+**Cost:** a side with nobody on it cannot be joined, because there is no row to
+press. That is a real hole in Free Roam, where founding a side is a thing
+players do, and it needs a door of its own. It was already true in a narrower
+way, since the side list decision 102 drew never had a found key either.
+
+The sheet is a panel over the fight, so reading it takes the screen the way
+every other panel does. The board it replaces was a 340-point column with the
+arena visible around it. Nothing pauses either way, and the band and the dial
+still read over the top of it, which is the bargain decision 102 struck.
+
+Page Up and Page Down are unbound. A pilot who had moved them onto something
+else keeps that; a pilot who had left them where they were has two free keys.
+
+**Verified:** the client's suite, with `players_test` written for the sheet in
+place of `podium_test` (the block it tested no longer exists): the order, the
+Team column and its case, a private side that is not named, the card and its
+three states, the rating column at the whistle, and an upright phone giving up
+assists rather than the column that names the side. `band_test` holds the
+band's new whistle, `side_col_test` follows the sheet, and `hud_hits_test`,
+`landing_test`, `marks_test`, `menu_test`, `binds_test` and `column_test` move
+with it. luacheck clean over 108 files.

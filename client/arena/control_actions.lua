@@ -8,22 +8,22 @@
 
 local M = {}
 
-local PANEL_ORDER = {"menu", "details", "players", "map", "help"}
+local PANEL_ORDER = {"menu", "details", "map", "help"}
 
--- Deliver every panel action through one seam. `players` is the ordered gap
--- where Page Up and Page Down run, so simultaneous presses keep the same
--- details, player, map, help order the frame loop has always used. A handler
--- may return false to leave an action pending.
+-- Deliver every panel action through one seam, in the order the frame loop
+-- has always used, so simultaneous presses resolve the same way every time. A
+-- handler may return false to leave an action pending.
+--
+-- There was a fifth step between `details` and `map`, a gap where Page Up and
+-- Page Down stepped a selection through the roster. The roster is a panel of
+-- the menu now and the arrows that walk every other panel walk it, so the two
+-- controls and the gap they ran in are gone together.
 function M.dispatch_panel(tapped, routes, handlers, live)
     for _, id in ipairs(PANEL_ORDER) do
-        if id == "players" then
-            handlers.players(tapped, live)
-        else
-            local action = routes[id]
-            if tapped[action] then
-                if handlers[id](tapped, live) ~= false then
-                    tapped[action] = nil
-                end
+        local action = routes[id]
+        if tapped[action] then
+            if handlers[id](tapped, live) ~= false then
+                tapped[action] = nil
             end
         end
     end
@@ -61,11 +61,6 @@ function M.new(hash_fn, sim)
         map = hash_fn("map"),
         help = hash_fn("help"),
     }
-    out.players = {
-        {id = "player_prev", action = hash_fn("player_prev"), direction = -1},
-        {id = "player_next", action = hash_fn("player_next"), direction = 1},
-    }
-
     -- Pointer actions are engine inputs, not controls the bindings page
     -- offers. They still land in the same simulation button map.
     out.pointer_bits = {

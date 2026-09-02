@@ -1,5 +1,5 @@
--- The color a name wears on the scoreboard and the info box, for seats the
--- snapshot does not carry.
+-- The color a name wears on the players sheet and the card it opens, for
+-- seats the snapshot does not carry.
 --
 --     lua5.1 client/tests/side_col_test.lua
 --
@@ -11,7 +11,7 @@
 -- whole list, and the colors reshuffled as driving carried seats in and out
 -- of the window. The roster carries every seat's team byte twice a second,
 -- which is where the row now takes it from, so this drives the real `M.hud`
--- and reads the colors back off the drawn names.
+-- and `M.menu` and reads the colors back off the drawn names.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -97,13 +97,16 @@ local PILOTS = {
     [3] = {name = "fartwo", label = "human", team = 9},
 }
 
+-- The sheet is a panel of the menu, so a frame is the HUD and then the menu
+-- over it with the players stop open, which is the order the frame loop draws
+-- them in.
 local function frame()
     package.loaded["arena.state"].n = 0
     ui.begin(layer, W, H, 1, false)
     ui.hud({
         me = 0,
         class_names = {"Apex"},
-        menu_open = false,
+        menu_open = true,
         pilots = PILOTS,
         teams = {},
         feed = {},
@@ -117,6 +120,10 @@ local function frame()
                  snaps = 10, rx = 0, tx = 0},
         zone = "alpha",
     })
+    ui.menu({open = true, home = false, at = "players", key = "spectate",
+             pilot = {name = "you"}, rows = {},
+             stops = {{stop = "players", label = "players",
+                       value = "watching", open = true}}})
     ui.finish()
 end
 
@@ -140,9 +147,9 @@ end
 
 local function rgb(c) return {c[1], c[2], c[3]} end
 
--- --- the scoreboard ---------------------------------------------------------
+-- --- the sheet --------------------------------------------------------------
 
-ui.details = true
+ui.col_pilot = nil
 frame()
 
 check("a seat in the snapshot wears its simulation side",
@@ -158,23 +165,23 @@ check("an absent seat does not wear team zero's color",
       not same(color_of("farone"), rgb(pal.team(0))),
       "team zero is what the zeroed simulation answers")
 
--- --- the info box -----------------------------------------------------------
+-- --- the card a row opens ---------------------------------------------------
 
--- Opened on a pilot the snapshot does not carry, which a click on their row
+-- Opened on a pilot the snapshot does not carry, which a press on their row
 -- can always do: the row is drawn from the roster whether or not the seat is
 -- in the window.
-ui.inspect = 2
+ui.col_pilot = 2
 frame()
 
--- The TEAM row's value is drawn in the side's color, and the side of an
--- absent seat only exists in the roster. "private" is what an unnamed side
--- reads as, drawn through cased(), which upper-cases the interface's words.
-check("the info box sides an absent seat from the roster",
-      same(color_of("PRIVATE"), rgb(pal.team(7))),
-      "the box is open on seat 2, whose roster side is 7")
+-- The Team row's value is drawn in the side's color, and the side of an
+-- absent seat only exists in the roster. "Private" is what an unnamed side
+-- reads as, in the interface's own case, since it is the interface's own
+-- word rather than a name.
+check("the card sides an absent seat from the roster",
+      same(color_of("Private"), rgb(pal.team(7))),
+      "the card is open on seat 2, whose roster side is 7")
 
-ui.details = false
-ui.inspect = nil
+ui.col_pilot = nil
 
 if fails > 0 then
     print(fails .. " check(s) failed")
