@@ -33,52 +33,123 @@ const ANSWER_MS = 20000
 // opening the card and pressing its key is a refusal. That is the design
 // working rather than a flake, and a player answers it by waiting a moment and
 // asking again. So does this.
-const TRIES = 3
+//
+// Four of them, because there are two ways to lose the round rather than one.
+// The client's gate refuses an ask made on a part-full bar and says so. The
+// room's refuses one that arrives about a pilot a round has hurt in transit,
+// and says nothing at all. Neither is a fault, and both clear on their own.
+const TRIES = 4
 
 // How long to give a press before deciding the row went out from under it,
-// and how many rows to work through before giving up on the room.
+// and how long to keep working through the sheet before giving up on the room.
 //
 // A row is numbered by where it sits this frame and the sheet re-sorts every
 // frame it is drawn, so a row number ages: a pilot leaving takes theirs with
 // them, and a press carrying it arrives about nobody. The client answers that
 // with nothing, which is the only honest answer available, so what a reader
-// has to do is notice quickly and take the next row rather than wait out a
-// card that is never coming.
-const CARD_MS = 4000
-const ROWS = 12
+// has to do is notice and take the next row rather than wait out a card that
+// is never coming.
+//
+// Twelve seconds rather than the four this first carried. Four was measured
+// off a desktop and a landscape phone reads slower than that: every row timed
+// out before its card could arrive, so a search that had found nothing looked
+// exactly like a room with nobody to cross to. The bound is on a press that
+// resolved to nobody, not on how fast the client draws, so it wants to sit
+// well clear of a slow profile's honest answer.
+//
+// And the search is bounded by a clock rather than a count of rows, since
+// what runs out on a slow profile is time.
+const CARD_MS = 12000
+const SEARCH_MS = 60000
 
 const whole = pilot => pilot.until('a full bar to spend on a side',
   s => s.me && s.me.alive && s.me.energy >= s.me.max_energy,
   { timeout: 90000 })
 
+// And somebody to cross to.
+//
+// A side is joined through one of its pilots, so a room with everybody on one
+// side offers no door at all: no row, no card, no key. That is decision 147's
+// stated cost rather than a fault, and it is a state this room reaches -- a
+// match ends, the ground changes, and for a moment the only two active ships
+// are the pilot and one bot that stayed put, both on side 0. Asking the sheet
+// for a crossing then is asking for something that does not exist, and a
+// reader that goes looking anyway reports a missing key rather than an empty
+// side.
+//
+// So it is waited for by name. The bot server holds every empty seat and
+// seats an arrival on the emptiest side, so a one-sided room is a moment
+// rather than a condition; what this waits out is the moment.
+const opposed = (pilot, mine) => pilot.until(
+  `somebody in the room flying for a side other than ${mine}`,
+  s => (s.ships || []).some(sh => sh.active && sh.team !== mine),
+  { timeout: 90000 })
+
 // Open the column at the players stop, however the profile's hand reaches it,
 // and on the sheet rather than on a card left open by a try that was refused.
+//
+// Written as a loop that reads, takes one step toward the sheet, and reads
+// again, rather than as a press followed by a long wait on the result. A
+// press is aimed at a box that was there when it was aimed, and nothing
+// pauses behind this panel: a match can end and raise the sheet from under a
+// card between the aim and the press, and a press meant for the head can land
+// on a row and open another card instead. That is not a fault to assert
+// against, it is what pressing at a live screen is, and the answer to it is
+// to look again and take the next step rather than to wait thirty seconds on
+// a step that did not take.
+const SHEET_MS = 30000
+
+// Every one of these steps is a toggle or a move that takes a moment, so each
+// waits for its own result before the loop looks again. Pressing one twice
+// because the first had not landed yet is how a key that opens the column
+// closes it.
+const settle = async (pilot, what, want) => {
+  try {
+    await pilot.until(what, want, { timeout: 5000 })
+  } catch { /* it did not take; the next turn of the loop presses again */ }
+}
+
 async function openSheet (pilot) {
-  let up = await pilot.read()
-  if (!up.screen.menu_open) {
-    await pilot.tap('open')
-    up = await pilot.until('the column',
-      s => s.screen.menu_open && s.boxes.length > 0)
+  const deadline = Date.now() + SHEET_MS
+  while (Date.now() < deadline) {
+    const up = await pilot.read()
+    if (!up || !up.screen.menu_open) {
+      await pilot.tap('open')
+      await settle(pilot, 'the column', s => s.screen.menu_open)
+      continue
+    }
+    if (up.screen.panel !== 'players') {
+      await pilot.tap('menu_stop', { value: 'players' })
+      await settle(pilot, 'the players stop',
+        s => s.screen.panel === 'players')
+      continue
+    }
+    if (up.screen.pilot_card !== null && up.screen.pilot_card !== undefined) {
+      // A card is a level of this panel, so the way off it is the way off any
+      // level: back.
+      await pilot.tap('menu_back')
+      await settle(pilot, 'the way off the card',
+        s => s.screen.pilot_card === null || s.screen.pilot_card === undefined)
+      continue
+    }
+    if (up.boxes.length > 0) return up
   }
-  if (up.screen.panel !== 'players') {
-    await pilot.tap('menu_stop', { value: 'players' })
-  } else if (up.screen.pilot_card !== null
-             && up.screen.pilot_card !== undefined) {
-    // A card is a level of this panel, so the way off it is the way off any
-    // level: back, once.
-    await pilot.tap('menu_back')
-  }
-  return pilot.until('the players sheet',
-    s => s.screen.panel === 'players'
-      && (s.screen.pilot_card === null || s.screen.pilot_card === undefined))
+  throw new Error(
+    'the players sheet never came up. The column opens at its stop and a ' +
+    'card steps back onto it, so neither the stop nor the way off a card is ' +
+    'answering.')
 }
 
 export async function run (pilot, { log = () => {} } = {}) {
   const seated = await arrive(pilot, { log })
   const mine = seated.me.team
+  // Why the last try came to nothing, so the failure at the end names what
+  // was actually seen rather than only that it gave up.
+  let why = 'the room was never read'
 
   for (let go = 1; go <= TRIES; go++) {
     await whole(pilot)
+    await opposed(pilot, mine)
     log(`asking for a side, try ${go}, flying for side ${mine}`)
     const sheet = await openSheet(pilot)
 
@@ -104,11 +175,19 @@ export async function run (pilot, { log = () => {} } = {}) {
     // here that outlives a sort.
     let opened = null
     const asked = new Set()
-    for (let row = 0; row < ROWS && !opened; row++) {
+    let quiet = 0
+    const deadline = Date.now() + SEARCH_MS
+    for (let row = 0; !opened && Date.now() < deadline; row++) {
       const now = await openSheet(pilot)
       const rows = now.boxes.filter(b => b.action === 'board_row')
       if (rows.length === 0) break
-      const next = rows[row % rows.length]
+      // From the far end of the list. The sheet puts your own side first and
+      // everyone else after it, and a card only offers a key for somebody on
+      // another side, so the rows nearest the top are the ones that cannot
+      // answer. Walking down from the bottom reaches a crossing on the first
+      // press instead of after a screenful of your own team mates, which on a
+      // phone is the difference between one try and four.
+      const next = rows[rows.length - 1 - (row % rows.length)]
 
       await pilot.tap('board_row', { value: next.value })
       let card = null
@@ -120,6 +199,7 @@ export async function run (pilot, { log = () => {} } = {}) {
       } catch {
         // The row went stale under the press: whoever held that number left
         // between the reading and the tap. Take another reading and go again.
+        quiet++
         continue
       }
       if (asked.has(card.screen.pilot_card)) continue
@@ -132,10 +212,17 @@ export async function run (pilot, { log = () => {} } = {}) {
       // steps back off it rather than pressing at a key that is not there.
     }
     if (!opened) {
-      throw new Error(
-        `no row on the sheet opened a card offering another side in ${ROWS} ` +
-        'tries. Either the whole room is on one side, or the card is not ' +
-        'drawing the key that is the only way to cross.')
+      // Said rather than thrown, because this is a fact about the room and
+      // the room changes: a side with every seat spoken for has none to
+      // offer until somebody leaves it, and the next try is after a full bar
+      // has built. What separates that from a client that has stopped
+      // drawing the key is the count -- cards read, and rows that answered a
+      // press with nothing at all.
+      why = `read ${asked.size} card${asked.size === 1 ? '' : 's'}, none ` +
+        `offering a side to cross to; ${quiet} row(s) answered nothing`
+      log(`no side on offer: ${why}`)
+      if (go === TRIES) break
+      continue
     }
     const want = opened.value
     log(`the card offers side ${want}`)
@@ -159,17 +246,29 @@ export async function run (pilot, { log = () => {} } = {}) {
         `the room to put this pilot on side ${want}`,
         s => s.me && s.me.team === want,
         { timeout: ANSWER_MS })
-    } catch (why) {
-      // Refused, which the client has to have said out loud: a side dropped in
-      // silence is a key that did nothing.
+    } catch (waited) {
+      // Refused, and there are two ways that reads.
+      //
+      // The client's own gate speaks: it wants a full bar to spend, and says
+      // so. The room's does not. `Room::join_team` puts the ask past two
+      // gates -- whether the side has a door, and whether the core will let
+      // this pilot leave where they are, which it refuses for anyone dead or
+      // hurt -- and both are silent by design, on the grounds that the team
+      // list that follows still says where you are.
+      //
+      // So the race this loses is real and is the room's to lose: the bar is
+      // full when the key is pressed and a round lands during the trip, so
+      // the ask arrives about a hurt pilot and is dropped without a word.
+      // Nothing to assert against there; what a player does is press again
+      // once they are whole, and so does this.
       const after = await pilot.read()
-      if (!after.screen.note) {
-        throw new Error(
-          `side ${want} never arrived and the client said nothing about it. ` +
-          'A refused side has to name its reason.')
-      }
-      log(`refused: ${after.screen.note}`)
-      if (go === TRIES) throw why
+      why = after.screen.note
+        ? `the client refused the side: ${after.screen.note}`
+        : `side ${want} was asked for on a full bar and never arrived, with ` +
+          'nothing said. That is the room\'s silent refusal, which is what a ' +
+          'round landing during the trip looks like from here.'
+      log(`refused: ${after.screen.note || 'in silence'}`)
+      if (go === TRIES) throw waited
       continue
     }
 
@@ -200,5 +299,5 @@ export async function run (pilot, { log = () => {} } = {}) {
     log(`the sheet still lists ${still.length}, this pilot now on side ${want}`)
     return crossed
   }
-  throw new Error(`no side after ${TRIES} tries`)
+  throw new Error(`no side after ${TRIES} tries: ${why}`)
 }
