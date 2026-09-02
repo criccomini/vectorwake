@@ -8247,52 +8247,49 @@ against the gate that produces it, and `client/tests/no_team_test.lua`
 pins the parse, the read-once, and the silence on a byte this build does not
 know.
 
-## 151. An X draws its own middle
+## 151. The inside of an angle stays open
 
 **Status:** accepted.
 
-**What:** `m_chevron` in `sim/tools/mapgen.c` lays the junction where its two
-arms cross, instead of leaving the tiles around the crossing to the sweep that
-walls in whatever a hull cannot reach. The waist takes the two tiles that make
-it as wide as the rows either side of it, and the wedge above and the wedge
-below each close with a pair of slopes that meet at a point. `expanse.vwmap`,
-the Free Roam map, is redrawn at seed 61 and its recipe carries the new hash.
+**What:** `fill_dead` in `sim/tools/mapgen.c` no longer walls in a tile that
+has a slope beside it. The sweep still plugs every square notch no hull can
+reach; the crotch of a V and the four wedges around a crossing, which are
+bounded by diagonals, are left as the open ground they were drawn as. Both of
+mapgen's own gates count stranded ground the same way, through
+`dead_squares`. `expanse.vwmap` is redrawn at seed 61 with the 353 tiles
+that sweep used to add taken back out, and nothing else in it moved.
 
 **Why:** because an X was not reading as one. Each arm is a band two tiles
-across stepping one tile a row, so the two land on the same two tiles on the
-row they cross and stand side by side on the rows either side. The shape
-pinched from four tiles to two exactly where it should have been widest, and
-the four wedges around that pinch came out one and two tiles across. A hull is
-three, so a pilot could reach none of them, and `fill_dead` plugged all four
-with square wall. What that drew was four flat ledges on the arms of every X
-in the arena, and Chris found them by flying at one and looking.
+across stepping one tile a row, so where two cross, the crotches narrow to
+two tiles and then to nothing, and the waist has a one-tile pocket on either
+side. A hull is three tiles across and reaches none of that, so the sweep
+plugged all of it with square wall: a flat ledge in each crotch and a bar
+across the waist. Chris found it by flying at one.
 
-The renderer had a fault in the same place and it is not this one. A face is
-drawn once, by the first tile of its run, and `runs` in `client/arena/world.lua`
-picked that tile with the set that also answers whether a face is covered.
-Slopes belong in that answer and not in this one, so each open side of a knot
-left its line to a slope, and a slope draws a diagonal face rather than a
-square one. The knot came out unlit: 164 faces on the shipped map. Lighting
-them was right and it is what made the ledges plain to see, which is the whole
-reason this decision exists.
+The union of the two arms was already the X. The sweep exists because a
+square notch reads as a way in and is not, which is true of a notch with
+width at the end of it; the inside of an angle closes to a point and reads as
+a corner. The core's own validator had said as much for a while:
+`sim_map_playable` reports stranded ground and refuses none of it, since two
+rocks a tile apart strand the tile between them and an asteroid field is
+hundreds of those. mapgen's gate was the stricter one, and now it counts what
+the sweep would have filled rather than everything a hull cannot stand on.
 
-**The waist keeps a tile of flat on each side, and that is the shape.** The
-wedge either side of the waist points along the row, so closing it to a point
-wants a face above the point and another below it, and a tile carries one
-face. Sixteen pixels of flat at the waist of an X is what an X is at this
-size, and pretending otherwise would mean drawing a face where the collision
-has none.
+**What was tried first and reverted:** a junction laid by `m_chevron` that
+widened the waist to four tiles and capped each crotch with a pair of slopes
+meeting at a point. It made a shape with a bar across its middle and two
+small triangles stuck to it, and it moved every structure placed after it, so
+the map redrew wholesale. An X pinches at the waist. That is the shape.
 
-**The cost:** the whole draw moved. A wedge that is solid while structures are
-being placed is ground the next one cannot stand on, so seed 61 now yields 529
-structures against 522, 763 doors against 600, and 2.64% solid against 2.72%.
-The seed was kept rather than re-picked, which keeps the file explainable by
-the one command in its recipe. The pick itself is stale: on the criterion the
-recipe states, seed 28 now reads 2.96% and seed 47 3.07% against the measured
-3%, and that is written down beside the seed so the next person to open this
-map re-picks rather than regenerates.
+**The renderer had a fault in the same place, and it is a different one.** A
+face is drawn once, by the first tile of its run, and `runs` in
+`client/arena/world.lua` picked that tile with the set that also answers
+whether a face is covered. Slopes belong in that answer and not in this one,
+so every open side of a crossing's knot handed its line to a slope, which
+draws a diagonal face and never a square one. 164 faces on the shipped map
+came out unlit. That fix stays: the knot's two waist faces are the only square
+faces an X has, and they are lit now.
 
-`junction_selftest` in `mapgen --selftest` reads the junction's tiles off a
-lone X, and `every open side of a crossing's knot is lit` in
+`every open side of a crossing's knot is lit` in
 `client/tests/terrain_style_test.lua` builds the shipped crossing from its own
 tiles and names each face that goes dark.
