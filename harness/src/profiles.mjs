@@ -5,9 +5,9 @@
 // functional bugs are, and it does not cover thermals, a real GPU, or Safari.
 // A phone stays a manual spot check.
 //
-// The short desktop is not padding. The landing lies down into a rail below a
-// window height it decides for itself, and that arm of the layout is only
-// reachable by making the window short.
+// The short desktop is not padding. Five stops over a key cost about three
+// hundred points whatever the window is, and whether they still fit with the
+// panel one of them opens is only answerable by making the window short.
 
 export const PROFILES = [
   {

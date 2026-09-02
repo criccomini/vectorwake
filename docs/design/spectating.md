@@ -215,10 +215,13 @@ hull rather than in a caption at the foot of the screen.
 ## The stands are the front end
 
 Everything below was written about a mode a player chooses. It is the first
-thing that happens now: opening the client seats you in the stands of a melee
-room, and the front end is the watcher's screen with the game's name and a PLAY
-NOW key over its foot. See [decision 61](../architecture/decisions.md) and
-[menu.md](menu.md#the-landing).
+thing that happens now: opening the client seats you in the stands of the game
+you were in last, and the front end is the watcher's screen with the menu's
+column over its foot. There is no second screen to be on, so a watcher who has
+just opened the client and a pilot the whistle benched are looking at the same
+thing. See [decision 61](../architecture/decisions.md),
+[decision 153](../architecture/decisions.md) and
+[menu.md](menu.md#opening-the-client).
 
 Nothing in the rule above changes, which is the point of writing it down as a
 rule. A visitor gets the room channel, five seconds behind, exactly as anybody

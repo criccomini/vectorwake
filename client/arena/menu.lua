@@ -1,15 +1,11 @@
--- The menu, which is the home screen and the one you open while flying.
+-- The menu you open while flying, and the one the client opens on.
 --
--- The page opens on this with nothing behind it, and on the games: the list
--- the directory answers with, cursor already in it, on the game you were in
--- last. The rail beside it goes to a different hull, a different call sign,
--- the settings. Escape opens the same tree over a live arena, and every row
--- means there what it meant on the way in. One menu, learned once.
---
--- `home` is the only difference between the two. It says whether there is a
--- game behind the panel, and when there is not the menu cannot be closed,
--- because closing it would leave a player looking at an empty starfield with
--- no way back.
+-- They are the same menu on the same screen. Opening the client puts you in
+-- the stands of the game you were in last, which is a room like any other, so
+-- what stands over it is the column every pilot in that room raises with the
+-- same key: the same stops in the same order, dismissed the same way, with the
+-- same radar and roster and clock behind it. There is no second screen and no
+-- second state to be in. See decision 153.
 --
 -- One list on screen at a time, a breadcrumb above it, and a stack behind it.
 -- Down and up move, right or enter descends or acts, left or escape goes
@@ -42,33 +38,25 @@ local keyset = require("arena.keys")
 
 local M = {}
 
-M.open = true           -- the page opens on it
-M.home = true           -- no game behind the panel
+-- Open on the first frame, and after that it is the player's. The column is
+-- what a client that has just loaded is looking at: it names the game behind
+-- it, who is in it, and the key that takes a seat. Dismissed, it goes the way
+-- it goes mid-match, and MENU at the foot brings it back.
+M.open = true
+-- No room on screen at all, because the fleet is down or the network is. Set
+-- by the arena each frame; see `arena.frame`. It is not a screen: what is
+-- drawn while it holds is the loader's own picture, and the column is not
+-- drawn at all.
+M.adrift = true
 M.class = 0             -- the hull you are flying, kept in step with the sim
 M.watching = false      -- sitting out, set by the arena each frame
 -- The side this client flies for, by the name the zone gave it, or nil while
 -- watching. Set by the arena each frame beside `M.watching`, because a side's
 -- name is the zone's to say and this file never reads a wire.
 M.side = nil
--- A room actually playing behind the panel at home, rather than a starfield
--- and a zone name this client remembers from last time. Set by the arena each
--- frame, and declared here because it is read before the first one.
-M.scenery = false
 M.pending = nil         -- the hull a row just asked for
 M.chosen = nil          -- the game a row just asked for
--- Which game a press asked to be in, and nothing while none is waiting.
---
--- A row of the games list is one act, whatever this client is: be in that
--- zone. Where it already is, that is answered on the spot and the panel goes;
--- where it is not, the stands dial the zone and go on dialing while a
--- network or an arena is down, and the panel goes when the client is actually
--- there. So a press is a thing the client is now trying to do rather than a
--- thing it has done, and this is what it is trying.
---
--- Cleared when it lands, when the menu closes, and when a press names
--- somewhere else. See `M.arrived`.
-M.await = nil
--- And which of its rooms, by the number the server gave that room, when a row
+-- Which of its rooms, by the number the server gave that room, when a row
 -- named one. Nil is what every arrival through the games list says, and it
 -- means "wherever the fill ladder puts me".
 M.chosen_room = nil
@@ -157,21 +145,11 @@ M.help_prompt_seen = false
 -- flags the arena sets every frame.
 --
 -- Flying: a seat of your own in a room. Watching: a room on screen with no
--- seat of yours in it, which is the stands at home and a benched pilot in a
--- game. Adrift: no room at all, because the fleet is down or the network is.
+-- seat of yours in it, which is a benched pilot, a stranger who has just
+-- opened the client, and a pilot who handed their seat back, all one thing.
+-- Adrift: no room at all, because the fleet is down or the network is.
 function M.flying()
-    return not M.home and not M.watching
-end
-
-
--- The client is in a zone. Called by the arena whenever a room answers, which
--- is the one moment a press that was waiting on one can be finished.
-function M.arrived(zone)
-    if M.await == nil or zone ~= M.await then return false end
-    M.await = nil
-    if not M.open then return false end
-    M.close()
-    return true
+    return not M.adrift and not M.watching
 end
 
 local VOLUMES = {{0, "off"}, {0.3, "quiet"}, {0.6, "half"}, {1.0, "full"}}
@@ -956,7 +934,7 @@ function M.sect_rows(cls, sect, at)
         -- five bars on screen at once, which compares them and shows none
         -- of them: what a hull looks like is most of what a pilot is
         -- choosing between, and a row of a list has no room to draw one.
-        local roster = M.landing_ships()
+        local roster = M.hull_rows()
         at = at or M.panel_home()
         if at < 0 or at > #HULLS then at = M.panel_home() end
         local h = roster[at + 1]
@@ -1217,14 +1195,13 @@ function M.flair_rows()
     return rows
 end
 
--- What a ship stop says: the hull you fly, on the landing and in a match
--- alike.
+-- What the ship stop says: the hull you fly.
 --
 -- It named a build. A build was thirty points under a name of the pilot's
 -- own, and there are none any more: what you arrive as is a ship off the
 -- roster. It also answered "spectate", which was the roster's last row until
 -- decision 136 took handing a seat back off the ship menu.
-function M.landing_ship()
+function M.hull_name()
     local h = HULLS[(M.class or 0) + 1]
     return h and h[1] or "ship"
 end
@@ -1237,7 +1214,7 @@ end
 -- list's clothes, and it was right about a page that also held every slot
 -- the hull could spend on. This one holds nothing else, and seven read one
 -- at a time have to be remembered where seven read down a column compare.
-function M.landing_ships()
+function M.hull_rows()
     local rows = {}
     for i, h in ipairs(HULLS) do
         rows[#rows + 1] = {label = h[1], value = i - 1,
@@ -1662,7 +1639,7 @@ local NODES = {
 -- --- navigation -------------------------------------------------------------
 
 -- The page the stack is standing on, or nothing where the column is standing
--- on its own three stops.
+-- on its own bare stops.
 --
 -- An empty stack is the ordinary state here rather than a case to guard: the
 -- column is the menu, and a page is what one of its stops opens over it. That
@@ -1680,8 +1657,8 @@ local function rows_of(nd)
     return r
 end
 
--- The column's stops: who you are, where you are going, what you fly, and
--- the machine.
+-- The column's stops: who you are, where you are going, who else is here,
+-- what you fly, and the machine.
 --
 -- The whole menu, and there is one. It stood in two places under two names
 -- for a year: the landing's ACCOUNT/ZONE/SHIP over PLAY NOW, and the
@@ -1698,7 +1675,7 @@ end
 -- Nothing here needs a room, and nothing pauses while it stands: the column
 -- takes the controls and the ship goes on flying under it, so a pilot reading
 -- settings can be shot for reading them. That is the same bargain the drawer
--- struck and the reason this is four stops rather than a place to spend time
+-- struck and the reason this is five stops rather than a place to spend time
 -- in. See docs/design/match-game.md.
 --
 -- SIDE is not here. Crossing to another team is a thing you do about the room
@@ -1726,25 +1703,24 @@ function M.stops()
     -- holds is a room rather than a list of settings, and only the arena has
     -- it.
     --
-    -- In a room and nowhere else. The front page watches somebody else's
-    -- game from the stands, and decision 108 took the roster off it along
-    -- with the rest of the instruments about a room nobody is in. That is
-    -- the one thing this column does not say the same way in both places,
-    -- against decision 143, and it is the same exception the radar and the
-    -- dial already are.
-    if not M.home then
-        out[#out + 1] = {stop = "players", label = "players",
-                         -- Your side, quoted the way a name is quoted
-                         -- everywhere; the interface's own word when you are
-                         -- on none, in the interface's own case.
-                         value = M.side or "watching", named = M.side ~= nil,
-                         panel = true}
-    end
+    -- Unconditional, like the other four. It used to be dropped whenever this
+    -- client held no seat, on the grounds that the room behind the front page
+    -- was somebody else's (decision 108), and what that produced was the
+    -- report this whole column exists to avoid: a player opens the client,
+    -- looks at a game with fourteen people in it, and finds no way to see who
+    -- any of them are. A watcher is exactly who wants that list. See
+    -- decision 153.
+    out[#out + 1] = {stop = "players", label = "players",
+                     -- Your side, quoted the way a name is quoted
+                     -- everywhere; the interface's own word when you are
+                     -- on none, in the interface's own case.
+                     value = M.side or "watching", named = M.side ~= nil,
+                     panel = true}
     -- What you fly. A panel rather than a page of rows: the same five
     -- sections over the same purse wherever it is opened from. What differs
     -- is what closing it means, which is the arena's business rather than
     -- this list's.
-    out[#out + 1] = {stop = "ship", label = "ship", value = M.landing_ship(),
+    out[#out + 1] = {stop = "ship", label = "ship", value = M.hull_name(),
                      named = true, panel = true}
     -- Everything about the machine rather than about a match, in one page:
     -- sound, music, frames, fullscreen, the bindings where there is a
@@ -1894,10 +1870,10 @@ end
 --
 -- It comes up on its bare stops every time, whatever was open last. A menu
 -- that reopens on the page you left is a menu that reopens on the controls
--- board a fortnight later, and the three stops are one press from anywhere
+-- board a fortnight later, and the stops are one press from anywhere
 -- anyway.
 function M.toggle()
-    if M.open and not M.home then
+    if M.open then
         M.close()
     else
         M.stack = {}
@@ -1981,7 +1957,10 @@ end
 -- with it.
 local function ask_reroll()
     local head = "your call sign is " .. M.name
-    if not M.home then
+    -- Only where there is a ship to lose. A change of pilot costs the seat,
+    -- because the room binds an identity at the join; from the stands there
+    -- is no seat for it to cost.
+    if M.flying() then
         head = head .. ". A new one respawns your ship"
     end
     M.confirm(head, {{label = "roll", act = "reroll"}, {label = "keep"}})
@@ -2216,16 +2195,12 @@ end
 -- version of this kept the stack, and pressing escape then down then enter,
 -- which had meant a play row a moment earlier, silently changed hull instead.
 function M.close()
-    -- At home the column is the screen rather than a panel over one, so there
-    -- is nothing to close onto: what closing means out there is coming back
-    -- to the bare stops. A menu that could be dismissed on the front page
-    -- would leave a player looking at a starfield with no way back, which is
-    -- the rule that has always governed this and now has one menu to govern.
+    -- And it closes, wherever it is standing. There used to be a screen it
+    -- could not be dismissed from, the one the client opened on, because
+    -- dismissing it there left a starfield and no way back. There is a game
+    -- behind it now wherever it stands, and MENU at the foot is the way back.
     M.stack = {}
-    M.open = M.home
-    -- Nothing is waiting on a room any more: the panel a landing would have
-    -- taken away is already gone.
-    M.await = nil
+    M.open = false
     -- A question belongs to the panel it was asked in. Left standing, it would
     -- be waiting on the next thing to open the menu, which is a player pressing
     -- escape mid-fight and being asked something they have forgotten.
@@ -2290,8 +2265,9 @@ function M.tick(dt)
     -- the state is let go rather than in each of the four ways out.
     if M.arming and (M.at() ~= "controls" or M.ask) then M.arming = nil end
     -- A stop the column no longer carries is a page you are no longer in.
-    -- Nothing comes and goes now that the sides have left: the four stops are
-    -- unconditional, so this is the belt to that brace rather than the thing
+    -- Nothing comes and goes now that the players stop is offered wherever
+    -- there is a room: the five are unconditional, so this is the belt to that
+    -- brace rather than the thing
     -- holding it up, and it stays because a stack pointed at a page the column
     -- has stopped drawing is a menu nobody can walk out of.
     if M.stack[1] then
@@ -2307,26 +2283,20 @@ end
 -- What the drawing code needs, and nothing about how it is drawn. Values are
 -- resolved here so ui.lua never calls back into this file mid-frame.
 --
--- The whole payload is the column: three stops, and the rows of whichever one
+-- The whole payload is the column: five stops, and the rows of whichever one
 -- is open over them. There was a rail, a stage, a topbar, a head and a preview
 -- of the page the rail cursor pointed at, which was five answers to "where am
 -- I" on a panel with four pages behind it. A stop that is lit and a panel
--- climbing off it is one answer, and it is the one the landing already gives.
+-- climbing off it is one answer.
 function M.view()
     local out = {open = M.open, at = M.at(), ask = M.ask, note = M.note,
                  class = M.class, arming = M.arming ~= nil, foot = M.foot,
-                 -- Whether there is a game behind this. At home the column is
-                 -- the screen: the lockup stands over it, nothing washes the
-                 -- glass, and it cannot be put away, because putting it away
-                 -- would leave a player looking at a starfield with no way
-                 -- back. In a match it is a panel raised over a fight.
-                 home = M.home,
                  -- What the one key does, which is the one thing on the
                  -- column that reads the state rather than setting it. No
-                 -- seat anywhere, on the front page or on a bench, and the
-                 -- key is the way into one; a seat of your own, and it is the
-                 -- way back out to the stands of the same game. See decision
-                 -- 140.
+                 -- seat in the room, whether this client has just opened or
+                 -- has been benched by a whistle, and the key is the way into
+                 -- one; a seat of your own, and it is the way back out to the
+                 -- stands of the same game. See decision 140.
                  key = M.flying() and "spectate" or "play",
                  -- Who is reading this, for the panel's own foot. It rode the
                  -- drawer's topbar, which was the one line on screen saying
@@ -2440,10 +2410,10 @@ local function activate_row(r, by)
         -- asks first, which is what the leave stop did with its own answer.
         if by then return nil end
         M.pending = r.value
-        -- Unless there is no match to lose. At home this list is what the
-        -- stands are pointed at, and asking somebody whether they meant to
+        -- Unless there is no match to lose. From the stands this list is what
+        -- the glass is pointed at, and asking a watcher whether they meant to
         -- look at a different game is a question with one answer.
-        if M.home then return "leave_for" end
+        if not M.flying() then return "leave_for" end
         local place = directory.label_of(r.value)
         if not place or place == "" then place = "another game" end
         M.confirm("leave for " .. place .. "?",

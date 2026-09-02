@@ -174,7 +174,7 @@ through CDP left Chrome's touch bookkeeping disagreeing with itself.
 Four profiles cover the matrix, and every journey runs on all four:
 
 - desktop, 1280x800
-- desktop short, the window height where the landing lies down into its rail
+- desktop short, the window height where the column has least room to stand
 - phone portrait, 390x844 at 3x, touch
 - phone landscape, 844x390 at 3x, touch
 
@@ -203,7 +203,7 @@ bar, so a stray round between the last press and the close is a refusal by
 design; what it does insist on is that the client names the reason rather than
 dropping the work in silence.
 
-The ones still to write are every landing stop opened and backed out of,
+The ones still to write are every stop of the column opened and backed out of,
 settings changed and the change observed, leave and rejoin. They are the smoke
 test, and they are quick: four profiles in under two minutes.
 
@@ -299,8 +299,8 @@ real players while doing it.
 Done: the stage, the probe, the four profiles, `boot-to-match`,
 `ship-change`, the oracles above, and the CI job.
 
-1. The rest of the journeys: every landing stop opened and backed out of,
-   settings changed and observed, leave and rejoin.
+1. The rest of the journeys: every stop of the column opened and backed out
+   of, settings changed and observed, leave and rejoin.
 2. The monkey, nightly.
 3. The player, and with it the soak curves and the counter report.
 4. The spectating connection that `agreesWithServer` needs, which is the

@@ -185,17 +185,17 @@ end
 -- carrying the stop the other lacked, so the settings lived only in a match
 -- and the account only on the front page.
 --
--- The players stop is the one exception to that, and it is a room's rather
--- than a screen's: the front page watches somebody else's game, and decision
--- 108 took the instruments of a room nobody is in off it. So there are five
--- stops in a room and four at home. See decision 147.
+-- The players stop was the one exception to that, dropped whenever this
+-- client held no seat on the grounds that the room behind the front page was
+-- somebody else's (decision 108). There is no front page and a watcher is in
+-- the room, so the five are unconditional. See decisions 147 and 151.
 --
 -- SIDE is not here either. Crossing to another team is about the room rather
 -- than about you, and the players sheet is where it went: a side is joined
 -- from the card of somebody already on it.
 
 menu.open = true
-menu.home = false
+menu.adrift = false
 menu.watching = false
 menu.zone = "chaos"
 menu.class = 0
@@ -237,12 +237,9 @@ check("the ship stop opens a panel and says what you fly",
       tostring(ship_stop.value))
 
 menu.watching = true
-check("and the same five from the bench",
+check("and the same five from the stands",
       stop_names() == "account/zone/players/ship/settings", stop_names())
-menu.home = true
-check("and four at home, where the room on screen is somebody else's",
-      stop_names() == "account/zone/ship/settings", stop_names())
-menu.home, menu.watching = false, false
+menu.watching = false
 
 -- Who you are, which the front page used to be the only screen to carry. It
 -- opens the account acts as a page of the tree like any other.
@@ -278,13 +275,9 @@ check("the view carries the stops the column is drawn from",
 check("a pilot with a seat is offered the stands",
       v.key == "spectate", tostring(v.key))
 menu.watching = true
-check("and a bench is offered a seat instead",
+check("and anybody watching is offered a seat instead",
       menu.view().key == "play", tostring(menu.view().key))
 menu.watching = false
-menu.home = true
-check("and so is the front page, which holds no seat at all",
-      menu.view().key == "play", tostring(menu.view().key))
-menu.home = false
 check("and none of them is open over the bare column",
       not v.stops[1].open and not v.stops[2].open and not v.stops[3].open)
 open("settings")
@@ -354,7 +347,7 @@ check("closing forgets the page, the question and the key it was waiting for",
 -- one rather than shutting the panel.
 
 open()
-menu.home, menu.watching = false, false
+menu.adrift, menu.watching = false, false
 menu.ask = nil
 local act, moved = menu.press_stop("zone")
 check("the zone stop opens the games rather than acting",
@@ -980,7 +973,7 @@ end
 -- they do is unchanged.
 
 menu.ask = nil
-menu.home = true
+menu.adrift, menu.watching = false, true
 menu.zone = ""
 open()
 account.claimed = false
@@ -1156,8 +1149,8 @@ act = account_act("new name")
 check("rolling a call sign asks first",
       act == nil and menu.ask ~= nil and menu.name == was,
       tostring(act) .. ", name " .. tostring(menu.name))
--- At home the card asks only about the name; there is no ship to cost.
-check("and at home says nothing about respawning",
+-- Watching, the card asks only about the name; there is no ship to cost.
+check("and from the stands says nothing about respawning",
       not string.find(menu.ask.head, "respawns"), menu.ask.head)
 menu.step({back = true})
 check("and escape keeps the one you have",
@@ -1200,14 +1193,14 @@ account.refuse = nil
 -- and a new pilot gets a fresh seat: the client rejoins the game on its own,
 -- which costs the ship. The card is the one place that can say so before it
 -- happens, and this is the act whose whole design is asking first.
-menu.home = false
+menu.watching = false
 account_act("new name")
-check("mid-game the card says a roll respawns your ship",
+check("flying, the card says a roll respawns your ship",
       menu.ask ~= nil
       and string.find(menu.ask.head, "respawns your ship") ~= nil,
       tostring(menu.ask and menu.ask.head))
 menu.step({back = true})
-menu.home = true
+menu.watching = true
 menu.ask = nil
 
 -- --- what the page holds, when the page is holding it ---------------------
@@ -1364,10 +1357,10 @@ check("and leaving the page lets go of it",
       tostring(menu.arming) .. "/" .. tostring(menu.foot))
 
 -- A stop the column no longer carries is a page you are no longer in. All
--- four are unconditional now, so nothing arrives or leaves under a hand; what
+-- five are unconditional now, so nothing arrives or leaves under a hand; what
 -- this holds is that a stack pointed at a page the column does not draw is not
 -- a menu somebody can be stranded in.
-menu.home, menu.watching = false, false
+menu.adrift, menu.watching = false, false
 open("zone")
 menu.tick(0.1)
 check("a page whose stop is still offered stays open",
@@ -1459,7 +1452,7 @@ do
 
     menu.kit = nil
     menu.class = 0
-    menu.home, menu.watching = true, false
+    menu.adrift, menu.watching = false, true
     local panel = menu.ship_panel(nil)
     local kinds, opens = {}, {}
     for _, r in ipairs(panel.rows) do

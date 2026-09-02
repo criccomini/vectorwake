@@ -337,19 +337,20 @@ through a gui component (`ui/vwui.gui_script`) that draws a pool of text nodes
 and nothing else. The division is absolute: if it has a shape, `arena/ui.lua`
 drew it; if it has words, the gui did.
 
-## One menu, opening and mid-game
+## One menu, one screen
 
-The client boots onto the menu over a starfield: a hull, a generated call sign,
-and the list of games a directory is running. Escape opens the same tree over a
-live arena, and nothing pauses while it is up. `client/arena/menu.lua` is the
-tree and the settings, `ui.menu` draws whatever level `menu.view()` reports,
-and `apply_menu` in `arena/arena.script` is the only place that knows what an
-action means.
+The client boots into the stands of the game this pilot was in last, with the
+menu's column over the foot of it: a generated call sign, the games a directory
+is running, who is in the room, the hull a seat would be taken in, and the
+machine. Escape opens the same tree over a live arena, and nothing pauses while
+it is up. `client/arena/menu.lua` is the tree and the settings, `ui.menu` draws
+whatever level `menu.view()` reports, and `apply_menu` in `arena/arena.script`
+is the only place that knows what an action means.
 
-The single difference between the home screen and the pause screen is
-`menu.home`, which says whether there is a game behind the panel. With nothing
-behind it the menu will not close, since closing would leave a player on an
-empty starfield with no way back.
+There is no second screen. A client that has just opened is a watcher, which is
+what a benched pilot is, so the same stops, the same radar and the same roster
+are on both. `menu.adrift` says there is no room on the glass at all, and what
+is drawn then is a loading screen. See decision 153.
 
 Changing hull calls `sim_set_ship_class`, which is a respawn in place rather
 than an arena rebuild -- the design and its consequences are in

@@ -86,10 +86,10 @@ export function clientReportsNoFaults (stage) {
  *
  * Written first as "connected, then not", which let the real case through.
  * Losing its server is one of the few things this client handles gracefully:
- * it goes back to the landing and says why. So the reading a quarter of a
- * second later is a client sitting happily on the landing, and an oracle
- * looking for a disconnected client in a room sees nothing wrong. Killing the
- * arena under a live match passed.
+ * it says why and dials the next room. So the reading a quarter of a second
+ * later is a client happily looking for a game, and an oracle looking for a
+ * disconnected client in a room sees nothing wrong. Killing the arena under a
+ * live match passed.
  *
  * What is durable is `net.lost`, the reason the wire gave. So the question is
  * not where the client is now but whether it was ever seated in a room that
@@ -121,7 +121,7 @@ export function staysConnected () {
 export function selfConsistent () {
   return seen => {
     const s = seen.screen || {}
-    if (s.joined && !s.landing && (seen.ships || []).length === 0) {
+    if (s.joined && !s.adrift && (seen.ships || []).length === 0) {
       return new Fault('empty-room',
         'the client says it is in a room and knows of no ships')
     }

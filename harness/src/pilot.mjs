@@ -325,7 +325,8 @@ export class Pilot {
     this.leaving = true
     try {
       await press()
-      await this.until('the landing', s => s.screen.landing && !s.screen.joined)
+      await this.until('the stands of the next room',
+        s => !s.screen.flying)
     } finally {
       this.leaving = false
     }
@@ -372,9 +373,10 @@ function covered (seen, action, value) {
 
 function describe (s) {
   const screen = s.screen || {}
-  const where = screen.landing
-    ? `landing${screen.panel ? ` panel=${screen.panel}` : ''}`
-    : `in a room${screen.menu_open ? ' menu=open' : ''}`
+  const where = screen.adrift
+    ? 'looking for a room'
+    : `in a room${screen.menu_open ? ' menu=open' : ''}` +
+      (screen.panel ? ` panel=${screen.panel}` : '')
   return [
     `last reading #${s.seq}: ${where}`,
     `joined=${screen.joined} watching=${screen.watching} flying=${screen.flying}`,

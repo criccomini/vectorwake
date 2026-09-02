@@ -1107,17 +1107,18 @@ M.touching = false
 -- would be a card being typed into invisibly. Set once, by the arena.
 M.page_fields = false
 
--- Whether this client has joined the room on screen, as a ship or as a
--- watcher. False on the landing, where the fight behind the name is a room
--- nobody here has walked into yet, and false again before a room answers at
--- all.
+-- Whether there is a room on the glass at all: true for every frame the HUD
+-- draws, false while the client is still looking for one.
 --
--- The two instruments that are about a room you are in read it: the dial in
--- the corner, and the board the band opens. Both are absent rather than drawn
--- when it is false. A radar is for flying and a roster is for knowing who you
--- are up against, and a stranger watching from outside is asking neither
--- question. What the front page owes them is the fight, the name and the way
--- in. `M.waiting` drew neither already, for this reason one screen earlier.
+-- What reads it is the corner: the dial, the readings over it, and where the
+-- feed starts under them. There is no dial to draw before a room answers, and
+-- the feed would otherwise begin a hundred and forty points down an instrument
+-- nobody drew.
+--
+-- It used to mean something narrower, that this client had walked into the
+-- room rather than merely having it on screen, and it took the radar and the
+-- roster away from anybody who had not pressed play. A watcher is in the room;
+-- see decision 153.
 M.joined = false
 
 -- Where each row of the corner stack, the dial and the feed landed this
@@ -1285,10 +1286,10 @@ end
 -- sign, so the band gives up its two names there. The figures under them
 -- always draw.
 --
--- Which is why this asks nothing about `M.joined`, even though the landing
--- draws no dial. What the band actually has to stop short of is the strip on
--- its own line, and the strip is there on every screen with a connection
--- behind it. One measurement covers both because they are the same width.
+-- Which is why this asks nothing about `M.joined`. What the band has to stop
+-- short of is the strip on its own line, and the strip is there on every
+-- screen with a connection behind it. One measurement covers both because they
+-- are the same width.
 function TOP.row_right()
     return TOP.dial_x() - KEY_GAP * F.scale
 end
@@ -2849,7 +2850,7 @@ end
 --
 -- `KEY_H` and `KEY_SIZE` are the two of them a caller has to lay out around,
 -- so they live out here with it rather than being repeated at each call.
-local function corner_row(on_air, watch, room, landed)
+local function corner_row(on_air, watch, room)
     -- Keys drawn the way the help page draws a key. They were bare words over
     -- a shared rule, which asked a player to know that a word in that corner
     -- was a thing to press, and the board has taught the same hand what a key
@@ -2870,11 +2871,13 @@ local function corner_row(on_air, watch, room, landed)
     -- slot the longer of the two runs out of.
     local cx = x
     local keys = {}
-    -- The way back into a hull, for a pilot the room is holding a seat for.
-    -- Not on the landing, where the column's own key says it better: two
-    -- controls for one act, one of them pulsing at the foot of the screen and
-    -- one of them a chip in the corner, is the same offer made twice.
-    if watch and not landed then
+    -- The way into a hull, for anybody watching: a benched pilot, and a
+    -- client that has just opened and is looking at the room it was in last.
+    -- One act, two controls, which is the offer made twice: the column's key
+    -- says it too. It stays because the column is a press away and this is
+    -- not, and because a watcher looking at the corner instruments is looking
+    -- here.
+    if watch then
         keys[#keys + 1] = {"TAKE SEAT", "take_seat", false}
     end
     -- Which copy of this game you are in, and the way to a different one.
@@ -3549,18 +3552,19 @@ local function foot_key_box()
 end
 
 -- Where the column stands, and what it is made of: `n` stops of one width
--- over one key, and at home a lockup over the lot of it.
+-- over one key, rising out of the strip the menu key sits in.
 --
 -- One function, because there is one column. There were two, `landing_geom`
 -- and `menu_geom`, and the second was written as "the same stops at the same
 -- width over the same breathing key" as the first: two copies of one
 -- measurement, kept in step by hand and by comment. See decision 143.
 --
--- `home` is the whole difference. The front page has a name to carry above
--- the column and a watched hull to keep off, so it measures whether the two
--- fit and lies the column down into a rail when they do not; a column raised
--- over a match has nothing above it and always stands upright.
-local function column_geom(n, home)
+-- And one shape. There was a second, for the screen the client opened on: a
+-- lockup over the stops, and where a short window could not hold both, the
+-- stops lying down into a rail along the foot beside the key. That screen was
+-- the landing and there is no landing; what the client opens on is a room,
+-- with the same column over it a pilot in that room raises. See decision 153.
+local function column_geom(n)
     local pts_w = F.w / math.max(F.density, 0.0001)
     local narrow = pts_w < 620
     local kh = (narrow and 50 or (M.compact and 44 or 54)) * F.scale
@@ -3575,111 +3579,16 @@ local function column_geom(n, home)
                kpx = (narrow and TYPE.ROW
                       or (M.compact and TYPE.BODY or TYPE.LEAD)) * F.scale,
                stops = {}}
-    if not home then
-        -- The key's own foot on the menu key's, so the two occupy one place:
-        -- the column comes up out of the key and the key it raised settles
-        -- onto it.
-        local _, ky, _, kbh = foot_key_box()
-        g.ky = ky + kbh - kh
-        g.top = g.ky - 12 * F.scale - n * rh - (n - 1) * rgap
-        for i = 1, n do
-            g.stops[i] = {x = g.kx, y = g.top + (i - 1) * (rh + rgap),
-                          w = kw, h = rh}
-        end
-        return g
-    end
-    -- `y` counts down from the top here, as it does everywhere in this file,
-    -- so the foot of the screen is measured back from `F.h`.
-    --
-    -- The key sits on the bottom margin, with nothing under it. The menu key
-    -- shared this strip for a while and the column was lifted clear of it,
-    -- which put a faint second control under the one the screen exists for.
-    -- There is nothing for a second key to open out here: the column is
-    -- already up and cannot be put away. See `M.foot_key`.
-    local foot = F.h - F.safe_b - (M.compact and 18 or 22) * F.scale
-    local size = (M.compact and 20 or 26) * F.scale
-    -- `txt` sets a string on the middle of its line, so half the type goes
-    -- back to put the baseline where it belongs above what it heads.
-    local mgap = (M.compact and 16 or 20) * F.scale + size / 2
-    g.size, g.ky = size, foot - kh
-    g.mark_x = mid - M.wordmark_w(size) / 2
-    -- The column: `n` rows at the key's own width stacked over it, in the
-    -- order you would say them. A finger gets the touch floor; a pointer gets
-    -- a slimmer row and `M.pick` grows it when a finger arrives anyway.
-    local top = g.ky - 12 * F.scale - n * rh - (n - 1) * rgap
-    -- Measured from the name's own top, which is the highest thing the
-    -- landing draws, against the middle of the screen and a hull's clearance
-    -- under it: the camera stands behind the hull the stands are watching, so
-    -- the column stands only where it keeps off that hull and its call sign.
-    if top - mgap - size / 2 >= F.h / 2 + 40 * F.scale then
-        g.mark_y, g.top = top - mgap, top
-        for i = 1, n do
-            g.stops[i] = {x = g.kx, y = top + (i - 1) * (rh + rgap),
-                          w = kw, h = rh}
-        end
-        return g
-    end
-    -- The rail. A cell carries its question over its answer rather than
-    -- beside it, so the stops and the key fit one line; where that line is
-    -- wider than the window, the cells take lines of their own over the key
-    -- rather than shrinking past reading. A cell stands as tall as the key
-    -- beside it, floored at what a thumb needs: a band drawn at two heights
-    -- reads as a key with smaller apparatus parked next to it.
-    --
-    -- `CELL_MIN` is the floor a cell is readable at, and it is the number the
-    -- fourth stop found. A rail of four cut to whatever a 320 point window had
-    -- left gave each of them 67 points, which holds neither a call sign nor a
-    -- game's name: the row was the interface reporting that it had run out of
-    -- width rather than saying anything. Under the floor the cells wrap
-    -- instead, two to a line, which is the same grid a phone's own home
-    -- screen uses for the same reason.
-    local CELL_MIN = 96 * F.scale
-    local ch = math.max(44 * F.scale, kh)
-    local want = (M.compact and 120 or 140) * F.scale
-    g.rail, g.rh = true, ch
-    local cx, cy
-    -- One line, cells and key together, where the cells can have the floor.
-    local line = (span - 14 * F.scale - kw - (n - 1) * rgap) / n
-    if line >= CELL_MIN then
-        local cw = math.min(want, line)
-        local band = n * cw + (n - 1) * rgap + 14 * F.scale + kw
-        cy = foot - ch
-        cx, g.kx, g.ky = mid - band / 2, mid + band / 2 - kw,
-                         cy + (ch - kh) / 2
-        g.mark_y, g.top = cy - mgap, cy
-        for i = 1, n do
-            g.stops[i] = {x = cx + (i - 1) * (cw + rgap), y = cy,
-                          w = cw, h = ch}
-        end
-        return g
-    end
-    -- Otherwise a grid of its own over the key, as many to a line as keep the
-    -- floor and never more than there are stops.
-    local per = math.max(1, math.floor((span + rgap) / (CELL_MIN + rgap)))
-    if per > n then per = n end
-    local lines = math.ceil(n / per)
-    local cw = (span - (per - 1) * rgap) / per
-    cx = F.safe_l + margin
-    cy = g.ky - 10 * F.scale - lines * ch - (lines - 1) * rgap
-    g.mark_y, g.top = cy - mgap, cy
+    -- The key's own foot on the menu key's, so the two occupy one place: the
+    -- column comes up out of the key and the key it raised settles onto it.
+    local _, ky, _, kbh = foot_key_box()
+    g.ky = ky + kbh - kh
+    g.top = g.ky - 12 * F.scale - n * rh - (n - 1) * rgap
     for i = 1, n do
-        local col, row = (i - 1) % per, math.floor((i - 1) / per)
-        g.stops[i] = {x = cx + col * (cw + rgap), y = cy + row * (ch + rgap),
-                      w = cw, h = ch}
+        g.stops[i] = {x = g.kx, y = g.top + (i - 1) * (rh + rgap),
+                      w = kw, h = rh}
     end
     return g
-end
-
--- How many stops the column carries, for the two callers that need its
--- measure without holding a view: the lockup on the waiting screen, and the
--- hit test that asks whether a press landed on the column. It is a constant
--- because the stops are: account, zone, ship, settings, always all four.
-local COLUMN_STOPS = 4
-
--- The name, where it sits whether or not there is a room to join yet.
-local function landing_mark()
-    local g = column_geom(COLUMN_STOPS, true)
-    M.wordmark(g.mark_x, g.mark_y, g.size)
 end
 
 -- A stop's caret: the two strokes that say a press here opens downward into
@@ -3692,16 +3601,14 @@ local function land_caret(cx, cy, col)
                 1.3 * F.scale, col, true)
 end
 
--- One stop of the landing: the question, the answer it currently holds and a
--- caret, in the same stroked rectangle every key here wears. `lit` is the
--- stop whose list is open.
+-- One stop of the column: the question at its left edge, the answer it
+-- currently holds at its right, and a caret, in the same stroked rectangle
+-- every key here wears. `lit` is the stop whose list is open.
 --
--- A column row sets the question at its left edge and the answer at its
--- right. A rail cell has no width for the two side by side, so the question
--- goes over the answer the way a gauge's caption goes over its reading, and
--- an answer with no room left is cut at the cell's edge: a long call sign
--- walking into the next cell is worse than a call sign that says it is longer
--- than the cell.
+-- It had a second shape, a rail cell that set the question over the answer
+-- the way a gauge sets its caption over its reading, for the screen the
+-- client opened on when the window was too short to stand a column up. That
+-- screen was the landing and there is no landing. See decision 153.
 --
 -- `raw` says the answer is quoted rather than said: a call sign, a game's
 -- name and a build's name all stand in the case they were given, where the
@@ -3716,16 +3623,15 @@ end
 -- was a `flat` here for the one that acted instead, which was LEAVE and then
 -- SIDE, and a caret is a promise that a list is about to come up: a stop that
 -- kept its promise by doing something else should not have been making it.
-local function land_stop(x, y, w, h, label, value, action, lit, stacked, o)
+local function land_stop(x, y, w, h, label, value, action, lit, o)
     o = o or {}
     -- Where a press would land, at the weight every row of the menu is lit
     -- at. Under the outline rather than over it: the edge is the brighter
     -- half of the same signal, and a wash laid over it would mute it.
     --
-    -- What the box publishes and not the action alone. The landing names its
-    -- three stops apart, so the action was enough out there; the column's
-    -- three all publish `menu_stop` and tell themselves apart by the value,
-    -- and a cursor on any one of them lit all three at once.
+    -- What the box publishes and not the action alone. Every stop publishes
+    -- `menu_stop` and they tell themselves apart by the value; without it a
+    -- cursor on any one of them lit the lot.
     local hot = M.col_sel == action and M.col_sel_value == o.value
     frost(x, y, w, h)
     rect(x, y, w, h, pal.a(pal.BTN_BG, 0.6))
@@ -3741,58 +3647,28 @@ local function land_stop(x, y, w, h, label, value, action, lit, stacked, o)
     -- replaced the stop, which is the seam the language exists to close.
     local pad = M.ROW_INSET * F.scale
     local cx = x + w - pad - 3 * F.scale
-    -- Down the column an answer is set on the type ladder like everything
-    -- else. A rail cell is the one place in this interface where an answer has
-    -- to fit a third of a small screen, and at 12 points "Team Battle" no
-    -- longer does on a 320 point window: the cell clips it, and a game's name
-    -- cut short is the one thing that cell is for. So the rail takes the size
-    -- that fits and the column takes the rung.
-    local px = (stacked and 11 or TYPE.LABEL) * F.scale
-    if stacked then
-        -- The caret rides the question's line rather than the answer's, so
-        -- the answer has the cell's whole width to be read across. At the
-        -- narrowest a cell gets there is barely room for a zone's name, and
-        -- what would have paid for the caret is those last two letters.
-        pad = 8 * F.scale
-        -- Eleven was the size that fit the longest name the catalog held, and
-        -- the catalog is where these names come from: Capture the Flag is
-        -- five letters longer than Team Battle and came out cut at the F on a
-        -- landscape phone. So the answer takes whatever size fits the cell it
-        -- landed in, floored, since past the floor a name nobody can read is
-        -- no better than a name cut short.
-        local room = w - 2 * pad
-        local run = text_w(value or "", px)
-        if run > room then px = math.max(9 * F.scale, px * room / run) end
-        lbl(label, x + pad, y + h * 0.33)
-        land_caret(cx, y + h * 0.33, pal.a(pal.INK, 0.75))
-        local kept = F.clip_r
-        F.clip_r = x + w - pad
-        txt(value or "", x + pad, y + h * 0.68, px, pal.a(pal.INK, 0.95),
-            nil, nil, raw)
-        F.clip_r = kept
-    else
-        -- A question at the label's weight with the answer beside it at full
-        -- strength, which is what every stop of the column is, including the
-        -- one whose answer is a page rather than a value.
-        --
-        -- That one had its name in ink for two decisions, on the argument that
-        -- a stop with nothing at full strength reads as a control that cannot
-        -- be pressed. It does not. What made it read that way was decision
-        -- 110's dim, which had the whole column at a third; with that fixed
-        -- the argument was left holding a lit word in a column of muted ones,
-        -- and four labels down a column with one of them white is a column
-        -- that looks broken rather than one that says anything. The left edge
-        -- is the question column and it is one weight the whole way down.
-        local names = value == nil or value == ""
-        lbl(label, x + pad, y + h / 2)
-        land_caret(cx, y + h / 2, pal.a(pal.INK, 0.75))
-        -- And nothing is set where there is nothing to say. An empty string
-        -- went down the type list every frame, which draws nothing and is one
-        -- more word for anything reading this frame back to walk past.
-        if not names then
-            txt(value, cx - 11 * F.scale, y + h / 2, px,
-                pal.a(pal.INK, 0.95), "right", nil, raw)
-        end
+    local px = TYPE.LABEL * F.scale
+    -- A question at the label's weight with the answer beside it at full
+    -- strength, which is what every stop of the column is, including the one
+    -- whose answer is a page rather than a value.
+    --
+    -- That one had its name in ink for two decisions, on the argument that a
+    -- stop with nothing at full strength reads as a control that cannot be
+    -- pressed. It does not. What made it read that way was decision 110's dim,
+    -- which had the whole column at a third; with that fixed the argument was
+    -- left holding a lit word in a column of muted ones, and five labels down
+    -- a column with one of them white is a column that looks broken rather
+    -- than one that says anything. The left edge is the question column and it
+    -- is one weight the whole way down.
+    local names = value == nil or value == ""
+    lbl(label, x + pad, y + h / 2)
+    land_caret(cx, y + h / 2, pal.a(pal.INK, 0.75))
+    -- And nothing is set where there is nothing to say. An empty string went
+    -- down the type list every frame, which draws nothing and is one more word
+    -- for anything reading this frame back to walk past.
+    if not names then
+        txt(value, cx - 11 * F.scale, y + h / 2, px,
+            pal.a(pal.INK, 0.95), "right", nil, raw)
     end
     -- The guest warning, where a guest has something a lost account would
     -- cost them: one dot in the caution color beside the name it is about.
@@ -3805,22 +3681,13 @@ local function land_stop(x, y, w, h, label, value, action, lit, stacked, o)
     -- and down the column those are at opposite ends of the row: a mark in
     -- the left margin reads as a note on the label.
     if o.warn then
-        local dy = stacked and y + h * 0.68 or y + h / 2
-        -- The rail sets the answer under the question at the same left edge,
-        -- so the margin the outline leaves is still the right place to stand
-        -- and the dot only has to drop a line to be beside the name. A
-        -- measure off the label would leave the box there: the label starts
-        -- at eight points on a rail cell and twelve down the column.
-        local dx = x + 5.5 * F.scale
-        if not stacked then
-            -- The answer is set from the right, so where it begins is where
-            -- it ends less its own width. Asked of the same measure the
-            -- drawing uses rather than guessed at, since a call sign is as
-            -- long as its pilot made it.
-            dx = cx - 11 * F.scale - text_w(value or "", px, nil, raw)
-                - 7 * F.scale
-        end
-        F.layer:disc(dx, ry(dy), 2.5 * F.scale, 8,
+        -- The answer is set from the right, so where it begins is where it
+        -- ends less its own width. Asked of the same measure the drawing uses
+        -- rather than guessed at, since a call sign is as long as its pilot
+        -- made it.
+        local dx = cx - 11 * F.scale - text_w(value or "", px, nil, raw)
+            - 7 * F.scale
+        F.layer:disc(dx, ry(y + h / 2), 2.5 * F.scale, 8,
                      pal.a(pal.CHARGE_COL, 0.95))
     end
     hit(x, y, w, h, action, o.value)
@@ -4755,97 +4622,72 @@ function M.col_go()
     return nil
 end
 
--- Before a room answers: the landing with everything that needs a room taken
--- off it.
+-- Before a room answers: a dial looking for one, the name under it, and a
+-- line saying what went wrong when something has.
 --
--- Not a screen of its own. It is the same starfield with the same name in the
--- same place, so when the stands arrive the only thing that happens is that
--- the room, the stops and the menu key appear. Nothing already on screen
--- moves. The instruments a watcher gets are all about a room this
--- client has not found yet, so the radar, the readings over it and the roster
--- are simply absent rather than drawn empty.
+-- The whole of it. This is the loading screen, held from the moment the page
+-- hands over until a room is on the glass, and everything the client has to
+-- say about a room is about a room it has not found yet: the radar, the
+-- readings over it, the roster and the column all arrive with the game. It
+-- used to be the landing with those taken off it, drawn to the landing's own
+-- measure so that nothing moved when the stands arrived. There is no landing
+-- to keep still for, so it is measured for itself. See decision 153.
 --
--- What used to be here was a lockup centered in the window, which was the
--- loading screen held one beat longer and read as a third screen between the
--- loader and the game. The logo moved when the game arrived, which is the one
--- thing the hand-off should never do.
+-- A first boot is a directory lookup and a handshake, two seconds of it; a
+-- game picked off the list drops the room on screen and dials the next one.
+-- One wait, one picture.
 function M.waiting(note)
     M.foot_key, M.joined = false, false
-    local g = column_geom(COLUMN_STOPS, true)
-    landing_mark()
+    -- The name, low, where the column will stand. `M.wordmark` sets its
+    -- lockup from the left, so half the run goes back to center it.
+    local size = (M.compact and 20 or 26) * F.scale
+    local mark_y = F.h - F.safe_b - (M.compact and 40 or 52) * F.scale
+    M.wordmark(F.w / 2 - M.wordmark_w(size) / 2, mark_y, size)
     -- And the dial, standing where the room will stand.
-    --
-    -- The middle of the window is the hull the stands are watching, which is
-    -- why the column above keeps clear of it, and while this screen is up
-    -- there is no hull there: the instrument that is looking for one takes the
-    -- place until it arrives. That covers both waits with one drawing, because
-    -- they are one wait. A first boot is a directory lookup and a handshake; a
-    -- game picked off the list drops the room on screen and dials the next
-    -- one, and the seconds in between used to be a starfield with a name on it
-    -- and nothing saying anything was happening.
     --
     -- Sized off the shorter side of the window rather than off the height
     -- alone, so a phone held upright gets a dial that fits across it, and
-    -- capped again by the room between the middle and the lockup. The lockup
-    -- sits below the middle on every window, since that is what keeps it off
-    -- the hull, and how far below is the column's answer rather than this
-    -- one's: on the smallest window the stops lie down into two rows and the
-    -- name comes up to meet a dial that had been sized against nothing.
-    -- Nothing on this screen moves when the room arrives, so it is the dial
-    -- that gives way.
-    local room = g.mark_y - F.h / 2 - 10 * F.scale
+    -- capped again by the room between the middle and the name under it.
+    local room = mark_y - size / 2 - 16 * F.scale - F.h / 2
     pages.sweep_dial(F.w / 2, F.h / 2,
                      math.max(14 * F.scale,
                               math.min(56 * F.scale, room,
                                        math.min(F.w, F.h) * 0.12)))
-    -- The one control, drawn here rather than through the corner row, which
-    -- carries a roster this screen has not got.
-    --
-    -- No menu key. There is no room yet, so there is nothing for a menu to be
-    -- about: leaving, sides and settings are all things a room has, and the
-    -- column that holds them arrives with the room. This screen is the
-    -- wordmark, and a note when the fleet is down.
-    -- And a line where the key will be, but only when something has gone
-    -- wrong. Waiting says nothing: the wordmark on a starfield is what this
-    -- game looks like and a caption narrating a normal two second wait is
-    -- noise. A fleet that is down is different, and silence there would be a
-    -- client that looks like it is still trying.
+    -- A line under the name, but only when something has gone wrong. Waiting
+    -- says nothing: the wordmark on a starfield is what this game looks like
+    -- and a caption narrating a normal two second wait is noise. A fleet that
+    -- is down is different, and silence there would be a client that looks
+    -- like it is still trying.
     if note and note ~= "" then
-        txt(note, F.w / 2, g.ky + g.kh / 2, (M.compact and 11 or 13) * F.scale,
+        txt(note, F.w / 2, mark_y + size * 0.9,
+            (M.compact and 11 or 13) * F.scale,
             pal.a(pal.DIM, 0.9), "center", MENU_FONT, true)
     end
 end
 
 function M.hud(o)
     F.case = "upper"
-    -- Whether this client is in the room on screen at all. Read before
-    -- anything else here, because the whistle is one of the things it
-    -- answers. See `M.joined`.
-    M.joined = not o.landing
-    -- Whether the match on screen has been settled, and this client is in
-    -- the room it was settled in. What that changes here is the band, which
-    -- gives up its pennants and stands the beaten side down; the account of
-    -- the match itself is the players sheet, raised by the arena at the
-    -- whistle like any other stop. Out on the landing a finished match is
-    -- something the band says a word about and the fight goes on being the
-    -- backdrop it was.
-    local ending = M.joined and match_ended(o.match)
+    -- There is a room on the glass: this is the one thing that draws one. See
+    -- `M.joined`.
+    M.joined = true
+    -- Whether the match on screen has been settled. What that changes here is
+    -- the band, which gives up its pennants and stands the beaten side down;
+    -- the account of the match itself is the players sheet, raised by the
+    -- arena at the whistle like any other stop.
+    local ending = match_ended(o.match)
     if sim.ship_count() == 0 then return end
     local me = o.me
     -- Before anything draws: every instrument that separates a friend from an
     -- enemy reads this, and while watching it is not the subject's side.
     view_team = o.side or team_of(o.me)
     F.menu_up = o.menu_open
-    -- Whether the menu key is drawn at the foot: in a room you are in, and
-    -- nowhere else. A screen still waiting on its first room clears this
-    -- itself (see `M.waiting`), and the front page is the other half of the
-    -- same rule.
-    --
-    -- No key on the front page. There is nothing out there for one to raise:
-    -- the column is already standing and cannot be put away, so a faint
-    -- control offering to open it would be a control that does nothing, drawn
-    -- under the one key the screen exists for.
-    M.foot_key = M.joined
+    -- The menu key is drawn at the foot wherever there is a room, which is
+    -- every frame this function runs. A screen still waiting on its first one
+    -- clears the flag itself; see `M.waiting`. It used to be off for a client
+    -- with no seat, on the grounds that the column out there was already up
+    -- and could not be put away. It can be put away now, so the way back has
+    -- to be on the screen.
+    M.foot_key = true
     -- Under the menu the instruments stay -- you can still be shot while you
     -- are reading -- but they stop competing with it. A third of their light
     -- is enough to keep a glance at your energy or the dial worth taking and
@@ -4899,13 +4741,12 @@ function M.hud(o)
     -- the plates down with it for the twenty five seconds it is up. So does
     -- the menu's own column, and so does a question card.
     --
-    -- And so does a panel of the column standing at home, which is where this
-    -- was noticed: the front page is a live room, the ship stop opens a panel
-    -- that climbs from its own stop to the top of the window, and every call
-    -- sign in the fight behind it was drawn through the build a pilot was
-    -- reading. `o.panel` is that case: out there the column itself is the
-    -- screen and the names behind its four stops are fine, so what has to go
-    -- down is a panel one of them opened.
+    -- And so does a panel one of the stops opens, which is where this was
+    -- noticed: the ship panel climbs from its own stop to the top of the
+    -- window, and every call sign in the fight behind it was drawn through the
+    -- build a pilot was reading. `o.panel` is that case, and it is a separate
+    -- question from `o.menu_open`: the bare column is five rows at the foot
+    -- and covers nothing.
     if not (o.menu_open or ending or o.panel or o.card or M.room_ask) then
         nameplates(o)
     end
@@ -4919,25 +4760,23 @@ function M.hud(o)
     -- not pause: a pilot reading it is still being shot at, and the two
     -- instruments that say so keep saying it.
     --
-    -- And no dial at all until this client has joined the room. A radar
-    -- answers what is near you, and on the landing there is no you: the fight
-    -- is somebody else's and the camera is a seat in the stands. The map that
-    -- replaces it goes with it, being the same corner asking the same question
-    -- further out. See `M.joined`.
-    if M.joined then
-        if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
-    end
+    -- Drawn for a watcher as well as for a pilot, on the camera's own seat:
+    -- what is near the hull the channel is behind is the question anybody
+    -- reading this corner is asking, whether or not the hull is theirs. It was
+    -- absent for a client that had taken no seat, which left a stranger
+    -- watching a fight with no way to tell where in the map it was happening.
+    -- See decision 153.
+    if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
     -- And the strip over it, which holds for the map as well: it is measured
     -- against the dial at rest, so the readings stay put while a player reads
     -- the whole arena. Four bars for a client that has not been handed a
     -- reading yet, which is what a fresh connection looks like anyway.
     --
-    -- The strip outlives the instrument under it, but only half of it does.
-    -- The stands are a live connection like any other, so the bars draw out
-    -- there and the press behind them still opens the numbers. POS does not:
-    -- it is captioned where you are, and on a screen with no you it would put
-    -- a stranger's tiles under that word.
-    over_dial(o.link or 4, M.joined and me or nil)
+    -- POS reads the camera's own seat, which while watching is the hull the
+    -- channel is behind. Where the fight is in the map, said in tiles, is the
+    -- reading everybody looking at this corner wants, whether or not the hull
+    -- under the camera is theirs.
+    over_dial(o.link or 4, me)
     -- Under the dial, wherever the dial now ends: it lost its panel and its
     -- padding, so a constant here would have left a gap or an overlap. Not on
     -- a touchscreen: the lines land where a thumb flies the ship, and a
@@ -5008,8 +4847,7 @@ function M.hud(o)
     -- it any more: PLAYERS, the seat and the room chip are all readable while
     -- a pilot is in settings, which is the point of a menu that does not
     -- pause.
-    corner_row(o.on_air and not o.watch, o.watch,
-               several and o.room or nil, o.landing)
+    corner_row(o.on_air and not o.watch, o.watch, several and o.room or nil)
     vignette(o.hurt or 0)
     -- After the stack, because it is hung off the rows the stack published,
     -- and after the tint so a hurt frame does not wash out the words.
@@ -5063,7 +4901,7 @@ function M.hud(o)
     -- somewhere else the moment the whistle goes. The ending's own head
     -- carries the score, so the band gives its two sides up while that block
     -- is on screen and keeps the numerals. See `match_clock`.
-    match_clock(o, o.match, o.side_names, o.menu_open or not M.joined)
+    match_clock(o, o.match, o.side_names, o.menu_open)
     -- The pennants belong to the band and are drawn with it, which puts them
     -- above the menu's early return below. Same reason the clock is: the menu
     -- is a scrim rather than a curtain, and who is holding what is exactly the
@@ -5083,14 +4921,6 @@ function M.hud(o)
     -- The two big centered lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end
-    -- The name and the way in, over the fight a stranger has just landed in
-    -- the stands of. Through the ending as well as through play: a match
-    -- ending is not a reason to take the one key on the screen away.
-    --
-    -- Drawn after it rather than before, which is the whole of why this is not
-    -- one line up. The ending washes the entire window, so a key laid down
-    -- first spends the twenty five seconds between matches buried under it:
-    -- visible to a hit test, invisible to a person.
     if ending then return end
     -- Over the arena and under nothing, since it is the thing being read. The
     -- game carries on behind it: nothing is paused here, and a player who
@@ -6020,10 +5850,10 @@ local COLUMN_WASH = 0.42
 -- on the frame the cursor moved and not on every frame after it.
 local page_followed = nil
 
--- The menu: four stops over one key, and there is one of it.
+-- The menu: five stops over one key, and there is one of it.
 --
--- `v` is `menu.view()`. It carries the stops, the rows of whichever stop is
--- open, and whether there is a game behind it. That is the whole payload.
+-- `v` is `menu.view()`. It carries the stops and the rows of whichever stop
+-- is open. That is the whole payload.
 --
 -- Two of these stood in this file for a year. The landing drew ACCOUNT, ZONE
 -- and SHIP over PLAY NOW off a payload of its own; the column drew ZONE,
@@ -6035,12 +5865,12 @@ local page_followed = nil
 -- with no account, so where a thing lived depended on whether you had taken
 -- a seat yet. See decision 143.
 --
--- `home` is the one difference left, and it is about the screen rather than
--- about the menu: out there the column is the whole front end, so it carries
--- the lockup, washes nothing, and cannot be put away, because putting it away
--- would leave a player looking at a starfield with no way back. In a match it
--- is a panel raised over a fight, and everything else about it is the same
--- object drawn in the same order.
+-- One difference outlived that merge: whether the column was the screen or a
+-- panel raised over a fight. Out on the landing it carried the lockup, washed
+-- nothing, and could not be put away, because putting it away left a player
+-- looking at a starfield with no way back. There is a game behind it wherever
+-- it stands now, so it is a panel everywhere and there is nothing left to
+-- branch on. See decision 153.
 --
 -- What it replaced on the way here was a rail of tabs, a stage, a topbar, a
 -- head row and a preview of the page the rail cursor was resting on: five
@@ -6049,7 +5879,6 @@ local page_followed = nil
 function M.menu(v)
     local n = v.stops and #v.stops or 0
     if n == 0 then return end
-    local home = v.home and true or false
     -- The HUD shouts, because everything in flight does; the menu speaks. A
     -- row that says "Sound" is a label and one that says "SOUND" is an
     -- instrument reading, and these are labels. Restored on the way out,
@@ -6075,16 +5904,9 @@ function M.menu(v)
     -- quiet what they cover.
     local was_dim = F.text_dim
     if not (v.ask or M.room_ask) then F.text_dim = 1 end
-    local g = column_geom(n, home)
+    local g = column_geom(n)
     column_x, column_w = g.kx, g.kw
     -- The slide, which is how the column arrives and leaves.
-    --
-    -- It runs at home as well, and has to: the front page's column sinks as a
-    -- pilot drops into the seat they pressed for, and it goes out through the
-    -- bottom edge again when the stands lose the room they were watching.
-    -- What keeps it standing out there is `menu.close` refusing to close it,
-    -- not this. Asking the drawing to pin it up instead left the landing's
-    -- column drawn at full height over the match it had just joined.
     --
     -- `F.now` is zero under the test harness, which is what settles it
     -- instantly there and keeps the layout tests still.
@@ -6131,24 +5953,18 @@ function M.menu(v)
     local drop = at * (F.h - g.top)
     local live = at < 0.5
 
-    -- The wash behind the column, and a press off it to put it away. Neither
-    -- at home: out there the column is the screen rather than something laid
-    -- over one, so there is nothing to settle behind it and nothing to
-    -- dismiss it onto. What a press beside an open panel means out there is
-    -- the panel closing, which is `menu_shut` one level rather than none, and
-    -- the panel publishes its own backdrop for that.
-    if not home then
-        wash(0, 0, F.w, F.h, pal.a(pal.BG, COLUMN_WASH * M.column))
-        -- Under everything else: the lowest priority box on the screen.
-        hit(0, 0, F.w, F.h, "menu_shut", nil, nil, -2)
-    end
+    -- The wash behind the column, and a press off it to put it away.
+    wash(0, 0, F.w, F.h, pal.a(pal.BG, COLUMN_WASH * M.column))
+    -- Under everything else: the lowest priority box on the screen.
+    hit(0, 0, F.w, F.h, "menu_shut", nil, nil, -2)
 
     -- The key first, under the stops that stand over it.
     --
     -- One word, and which word is the whole of what this screen knows about
-    -- where you are sitting. No seat anywhere, at home or on a bench, and it
-    -- is the way into one; a seat of your own, and it is the way back out to
-    -- the stands of the same game. See decision 143.
+    -- where you are sitting. No seat in the room, whether this client has just
+    -- opened or has been benched, and it is the way into one; a seat of your
+    -- own, and it is the way back out to the stands of the same game. See
+    -- decision 143.
     local ky = g.ky + rise + drop
     local key_hot = M.col_sel == "menu_go"
     if at < 1 then
@@ -6167,7 +5983,7 @@ function M.menu(v)
             local box = g.stops[i]
             local sy = box.y + rise + drop
             land_stop(box.x, sy, box.w, box.h, s.label, s.value,
-                      "menu_stop", s.open, g.rail,
+                      "menu_stop", s.open,
                       {raw = s.named, value = s.stop, warn = s.warn})
         end
     end
@@ -6239,9 +6055,8 @@ function M.menu(v)
         py = py + (1 - at) * (F.h - py) + rise
         -- A backdrop behind everything (`pri` -1) so a press on the margin
         -- beside the glass puts the panel away rather than pulling a trigger
-        -- on the fight. In a match the column's own backdrop is already under
-        -- this at -2 and means one level further out; at home this is the only
-        -- one, and one level is all there is.
+        -- on the fight. The column's own backdrop is already under this at -2
+        -- and means one level further out.
         hit(0, 0, F.w, F.h, "menu_shut", nil, nil, -1)
         -- The rows are the panel's now, so that is the span they are lit at.
         column_x, column_w = px, pw
@@ -6278,13 +6093,6 @@ function M.menu(v)
             M.menu_panel(px, pw, top, foot, v)
         end
     end
-
-    -- The lockup, over the column it heads, and only at home: the name belongs
-    -- to the screen a player arrives on rather than to a panel raised
-    -- mid-match. It sinks with the stops when one of them opens, because the
-    -- column is one object and a wordmark left hanging over an open panel is
-    -- the front page refusing to get out of the way.
-    if home and at <= 0.001 then landing_mark() end
 
     -- While the column is going away it still draws, so the fight behind it
     -- comes back through a wash that is fading rather than a panel that

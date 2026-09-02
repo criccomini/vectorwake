@@ -10,20 +10,35 @@
 // press a person could make joins a room and hands over a seat.
 
 export async function arrive (pilot, { log = () => {} } = {}) {
-  // The client boots, reaches the directory and draws its landing. Everything
-  // before this is the engine starting up, which is not what is under test but
-  // is where a broken build stops.
-  log('waiting for the landing')
-  await pilot.until('the client to draw its landing',
-    s => s.screen.landing && s.boxes.length > 0,
+  // The client boots, reaches the directory and puts itself in the stands of
+  // the game it was in last. Everything before this is the engine starting up,
+  // which is not what is under test but is where a broken build stops.
+  log('waiting for a room')
+  await pilot.until('the client to reach a room',
+    s => !s.screen.adrift && s.boxes.length > 0,
     { timeout: 60000 })
 
   await pilot.wake()
 
-  // The landing is the menu's own column, four stops over one key, and that
-  // key is the whole of joining: one press and you are in a room. Wait for it
-  // to actually take a press before making one, because until the client has
-  // heard from the directory there is no game behind it.
+  // And put the column back if waking took it away. On glass the wake is a
+  // plain touch in the middle of the canvas, because the pads are not drawn
+  // until the client has seen a finger, and the middle of the canvas is the
+  // column's own backdrop: a press there means dismiss, which is what it means
+  // anywhere else off the column. A person's first touch is a press on
+  // something, so this is the harness paying for its own gesture. MENU at the
+  // foot is how anybody raises it again.
+  const woke = await pilot.read()
+  if (woke && !woke.screen.menu_open) {
+    log('raising the column the wake touch dismissed')
+    if (pilot.profile.input === 'keyboard') await pilot.press('menu')
+    else await pilot.tap('open')
+    await pilot.until('the column', s => s.screen.menu_open, { timeout: 10000 })
+  }
+
+  // The column stands over it, five stops over one key, and that key is the
+  // whole of taking a seat: one press and the room owes you a hull. Wait for
+  // it to actually take a press before making one, because until the client
+  // has heard from the directory there is no game behind it.
   log('waiting for the column key to be live')
   await pilot.until('a live key',
     s => s.boxes.some(b => b.hits === 'menu_go'),
@@ -36,7 +51,7 @@ export async function arrive (pilot, { log = () => {} } = {}) {
     const at = await pilot.read()
     if (at.cursor.go !== 'menu_go') {
       throw new Error(
-        `the landing's cursor fires ${at.cursor.go || 'nothing'}, not menu_go`)
+        `the column's cursor fires ${at.cursor.go || 'nothing'}, not menu_go`)
     }
     log('pressing enter on the key')
     await pilot.press('select')

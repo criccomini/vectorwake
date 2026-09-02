@@ -90,14 +90,14 @@ builds, per [platforms.md](../architecture/platforms.md). Several credentials
 can attach to one account, which is what lets the web build and the Steam
 build be the same pilot.
 
-The client offers the claim on the landing's account stop and never blocks
+The client offers the claim on the menu's account stop and never blocks
 play on it. The offer is the first row of the list that stop opens, in the
 caution color with "keep your points" beside it, and it is the same act as
 setting a password on an account that already has one: the server has one
 endpoint for both, and what it does is put a password on the account this
 client already holds. A player who declines stays a guest and loses nothing
 but durability. Once a guest has something a sweep would cost them, a rating
-earned past the baseline or a rated game flown, the landing's account stop
+earned past the baseline or a rated game flown, the account stop
 wears a dot beside the call sign: you are using a guest account, press here to
 set your password. Beside the name rather than beside the word ACCOUNT, since
 what is at stake is who you are signed in as and not the question the row is

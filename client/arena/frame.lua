@@ -7,21 +7,25 @@ local M = {}
 -- Recompute whether the connection has a world ready to draw. Call this again
 -- after input handling because a menu action can join or leave during a frame.
 --
--- A watch that nobody deployed from is live to draw and holds no seat, so the
--- menu keeps its no-hull tree. That is the landing: the client opens in the
--- stands of a real room, and pressing play is what turns the connection into a
--- session. It clears the flag itself.
+-- `adrift` is the one thing the menu is told from here: there is no room on
+-- screen, because the fleet is down or the network is. It used to say
+-- something else as well, that this client had reached a room but taken no
+-- seat in it, and the interface treated the two as one screen called the
+-- landing: no radar, no roster, no menu key, a wordmark over a column that
+-- could not be put away. A watcher is a watcher wherever it arrived from, so
+-- the second meaning is gone and a client with no seat draws the same game
+-- everybody else in the room is looking at. See decision 153.
 --
--- Nothing here opens the menu any more. It used to stand itself up whenever
--- there was no seat, and later whenever there was no room, so a player who had
--- asked for nothing met a panel for as long as a directory and a handshake
--- took. With no room the client draws the loader's own picture instead and
--- keeps MENU in the corner, so the menu is only ever open because somebody
--- opened it. See `ui.waiting`.
+-- Nothing here opens the menu. It used to stand itself up whenever there was
+-- no seat, and later whenever there was no room, so a player who had asked for
+-- nothing met a panel for as long as a directory and a handshake took. With no
+-- room the client draws the loader's own picture instead, so the menu is only
+-- ever open because somebody opened it, or because this is the first thing
+-- they have seen. See `ui.waiting`.
 function M.live(self, net, sim, menu)
     local live = (self.replay ~= nil or (self.online and net.connected))
         and sim.ship_count() > 0
-    menu.home = not live or self.attract == true
+    menu.adrift = not live
     return live
 end
 

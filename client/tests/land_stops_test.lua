@@ -2,7 +2,7 @@
 --
 --     lua5.1 client/tests/land_stops_test.lua
 --
--- The stop's label and its list come from `landing_ship` and `landing_ships`,
+-- The stop's label and its list come from `hull_name` and `hull_rows`,
 -- and a press in the list goes through `pick_profile`. What is worth pinning
 -- is the contract the landing draws against: the label is the ship's own
 -- name, the list is the roster and nothing else, a pick asks the arena for
@@ -70,15 +70,16 @@ _G.hash = function(s) return s end
 
 local menu = require("arena.menu")
 
--- A pilot at home in the stands, flying an Apex.
-menu.home = true
+-- A pilot in the stands, flying an Apex.
+menu.adrift = false
+menu.watching = true
 menu.class = 0
 
-check("the stop says the ship the next deploy flies",
-      menu.landing_ship() == "Apex",
-      "said " .. tostring(menu.landing_ship()))
+check("the stop says the ship a seat would be taken in",
+      menu.hull_name() == "Apex",
+      "said " .. tostring(menu.hull_name()))
 
-local rows = menu.landing_ships()
+local rows = menu.hull_rows()
 check("the list is the roster and nothing else",
       #rows == 7 and rows[1].label == "Apex" and rows[2].label == "Wedge"
       and rows[7].label == "Lattice",
@@ -96,7 +97,7 @@ check("picking a ship is the roster's own act", act == "ship")
 check("and it asks the arena for that hull", menu.pending == 1)
 menu.class = 1
 check("and the stop follows once the arena agrees",
-      menu.landing_ship() == "Wedge")
+      menu.hull_name() == "Wedge")
 
 menu.pick_profile(0)
 menu.class = 0

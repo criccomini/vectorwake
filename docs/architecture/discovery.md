@@ -227,14 +227,13 @@ is the same line an arena reads to decide what to serve when nothing has told
 it, so one entry in the catalog answers the question at both ends, and a
 deployment that names none sends nothing here.
 
-It has to be stated rather than derived, because the client's landing shows
-that game behind the panel and joins it on the one key. The list below is
+It has to be stated rather than derived, because a client with nothing
+remembered opens in the stands of that game. The list below is
 sorted alphabetically by label, for reading, so taking its head lets the
 alphabet choose where a new player starts. Worse, a game with no arena behind
 it is still a row, on purpose, so a player can see that it exists and is down:
 a deployment running five games gives the alphabet five chances to put a dead
-one first, and a landing with nothing behind it draws the loading screen
-forever. So a client takes the front door while it is up, the first row with an
+one first, and a client that took one would sit on the loading screen forever. So a client takes the front door while it is up, the first row with an
 arena behind it when it is not, and the head of the list only when nothing at
 all is running. That last one is not a game anybody can join. It is a name to
 put on the press, so a fleet that is down feels like a join that waits.

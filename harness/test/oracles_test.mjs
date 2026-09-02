@@ -10,7 +10,7 @@
 // One of these caught a real hole. `staysConnected` was written as "connected,
 // then not", which passed the actual case: losing its server is something this
 // client handles well, so a quarter of a second later it is sitting on the
-// landing looking healthy, and an oracle hunting for a disconnected client in
+// stands looking healthy, and an oracle hunting for a disconnected client in
 // a room finds nothing. Killing an arena under a live match went green.
 
 import {
@@ -36,7 +36,7 @@ function reading (over = {}) {
     seq,
     frames: seq * 6,
     tick: seq * 6,
-    screen: { landing: false, joined: true, flying: true, watching: false },
+    screen: { adrift: false, joined: true, flying: true, watching: false },
     me: { seat: 3, alive: true, x: 100, y: 100, energy: 900, max_energy: 1000 },
     ships: [{ seat: 3, alive: true }],
     link: { connected: true, bars: 4 },
@@ -85,11 +85,11 @@ ok('a simulation that stands still while joined is caught',
     [reading({ tick: 900 }), { ...frozen }, { ...frozen }, { ...frozen }],
     { clockJumpMs: 3000 }))?.kind === 'stalled-tick')
 
-ok('and a still tick on the landing is not a fault',
+ok('and a still tick with no room is not a fault',
   !await feed(tickAdvances(), [
-    reading({ tick: 900, screen: { landing: true, joined: false } }),
-    reading({ tick: 900, screen: { landing: true, joined: false } }),
-    reading({ tick: 900, screen: { landing: true, joined: false } })
+    reading({ tick: 900, screen: { adrift: true, joined: false } }),
+    reading({ tick: 900, screen: { adrift: true, joined: false } }),
+    reading({ tick: 900, screen: { adrift: true, joined: false } })
   ], { clockJumpMs: 9000 }))
 
 // --- the wire --------------------------------------------------------------
@@ -103,7 +103,7 @@ ok('a room that goes away under a seated client is caught',
   (await feed(staysConnected(), [
     reading(),
     reading({
-      screen: { landing: true, joined: false, flying: false },
+      screen: { adrift: true, joined: false, flying: false },
       me: null,
       link: { connected: false, lost: 'the zone closed the connection' }
     })
@@ -114,7 +114,7 @@ ok('and a journey that means to leave is not a fault',
     reading(),
     {
       ...reading({
-        screen: { landing: true, joined: false, flying: false },
+        screen: { adrift: true, joined: false, flying: false },
         me: null,
         link: { connected: false, lost: 'left' }
       }),
@@ -124,7 +124,7 @@ ok('and a journey that means to leave is not a fault',
 
 ok('a client that never got seated is not held to it',
   !await feed(staysConnected(), [
-    reading({ screen: { landing: true, joined: false }, link: { connected: false } })
+    reading({ screen: { adrift: true, joined: false }, link: { connected: false } })
   ]))
 
 // --- what the client says about itself -------------------------------------

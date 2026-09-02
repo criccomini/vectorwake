@@ -31,48 +31,39 @@ eq(state.clock, 0.25, "wall clock")
 eq(net.ticked, 0.25, "transport clock")
 eq(sfx.frames, 1, "sound frame")
 eq(sfx.music, 0.25, "music clock")
-eq(menu.home, false, "live menu state")
+eq(menu.adrift, false, "a room on screen")
 
 state.online = false
 menu.open = false
 eq(frame.live(state, net, sim, menu), false, "offline world")
-eq(menu.home, true, "offline menu state")
+eq(menu.adrift, true, "and adrift with it")
 -- And it stays shut. This used to stand the menu up whenever there was no
 -- world, which is how a player who had asked for nothing met a panel for the
 -- length of a directory lookup and a handshake. What goes there now is the
 -- loader's own picture, held until a room answers; see `ui.waiting`.
 eq(menu.open, false, "no world does not open the menu")
 
--- The landing: a watch nobody deployed from. There is no seat, so the menu
--- keeps its no-hull tree, and the menu is nobody's business but the player's.
+-- A watcher: a room on screen that this client holds no seat in. It reads as
+-- a room, because that is what it is. There was a flag for it here, which the
+-- interface spent on a whole second screen; see decision 153.
 state.online = true
-state.attract = true
 menu.open = false
 eq(frame.live(state, net, sim, menu), true, "the stands are a live world")
-eq(menu.home, true, "the stands hold no seat")
+eq(menu.adrift, false, "and a room like any other")
 eq(menu.open, false, "and the menu is not forced over them")
 
--- Deploying clears the flag, and the same frame reads as a session.
-state.attract = false
-eq(frame.live(state, net, sim, menu), true, "deployed world")
-eq(menu.home, false, "deploying takes the seat")
-eq(menu.open, false, "and leaves the menu shut")
-
--- Losing the room takes the seat back and leaves the menu where it was. The
--- waiting screen is what stands in for the world, and it carries MENU, so
--- nothing here has to open a panel to keep a way out on the screen.
+-- Losing the room leaves the menu where it was. The loading screen is what
+-- stands in for the world, and the menu comes back over the next room in
+-- whatever state the player left it.
 state.online = false
-state.attract = true
 eq(frame.live(state, net, sim, menu), false, "no room to stand in")
-eq(menu.home, true, "and no seat either")
+eq(menu.adrift, true, "adrift again")
 eq(menu.open, false, "still nobody's menu but the player's")
-state.attract = nil
-state.online = false
 
 state.replay = {}
 menu.open = false
 eq(frame.live(state, net, sim, menu), true, "replay world")
-eq(menu.home, false, "replay keeps the flight screen")
+eq(menu.adrift, false, "a film is a room to draw")
 state.replay = nil
 
 local page = {}

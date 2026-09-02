@@ -8363,3 +8363,91 @@ in one direction and out loud in the other is a rating nobody trusts.
 layout on main a few hours earlier, goes through the same send as every other
 death, so there is one place the message is finished. The podium column is
 unchanged, and rating.md and interface.md say the figure exists again.
+
+## 153. There is no landing
+
+**Status:** accepted, superseding the landing arm of
+[decision 143](#143-one-menu) and the part of
+[decision 108](#108-the-front-page-carries-no-instruments-of-a-room-nobody-is-in)
+that took the room's instruments off a client with no seat.
+
+**What:** opening the client puts you in the stands of the game you were in
+last, and that is an ordinary watcher's session. One screen, and it is the
+screen a benched pilot in the same room is looking at: the five stops of the
+column over the menu key, the radar in its corner with `POS` over it, the band
+that opens the players sheet, `TAKE SEAT` in the corner row, the ending at the
+whistle. The column starts up, because it names the game behind it and holds
+the key that gets you into it, and it is dismissed the way it is dismissed
+mid-match.
+
+`menu.home` is gone. What is left of it is `menu.adrift`, which says there is no
+room on the glass at all, and what stands in for one then is a loading screen:
+the dial that is looking for a room, the wordmark under it, and a line when
+something has gone wrong.
+
+The attract loop is gone with it. `session.seek_tick` dials a room whenever
+there is none, preferring the zone the pilot was last in over the deployment's
+own front door, and the connection it makes is the session. Pressing the
+column's key no longer promotes anything: `session.take_seat` asks the room for
+a hull on the socket already standing, which is what `TAKE SEAT` in the corner
+has always meant.
+
+**Why:** Chris opened the client and could not find the players list. It was
+not a bug in the sheet. Decision 108 had reasoned that the room behind the
+front page was somebody else's, so the instruments about a room, the radar, the
+roster and `POS`, did not belong on it. That reasoning was sound about a screen
+called the landing and wrong about the room: fourteen people were in the game
+on the glass, and the interface offered no way to see who any of them were.
+
+The same argument had been made about the same instruments three times, and
+each time it took something a watcher wants. The radar answers where in the map
+the fight is happening, which is exactly what somebody watching wants to know.
+The menu key was withheld because the column out there could not be put away,
+and the column could not be put away because there was nothing behind it, and
+there was a room behind it the whole time.
+
+What the split cost in code was two of everything: two meanings for the ship
+stop, one saving each turn of the carousel and one drafting; two ways to be in
+a room, `session.enter` and the attract dial; a `landing` flag through the HUD
+payload and a `home` flag through the menu's; a second column geometry with a
+lockup and a rail for the short windows the lockup would not fit on. Decision
+143 merged the two menus and left this seam, and the seam is where the players
+stop fell through.
+
+It also hid a real fault. Decision 136 took the watching arm out of
+`apply_menu("ship")` when the ship stop learned to draft, and the two callers
+that reached a seat through it, the column's key on a bench and the `TAKE SEAT`
+chip, went on calling a function that had stopped doing anything. Both were
+controls that made a noise and no difference. Nobody found it because the
+landing's key took a different path, and the landing was where anybody pressed.
+
+**What was considered and rejected:** keeping the wordmark over the column on a
+client that has just opened, so a first visit still reads the game's name. It
+is the landing's signature, and a name that is there for some watchers and not
+others is the dichotomy in one more place. The page title, the favicon and
+vectorwake.net carry the name; the loading screen keeps the lockup, which is
+where a browser tab's first second is spent anyway.
+
+Also rejected: holding the ship stop as pure configuration for a client with no
+seat, so that turning the carousel and closing the panel does not put you in
+the fight. That is the landing's rule wearing a different hat. A watcher is on
+a bench, `ship_foot` says "you take a seat in it" on the panel's head for as
+long as the panel is open, and the pilot who reads that and closes it meant to.
+
+**Cost:** the column is five stops tall on every window, and a landscape phone
+draws it across the middle of the screen where the watched hull is. That is
+what the rail existed to avoid. It is also what the in-match column has done on
+that window since decision 147 added the players stop, and the menu is a scrim
+over a fight that does not pause: the fight goes on being visible through it,
+and one press puts it away.
+
+A watcher at the whistle now gets the players sheet raised over the ending, the
+way a pilot in the room does. That is decision 147 applied to somebody who is
+not playing, and it is the account of the match they have been watching.
+
+**Verified:** the client's suite, with `landing_test` rewritten as
+`spectate_test`: the five stops over the key on four windows, the radar, the
+roster press, `POS` and `TAKE SEAT` on a watcher's screen, the presses standing
+down under an open column, and the loading screen measured for itself. luacheck
+clean over 109 files. The playtest harness reads `screen.adrift` where it read
+`screen.landing`, and `arrive` waits for a room rather than for a front page.

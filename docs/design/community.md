@@ -76,7 +76,7 @@ would outlive every attempt to revoke it. Behind the redirect, rotating a
 leaked or raided invite is editing two lines, and every place that ever named
 the address stays correct.
 
-The door is on the site and not in the game, per decision 73. The landing
+The door is on the site and not in the game, per decision 73. The client
 page, the pilot pages and the support and deletion documents all link it, the
 nav carries it as a button with a live member count, and a player who wants
 the room is one click from it before they ever load the client.

@@ -5,9 +5,9 @@
 -- Scenarios: after (a match part way through), before (with the banner the
 -- server used to send), turf (a flag mode, for the pennant strip under the
 -- band), roam (the one zone with prizes, for the greens on the dial),
--- ending (a room at the whistle), landing (the front
--- end, watched from the stands; landing-zones, landing-ships and
--- landing-account open a stop's list, landing-login the panel an
+-- ending (a room at the whistle), watching (the screen a client opens
+-- on, a room with no seat of ours in it; watching-zones, watching-ships
+-- and watching-account open a stop's list, watching-login the panel an
 -- account act opens over one), waiting (what the loader hands off to
 -- before a room answers), loadout (a loaded hull with charges in hand, for
 -- the corner stack), menu (the in-match column; menu-settings, menu-side and
@@ -292,17 +292,16 @@ end
 -- lists down.
 local in_menu = scenario == "menu" or scenario == "menu-settings"
     or scenario == "menu-side" or scenario == "menu-zone"
-local landing = scenario == "landing" or scenario == "landing-zones"
-    or scenario == "landing-ships" or scenario == "landing-account"
-    or scenario == "landing-login"
-if landing then
+local watching = scenario == "watching" or scenario == "watching-zones"
+    or scenario == "watching-ships" or scenario == "watching-account"
+    or scenario == "watching-login"
+if watching then
     room.count = 8
     room.teams = {[0] = 0, 0, 0, 0, 1, 1, 1, 1}
     match = {playing = true, left = 107, score = {[0] = 3, [1] = 5}}
 end
--- The landing's stops, as the arena builds them: the call sign and what its
--- list holds, the games with their one-line formats, and the ships with
--- sitting out as the last row.
+-- The column's stops, as the arena builds them: the call sign and what its
+-- list holds, the games with their one-line formats, and the ships.
 -- The ship stop's panel, as `menu.ship_panel` builds one.
 --
 -- A fixture the way the zones and the account rows above are: `arena.menu`
@@ -377,7 +376,7 @@ local function ship_panel()
     }
 end
 
-local land = landing and {
+local land = watching and {
     name = "Kestrel 8",
     zone = "Team Battle",
     ship = "Gunner",
@@ -415,13 +414,13 @@ local land = landing and {
 } or nil
 -- Which stop is standing open, if any. This was `ui.land_open` for a while,
 -- which is a field the interface has never had: the three scenarios that open
--- a stop all quietly drew the closed landing instead, and a tool that draws
+-- a stop all quietly drew the closed column instead, and a tool that draws
 -- the wrong picture without saying so is worse than one that fails.
-ui.col_open = (scenario == "landing-zones" and "zone")
-    or (scenario == "landing-ships" and "ship")
+ui.col_open = (scenario == "watching-zones" and "zone")
+    or (scenario == "watching-ships" and "ship")
     -- The log-in panel stands over the account panel it was raised from,
     -- which is what makes it a picture of the stack rather than of a card.
-    or ((scenario == "landing-account" or scenario == "landing-login")
+    or ((scenario == "watching-account" or scenario == "watching-login")
         and "account") or nil
 
 -- And a row under the cursor on the stop that is open, because a panel drawn
@@ -429,11 +428,11 @@ ui.col_open = (scenario == "landing-zones" and "zone")
 -- The field says where a press would land, and it was drawn short of the
 -- glass on both sides for a while with no picture here that would have shown
 -- it.
-if scenario == "landing-zones" then
+if scenario == "watching-zones" then
     ui.col_sel, ui.col_sel_value = "land_pick_zone", "duel"
-elseif scenario == "landing-ships" then
+elseif scenario == "watching-ships" then
     ui.col_sel, ui.col_sel_value = "land_kit_row", 16
-elseif scenario == "landing-account" then
+elseif scenario == "watching-account" then
     ui.col_sel, ui.col_sel_value = "land_pick_account", 1
 end
 
@@ -453,21 +452,18 @@ if scenario == "waiting" then
     ui.waiting(nil)
 else
 ui.hud({
-    me = landing and 0 or 0,
-    -- A watcher's camera stands behind a hull that is not yours, and the
-    -- landing is a watch nobody deployed from.
-    watch = landing and {subject = 0} or nil,
-    landing = landing or nil,
-    land = land,
+    me = 0,
+    -- A watcher's camera stands behind a hull that is not yours.
+    watch = watching and {subject = 0} or nil,
     -- Something is being read over the fight, so the instruments
     -- behind it stand down: glyphs draw over every mesh, so a label
     -- is quieted where it is written or not at all.
-    card = (scenario == "landing-login") or nil,
+    card = (scenario == "watching-login") or nil,
     side = 0,
     viewer_name = scenario == "ending" and "DRiFT" or "Kestrel 8",
     class_names = {"Apex", "Wedge", "Chord", "Anvil", "Facet", "Cipher", "Lattice"},
     menu_open = in_menu,
-    pilots = (landing or scenario == "ending") and (function()
+    pilots = (watching or scenario == "ending") and (function()
         local out = {}
         local names = ending
             and {"DRiFT", "Gantry", "Bellwether", "Ozone",
@@ -484,12 +480,12 @@ ui.hud({
         [0] = {name = "Kestrel 8", label = "unknown", tier = "Wing", games = 41},
         [1] = {name = "Ozone 12", label = "bot", ai = true, tier = "Ace", games = 900},
     },
-    ratings = (landing or scenario == "ending") and {}
+    ratings = (watching or scenario == "ending") and {}
               or {[0] = 1183.4, [1] = 1346.6},
     watchers = nil,
     teams = {},
     match = match,
-    side_names = (landing or scenario == "ending")
+    side_names = (watching or scenario == "ending")
                  and {[0] = "Pylon", [1] = "Caisson"}
                  or (scenario == "turf" and {[0] = "Keel", [1] = "Vantage"})
                  or {[0] = "Pilot", [1] = "Rival"},
@@ -512,7 +508,7 @@ end
 -- What an account act opens: the log-in panel, over the account panel it was
 -- pressed from. Drawn after everything else, which is where the arena's own
 -- frame loop draws it, and it clears every box published before it.
-if scenario == "landing-login" then
+if scenario == "watching-login" then
     ui.land_card({
         head = "Log in.",
         keys = {{label = "log in", act = "do_login"}, {label = "cancel"}},
@@ -521,6 +517,50 @@ if scenario == "landing-login" then
                    kind = "username", max = 24},
                   {label = "password", value = "hunter2", mask = true,
                    kind = "current-password", max = 64}},
+    })
+end
+-- The column over a watched room, which is what a client that has just opened
+-- is looking at: five stops over a breathing key, and whatever one of them
+-- opened. The payload is `menu.view()`'s, written out here for the same reason
+-- the in-match one below is.
+--
+-- The table above it was handed to `ui.hud` for years and read by nothing:
+-- the column is `ui.menu`'s, so a picture that only drew the HUD was a picture
+-- of the screen with the whole front of it missing. It is drawn here now.
+if watching then
+    local open = (scenario == "watching-zones" and "zone")
+        or (scenario == "watching-ships" and "ship")
+        or ((scenario == "watching-account" or scenario == "watching-login")
+            and "account") or nil
+    local rows = {}
+    if open == "zone" then
+        for i, z in ipairs(land.zones) do
+            rows[i] = {label = z.label, named = true, note = z.format,
+                       mark = z.here, dim = not z.live, waiting = not z.live,
+                       index = i}
+        end
+    elseif open == "account" then
+        for i, a in ipairs(land.account) do
+            rows[i] = {label = a.label, note = a.note, offer = a.offer,
+                       rule = a.rule, index = i}
+        end
+    end
+    ui.menu({
+        open = true, key = "play", at = open, page = open,
+        depth = open and 1 or nil,
+        pilot = {name = land.name},
+        stops = {
+            {stop = "account", label = "account", value = land.name,
+             named = true, warn = land.warn, open = open == "account"},
+            {stop = "zone", label = "zone", value = land.zone, named = true,
+             open = open == "zone"},
+            {stop = "players", label = "players", value = "watching"},
+            {stop = "ship", label = "ship", value = land.ship, named = true,
+             open = open == "ship"},
+            {stop = "settings", label = "settings"},
+        },
+        rows = rows,
+        panel = open == "ship" and land.panel or nil,
     })
 end
 -- The in-match column, drawn after the HUD the way the arena's frame loop
@@ -551,7 +591,7 @@ if in_menu then
         },
         rows = open and (zone and {
             -- The games list, as `menu.zone_rows` builds it and `M.menu`
-            -- turns it into the landing's own kind of list: the format at the
+            -- turns it into the column's own kind of list: the format at the
             -- right end, a mark on the one you are in, and a game the fleet is
             -- not serving dimmed with the dial that is looking for an arena
             -- beside its format.

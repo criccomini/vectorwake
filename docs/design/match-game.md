@@ -582,7 +582,7 @@ surfaces now rather than one:
   the ship page is the roster now, one row a ship, and nothing behind it. Play
   was one until [decision 98](../architecture/decisions.md), because at home it
   put the same games on the screen twice, once in a page and once in the
-  landing's zone stop behind it. See [menu.md](menu.md) and
+  zone stop behind it. See [menu.md](menu.md) and
   [decision 64](../architecture/decisions.md).
 - **In a room**: the side you are on, the ship in the window where a hull is
   not locked, the way out, and settings. Same row in the same place, carrying
@@ -659,7 +659,7 @@ layout constraint worth having anyway.
 Two consequences for [menu.md](menu.md). Changing ship is a respawn today and
 becomes a front-end action, because a ship is locked for the match. And the
 games list stops being a menu node, because picking a game is what the
-landing's zone stop is for.
+menu's zone stop is for.
 
 ## The week
 

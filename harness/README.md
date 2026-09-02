@@ -41,8 +41,8 @@ The client is rebuilt when anything under `client/` or `sim/` is newer than the
 last page it built, and reused otherwise, so iterating on a driver does not pay
 two minutes a run.
 
-The four windows are desktop, a short desktop (where the landing lies down into
-its rail), and a phone in portrait and landscape. Desktop plays with the
+The four windows are desktop, a short desktop (where the column has least room
+to stand in), and a phone in portrait and landscape. Desktop plays with the
 keyboard; the phones play with a thumb.
 
 ## When it fails

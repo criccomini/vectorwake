@@ -194,7 +194,6 @@ local function frame(w, h, o)
     ui.begin(layer, w, h, o.density or 1, o.touching or false, 0, glass)
     ui.hud({
         me = 0,
-        landing = o.landing or nil,
         side = 0,
         viewer_name = "you",
         menu_open = o.open or false,
@@ -621,24 +620,17 @@ do
           and value.index == 1)
 end
 
--- --- the landing -----------------------------------------------------------
+-- --- the way back ----------------------------------------------------------
 
--- The front page carries no menu key. There is nothing for one to raise out
--- there: the column is already up and cannot be put away, so a faint control
--- offering to open it would be a control that does nothing. The landing's own
--- arm of the column is checked in landing_test.
-do
-    frame(1440, 810, {landing = true})
-    check("the front page carries no menu key", hit_of("open") == nil)
-    check("and does not say MENU either", said("MENU") == nil)
-end
-
--- A player or a spectator inside a room gets it, which is the other half of
--- the same rule: a watcher who chose this room has a seat to leave, a side to
--- be on and a machine to set up.
+-- Everybody with a room on screen gets the menu key, which is what dismissing
+-- the column has to be paid for with. There was a screen without one, the
+-- landing, where the column was up and could not be put away; a faint control
+-- offering to open what was already open would have done nothing. The column
+-- comes down everywhere now, so the way back is on every screen that has a
+-- room behind it. See decision 153.
 do
     frame(1440, 810, {watch = {subject = 1}})
-    check("a spectator in the room gets the key", hit_of("open") ~= nil)
+    check("a spectator gets the key", hit_of("open") ~= nil)
     frame(1440, 810)
     check("and so does a pilot flying it", hit_of("open") ~= nil)
 end

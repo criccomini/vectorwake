@@ -473,11 +473,11 @@ drops every hit box published before it, so a question is answered, not
 clicked past.
 
 Nameplates come down for every panel that stands over the arena, not just for
-the menu's. The landing is the case that says why: it is a live room with the
-column laid over it, and the ship stop opens a panel climbing from its own
-stop to the top of the window. Every call sign in the fight behind it read
-through the build in front of it until the rule was written as "something is
-being read over the arena" rather than as "the menu is open".
+the menu's own column. The ship stop is the case that says why: it opens a
+panel climbing from its row to the top of the window, and every call sign in
+the fight behind it read through the build in front of it until the rule was
+written as "something is being read over the arena" rather than as "the menu is
+open".
 
 That gui-over-mesh constraint is load-bearing everywhere: the only way to
 quiet a label is to quiet the label (`text_dim`), a wash can never do it. It
@@ -529,13 +529,14 @@ a grid is the one place arrows mean rows and columns. A pointer is additive:
 resting on a row moves the same cursor the arrows move, and lights it the
 same way.
 
-The landing answers the same hands. Its stops and its key are a page of rows
+The column answers the same hands. Its stops and its key are a page of rows
 with no panel around them, so up and down walk them in the order they are
 said and enter presses what the cursor is on, opening a stop's list and then
-walking that. Enter with nothing lit is PLAY NOW, because a keyboard that had
-to walk to it would be a front page nobody can start the game from. Left and
-right are not read out there: there is no tab row and no row with a value to
-set, which is the work those two do inside the panel.
+walking that. Enter with nothing lit is the key, because a keyboard that had to
+walk to the one control the screen exists for would be a client nobody can
+start the game from. Left and right are not read on the bare stops: there is no
+row with a value to set out there, which is the work those two do inside the
+panel.
 
 Hit boxes are rectangles resolved by one function, `ui.pick`, which the press
 path, the hover pass and the tests all ask. Containment decides by rank:

@@ -269,7 +269,10 @@ local function reading(self, dt, html5, touch, ui, menu)
         dt = dt,
 
         screen = {
-            landing = menu.home and true or false,
+            -- No room on screen at all, which is the loading picture. It said
+            -- something else until decision 153, that this client had a room
+            -- but no seat, and the journeys that read it read it for that.
+            adrift = menu.adrift and true or false,
             joined = ui.joined and true or false,
             watching = menu.watching and true or false,
             flying = menu.flying(),

@@ -1,5 +1,28 @@
 # The menu
 
+> **There is no landing.** Opening the client puts you in the stands of the
+> game you were in last, and that is an ordinary watcher's session. One screen,
+> and it is the one a benched pilot in the same room is looking at: `ACCOUNT`,
+> `ZONE`, `PLAYERS`, `SHIP`, `SETTINGS` over the key, the radar in its corner
+> with `POS` over it, the band that opens the players sheet, `TAKE SEAT` in the
+> corner row, and the ending at the whistle.
+>
+> The column starts up, because it names the game behind it and holds the key
+> that gets you into it, and it comes down the way it comes down mid-match: on
+> escape, on the menu key, or on a press on the glass beside it. `MENU` at the
+> foot brings it back. `PLAYERS` is offered wherever there is a room, which is
+> everywhere the column is drawn: what took it away was the reading that the
+> game on the front page was somebody else's, and a player who opens the client
+> and looks at fourteen people has no other way to see who any of them are.
+>
+> The key does not dial anything. It asks the room already on the wire for a
+> hull, which is what `TAKE SEAT` has always meant, and picking a game off
+> `ZONE` is the only press that moves this client between rooms.
+>
+> What is left of `menu.home` is `menu.adrift`: no room on the glass at all.
+> What stands in for one then is a loading screen, not a page. See
+> [decision 153](../architecture/decisions.md).
+
 > **There is one menu.** The landing and the in-match column were the same
 > drawing off two models, and this note is where they stop being two. The
 > column is `ACCOUNT`, `ZONE`, `PLAYERS`, `SHIP`, `SETTINGS` over one key, in
@@ -674,119 +697,65 @@ nobody is running is still a row, drawn a register back, because a player is
 better off seeing that a game exists and is down than wondering whether they
 misread the list.
 
-### The landing
+### Opening the client
 
-There is no landing page. Opening the client dials the game at the head of the
-list as a watcher and draws the room, and the front end is that: the watcher's
-own HUD, with the corner keys, the clock and the score, the radar and the feed,
-and none of a hull's furniture. The front end's chrome sits over the foot of
-it, in the order you would say it: the wordmark, three stops (account, zone,
-ship), and a PLAY NOW key that takes a seat in the room already on screen. On a
-window with the height for it that is a column, the stops at the key's own
-width stacked over it; on a short one it is a rail, the stops as three cells
-beside the key with the name over them.
+There is no landing page. Opening the client dials the game this pilot was in
+last as a watcher, or the deployment's own front door on a first boot, and
+draws the room. The front end is that room: the watcher's HUD, with the corner
+keys, the clock and the score, the radar and the readings over it, the feed,
+and none of a hull's furniture. Over the foot of it stands the column, the same
+one a pilot in that room raises: five stops at the key's own width stacked over
+one key, in the order you would say them.
 
 The stops are decision 89, and they exist because the drawer went undiscovered:
-a first visit met PLAY NOW and a hamburger, deployed into whatever the stands
+a first visit met one key and a hamburger, deployed into whatever the stands
 were showing, and never learned there was another game or another ship to be. A
-column row is the question at its left edge and the current answer with a caret
-at its right; a rail cell sets the question over the answer, with the caret on
-the question's line. All three drop a list. Account drops the account acts,
-which is the whole of that interface since decision 99 took the pilot page:
-sign up or set a password, roll a new call sign, log in or log off, with a
-rule between what you can do to the account you are and how to be a different
-one, and a dot on the stop for a guest with something to lose. Zone drops the
-games list in place; picking one re-dials the stands to it, so the fight behind
-the glass becomes the one the key would join, and PLAY NOW stays the press that
-commits. Ship drops the panel that is the whole of a ship: five parts over the credits
-they are bought with, with the body a carousel of the roster. A list opens upward
-from the stop it belongs to, and what it covers stands down, the wordmark
-included, the same way the clock band stands down under the drawer. Down the
-column that is the stops above the open one; along the rail nothing stands
-above an open cell, so all three stay and only the name comes off.
+row is the question at its left edge and the current answer with a caret at its
+right. Account drops the account acts, which is the whole of that interface
+since decision 99 took the pilot page: sign up or set a password, roll a new
+call sign, log in or log off, with a rule between what you can do to the account
+you are and how to be a different one, and a dot on the stop for a guest with
+something to lose. Zone drops the games list; picking one leaves the room on
+screen for the stands of whichever was picked. Players opens the room. Ship
+opens the panel that is the whole of a ship: five parts over the credits they
+are bought with, with the body a carousel of the roster. Settings holds
+everything about the machine.
 
 The key breathes on the same slow swell the on-air tally uses, with its edge
 floored well above dark so the trough never reads as a key that stopped
-working. It is the one press this screen exists for. Enter is the same press,
-because a keyboard should not have to open a menu to start the game. It does
-what the ship stop says: the hull on that stop is the hull this press flies,
-since turning the carousel is the whole of choosing one.
+working. Enter is the same press, because a keyboard should not have to walk to
+the one control the screen exists for. It does what the ship stop says: the hull
+on that stop is the hull this press flies, since turning the carousel is the
+whole of choosing one. What it asks is the room already on the wire, not a new
+one, so it costs a message rather than a handshake.
 
-**The shape is a question about height,** which is decision 91. A column costs
-about 260 points whatever the window is: a third of a monitor, which is what it
-was drawn against, and more than half of a phone held sideways. The camera
-stands behind the hull the stands are watching, so the middle of the screen is
-that hull, and a column that tall on a short window is drawn across it. At 844
-by 390 the wordmark landed on the ship and the account stop on its call sign.
-Where the column would climb that far the same pieces lie down into the rail,
-which is the direction the column beat for the upright case: a cell carries its
-question over its answer, so three cells and the key fit one line, and where
-that line is wider than the window the cells take a line of their own over the
-key, which is what a 320 point screen gets. Nothing about what a stop is or
-what pressing it does changes with the shape.
+The column comes down. Escape, the menu key, or a press on the glass beside it
+put it away, and `MENU` at the foot of the screen brings it back, which is what
+that key does in a match. It starts up on the first frame because a client that
+has just loaded has nothing else naming the game, and after that it is the
+player's.
 
-**The name sits directly over the block.** It could have gone under the
-clock, in the broadcast bug's slot, or into the corner the missing corner
-stack leaves empty; all three were drawn, and the mocks are in
-`.design/spectator-landing`. A stranger's eye ends on the pulsing thing at the
-foot of the screen, climbs the stops, and the name has to be where that look
-ends or the page never says what it is. The stops' own directions, a column
-against a rail along the foot and a line of pressable words, are drawn in
-`.design/start-flow`; the column won the question and the rail came back for
-the windows it does not fit.
-
-Nothing else is added. Every reading a panel would carry is one the HUD
-already draws, to the people in the room, in code that has to be right anyway.
-
-The corner keeps MENU and drops TAKE SEAT. That key means the same act as PLAY NOW, and two controls for one act,
-one of them pulsing at the foot of the screen and one a chip in the corner, is
-the offer made twice. A pilot the room benched mid-match keeps TAKE SEAT: they
-are not on the landing, and the seat being held is theirs already.
+Nothing else is added. Every reading a panel would carry is one the HUD already
+draws, to the people in the room, in code that has to be right anyway. The
+corner keeps `MENU` and `TAKE SEAT`, which is the same act the column's key is:
+two controls for one thing, offered because the column is a press away and the
+chip is not, and because a watcher reading the corner instruments is already
+looking there.
 
 ### Before a room answers
 
 A directory lookup and a handshake stand between the engine's first frame and
-the first snapshot. What is on screen for them is this same page with
-everything that needs a room taken off it: the starfield, the name, and MENU.
-No key and no stops, because there is nothing to join yet, and none of the
-instruments, because the radar, the coordinates, the link bars and the roster
+the first snapshot. What is on screen for them is a loading screen rather than a
+page: the dial that is looking for a room in the middle of the window, the
+wordmark under it, and a line when something has gone wrong. No column and none
+of the instruments, because the radar, the coordinates, the roster and the stops
 are all about a room this client has not found. They are absent rather than
 drawn empty.
 
-**The name does not move.** It sits exactly where it sits once the room is
-there, with the stops and the key appearing underneath it, so arriving is the
-column fading in rather than the page rearranging itself. A centered lockup
-was tried first and it jumped to the foot of the screen the moment a game
-answered, which is the one move a hand-off should never make.
-
-Nothing is said while it is only waiting. A couple of seconds of network is not
-worth a caption, and a wordmark on a starfield is what this game looks like. A
-line appears where the key will be when something has actually gone wrong: a
-join that failed, or a directory that has answered and named no games. Silence
-there would be a client that looks like it is still trying when it has finished
-looking and found nothing.
-
-What used to fill that gap was the menu, opened by the client rather than by
-anybody, which is the one thing this whole design is against. It also meant the
-first screen of a game about flying was a list.
-
-MENU is on it because a directory that never answers must not leave a wordmark
-and no way out. That is also what lets the menu always close: there is always
-something behind it that has a way back in.
-
-Which game you land in is the head of the directory's list, which is the
-deployment's own first zone and is Melee. Moving the cursor down the games list
-re-dials the stands to whatever it lands on, so what is on screen is always
-what the key would join, and the choice outlives the menu closing.
-
-The band shares the corner key's line at every window size, including a phone's
-390 points. It took a line of its own down there for a while, because the top
-right carries the dial's two readouts and a centered band with two call signs
-on it was drawn straight through them. The line under the row is where the dial
-itself is, though, so dropping bought the same collision against a bigger
-instrument and cost the row the one alignment it is for. What gives instead is
-the names. A band with nowhere left to grow drops both of them and keeps the
-two figures, which are the reading; the names are on the board a press opens.
+A fleet that is down gets the line. An ordinary two second wait does not: the
+wordmark on a starfield is what this game looks like, and a caption narrating a
+normal wait is noise, while silence over a fleet that has finished answering
+would be a client that looks like it is still trying.
 
 ## Nothing pauses
 
