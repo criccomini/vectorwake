@@ -287,6 +287,34 @@ for _, h in ipairs(M.HULLS) do
     end
     h.reach = math.sqrt(far)
 
+    -- Where each vertex sits across the beam, from -1 at the port wingtip to
+    -- +1 at the starboard one. It is what a bank is shaded by: rolled, one
+    -- wing drops away and the other tips up into the light, and how far out
+    -- along the wing a thing sits is how much of that it takes.
+    --
+    -- Normalized per hull rather than in pixels, so an Anvil's wide wing and a
+    -- Cipher's narrow one darken by the same amount at the same angle.
+    local beam = 0
+    for i = 1, #p, 2 do
+        local ax = p[i] < 0 and -p[i] or p[i]
+        if ax > beam then beam = ax end
+    end
+    if beam < 1e-6 then beam = 1 end
+    h.beam = beam
+    h.side = {}
+    for v = 1, n do h.side[v] = p[v * 2 - 1] / beam end
+    -- The same figure for a whole interior plate, taken at its middle. A
+    -- plate is small enough that grading one across itself would be a
+    -- gradient nobody can see on a shape eight pixels wide.
+    if h.plates then
+        h.pside = {}
+        for k = 1, #h.plates do
+            local q, s = h.plates[k], 0
+            for i = 1, #q, 2 do s = s + q[i] end
+            h.pside[k] = s / (#q / 2) / beam
+        end
+    end
+
     -- The outward normal of every edge, and from those, how brightly the edge
     -- draws: a light fixed to the hull's own nose. Fixed to the world instead,
     -- the same ship would look like a different ship depending on which way it
@@ -351,6 +379,10 @@ for _, h in ipairs(M.HULLS) do
     h.ptmp, h.ltmp = {}, {}
     for k = 1, #(h.plates or {}) do h.ptmp[k] = {} end
     for k = 1, #(h.lines or {}) do h.ltmp[k] = {} end
+    -- The bank shade, per vertex and per edge, and the two skirt weights
+    -- already folded into it. Written once per hull per frame and read in the
+    -- same call, for the same reason the point scratches exist.
+    h.stmp, h.etmp, h.wstmp, h.bstmp = {}, {}, {}, {}
 end
 
 
@@ -2259,6 +2291,21 @@ local lit_col = {0, 0, 0, 1}
 -- never kept, so one table serves every hull in the room.
 local edge_col = {0, 0, 0, 1}
 
+-- How far a bank takes the two wings apart. The dropped one turns away from
+-- the light and loses most of what it had; the raised one tips into it and
+-- gains a little. Not the same number, because a lit wing already near white
+-- has nowhere to go and a hull that brightened as hard as it darkened would
+-- pulse every time a pilot flicked the rudder.
+--
+-- At the full bank in arena.script (0.95 rad) the tip of the low wing draws
+-- at 0.33 and the high one at 1.24, and everything between them is graded, so
+-- a hull leaning hard has a lit edge and a dark edge rather than two sides of
+-- one flat shape. That is about four to one across the beam, which is more
+-- than the light on a real wing would do and is meant to be: the whole tilt
+-- is 22 world pixels wide and has to say what it is at a glance, across a
+-- room, on a phone.
+local BANK_DIM, BANK_LIFT = 0.82, 0.30
+
 function M.ship(fill, glow, cls, x, y, heading, col, opts)
     local h = M.HULLS[cls + 1] or M.HULLS[1]
     -- A blast beside a hull throws its color onto it. Half weight at most, so
@@ -2280,11 +2327,44 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- local x multiplies by this, so the whole ship leans together: hull,
     -- plates, canopy, hardpoints, lamps and the engines, whose plumes stay
     -- on the heading while their nozzles come inboard.
-    local squash = 1
+    --
+    -- `lean` is the other half of the same angle, and it is what says which
+    -- way. A cosine is the same number left or right, so the geometry above
+    -- draws a hull rolled hard one way exactly like one rolled hard the
+    -- other: shading is the only thing on the ship that tells them apart, and
+    -- without it a lean reads as a hull that got thinner rather than one that
+    -- tipped. Positive heading rate is a turn to starboard, so a positive
+    -- roll drops the +x wing.
+    local squash, lean = 1, 0
     if opts and opts.roll and opts.roll ~= 0 then
         squash = math.cos(opts.roll)
+        lean = math.sin(opts.roll)
     end
     local pts = place(h.poly, h.tmp, x, y, ca, sa, 1, squash)
+    -- What the bank does to the light on every part of the hull. Surfaces
+    -- only: the body, its plates and panel lines, the silhouette and the two
+    -- skirts hanging off it. The flame, the muzzles, the lamps and the canopy
+    -- are lights rather than lit, and a light does not dim because the thing
+    -- carrying it leaned.
+    local shade, eshade, wskirt, bskirt
+    if lean ~= 0 then
+        shade, eshade = h.stmp, h.etmp
+        wskirt, bskirt = h.wstmp, h.bstmp
+        local nv = #h.side
+        for v = 1, nv do
+            local t = lean * h.side[v]
+            shade[v] = 1 - (t > 0 and BANK_DIM or BANK_LIFT) * t
+        end
+        -- An edge takes the shade of its two ends, which is the same grade
+        -- the body gets and keeps the outline from stepping where the fill
+        -- is smooth.
+        for v = 1, nv do
+            local s = (shade[v] + shade[v % nv + 1]) * 0.5
+            eshade[v] = s
+            wskirt[v] = h.wide[v] * s
+            bskirt[v] = h.band[v] * s
+        end
+    end
     local mine = opts and opts.mine
     local dim = ((opts and opts.alpha) or 1) * (h.dim or 1)
     local near = not (opts and opts.far)
@@ -2345,38 +2425,61 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- the stern. The wash has to be additive rather than a lighter fill,
     -- because anything the fill layer draws below full alpha lets a star
     -- through the hull.
+    --
+    -- The bank rides on the wash and not on the base. The base is a hole in
+    -- the starfield, and a hole does not have a lit side; the wash is the
+    -- light on the hull, so that is where a wing turning away loses it.
     local body = {col[1] * 0.055 + 0.018, col[2] * 0.055 + 0.026,
                   col[3] * 0.055 + 0.042, 0.95 * dim}
     local tris, lit = h.tris, h.lit
+    local wash = 0.20 * dim
     for i = 1, #tris, 3 do
         local a1, b1, c1 = tris[i], tris[i + 1], tris[i + 2]
+        local sa1, sb1, sc1 = 1, 1, 1
+        if shade then sa1, sb1, sc1 = shade[a1], shade[b1], shade[c1] end
         fill:tri(pts[a1 * 2 - 1], pts[a1 * 2], pts[b1 * 2 - 1], pts[b1 * 2],
                  pts[c1 * 2 - 1], pts[c1 * 2], body)
-        glow:tri_fade(pts[a1 * 2 - 1], pts[a1 * 2], lit[a1] * 0.20 * dim,
-                      pts[b1 * 2 - 1], pts[b1 * 2], lit[b1] * 0.20 * dim,
-                      pts[c1 * 2 - 1], pts[c1 * 2], lit[c1] * 0.20 * dim, col)
+        glow:tri_fade(pts[a1 * 2 - 1], pts[a1 * 2], lit[a1] * sa1 * wash,
+                      pts[b1 * 2 - 1], pts[b1 * 2], lit[b1] * sb1 * wash,
+                      pts[c1 * 2 - 1], pts[c1 * 2], lit[c1] * sc1 * wash, col)
     end
 
     -- Interior structure, under the silhouette so the outline always wins.
     -- Drawn in a neutral instrument gray rather than in the team color: the
     -- team read belongs on the silhouette, and a hull whose every line is the
     -- same color looks cut from one sheet of neon rather than built.
+    --
+    -- Structure banks with the surface it is painted on, a plate at its own
+    -- middle and a panel line a segment at a time. A hull whose plating stayed
+    -- lit on a wing that had gone dark would read as an outline with a
+    -- diagram floating inside it.
     if near then
         if h.plates then
             for k = 1, #h.plates do
                 local q = place(h.plates[k], h.ptmp[k], x, y, ca, sa, 1,
                                 squash)
-                glow:fan(q, pal.a(pal.PANEL_INK, 0.035 * dim))
-                glow:outline(q, 0.85, pal.a(pal.PANEL_INK, 0.36 * dim), true)
+                local s = 1
+                if shade then
+                    local t = lean * h.pside[k]
+                    s = 1 - (t > 0 and BANK_DIM or BANK_LIFT) * t
+                end
+                glow:fan(q, pal.a(pal.PANEL_INK, 0.035 * s * dim))
+                glow:outline(q, 0.85, pal.a(pal.PANEL_INK, 0.36 * s * dim),
+                             true)
             end
         end
         if h.lines then
             for k = 1, #h.lines do
-                local q = place(h.lines[k], h.ltmp[k], x, y, ca, sa, 1,
-                                squash)
+                local src = h.lines[k]
+                local q = place(src, h.ltmp[k], x, y, ca, sa, 1, squash)
                 for i = 1, #q - 3, 2 do
+                    local s = 1
+                    if shade then
+                        local t = lean * (src[i] + src[i + 2]) * 0.5 / h.beam
+                        s = 1 - (t > 0 and BANK_DIM or BANK_LIFT) * t
+                    end
                     glow:seg(q[i], q[i + 1], q[i + 2], q[i + 3], 0.7,
-                             pal.a(pal.PANEL_INK, 0.26 * dim), true)
+                             pal.a(pal.PANEL_INK, 0.26 * s * dim), true)
                 end
             end
         end
@@ -2410,9 +2513,14 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- What the hull throws into the dark around it, under the skirts rather
     -- than instead of them: the skirts hug the silhouette and say what shape
     -- this is, and this says there is something lit here.
+    --
+    -- Both skirts take the bank, the round bloom under them does not. A skirt
+    -- is the hull's own edge and belongs to the wing it hangs off; the bloom
+    -- is one soft ball centered on the ship saying something is lit here, and
+    -- lopsiding that would move the ship rather than shade it.
     glow:bloom(x, y, 30 + flare * 10, (0.085 + flare * 0.16) * dim, col)
-    glow:glow_band(pts, nrm, 9.0, 0.105 * dim, col, h.wide)
-    glow:glow_band(pts, nrm, 3.0, 0.32 * dim, col, h.band)
+    glow:glow_band(pts, nrm, 9.0, 0.105 * dim, col, wskirt or h.wide)
+    glow:glow_band(pts, nrm, 3.0, 0.32 * dim, col, bskirt or h.band)
     -- The hot edge, which is the team color pushed toward white. A hurt hull
     -- pushes it toward HURT instead, so an outline that was cooling to white
     -- runs red as the energy goes.
@@ -2430,6 +2538,12 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- The flare from a fresh hit rides on top, toward white and brighter,
     -- which is the opposite direction and deliberately so: taking a round is
     -- a moment and being wounded is a state, so they must not look alike.
+    --
+    -- The bank grades this too, on alpha alone. It is the strongest read on
+    -- the ship and the one that makes a lean look like depth instead of a
+    -- squash, and it is safe to touch for the same reason the hurt grade is:
+    -- it changes how bright the rim is, never what color, so the side a hull
+    -- is on survives a hard turn intact.
     local edge = pal.hot(col, mine and 0.62 or 0.34, 1)
     if hurt > 0 or flare > 0 then
         local k = hurt * 0.7
@@ -2445,8 +2559,10 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     local e = 1
     for i = 1, n, 2 do
         local j = (i + 1 < n) and i + 2 or 1
+        local w = h.hot[e]
+        if eshade then w = w * eshade[e] end
         glow:seg(pts[i], pts[i + 1], pts[j], pts[j + 1], 1.5 + flare * 1.1,
-                 pal.a(edge, math.min(1, h.hot[e] * ea)), true)
+                 pal.a(edge, math.min(1, w * ea)), true)
         e = e + 1
     end
 
