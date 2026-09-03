@@ -4,7 +4,9 @@
 --
 -- Scenarios: after (a match part way through), before (with the banner the
 -- server used to send), turf (a flag mode, for the pennant strip under the
--- band), roam (the one zone with prizes, for the greens on the dial),
+-- band), roam (the one zone with prizes, for the greens on the dial, and
+-- the one that sends no match, so the row counts the room), duel (two
+-- pilots and no score),
 -- ending (a room at the whistle), watching (the screen a client opens
 -- on, a room with no seat of ours in it; watching-zones, watching-ships
 -- and watching-account open a stop's list, watching-login the panel an
@@ -276,6 +278,15 @@ if scenario == "turf" then
              {3050, 2990, 1, 0}, {3070, 2990, 1, 0}, {3090, 2990, 255, 0}}
 end
 
+-- A duel, which is the one zone whose row carries no score: one clean kill
+-- takes a match, so it would read nil to nil the whole way, and what the two
+-- sides are is the two pilots. See decision 163.
+if scenario == "duel" then
+    room.count = 2
+    room.teams = {[0] = 0, 1}
+    match = {playing = true, left = 97, score = {[0] = 0, [1] = 0}}
+end
+
 -- Free Roam, which is the one zone that puts prizes on the ground, so it is
 -- the one frame that can show what a dial holds when they are out. Sown six
 -- to twenty-eight tiles from a live pilot, which is the ring the zone uses
@@ -483,8 +494,12 @@ ui.hud({
         end
         return out
     end)() or {
-        [0] = {name = "Kestrel 8", label = "unknown", tier = "Wing", games = 41},
-        [1] = {name = "Ozone 12", label = "bot", ai = true, tier = "Ace", games = 900},
+        -- The seat's own side, which the row reads in the one zone that
+        -- names its sides by the pilots on them.
+        [0] = {name = "Kestrel 8", label = "unknown", tier = "Wing", games = 41,
+               team = 0},
+        [1] = {name = "Ozone 12", label = "bot", ai = true, tier = "Ace",
+               games = 900, team = 1},
     },
     -- A rating a seat, since the row carries the viewer's own all match and
     -- the sheet at the whistle carries the room's.
@@ -516,7 +531,8 @@ ui.hud({
     banner = banner,
     lag_notice = "",
     rtt = 22,
-    zone = (scenario == "roam") and "roam" or "melee",
+    zone = (scenario == "roam" and "roam")
+           or (scenario == "duel" and "duel") or "melee",
     room = 1,
     fps = 60, frame_ms = 16.7, rx_rate = 31000, tx_rate = 700,
 })
