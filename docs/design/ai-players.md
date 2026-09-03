@@ -382,9 +382,10 @@ A turf side of four on six stands must not arrive anywhere as a clump, so a
 stand's score is discounted by the allies already nearer it than you, which
 spreads the side with no captain and re-forms it the moment somebody dies.
 Defense enters as its own choice: your own stand with a hostile nearer to it
-than any ally is a place to be. Which pilots take and which hold falls out of
-the personalities the roster already has, the way everything else about a
-bot's taste does.
+than any ally is a place to be, and it is how a side holding five of six ever
+gets the sixth without giving one back. Which pilots take and which hold falls
+out of the personalities the roster already has, the way everything else about
+a bot's taste does.
 
 Capture the Flag wants two behaviors on top of the shared flag chase. The
 ferry: a carried flag drops after thirty seconds wherever its carrier is,
@@ -394,9 +395,9 @@ puts it down on your doorstep, then go get the next. A pilot knows it is
 carrying from the state and flies accordingly, which the retreat logic
 already half does. And the count: the set is in every snapshot, so the brain
 knows we-hold-three the same way the mode does. A side holding the whole set
-turtles on its flags while the ten seconds run; a side facing a completed set
-rushes the nearest enemy flag, because touching one resets the clock; and in
-between the ordinary take-ferry-hunt loop plays.
+turtles on its flags while the fifteen seconds run; a side facing a completed
+set rushes the nearest enemy flag, because taking one back ends the countdown;
+and in between the ordinary take-ferry-hunt loop plays.
 
 ### The room follows the people
 
@@ -413,9 +414,10 @@ game and being an execution.
 
 None of this ships on the feeling that the bots seem better. A zone probe in
 the melee probe's family runs bot-only rooms and reports the number that says
-the game happened at all: rounds completed per match in Capture the Flag, score
-spread and stand traffic in Turf, greens taken and time spent near humans in
-Free Roam. The probe runs before a behavior lands and after, and the difference
+the game happened at all: how long a match takes to be decided in the two flag
+zones, and how often a hold is broken before its fifteen seconds are up, since
+a room where neither happens is a room where nothing is being contested;
+greens taken and time spent near humans in Free Roam. The probe runs before a behavior lands and after, and the difference
 is the review.
 
 ## The roster: bots as long-lived individuals

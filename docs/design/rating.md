@@ -249,10 +249,15 @@ S_st = 1 if score_s > score_t, 0.5 if level, 0 otherwise
 Two sides is the ordinary case and the mean over other sides is then one
 term. A level score is a draw, which moves nobody at equal strength.
 
+The score a flag match hands this is a one against a zero: the match belongs to
+whoever held every flag for fifteen seconds and there is no number under that,
+so the ledger says which side and the band draws no score at all. See
+[decision 165](../architecture/decisions.md#165-a-flag-game-is-won-by-holding-the-set).
+
 Who is on a side is the room's call, and it is the same call the participation
 grant already makes: thirty seconds on the field, so a pilot who arrives for
 the closing seconds is not on the exchange in either direction. A private side
-cannot win a flag round and is not on it either.
+cannot take a flag match and is not on it either.
 
 Everything else is the death rule again. K decays with games the same way,
 and a match is one game, so a pilot is out of provisional after ten matches
@@ -264,8 +269,8 @@ person can arrange for themselves, and losing is never capped.
 What is deliberately not in it is per-flag credit. Paying a pilot for each
 stand taken or flag carried is what gets farmed, and it is what the objective
 games that tried it took out again: a stat can be padded and a win cannot.
-Flag takes and stand time belong on the board beside assists, where the score
-already lives, and score and rating do different jobs. The
+Flag takes and stand time belong on the board beside assists, and a per-flag
+count and a rating do different jobs. The
 [original](../research/asss-server.md) paid points per flag and per carried
 flag killed, and had no rating at all, which is the other way of saying the
 same thing.

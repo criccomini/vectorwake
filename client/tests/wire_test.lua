@@ -317,6 +317,32 @@ check("and the mark rides until the frame loop spends it",
       net.match.fresh == true)
 net.match.fresh = nil
 
+-- A flag game sends neither number. Its match has no length, so the clock
+-- byte is a zero no running clock can be, and its standing is the pennants,
+-- so it carries no sides at all. Both are absences here rather than zeroes:
+-- an empty score table is a truthy answer meaning "two sides, no figures",
+-- and a nil clock is what stops the band drawing 0:00 for a whole match.
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(14, 1, 0, 0)})
+check("a flag game sends no clock and no score",
+      net.match and net.match.playing and net.match.left == nil
+      and net.match.score == nil,
+      tostring(net.match and net.match.left) .. "/"
+          .. tostring(net.match and net.match.score))
+-- And a set completed is a countdown appearing out of nothing, not a match
+-- starting over: a whistle on each of those would be a room restarting a
+-- dozen times a match.
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(14, 1, 15, 0)})
+check("the hold's countdown arrives on the same byte",
+      net.match.left == 15 and net.match.score == nil)
+check("and appearing from nothing is not a match started over",
+      not net.match.fresh)
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(14, 1, 0, 0)})
+check("and a flag taken back takes it away again",
+      net.match.left == nil and not net.match.fresh)
+
 local reliable_before, unreliable_before = #wt.sent, #wt.unsent
 check("focus loss can release held controls", net.release_controls())
 check("the release uses both input lanes",

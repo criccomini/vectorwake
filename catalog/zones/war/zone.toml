@@ -1,23 +1,21 @@
-# Capture the Flag: four a side over four flags, and a round belongs to whoever
-# holds all of them at once.
+# Capture the Flag: four a side over four flags, and the match belongs to
+# whoever holds all of them for fifteen seconds.
 #
 # A flag can only be taken from a side that is not yours, it rides whoever took
-# it, and it drops where they die. Hold the whole set for ten seconds and the
-# round is yours; the flags then go neutral and back on their stands, and the
-# next one starts.
+# it, and it drops where they die. Gather the whole set, keep it for fifteen
+# seconds, and the match is yours; the flags then go neutral and back on their
+# stands, the ground changes, and the next one starts.
 #
-# What is ours is the match around the rounds. A room that ran rounds forever
-# had no score to show, no clock beside the deploy key and no reason to change
-# ground, so it was the one game in the catalog a player could not read from
-# the outside. Four minutes of rounds, a podium, next map: the same shape Team
-# Battle and Turf play, scored in rounds instead of kills or stands.
+# There is no clock on the match. It runs until somebody holds the set, so the
+# only thing worth counting is the fifteen seconds that decide it, and the
+# other side losing one flag takes that away again.
 
 # The key stays `war`, which is what a join, a rating and a room are filed
 # under and what every rating already written is filed under. The label is the
 # whole of what a player reads, and what they read is the game they know.
 label = "Capture the Flag"
 
-mode = "warzone"
+mode = "flags"
 
 # Three maps, each drawing four stands. Two are the same theme at different
 # proportions, which changes the geometry rather than the paint: a keep on a
@@ -41,10 +39,10 @@ max_humans_per_team = 4
 max_bots_per_team = 4
 
 [arena]
-# Four minutes rather than three. A round needs the set gathered and then held
-# for ten seconds, which is a slower thing to build than a kill, and a match
-# that ends before either side ever completes one is a match about nothing.
-match_seconds = 240
+# No `match_seconds`: gathering four carried flags against a side trying to
+# take them back is not a thing with a length, and a clock that ended the
+# match before either side ever completed the set ended it about nothing.
+# Fifteen seconds of podium between two of them.
 intermission_seconds = 15
 
 # Thirty seconds is what one pilot may carry a flag for before it drops on its
@@ -55,7 +53,7 @@ intermission_seconds = 15
 #
 # Without a limit that is exactly what happens. The other side's only answer to
 # a runner is to kill them, and a hull built to not be killed turns a four flag
-# round into a three flag round nobody can finish.
+# match into a three flag match nobody can finish.
 flag_carry_seconds = 30
 
 # The other two flag numbers are the baseline's and so are not written here: a

@@ -1000,6 +1000,87 @@ do
               or "no caption")
 end
 
+-- --- a flag game: the pennants are the whole board ---------------------------
+--
+-- Turf and Capture the Flag have no match clock and no score. They run until
+-- one side holds every flag for fifteen seconds, so the only number worth
+-- putting on the row is that countdown, and it is not there most of the time;
+-- what the row carries instead is the strip under it. See decision 165.
+
+local HELD_MINE = {{100, 100, 0, 0}, {200, 100, 0, 0}, {300, 100, 0, 0}}
+local HELD_THEIRS = {{100, 100, 1, 0}, {200, 100, 1, 0}, {300, 100, 1, 0}}
+
+do
+    -- Nobody holds the set: no clock, no sides, no figures. Just the marks.
+    frame({flags = FLAGS,
+           match = {playing = true, left = nil, score = nil}})
+    local said = table.concat(words(), " | ")
+    check("a flag game with the set loose draws no clock",
+          drawn("0:00") == nil and drawn("0:15") == nil, said)
+    check("and neither side's name nor figure",
+          drawn("PYLON") == nil and drawn("CAISSON") == nil, said)
+    local pennants = strip()
+    check("but the pennants are still there",
+          pennants ~= nil and pennants.n == #FLAGS,
+          pennants and pennants.n .. " marks" or "no strip at all")
+
+    -- The strip is the band, so the press that opens the sheet has to reach
+    -- it: an empty row with a hit box the width of nothing would leave a flag
+    -- zone with no way into the players sheet but the menu.
+    local b = box("players_open")
+    check("and the press that opens the sheet covers them",
+          b ~= nil and pennants ~= nil and b.x <= pennants.left
+              and b.x + b.w >= pennants.right
+              and b.y + b.h >= pennants.bottom,
+          b and pennants
+              and string.format("box %.0f..%.0f x %.0f..%.0f, strip "
+                                .. "%.0f..%.0f to %.0f",
+                                b.x, b.x + b.w, b.y, b.y + b.h,
+                                pennants.left, pennants.right,
+                                pennants.bottom)
+              or "no box")
+
+    -- The set completed: the countdown appears in the middle of the row,
+    -- wearing whoever is holding it. Yours is the friendly color and theirs
+    -- the enemy's, the same two the marks under it are wearing, because
+    -- fifteen seconds is a warning to one side and the other side's win.
+    frame({flags = HELD_MINE,
+           match = {playing = true, left = 15, score = nil}})
+    local mine = drawn("0:15")
+    check("completing the set puts a countdown on the row", mine ~= nil,
+          table.concat(words(), " | "))
+    check("and it wears the side holding it",
+          mine ~= nil and mine.col[1] == pal.FRIEND[1]
+              and mine.col[2] == pal.FRIEND[2],
+          mine and table.concat(mine.col, ",") or "no clock")
+
+    frame({flags = HELD_THEIRS,
+           match = {playing = true, left = 15, score = nil}})
+    local theirs = drawn("0:15")
+    check("the other side's hold reads as theirs",
+          theirs ~= nil and theirs.col[1] == pal.ENEMY[1]
+              and theirs.col[2] == pal.ENEMY[2],
+          theirs and table.concat(theirs.col, ",") or "no clock")
+
+    -- Losing one takes it away again, which is the whole of the rule: a hold
+    -- is unbroken or it is nothing.
+    frame({flags = FLAGS,
+           match = {playing = true, left = nil, score = nil}})
+    check("and one flag taken back takes the countdown away",
+          drawn("0:15") == nil, table.concat(words(), " | "))
+
+    -- At the whistle the row has a clock and nothing else, so who took the
+    -- match goes on the line under it. In a scored game that line is the
+    -- caption about the clock; here the caption would be the only thing said,
+    -- and it would not be the result.
+    local took = "Keel takes it"
+    frame({match = {playing = false, left = 12, score = nil}, banner = took})
+    check("the whistle says who took it under the band", drawn(took) ~= nil,
+          table.concat(words(), " | "))
+    check("and drops the caption that would sit there",
+          drawn("NEXT MATCH IN") == nil, table.concat(words(), " | "))
+end
+
 if fails > 0 then
     print(fails .. " failed")
     os.exit(1)

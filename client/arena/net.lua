@@ -118,7 +118,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 39
+local CLIENT_PROTOCOL = 40
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -219,7 +219,12 @@ M.streaks = {}
 -- What the room is doing, in a zone that plays matches: `playing`, `left` in
 -- whole seconds, `score`, and any result film or Ladder progress. Nil in a room
 -- that runs forever, which is how the interface decides whether to draw a
--- clock at all.
+-- band at all.
+--
+-- `left` and `score` are each absent on their own as well. A flag game has no
+-- match clock, so it sends nothing to count except the fifteen seconds
+-- somebody spends holding every flag, and no score, because what it is scored
+-- in is the pennants. See decision 165.
 M.match = nil
 
 -- People arriving and leaving, drained into feed lines the same way. Worked
@@ -883,13 +888,18 @@ end
 -- because there is one answer and the newest is it: a message lost to a full
 -- socket queue costs a second of clock and the next one repairs it.
 local function on_match(s)
-    local score = {}
     local flags = string.byte(s, 2) or 0
     local sides = string.byte(s, 4) or 0
     local at = 5 + sides * 2
     if #s < at - 1 then return end
+    -- No sides at all is a game whose standing is not a number, and the
+    -- difference between that and a two-nil scoreline is what the band draws.
+    -- An empty table would be a truthy answer meaning "two sides, no figures",
+    -- so it is nil.
+    local score = nil
     for k = 0, sides - 1 do
         local score_at = 5 + k * 2
+        score = score or {}
         score[k] = string.byte(s, score_at)
             + string.byte(s, score_at + 1) * 256
     end
@@ -903,13 +913,24 @@ local function on_match(s)
     local prev = M.match
     local was = prev and prev.playing
     local playing = flags % 2 == 1
+    -- Zero is the room counting nothing, which no running clock can be: a
+    -- phase reads at least one second until the tick it ends on. A flag game
+    -- spends all of a match there except the fifteen seconds somebody holds
+    -- every flag.
     local left = string.byte(s, 3)
+    if left == 0 then left = nil end
     -- A clock that goes back up inside a match is the room starting it over,
     -- which a duel does when a seat changes hands. The arena's clock only
     -- ever counts down otherwise, so the jump is the whole of the signal.
     -- Kept on the message until `clock_says` has heard it, since the frame
     -- loop reads the newest message rather than every one.
-    local reopened = playing and was and left > prev.left
+    --
+    -- A clock that was not there and now is is not one of those. A flag game
+    -- reaches fifteen from nothing every time somebody completes the set, and
+    -- a whistle on each of them would be a room restarting a dozen times a
+    -- match.
+    local reopened = playing and was and left and prev.left
+        and left > prev.left
     M.match = {
         playing = playing,
         left = left,

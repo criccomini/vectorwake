@@ -1,20 +1,19 @@
-# Turf: four a side, three minutes, six stands that pay whoever holds them.
+# Turf: four a side, six stands, and the match goes to whoever holds all six
+# for fifteen seconds.
 #
 # A flag here is a place rather than an object. Nobody carries one: fly over a
 # stand and it is yours, and it stays yours until somebody of another side
-# crosses it. Every five seconds each side is paid a point for each stand it is
-# holding, and the match belongs to whoever has the most when the clock runs
-# out.
+# crosses it. Six stands and four a side is the whole difficulty. Two more
+# stands than either team has pilots means nobody can cover the map, so taking
+# the set is a sweep the other side can see coming and has fifteen seconds to
+# break.
 #
-# That scoring is the whole design. Holding two stands of six is not losing, it
-# is two points every five seconds, so a side that gives up the middle and
-# keeps its own half is playing a real strategy rather than waiting to be
-# beaten. It is also what stops the game collapsing into one scrum: a scrum
-# wins one stand while the four it left pay somebody else.
+# There is no clock on the match. It runs until somebody holds everything, and
+# then the room stands the flags back up and deals another.
 
 label = "Turf"
 
-mode = "turf"
+mode = "flags"
 
 # Three maps, one theme apiece, each drawing six stands down its long axis.
 # `mapforge verify` proves each is the exact output its recipe names.
@@ -38,28 +37,23 @@ max_humans_per_team = 4
 max_bots_per_team = 4
 
 [arena]
-match_seconds = 180
+# No `match_seconds`: a flag game has no length. Fifteen seconds of podium
+# between two of them, which is where the sides are evened up and the ground
+# changes.
 intermission_seconds = 15
 
 # The rule that makes this turf rather than Capture the Flag: a stand cannot
 # be picked up.
 flag_carry = false
 
-# Five seconds a payout. Over a three minute match that is thirty-six of them,
-# so one stand held end to end is worth 36 and the six between them put 216
-# points on the board. Small enough that a single stand taken late still moves
-# the result, large enough that the numbers on the scoreboard are worth
-# reading.
-turf_seconds = 5
-
-# Two more flag numbers matter here and neither is written, because both are
+# Two flag numbers matter here and neither is written, because both are
 # already the baseline's. A stand settles for two seconds after changing hands
 # (`flag_drop_cooldown`), without which two pilots of opposite sides sitting on
 # one stand take it from each other a hundred times a second, the pennant
-# strobes, and which side the clock happens to pay is decided by the tick the
-# payout lands on rather than by the fight. And a stand is claimed from
-# eighteen pixels past the hull's own edge (`flag_radius`), which is the whole
-# of how precisely you have to fly over one.
+# strobes, and a side holding the set would win or not depending on which tick
+# the fifteen seconds ran out on rather than on the fight. And a stand is
+# claimed from eighteen pixels past the hull's own edge (`flag_radius`), which
+# is the whole of how precisely you have to fly over one.
 
 # Nothing else, and deliberately so. A pilot moving between this game and Team
 # Battle should find the same ship, the same wall and the same economy; what

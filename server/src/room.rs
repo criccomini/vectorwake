@@ -618,13 +618,22 @@ fn match_message(state: modes::MatchState, artifact: Option<u64>) -> Vec<u8> {
     if artifact.is_some() {
         flags |= MATCH_HAS_ARTIFACT;
     }
+    // A room counting nothing sends a zero, which no running clock can be: a
+    // phase reads at least one second until the tick it ends on, and that
+    // tick is the next phase's first. A flag game spends most of a match
+    // there.
+    //
+    // And a game whose score is not a reading sends no sides at all. What
+    // travels is what the band draws, so the ledger a flag match is rated and
+    // filed off stays on the server, where both readers of it are.
+    let score: &[u16] = if state.scored { &state.score } else { &[] };
     let mut out = vec![
         S2C_MATCH,
         flags,
-        state.seconds_left,
-        state.score.len().min(255) as u8,
+        state.seconds_left.unwrap_or(0),
+        score.len().min(255) as u8,
     ];
-    for score in state.score.iter().take(255) {
+    for score in score.iter().take(255) {
         out.extend_from_slice(&score.to_le_bytes());
     }
     if let Some(id) = artifact {
@@ -1086,7 +1095,6 @@ impl Room {
             teams: self.public_teams,
             match_ticks: c.match_seconds.unwrap_or(180) as u32 * 100,
             intermission_ticks: c.intermission_seconds.unwrap_or(25) as u32 * 100,
-            turf_period: c.turf_seconds.unwrap_or(5) as u32 * 100,
             first_to: c.first_to.unwrap_or(modes::DEFAULT_FIRST_TO),
         }
     }
@@ -1277,7 +1285,7 @@ impl Room {
     pub(crate) fn new_from(cfg: &config::ZoneConfig) -> Self {
         let mut a = Room::new_on_maps(&cfg.maps);
         // Mode and flags were keys in the file that nobody read: the arena
-        // built a four-flag warzone whatever they said. They settle at start
+        // built a four-flag flag game whatever they said. They settle at start
         // rather than on reload, because changing what a round is for while
         // one is being played is not a tuning change.
         //
@@ -1342,7 +1350,7 @@ impl Room {
     }
 
     /// The built-in arena, which is the room a process holds when it has no
-    /// zone to serve and the ground every warzone test flies.
+    /// zone to serve and the ground every flag test flies.
     ///
     /// Its four flags are put here rather than in `with_world` because they
     /// are this arena's: 1024 tiles wide, with the stands forty tiles out
@@ -1358,10 +1366,9 @@ impl Room {
         let mut a = Room::with_world_bare(world);
         // The built-in arena's own defaults, which a catalog zone replaces
         // the moment it names its clocks.
-        a.mode = Box::new(modes::Warzone::new(
+        a.mode = Box::new(modes::Flags::new(
             4,
             a.public_teams,
-            240 * modes::TICKS_PER_SECOND,
             15 * modes::TICKS_PER_SECOND,
         ));
         a.place_flags();
@@ -1369,7 +1376,7 @@ impl Room {
     }
 
     /// An empty room. A catalog zone builds one of these and then decides its
-    /// mode, its teams and its population, rather than inheriting a warzone.
+    /// mode, its teams and its population, rather than inheriting a flag game.
     pub(crate) fn with_world_bare(world: sim::World) -> Self {
         Room {
             // One. An arena server renumbers it the moment it knows which zone
@@ -4631,8 +4638,9 @@ mod wire_tests {
         let message = match_message(
             modes::MatchState {
                 playing: false,
-                seconds_left: 0x50,
+                seconds_left: Some(0x50),
                 score: vec![1, 0],
+                scored: true,
             },
             Some(0x7172_7374_7576_7778),
         );
@@ -4657,12 +4665,47 @@ mod wire_tests {
         let message = match_message(
             modes::MatchState {
                 playing: true,
-                seconds_left: 180,
+                seconds_left: Some(180),
                 score: vec![0, 0],
+                scored: true,
             },
             None,
         );
         assert_eq!(message.len(), 8, "header and two scores");
         assert_eq!(message[1], MATCH_PLAYING);
+    }
+
+    /// A flag game sends neither. Its match has no length, so the clock byte
+    /// is a zero no running clock can be, and its ledger stays on the server,
+    /// so the packet carries no sides at all.
+    #[test]
+    fn a_flag_game_sends_no_clock_and_no_score() {
+        let message = match_message(
+            modes::MatchState {
+                playing: true,
+                seconds_left: None,
+                score: vec![0, 0],
+                scored: false,
+            },
+            None,
+        );
+        assert_eq!(message.len(), 4, "the header and nothing else");
+        assert_eq!(message[1], MATCH_PLAYING);
+        assert_eq!(message[2], 0, "nothing is being counted");
+        assert_eq!(message[3], 0, "and there is no score to read");
+
+        // The fifteen seconds somebody holds the set are the exception, and
+        // they travel in the same byte every other clock does.
+        let holding = match_message(
+            modes::MatchState {
+                playing: true,
+                seconds_left: Some(15),
+                score: vec![0, 0],
+                scored: false,
+            },
+            None,
+        );
+        assert_eq!(holding[2], 15);
+        assert_eq!(holding[3], 0, "still no score");
     }
 }

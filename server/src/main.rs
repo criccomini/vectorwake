@@ -2535,8 +2535,9 @@ mod tests {
         fn match_state(&self) -> Option<modes::MatchState> {
             Some(modes::MatchState {
                 playing: false,
-                seconds_left: 0,
+                seconds_left: Some(0),
                 score: self.0.clone(),
+                scored: true,
             })
         }
     }
@@ -2554,7 +2555,7 @@ mod tests {
         let results = spools.results.clone();
 
         let mut def = wire_zone(1, 6, 16);
-        def.mode = "turf".into();
+        def.mode = "flags".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
         let mut z = ArenaServer::new(cfg, spools, HashMap::new());
         z.serve_zone(&def).expect("a room");
@@ -3137,14 +3138,14 @@ mod tests {
         a.tick();
         let before = a.mode.match_state().unwrap();
         assert_eq!(before.score.iter().sum::<u16>(), 5);
-        assert!(before.seconds_left < 180, "and the clock has run");
+        assert!(before.seconds_left < Some(180), "and the clock has run");
         let match_no = a.match_no;
 
         let pilot = seat_human(&mut a, "pilot");
         a.tick();
         let after = a.mode.match_state().unwrap();
         assert!(after.playing);
-        assert_eq!(after.seconds_left, 180, "a whole clock");
+        assert_eq!(after.seconds_left, Some(180), "a whole clock");
         assert_eq!(after.score, vec![0, 0], "nothing on the board");
         assert_eq!(a.match_no, match_no + 1, "a match of its own");
         for sh in a.world.state.ships.iter().filter(|s| s.active != 0) {
@@ -3324,6 +3325,95 @@ mod tests {
         z.rooms.remove(0)
     }
 
+    /// A flag room, as the catalog shapes one: eight seats, two sides, stands
+    /// off the map, and a match with no length.
+    fn flag_room(stands: &[(u16, u16)]) -> Room {
+        let mut def = wire_zone(1, 8, 8);
+        def.mode = "flags".into();
+        def.maps_b64 = vec![fleet::b64(
+            &sim::World::arena_with_stands(1, stands).packed_map(),
+        )];
+        def.zone_toml = "teams = [\"Keel\", \"Vantage\"]\n\
+                         [arena]\nintermission_seconds = 1\n"
+            .into();
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
+        z.serve_zone(&def).expect("a room");
+        z.rooms.remove(0)
+    }
+
+    /// The whole of decision 165 from the room's side: a flag match runs with
+    /// no clock, ends on fifteen seconds of one side holding the set, and the
+    /// next one opens with the flags back on their stands.
+    ///
+    /// The mode has its own checks and cannot reach the last of those. It no
+    /// longer resets the flags itself, because `open_match` already stands
+    /// them back up on ground that may have changed under them, so what is
+    /// under test here is that the two halves agree.
+    #[test]
+    fn a_flag_match_ends_on_the_hold_and_the_next_one_opens_neutral() {
+        let stands = [(480u16, 512), (544, 512), (512, 480)];
+        let mut a = flag_room(&stands);
+        assert_eq!(a.world.state.flag_count, 3, "one per stand");
+
+        for _ in 0..2_000 {
+            a.tick();
+        }
+        let state = a.mode.match_state().expect("a flag room has a match");
+        assert!(
+            state.playing,
+            "twenty seconds in and nothing has decided it"
+        );
+        assert_eq!(state.seconds_left, None, "and nothing is being counted");
+        assert!(!state.scored, "nor is there a score to draw");
+
+        // One side sweeps the set. Written on the flags rather than flown,
+        // because what is under test is the rule and not the core's claim
+        // radius, which has checks of its own.
+        for i in 0..3 {
+            a.world.state.flags[i].team = 1;
+        }
+        a.tick();
+        assert_eq!(
+            a.mode.match_state().unwrap().seconds_left,
+            Some(15),
+            "completing the set starts the countdown"
+        );
+
+        let opened = a.match_no;
+        for _ in 0..15 * 100 {
+            a.tick();
+        }
+        assert!(
+            !a.mode.match_state().unwrap().playing,
+            "fifteen seconds of it takes the match"
+        );
+        assert_eq!(a.match_no, opened, "the podium is not a fresh match");
+
+        // Through the podium and into the next one.
+        for _ in 0..200 {
+            a.tick();
+            if a.mode.match_state().unwrap().playing {
+                break;
+            }
+        }
+        assert!(a.mode.match_state().unwrap().playing, "a match opened");
+        assert_eq!(a.match_no, opened + 1);
+        assert_eq!(a.world.state.flag_count, 3, "the same stands");
+        for i in 0..3 {
+            assert_eq!(
+                a.world.state.flags[i].team,
+                sim::TEAM_NONE,
+                "flag {i} carried the last match's owner into this one"
+            );
+        }
+        assert_eq!(
+            a.mode.match_state().unwrap().seconds_left,
+            None,
+            "so nobody holds the set and nothing is counting"
+        );
+    }
+
     /// A pilot whose queue was full at the whistle is not left flying the
     /// last match's walls.
     ///
@@ -3415,7 +3505,11 @@ mod tests {
         let opened = a.match_no;
         let before = a.mode.match_state().expect("a match room has a clock");
         assert!(before.playing);
-        assert_eq!(before.seconds_left, 150, "two and a half minutes left");
+        assert_eq!(
+            before.seconds_left,
+            Some(150),
+            "two and a half minutes left"
+        );
         assert!(before.score.iter().any(|n| *n > 0), "and a score standing");
 
         // Watching it, then pressing deploy: one connection, no re-dial.
@@ -4059,10 +4153,10 @@ mod tests {
 
     #[test]
     fn a_two_team_zone_still_has_two_teams() {
-        // The other half of the same rule: a warzone must not become a
+        // The other half of the same rule: a flag game must not become a
         // free-for-all with two flags in it.
         let mut def = wire_zone(1, 6, 16);
-        def.mode = "warzone".into();
+        def.mode = "flags".into();
         def.zone_toml = "teams = [\"Keel\", \"Vantage\"]\n".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
         let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
@@ -7108,12 +7202,11 @@ mod tests {
         // stands to play, and the connection policy. None of them reach the
         // settings a client is sent, so they cannot be checked this way and
         // are not what this test is about.
-        const NOT_SETTINGS: [&str; 7] = [
+        const NOT_SETTINGS: [&str; 6] = [
             "mode",
             "flags",
             "match_seconds",
             "intermission_seconds",
-            "turf_seconds",
             "first_to",
             "lag",
         ];
@@ -7165,7 +7258,7 @@ mod tests {
         let (w, _) = tuned(
             r#"
             [arena]
-            mode = "warzone"
+            mode = "flags"
         "#,
         );
         assert_eq!(w.cfg.mod_multi_energy, 25);
@@ -7175,7 +7268,7 @@ mod tests {
     }
 
     /// `mode` and `flags` were documented keys that nobody read: the arena
-    /// built a four-flag warzone whatever the file said.
+    /// built a four-flag flag game whatever the file said.
     #[test]
     fn a_zone_picks_its_mode_and_how_many_flags_it_plays_for() {
         let cfg: config::ZoneConfig =
@@ -7188,8 +7281,8 @@ mod tests {
         let a = Room::new_from(&cfg);
         assert_eq!(
             a.mode.name(),
-            "warzone",
-            "and a file that says nothing is a warzone"
+            "flags",
+            "and a file that says nothing is a flag game"
         );
         assert_eq!(a.world.state.flag_count, 4);
     }
@@ -7198,7 +7291,7 @@ mod tests {
     fn a_catalog_room_uses_the_configured_number_of_flags() {
         let stands = [(500u16, 500), (520, 500), (500, 520), (520, 520)];
         let mut zone = wire_zone(1, 6, 16);
-        zone.mode = "warzone".into();
+        zone.mode = "flags".into();
         zone.maps_b64 = vec![fleet::b64(
             &sim::World::arena_with_stands(1, &stands).packed_map(),
         )];
@@ -7206,19 +7299,19 @@ mod tests {
 
         let room = ArenaServer::build_room(&zone, None).expect("room");
 
-        assert_eq!(room.mode.name(), "warzone");
+        assert_eq!(room.mode.name(), "flags");
         assert_eq!(room.world.state.flag_count, 2, "two of the four it draws");
     }
 
     /// Where the flags stand is the map's. This built the arena's own four
-    /// quadrant tiles for any warzone, whatever ground it was on, which put
+    /// quadrant tiles for any flag game, whatever ground it was on, which put
     /// four flags out past the wall of every zone map we ship; and it laid
     /// none at all for a game whose flags are the map's whole objective.
     #[test]
     fn a_catalog_room_stands_its_flags_where_the_map_draws_them() {
         let stands = [(480u16, 512), (544, 512), (512, 480)];
         let mut zone = wire_zone(1, 6, 16);
-        zone.mode = "turf".into();
+        zone.mode = "flags".into();
         zone.maps_b64 = vec![fleet::b64(
             &sim::World::arena_with_stands(1, &stands).packed_map(),
         )];
@@ -7226,7 +7319,7 @@ mod tests {
 
         let room = ArenaServer::build_room(&zone, None).expect("room");
 
-        assert_eq!(room.mode.name(), "turf");
+        assert_eq!(room.mode.name(), "flags");
         assert_eq!(room.world.state.flag_count, 3, "one per stand, and no more");
         let mut where_they_are: Vec<(i32, i32)> = (0..3)
             .map(|i| {
@@ -7239,7 +7332,7 @@ mod tests {
     }
 
     /// The turf zone as it ships, played: stands off the map, claimed by
-    /// flying over one, and a clock that pays whoever is holding them.
+    /// flying over one, and no clock on a match until somebody holds the set.
     ///
     /// End to end on purpose. Every piece of this was tested on its own and
     /// the pieces are in four files, so what is under test here is that the
@@ -7260,7 +7353,7 @@ mod tests {
         zone.zone_toml = std::fs::read_to_string(format!("{dir}/zone.toml")).unwrap();
         let mut room = ArenaServer::build_room(&zone, None).expect("a room");
 
-        assert_eq!(room.mode.name(), "turf");
+        assert_eq!(room.mode.name(), "flags");
         assert_eq!(room.world.state.flag_count, 6, "six stands off the map");
         assert_eq!(room.world.cfg.flag_carry, 0, "and none of them travel");
 
@@ -7289,12 +7382,13 @@ mod tests {
         for f in 0..2 {
             assert_eq!(room.world.state.flags[f].carried, 0, "carried by nobody");
         }
-        let score = room.mode.match_state().expect("turf has a clock").score;
+        let state = room.mode.match_state().expect("turf is a match game");
+        assert!(state.playing, "ten seconds in and nothing has decided it");
         assert_eq!(
-            score,
-            vec![2, 2],
-            "ten seconds of a five second period, one stand each"
+            state.seconds_left, None,
+            "no clock: neither side is anywhere near the set"
         );
+        assert!(!state.scored, "and no score to read either");
     }
 
     /// The War zone as it ships: four flags off the map, carried by whoever
@@ -7312,7 +7406,7 @@ mod tests {
         zone.zone_toml = toml_text;
         let mut room = ArenaServer::build_room(&zone, None).expect("a room");
 
-        assert_eq!(room.mode.name(), "warzone");
+        assert_eq!(room.mode.name(), "flags");
         assert_eq!(room.world.state.flag_count, 4, "four flags off the map");
         assert_eq!(room.world.cfg.flag_carry, 1, "and they travel");
         assert_eq!(
@@ -7509,14 +7603,14 @@ mod tests {
     #[test]
     fn a_tuning_reload_does_not_replace_an_active_objective() {
         let cfg: config::ZoneConfig =
-            toml::from_str("[arena]\nmode = \"warzone\"\nflags = 2\n").unwrap();
+            toml::from_str("[arena]\nmode = \"flags\"\nflags = 2\n").unwrap();
         let mut room = Room::new_from(&cfg);
         room.world.state.flags[0].team = 1;
 
         let changed = parse("[arena]\nmode = \"arena\"\nflags = 4\nfriction = 9\n");
         Room::apply_config(&mut room.world, &changed);
 
-        assert_eq!(room.mode.name(), "warzone");
+        assert_eq!(room.mode.name(), "flags");
         assert_eq!(room.world.state.flag_count, 2);
         assert_eq!(room.world.state.flags[0].team, 1);
         assert_eq!(room.world.cfg.friction, 9);
@@ -7685,7 +7779,7 @@ mod tests {
 
         // And untouched they are the original's: ProximityDistance gains a
         // tile a level, InactiveShrapDamage is 3 over a quarter second.
-        let (w, _) = tuned("[arena]\nmode = \"warzone\"\n");
+        let (w, _) = tuned("[arena]\nmode = \"flags\"\n");
         assert_eq!(w.cfg.prox_step, 16 * 256);
         assert_eq!(w.cfg.shrap_inactive, unsafe { sim::sim_units_energy(3) });
         assert_eq!(w.cfg.shrap_inactive_ticks, 25);
@@ -7787,7 +7881,7 @@ mod tests {
         assert_eq!(w.cfg.wormhole_range, 500 * 256);
 
         // Left out, each is the core's own.
-        let (w, _) = tuned("[arena]\nmode = \"warzone\"\n");
+        let (w, _) = tuned("[arena]\nmode = \"flags\"\n");
         assert_eq!(w.cfg.bounce, 12);
         assert_eq!(w.cfg.door_period, 600);
         assert_eq!(w.cfg.flag_radius, 18 * 256);

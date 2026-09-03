@@ -283,7 +283,14 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// `S2C_NOSHIP` is a new tag, so a client built for 38 would skip it rather
 /// than misread anything, and the number moves for 37's reason: a build that
 /// cannot hear the answer goes on showing the silence it exists to end.
-pub(crate) const CLIENT_PROTOCOL: u8 = 39;
+///
+/// 40 gives `S2C_MATCH` two absences. Zero seconds left now means the room is
+/// counting nothing rather than a clock that has run out, and zero sides means
+/// a game whose standing is not a number. No byte moved, and that is exactly
+/// why the number has to: a client built for 39 reads a flag game's packet
+/// cleanly and draws 0:00 over an empty score for the whole match. See
+/// decision 165.
+pub(crate) const CLIENT_PROTOCOL: u8 = 40;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
@@ -387,6 +394,14 @@ pub(crate) const S2C_TEAMS: u8 = 12;
 ///
 /// Flag bit 0 says the match is playing and bit 1 says an artifact follows the
 /// scores.
+///
+/// Seconds left is zero where the room is counting nothing, which no running
+/// clock can be: a phase reads at least one second until the tick it ends on.
+/// A flag game has no match clock at all and sends a zero for all of one
+/// except the fifteen seconds somebody spends holding every flag.
+///
+/// Sides is zero where the game's standing is not a number: the same flag
+/// game, whose pennants are the whole of it.
 ///
 /// One packet owns the clock, the score and the result artifact. Queue
 /// pressure can delay the newest answer, but it cannot combine halves from two

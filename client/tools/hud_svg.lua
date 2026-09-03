@@ -3,8 +3,10 @@
 --     lua5.1 client/tools/hud_svg.lua <out.svg> [scenario] [root] [w] [h]
 --
 -- Scenarios: after (a match part way through), before (with the banner the
--- server used to send), turf (a flag mode, for the pennant strip under the
--- band), roam (the one zone with prizes, for the greens on the dial, and
+-- server used to send), turf (a flag mode part way through, for the pennant
+-- strip under a row with nothing else on it), hold (the fifteen seconds one
+-- side holds every flag, for the only clock a flag game draws),
+-- roam (the one zone with prizes, for the greens on the dial, and
 -- the one that sends no match, so the row counts the room), duel (two
 -- pilots and no score),
 -- ending (a room at the whistle), watching (the screen a client opens
@@ -270,8 +272,9 @@ if ending then
              score = {[0] = 17, [1] = 20}}
 end
 
--- Turf, part way through: six stands, four of them claimed, and a score that
--- has been paid a while. The picture is the point of it. The pennant strip was
+-- Turf, part way through: six stands, four of them claimed, and nothing else
+-- on the row at all. A flag game has no match clock and no score, so the strip
+-- is the whole board. The picture is the point of it. The pennant strip was
 -- pinned above where the room's line lands rather than under the band, which
 -- put a staff through every numeral of the clock and made the score unreadable
 -- in the two zones that have flags; every string was in the right place and in
@@ -279,9 +282,21 @@ end
 if scenario == "turf" then
     room.count = 8
     room.teams = {[0] = 0, 0, 0, 0, 1, 1, 1, 1}
-    match = {playing = true, left = 158, score = {[0] = 7, [1] = 16}}
+    match = {playing = true, left = nil, score = nil}
     flags = {{2990, 2990, 0, 0}, {3010, 2990, 0, 0}, {3030, 2990, 255, 0},
              {3050, 2990, 1, 0}, {3070, 2990, 1, 0}, {3090, 2990, 255, 0}}
+end
+
+-- And the fifteen seconds that decide it: one side on every stand, with the
+-- countdown that is the only number a flag game ever puts on the row. Drawn
+-- as the other side sees it, which is the reading that matters.
+if scenario == "hold" then
+    room.count = 8
+    room.teams = {[0] = 0, 0, 0, 0, 1, 1, 1, 1}
+    match = {playing = true, left = 9, score = nil}
+    banner = "Vantage holds all 6 flags"
+    flags = {{2990, 2990, 1, 0}, {3010, 2990, 1, 0}, {3030, 2990, 1, 0},
+             {3050, 2990, 1, 0}, {3070, 2990, 1, 0}, {3090, 2990, 1, 0}}
 end
 
 -- A duel, which is the one zone whose row carries no score: one clean kill
@@ -554,7 +569,8 @@ ui.hud({
     match = match,
     side_names = (watching or ending or players)
                  and {[0] = "Pylon", [1] = "Caisson"}
-                 or (scenario == "turf" and {[0] = "Keel", [1] = "Vantage"})
+                 or ((scenario == "turf" or scenario == "hold")
+                     and {[0] = "Keel", [1] = "Vantage"})
                  or {[0] = "Pilot", [1] = "Rival"},
     feed = {},
     hurt = 0,

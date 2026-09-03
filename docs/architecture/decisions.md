@@ -6805,7 +6805,11 @@ of them is refused rather than quietly given one more than it asked for.
 
 ## 130. Turf is paid, War is a match
 
-**Status:** accepted
+**Status:** superseded by
+[decision 165](#165-a-flag-game-is-won-by-holding-the-set), which took the
+payout and the rounds out and made both zones one game: hold every flag for
+fifteen seconds and the match is yours. The flag rules below are unchanged and
+are still the whole difference between the two.
 
 **What:** two zones off the flag mechanism above.
 
@@ -9167,3 +9171,115 @@ checks fail. The whistle's own checks are unchanged and pass.
 picture of this panel the tool could draw, and the column reads down a room of
 eight with a watcher's row at the foot at both 1280x800 and 390x844. The client
 suite and luacheck are clean.
+
+## 165. A flag game is won by holding the set
+
+**Status:** accepted, replacing
+[decision 130](#130-turf-is-paid-war-is-a-match), which paid Turf per stand
+every five seconds and wrapped War's rounds in a four minute match
+
+**What:** Turf and Capture the Flag have no match clock. A match runs until one
+side holds every flag at once and keeps them for fifteen seconds, and then the
+room stands the flags back up, changes ground and deals another. Losing one
+flag during those fifteen seconds ends the hold; the next completed set starts
+a fresh one.
+
+The band draws that and nothing else. No score, because there is none: the
+pennant per flag, colored by who holds it, is the whole standing. No clock
+either, except the countdown, which appears the moment the set is completed,
+reads fifteen, and goes when the set breaks. It wears the color of the side
+holding the set, the same two colors the marks under it are wearing.
+
+The two modes became one. `Turf` and `Warzone` differed in what they scored and
+in nothing else, so `mode = "flags"` is what both zone files name, and what
+still separates the two games is `flag_carry`: four flags gathered and carried
+in Capture the Flag, six stands that change hands where they stand in Turf.
+`turf_seconds` is gone, and so is `match_seconds` in both files.
+
+Three smaller pieces fall out of it:
+
+- `MatchState::seconds_left` is an `Option`, and `Clock` grew an open-ended
+  match: `Clock::open_ended` plays until the mode blows the whistle and answers
+  nothing until the podium is up. On the wire that absence is a zero, which no
+  running clock can be, since a phase reads at least one second until the tick
+  it ends on.
+- `MatchState` grew `scored`, and a mode that says no sends no sides. The score
+  itself stays: a flag match's ledger is a one against the side that took it,
+  which is what `Rating::matched` reads and what the pilot log files. Nobody is
+  shown it.
+- At the whistle the row has a clock and nothing else, so the line under it
+  carries the banner, "Vantage takes it", instead of the `NEXT MATCH IN`
+  caption. In a scored game the caption stays: the sides are up there saying
+  who won and the caption is about the clock beside them.
+
+**Why:** asked for, and the two zones were funny in the same way for two
+different reasons.
+
+Turf's payout was a real design and it read as arithmetic. The scoreboard said
+`96` against `120` and the honest question a player had was which stands are
+mine, which is what the pennants already answered a mark at a time. Two figures
+derived from those marks, integrated over three minutes, is the same fact in a
+form nobody can act on: there is no play that changes 96 to 121, only more of
+what you were already doing.
+
+War's rounds were the opposite. A round was a real event with a real countdown,
+and then it was filed as a tally mark and the flags went back on their stands
+with three minutes still on the clock. A player who took the set had won
+something the interface immediately put away.
+
+What both games were actually about was the same moment, and neither one ended
+on it. Holding every flag is the thing the map is shaped for and the thing four
+pilots against four cannot quite manage; making it the end of the match rather
+than a point or a round means the fight that decides the game is the fight
+everybody can see coming.
+
+Fifteen seconds rather than War's ten. Ten was a round's length and this is a
+match's, so it wants to be long enough that a set completed by one lucky sweep
+is not a match, and short enough to be watched. Six stands on a turf map is the
+harder version of the same problem, which is what the extra five seconds are
+for.
+
+No clock at all rather than a long one. A backstop would decide the match by
+whoever happened to hold more when it ran out, which is the payout again with a
+worse resolution.
+
+**Cost:** a flag match has no length, so a room can hold one for as long as
+neither side sweeps, and Turf's six stands are the case to watch: four pilots
+covering six stands against four doing the same is a set that may take a while
+to complete. That is the pressure the zone was built on, but it is now the
+thing that ends the match rather than the thing that colors it, and if rooms
+run long the answer is fewer stands rather than a clock. Nothing measures this
+yet; the zone probe in [ai-players.md](../design/ai-players.md) is where it
+should go, reporting how long a match takes to decide and how often a hold is
+broken.
+
+`CLIENT_PROTOCOL` moves to 40 although no byte moved, which is exactly why it
+has to: a client built for 39 reads a flag game's packet cleanly and draws
+`0:00` over an empty score for the whole match.
+
+Bots read the clock byte to decide what a charge is worth, and in a flag game
+that byte is zero for most of a match. `None` there already means "no pace to
+keep, pay the asking price", which is right; the fifteen seconds of a hold are
+seconds until the whistle like any other and are paced against.
+
+**Verified:** `modes.rs` has ten checks on the new mode: no clock until the set
+is completed, the countdown starting at fifteen and running to the whistle, one
+flag taken back stopping it and the retake starting a whole fresh fifteen, a
+simultaneous change of holder restarting it, a side above three winning, the
+podium counting only itself, and the next match opening from nothing.
+`a_flag_match_ends_on_the_hold_and_the_next_one_opens_neutral` in `main.rs`
+runs the same arc against a room, which is the half the mode cannot reach: it
+no longer resets the flags itself, since `open_match` stands them back up on
+ground that may have changed. That test is what found the one-tick countdown a
+fresh match inherited from the match that had just been won, since an opening
+tick sees the old arrangement and the room only clears it afterwards; nothing
+is read off an opening tick now. `the_shipped_turf_zone_plays_turf` and its war
+counterpart run the shipped zone files end to end. `band_test` reads the row in a flag game: no clock and no
+sides with the set loose, the countdown appearing in the holder's color and
+going when it breaks, the press that opens the players sheet reaching down over
+the pennants since the row above them is empty, and the banner taking the
+caption's line at the whistle. `wire_test` reads both absences off the packet
+and checks that a countdown appearing from nothing is not read as a match
+started over. `client/tools/hud_svg.lua` grew a `hold` scenario beside `turf`,
+and both render at 1280x800 and 390x844. Server suite, client suite, luacheck
+and clippy are clean.

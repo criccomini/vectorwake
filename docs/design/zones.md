@@ -5,10 +5,14 @@ Five games, in one catalog, on one engine.
 | Zone | What it is | Room | Scored in |
 |---|---|---|---|
 | Team Battle | Three minute 4v4 melee | 8 seats, 5 maps | kills |
-| Turf | Six stands that pay whoever holds them | 8 seats, 3 maps | turf |
-| Capture the Flag | Four flags, a round to whoever holds the set | 8 seats, 3 maps | flags |
+| Turf | Six stands nobody can carry | 8 seats, 3 maps | flags |
+| Capture the Flag | Four flags that travel | 8 seats, 3 maps | flags |
 | Duel | One against one on small ground | 2 seats, 3 maps | rounds |
 | Free Roam | A thousand tiles, no clock, greens | 64 seats, 1 map | nothing |
+
+The two flag zones are one game under different flag rules: the match belongs
+to whoever holds every flag for fifteen seconds, and neither has a clock. What
+separates them is `flag_carry`, one byte in the zone file.
 
 Team Battle is [match-game.md](match-game.md)'s and came first. The other four
 were built together, and this document is what they are and why each one is
@@ -43,12 +47,15 @@ tested:
 3. **Modes** in `server/src/modes.rs` are where the meaning went: small
    compiled Rust behind the `Mode` trait, watching the state a tick produced,
    writing the banner, keeping the score, and saying when a match opens and
-   closes.
+   closes. There are three of them for five zones: `melee`, `flags` and
+   `duel`, plus `arena`, which is the absence of a mode.
 
 Every zone below decomposes along that split, and building four of them added
 two modes, five settings and one entity to the core. The duel took a third
 mode afterwards, per
 [decision 142](../architecture/decisions.md#142-a-duel-is-rounds-and-two-of-them-take-it),
+and the two flag modes then became one, per
+[decision 165](../architecture/decisions.md#165-a-flag-game-is-won-by-holding-the-set),
 which is still meaning in the mode layer rather than anything the core had to
 learn. Nothing needed a new
 layer, and [decision 6](../architecture/decisions.md#6-zone-modules-are-sandboxed)'s
@@ -67,46 +74,50 @@ Four games, and the whole of what the core had to grow:
 
 Everything else was configuration, two modes, and maps.
 
+## The flag rule
+
+Both flag zones are won the same way: hold every flag at once, keep them for
+fifteen seconds, and the match is yours. Lose one during that fifteen and the
+countdown is gone; the next completed set starts a fresh one.
+
+There is no clock. A flag game runs until somebody holds the set, so the only
+number on the top row is that countdown, and it is not there most of the time.
+What is there instead is one pennant per flag, colored by who holds it, which
+is the whole board: two of six in your color says where you stand more
+directly than any pair of figures would. See
+[decision 165](../architecture/decisions.md#165-a-flag-game-is-won-by-holding-the-set).
+
+Then the room stands the flags back up, changes ground and deals another.
+
 ## Turf
 
 Six stands down the long axis of the map. Flying over one claims it; it then
-settles for two seconds before it can change hands again. Every five seconds
-each side is paid a point for each stand it is holding, and the match belongs
-to whoever has the most when the clock runs out.
+settles for two seconds before it can change hands again. Nobody carries a
+stand: it changes hands where it stands.
 
-The payout is the design. Holding two stands of six is not a losing position,
-it is two points every five seconds, so a side that gives up the middle and
-keeps its own half is playing a real strategy rather than waiting to be beaten.
-It is also what stops the game collapsing into one scrum: a scrum wins one
-stand while the four it left pay somebody else.
+Six stands and four a side is the whole difficulty. Two more stands than either
+team has pilots means nobody can cover the map, so completing the set is a
+sweep the other side can watch coming and has fifteen seconds to break. A scrum
+in the middle wins one stand while the four it left go somewhere else, which is
+what spreads the fight over the ground.
 
 The settling window looks like a detail and is not. Without it, two pilots of
 opposite sides sitting on one stand take it from each other a hundred times a
-second: the stand strobes, and which side the clock happens to pay is decided
-by the tick the payout lands on rather than by the fight.
-
-Six stands and four a side is deliberate. Two more stands than either team has
-pilots means nobody can cover the map, which is the pressure the whole game
-runs on.
+second: the stand strobes, and whether a side's hold survives is decided by
+which tick the fifteen seconds ran out on rather than by the fight.
 
 ## Capture the Flag
 
 The classic flag game, which the original ran as its War Zone. A flag can only
 be taken from a side that is not yours, it rides whoever took it, and it drops
-where they die. Hold all four for ten seconds and the round is yours; the flags
-go neutral and back on their stands, and the next round starts.
+where they die. Four of them, gathered rather than swept.
 
-Two things are ours. A carried flag comes down on its own after thirty seconds,
+One thing is ours. A carried flag comes down on its own after thirty seconds,
 because without that the other side's only answer to a runner is to kill them,
-and a hull built not to be killed turns a four flag round into a three flag
-round nobody can finish. Home to home on these maps is about twelve seconds, so
+and a hull built not to be killed turns a four flag match into a three flag
+match nobody can finish. Home to home on these maps is about twelve seconds, so
 thirty is two crossings: long enough to bring a flag to where your side holds
 the others, short enough that staying alive is not the whole strategy.
-
-And there is a match around the rounds: four minutes, scored in rounds taken.
-A room that ran rounds forever had no score, no clock beside the deploy key, no
-ending board and no reason to change ground, which made it the one game in the
-catalog a player could not read from outside the room.
 
 ## Duel
 
@@ -198,8 +209,8 @@ something a new arrival cannot fight.
 ## What we did not build
 
 **A module runtime.** Four games needed two modes and five settings between
-them, and rounds took a third mode later. That is no argument for an ABI, an
-authoring system and a sandbox.
+them, rounds took a third mode later, and the two flag modes have since become
+one. That is no argument for an ABI, an authoring system and a sandbox.
 
 **A mode-aware client.** The client reads the catalog's format strip, draws
 flags and greens off the wire, and gets the match clock from `match_state`.
@@ -211,10 +222,12 @@ sound that was already in the kit, and a feed line naming what one filled.
 
 **Objective bots.** The brains already went for flags, and a small fix was
 worth making: a flag another side is carrying is no longer skipped, because in
-a game whose round is who holds the set, the flag being run off with is the one
+a game whose match is who holds the set, the flag being run off with is the one
 that decides it. What is still missing is defending a stand you already hold
 and sitting on a point rather than drifting off to fight. That is the largest
-open item on this list.
+open item on this list, and it got larger: the fifteen seconds a hold has to
+survive are exactly the fifteen a bot should spend defending rather than
+wandering back into a fight.
 
 ## What a zone costs after it ships
 

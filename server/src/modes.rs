@@ -9,7 +9,7 @@
 //! direct Rust state, strings, and slices, so it is an internal surface and not
 //! a module ABI; see decision 6.
 
-use crate::sim::{self, World};
+use crate::sim::World;
 
 pub struct ModeCtx<'a> {
     pub world: &'a mut World,
@@ -52,12 +52,27 @@ pub struct MatchState {
     /// False during the intermission, when the podium is up and nobody is
     /// flying.
     pub playing: bool,
-    /// Seconds left in whichever of the two this is. A match is three minutes
-    /// and an intermission is fifteen, so a byte is plenty and
-    /// the client only ever draws whole seconds of it.
-    pub seconds_left: u8,
-    /// Kills per public side, in the order the zone named them.
+    /// Seconds left on whatever the room is counting, and `None` where it is
+    /// counting nothing. A match is at most four minutes and an intermission
+    /// is fifteen, so a byte is plenty and the client only ever draws whole
+    /// seconds of it.
+    ///
+    /// A flag game spends most of a match with nothing here. It runs until
+    /// somebody holds the set, so there is no length for a clock to read
+    /// against, and the fifteen seconds that decide it are the only thing up
+    /// there worth counting.
+    pub seconds_left: Option<u8>,
+    /// Kills, rounds or stands per public side, in the order the zone named
+    /// them. This is the ledger: the whistle is rated off it, the podium
+    /// names its leader, and the pilot log files it.
     pub score: Vec<u16>,
+    /// Whether the band reads that score out.
+    ///
+    /// A flag game says no. Its ledger is a one and a zero, since holding the
+    /// set is the whole result, and a pair of numbers saying so at the top of
+    /// the window would be the pennants' own answer written out longhand
+    /// under the picture of itself.
+    pub scored: bool,
 }
 
 /// Simulation ticks in one second, which is the unit every clock in here is
@@ -83,14 +98,22 @@ pub enum Beat {
 /// The two-phase clock a match game runs on.
 ///
 /// The room outlives the match: it plays one, puts up a podium, changes
-/// ground and plays another. Three modes need exactly that and differ only in
-/// what they count, so the phases live here and the score stays with the mode
-/// that knows what it means.
+/// ground and plays another. Every match game needs exactly that and they
+/// differ only in what they count, so the phases live here and the score
+/// stays with the mode that knows what it means.
+///
+/// The match phase has a length or does not. A kill game and a duel are
+/// played against a clock; a flag game is played until somebody holds the
+/// set, and gives the room no answer for how long that will take. Both put
+/// up the same podium afterwards.
 pub struct Clock {
-    match_ticks: u32,
+    /// Ticks a match runs, and `None` where it runs until the mode blows the
+    /// whistle itself.
+    match_ticks: Option<u32>,
     intermission_ticks: u32,
-    /// Ticks left in whichever phase this is.
-    left: u32,
+    /// Ticks left in whichever phase this is, and `None` in a match with no
+    /// length: there is nothing to count down.
+    left: Option<u32>,
     playing: bool,
     /// The first tick has not run yet, so the room has not opened a match.
     /// Set once, which is what makes a room that has just been built start
@@ -101,9 +124,23 @@ pub struct Clock {
 impl Clock {
     pub fn new(match_ticks: u32, intermission_ticks: u32) -> Self {
         Clock {
-            match_ticks: match_ticks.max(1),
+            match_ticks: Some(match_ticks.max(1)),
             intermission_ticks: intermission_ticks.max(1),
-            left: match_ticks.max(1),
+            left: Some(match_ticks.max(1)),
+            playing: true,
+            opened: false,
+        }
+    }
+
+    /// A match with no length, over when the mode says so.
+    ///
+    /// The podium still runs on a clock, because what it is counting is a
+    /// fixed wait rather than a game.
+    pub fn open_ended(intermission_ticks: u32) -> Self {
+        Clock {
+            match_ticks: None,
+            intermission_ticks: intermission_ticks.max(1),
+            left: None,
             playing: true,
             opened: false,
         }
@@ -125,17 +162,19 @@ impl Clock {
             beat = Beat::Opening;
         }
 
-        self.left = self.left.saturating_sub(1);
-        if self.left == 0 {
-            self.playing = !self.playing;
-            if self.playing {
-                self.left = self.match_ticks;
-                ctx.open_match = true;
-                beat = Beat::Opening;
-            } else {
-                self.left = self.intermission_ticks;
-                ctx.close_match = true;
-                beat = Beat::Ending;
+        if let Some(left) = self.left.as_mut() {
+            *left = left.saturating_sub(1);
+            if *left == 0 {
+                self.playing = !self.playing;
+                if self.playing {
+                    self.left = self.match_ticks;
+                    ctx.open_match = true;
+                    beat = Beat::Opening;
+                } else {
+                    self.left = Some(self.intermission_ticks);
+                    ctx.close_match = true;
+                    beat = Beat::Ending;
+                }
             }
         }
         beat
@@ -163,22 +202,25 @@ impl Clock {
     ///
     /// A duel asks for this too, from the other end: a match played to a
     /// number of rounds is over when somebody reaches it, and the clock is
-    /// the backstop rather than the referee. The podium goes up for its full
-    /// length, exactly as it does when regulation runs out.
+    /// the backstop rather than the referee. A flag game has no backstop at
+    /// all and this is the only way its match ever ends. The podium goes up
+    /// for its full length either way, exactly as it does when regulation
+    /// runs out.
     pub fn finish(&mut self, ctx: &mut ModeCtx) {
         if !self.playing {
             return;
         }
         self.playing = false;
-        self.left = self.intermission_ticks;
+        self.left = Some(self.intermission_ticks);
         ctx.close_match = true;
     }
 
     /// Whole seconds left in this phase, rounded up so a clock reads 1 for
     /// the last second rather than sitting on 0 while there is still a second
-    /// to play in.
-    pub fn seconds_left(&self) -> u8 {
-        self.left.div_ceil(TICKS_PER_SECOND).min(255) as u8
+    /// to play in, and `None` in a match with no length.
+    pub fn seconds_left(&self) -> Option<u8> {
+        self.left
+            .map(|left| left.div_ceil(TICKS_PER_SECOND).min(255) as u8)
     }
 }
 
@@ -214,6 +256,15 @@ fn result_banner(ctx: &ModeCtx, score: &[u16]) -> String {
     }
 }
 
+/// And what it says about a game with no numbers in it. A flag match is taken
+/// by holding every one of them, so the result is a side and nothing else.
+fn won_banner(ctx: &ModeCtx, winner: Option<u8>) -> String {
+    match winner {
+        Some(t) => format!("{} takes it", ctx.team_name(t)),
+        None => String::new(),
+    }
+}
+
 impl ModeCtx<'_> {
     /// What to call a side in a sentence. A zone that named none, or a side
     /// above the ones it named, still has to read as something.
@@ -226,9 +277,9 @@ impl ModeCtx<'_> {
 }
 
 /// Every mode a zone may name. The catalog checks against this rather than
-/// falling back to warzone, which is exactly how `arena.mode` came to be a key
-/// that parsed and did nothing for months.
-pub const NAMES: [&str; 5] = ["arena", "warzone", "melee", "turf", "duel"];
+/// falling back to a default, which is exactly how `arena.mode` came to be a
+/// key that parsed and did nothing for months.
+pub const NAMES: [&str; 4] = ["arena", "flags", "melee", "duel"];
 
 /// Whether a mode's zone rates the match rather than the death.
 ///
@@ -237,7 +288,7 @@ pub const NAMES: [&str; 5] = ["arena", "warzone", "melee", "turf", "duel"];
 /// by ground held, so its ladder is moved by the whistle and not by the
 /// wreck. See decision 157.
 pub fn rated_by_match(name: &str) -> bool {
-    matches!(name, "turf" | "warzone")
+    name == "flags"
 }
 
 pub fn exists(name: &str) -> bool {
@@ -245,17 +296,15 @@ pub fn exists(name: &str) -> bool {
 }
 
 /// Everything a mode is built from, which is all of it a zone's own. A
-/// two-team warzone with three flags, or a four-a-side melee on a two minute
-/// clock, is configuration rather than a rebuild.
+/// two-team flag game with three flags, or a four-a-side melee on a two
+/// minute clock, is configuration rather than a rebuild.
 pub struct Setup {
     pub flags: u8,
     pub teams: u8,
-    /// Ticks a match runs, and ticks of podium between two of them. Only a
-    /// match game reads these.
+    /// Ticks a match runs, and ticks of podium between two of them. A flag
+    /// game reads only the second: its match has no length.
     pub match_ticks: u32,
     pub intermission_ticks: u32,
-    /// Ticks between two turf payouts. Only Turf reads it.
-    pub turf_period: u32,
     /// Rounds that take a duel. Only Duel reads it.
     pub first_to: u16,
 }
@@ -280,22 +329,11 @@ pub const ROUND_CLOSE_TICKS: u32 = 2 * TICKS_PER_SECOND;
 pub fn build(name: &str, s: &Setup) -> Box<dyn Mode> {
     let (flags, teams) = (s.flags.max(1), s.teams.max(1));
     match name {
-        "warzone" => Box::new(Warzone::new(
-            flags,
-            teams,
-            s.match_ticks.max(1),
-            s.intermission_ticks.max(1),
-        )),
+        "flags" => Box::new(Flags::new(flags, teams, s.intermission_ticks.max(1))),
         "melee" => Box::new(Melee::new(
             teams,
             s.match_ticks.max(1),
             s.intermission_ticks.max(1),
-        )),
-        "turf" => Box::new(Turf::new(
-            teams,
-            s.match_ticks.max(1),
-            s.intermission_ticks.max(1),
-            s.turf_period.max(1),
         )),
         "duel" => Box::new(Duel::new(
             teams,
@@ -436,6 +474,7 @@ impl Mode for Melee {
             playing: self.clock.playing(),
             seconds_left: self.clock.seconds_left(),
             score: self.score.clone(),
+            scored: true,
         })
     }
 }
@@ -607,201 +646,141 @@ impl Mode for Duel {
             playing: self.clock.playing(),
             seconds_left: self.clock.seconds_left(),
             score: self.score.clone(),
+            scored: true,
         })
     }
 }
 
-/// Turf: the stands pay whoever is holding them, over and over.
-///
-/// A turf flag cannot be carried, so there is nothing to bring home and no
-/// arrangement of them to complete. What there is instead is a clock: every
-/// `period` ticks each side is paid one point per stand it holds, and the
-/// match is won by whoever has the most when time runs out. Holding two of
-/// five is not a losing position, it is two points a period, which is the
-/// whole reason the game spreads a fight over the map rather than collapsing
-/// it onto one contested room.
-///
-/// It is a match game and reuses Melee's shape: three minutes, a podium, the
-/// room opening a fresh one at each whistle. What it does not reuse is the
-/// score, which is paid rather than tallied off the ships, so it is kept here.
-pub struct Turf {
-    teams: u8,
-    clock: Clock,
-    /// Ticks between payouts, and the count down to the next one.
-    period: u32,
-    until_pay: u32,
-    score: Vec<u16>,
-}
-
-impl Turf {
-    pub fn new(teams: u8, match_ticks: u32, intermission_ticks: u32, period: u32) -> Self {
-        Turf {
-            teams,
-            clock: Clock::new(match_ticks, intermission_ticks),
-            period,
-            until_pay: period,
-            score: vec![0; teams as usize],
-        }
-    }
-
-    /// Stands held, per side. Saturating, because a long match on a wide map
-    /// can pay a lot of periods and a side's total is a u16 on the wire.
-    fn pay(&mut self, ctx: &ModeCtx) {
-        for team in 0..self.teams {
-            let held = ctx.world.flags_held(team) as u16;
-            if let Some(n) = self.score.get_mut(team as usize) {
-                *n = n.saturating_add(held);
-            }
-        }
-    }
-}
-
-impl Mode for Turf {
-    fn tick(&mut self, ctx: &mut ModeCtx) {
-        let beat = self.clock.beat(ctx);
-        if beat == Beat::Opening {
-            self.score = vec![0; self.teams as usize];
-            self.until_pay = self.period;
-        }
-        // The payout clock runs on the same ticks the match clock does, both
-        // ends included, so a three minute match on a five second period pays
-        // exactly thirty-six times whatever else happens.
-        if matches!(beat, Beat::Opening | Beat::Playing | Beat::Ending) {
-            self.until_pay = self.until_pay.saturating_sub(1);
-            if self.until_pay == 0 {
-                self.pay(ctx);
-                self.until_pay = self.period;
-            }
-        }
-
-        // The pennants say who holds what, so the banner is left to the one
-        // thing they cannot say: who took the match.
-        ctx.banner = if self.clock.playing() {
-            String::new()
-        } else {
-            result_banner(ctx, &self.score)
-        };
-    }
-
-    fn on_death(&mut self, _ctx: &mut ModeCtx, _victim: u8, _killer: u8) {}
-
-    #[cfg(test)]
-    fn name(&self) -> &'static str {
-        "turf"
-    }
-
-    fn reopen(&mut self) {
-        self.clock.reopen();
-    }
-
-    fn match_state(&self) -> Option<MatchState> {
-        Some(MatchState {
-            playing: self.clock.playing(),
-            seconds_left: self.clock.seconds_left(),
-            score: self.score.clone(),
-        })
-    }
-}
-
-/// Warzone: a side takes a round by holding every flag at once, and the match
-/// by taking the most rounds before the clock runs out.
+/// Flags: hold every one of them at once for fifteen seconds and the match is
+/// yours. Then the room stands them back up and deals another.
 ///
 /// The simulation moves flags; this decides what an arrangement of them
 /// means, which is the split the original drew between flagcore and fg_wz.
 ///
-/// The round is the original's and the match around it is ours. A room that
-/// ran rounds forever had no score to show, no clock beside the deploy key,
-/// no ending board and no reason to change ground, so it was the one game in
-/// the catalog a player could not read from the outside. Wrapping it puts War
-/// on the same footing as Team Battle and Turf: three or four minutes, a
-/// podium, next map.
-pub struct Warzone {
-    pub flags: u8,
-    /// How many sides there are to win. Four was hardcoded here, in the leader
-    /// search, in the win tally and in the banner, which is fine for the two the
-    /// shipped zone has and silently wrong for anything else: a side above three
-    /// could never be found holding the set, and its win was tallied against
-    /// `team % 4`, somebody else's row. A one-team zone gives every pilot their
-    /// own side, so that ceiling became reachable the day free-for-all was
-    /// fixed.
-    pub teams: u8,
-    pub round: u16,
-    /// Rounds taken, per side. This is the match score.
-    pub wins: Vec<u16>,
+/// There is no clock. A flag game runs until somebody holds the set, so the
+/// only number worth putting at the top of the window is the fifteen seconds
+/// that decide it, and that number is not there most of the time. Losing one
+/// flag during the hold takes it away and the next completed set starts it
+/// again from fifteen.
+///
+/// One mode covers both flag zones. Whether a flag can be picked up is
+/// `flag_carry`, a byte in the zone file, and it is the entire difference
+/// between Capture the Flag, where four flags are gathered and carried home,
+/// and Turf, where six stands change hands where they stand. Neither is a
+/// different rule about winning. See decision 165, which replaced Turf's
+/// payout and Capture the Flag's rounds with this.
+pub struct Flags {
+    flags: u8,
+    /// How many sides there are to win. Four was hardcoded in the leader
+    /// search, in the win tally and in the banner, which is fine for the two
+    /// the shipped zones have and silently wrong for anything else: a side
+    /// above three could never be found holding the set. A one-team zone
+    /// gives every pilot their own side, so that ceiling is reachable.
+    teams: u8,
     clock: Clock,
-    hold: Option<(u8, u32)>, // team and the tick they completed the set
-    /// Where each flag belongs, learned on the first tick after a placement
-    /// and put back on a reset. Flags travel: the core moves one with whoever
-    /// is carrying it and drops it where they die, so a round that reset only
-    /// their ownership left them lying wherever the winning side had gathered
-    /// them. Measured: the first round took fifty seconds and every round
-    /// after it took exactly seven, which is the reset delay plus the hold,
-    /// the winners standing on all four when they went neutral.
-    ///
-    /// Forgotten at every whistle, because the room stands the flags back on
-    /// the map's own tiles when it opens a match and the ground may have
-    /// changed underneath them.
-    homes: Vec<(i32, i32)>,
+    /// The side holding every flag and the ticks they have held them for, and
+    /// `None` whenever nobody holds the set.
+    hold: Option<(u8, u32)>,
+    /// Ticks of unbroken hold that take the match.
     hold_ticks: u32,
-    reset_at: Option<u32>,
-    elapsed: u32,
+    /// Who took the match, kept through the podium so the whistle can be
+    /// rated and filed. Forgotten when the next one opens.
+    winner: Option<u8>,
 }
 
-impl Warzone {
-    pub fn new(flags: u8, teams: u8, match_ticks: u32, intermission_ticks: u32) -> Self {
-        Warzone {
+/// Seconds a side must hold every flag to take the match.
+///
+/// Long enough that a set completed by one lucky pass across the map is not a
+/// match won, short enough to be a thing the other side can be seen racing.
+/// It is also the length of the podium that follows, which is a coincidence
+/// of two comfortable numbers rather than a rule.
+pub const HOLD_SECONDS: u32 = 15;
+
+impl Flags {
+    pub fn new(flags: u8, teams: u8, intermission_ticks: u32) -> Self {
+        Flags {
             flags,
             teams,
-            round: 1,
-            wins: vec![0; teams as usize],
-            clock: Clock::new(match_ticks, intermission_ticks),
+            clock: Clock::open_ended(intermission_ticks),
             hold: None,
-            homes: Vec::new(),
-            hold_ticks: 1_000, // ten seconds holding the full set to win
-            reset_at: None,
-            elapsed: 0,
+            hold_ticks: HOLD_SECONDS * TICKS_PER_SECOND,
+            winner: None,
         }
     }
 
-    /// Every flag neutral and back on its stand, which is what a fresh round
-    /// starts from.
-    fn reset_flags(&mut self, ctx: &mut ModeCtx) {
-        for i in 0..ctx.world.state.flag_count as usize {
-            let home = self.homes.get(i).copied();
-            let f = &mut ctx.world.state.flags[i];
-            f.team = sim::TEAM_NONE;
-            f.carried = 0;
-            f.carrier = 0;
-            f.cooldown = 0;
-            f.held = 0;
-            if let Some((x, y)) = home {
-                f.x = x;
-                f.y = y;
-            }
+    /// The side holding every flag, if there is one.
+    fn holder(&self, ctx: &ModeCtx) -> Option<u8> {
+        if self.flags == 0 {
+            return None;
         }
+        (0..self.teams).find(|&team| ctx.world.flags_held(team) as u8 == self.flags)
+    }
+
+    /// One tick of the hold: who has the set, how long they have had it, and
+    /// the whistle at the end of it.
+    fn hold_tick(&mut self, ctx: &mut ModeCtx) {
+        let holder = self.holder(ctx);
+        self.hold = match (holder, self.hold) {
+            // The same side, one tick longer. A side that completes the set,
+            // loses a flag and takes it straight back is a fresh hold: the
+            // arm below only survives while `flags_held` says the set is
+            // whole on every tick between.
+            (Some(t), Some((held, ticks))) if held == t => Some((t, ticks + 1)),
+            (Some(t), _) => Some((t, 0)),
+            (None, _) => None,
+        };
+        let Some((team, ticks)) = self.hold else {
+            // The pennants say who holds what and there is nothing else to
+            // report, so the banner is empty until somebody has the set.
+            ctx.banner = String::new();
+            return;
+        };
+        if ticks >= self.hold_ticks {
+            self.winner = Some(team);
+            self.clock.finish(ctx);
+            ctx.banner = won_banner(ctx, self.winner);
+            return;
+        }
+        ctx.banner = format!("{} holds all {} flags", ctx.team_name(team), self.flags);
+    }
+
+    /// Seconds left on the hold, which is the only clock this game has and is
+    /// there only while somebody has the whole set.
+    fn countdown(&self) -> Option<u8> {
+        let (_, ticks) = self.hold?;
+        let left = self.hold_ticks.saturating_sub(ticks);
+        Some(left.div_ceil(TICKS_PER_SECOND).min(255) as u8)
+    }
+
+    /// The ledger: a one against the side that took it and a zero against
+    /// everybody else. Nobody is shown this. It is what the whistle is rated
+    /// off and what the pilot log files, and a flag match has exactly one
+    /// thing to say to either.
+    fn ledger(&self) -> Vec<u16> {
+        (0..self.teams)
+            .map(|t| u16::from(self.winner == Some(t)))
+            .collect()
     }
 }
 
-impl Mode for Warzone {
+impl Mode for Flags {
     fn tick(&mut self, ctx: &mut ModeCtx) {
-        let beat = self.clock.beat(ctx);
-        if beat == Beat::Opening {
-            self.wins = vec![0; self.teams as usize];
-            self.round = 1;
-            self.hold = None;
-            self.reset_at = None;
-            // The room puts the flags back on the map's own stands after this
-            // tick, and the map may be a different one, so where they belong
-            // is worked out again from where they land.
-            self.homes.clear();
-        }
-        // The whistle tick is still part of the match, so a round completed
-        // on it is a round taken rather than one the clock stole.
-        if beat != Beat::Waiting {
-            self.round_tick(ctx);
-        }
-        if !self.clock.playing() {
-            ctx.banner = result_banner(ctx, &self.wins);
+        match self.clock.beat(ctx) {
+            // Nothing is read off an opening tick. The room puts everybody
+            // home and the flags back on their stands *after* this one, and
+            // the ground may be a different map, so what is on the field here
+            // is still the match that just ended: reading it started the next
+            // match on a countdown the last one had earned.
+            Beat::Opening => {
+                self.hold = None;
+                self.winner = None;
+                ctx.banner = String::new();
+            }
+            // The whistle tick is still part of the match it ended, and the
+            // podium's are not: a flag taken while nobody is flying would
+            // start a hold against a match that is over.
+            Beat::Playing | Beat::Ending => self.hold_tick(ctx),
+            Beat::Waiting => ctx.banner = won_banner(ctx, self.winner),
         }
     }
 
@@ -809,7 +788,7 @@ impl Mode for Warzone {
 
     #[cfg(test)]
     fn name(&self) -> &'static str {
-        "warzone"
+        "flags"
     }
 
     fn reopen(&mut self) {
@@ -819,75 +798,14 @@ impl Mode for Warzone {
     fn match_state(&self) -> Option<MatchState> {
         Some(MatchState {
             playing: self.clock.playing(),
-            seconds_left: self.clock.seconds_left(),
-            score: self.wins.clone(),
+            // The podium's own clock while it is up, and the hold's while a
+            // match is on. They are never both there: the match has no length
+            // of its own, so `Clock::seconds_left` answers nothing until the
+            // whistle has gone.
+            seconds_left: self.clock.seconds_left().or_else(|| self.countdown()),
+            score: self.ledger(),
+            scored: false,
         })
-    }
-}
-
-impl Warzone {
-    /// One tick of the round inside the match: who holds the set, how long
-    /// they have held it, and the reset that follows a win.
-    fn round_tick(&mut self, ctx: &mut ModeCtx) {
-        self.elapsed += 1;
-        if self.homes.is_empty() {
-            self.homes = (0..ctx.world.state.flag_count as usize)
-                .map(|i| (ctx.world.state.flags[i].x, ctx.world.state.flags[i].y))
-                .collect();
-        }
-
-        if let Some(at) = self.reset_at {
-            let left = at.saturating_sub(self.elapsed);
-            if left == 0 {
-                self.reset_flags(ctx);
-                self.reset_at = None;
-                self.hold = None;
-                self.round += 1;
-            }
-            return;
-        }
-
-        // Who, if anybody, holds the whole set.
-        let mut leader = None;
-        for team in 0..self.teams {
-            if ctx.world.flags_held(team) as u8 == self.flags && self.flags > 0 {
-                leader = Some(team);
-                break;
-            }
-        }
-
-        match (leader, self.hold) {
-            (Some(t), Some((held, since))) if held == t => {
-                let left = self.hold_ticks.saturating_sub(self.elapsed - since);
-                if left == 0 {
-                    if let Some(w) = self.wins.get_mut(t as usize) {
-                        *w += 1;
-                    }
-                    self.reset_at = Some(self.elapsed + 500);
-                    ctx.banner = format!("{} wins round {}", ctx.team_name(t), self.round);
-                } else {
-                    ctx.banner = format!(
-                        "{} holds all {} flags: {}",
-                        ctx.team_name(t),
-                        self.flags,
-                        left / 100 + 1
-                    );
-                }
-            }
-            (Some(t), _) => {
-                self.hold = Some((t, self.elapsed));
-                ctx.banner = format!("{} holds all {} flags", ctx.team_name(t), self.flags);
-            }
-            (None, _) => {
-                self.hold = None;
-                // Nothing. The HUD draws a pennant per flag, colored yours,
-                // theirs or loose, on the line above where this one lands, so
-                // a tally here was the same answer written out longhand under
-                // the picture of itself. The banner is for what the pennants
-                // cannot show: the countdown and the win.
-                ctx.banner = String::new();
-            }
-        }
     }
 }
 
@@ -935,7 +853,7 @@ mod melee_tests {
         assert!(c.open_match, "the room is asked to open one");
         let s = m.match_state().expect("a match game has a clock");
         assert!(s.playing);
-        assert_eq!(s.seconds_left, 3);
+        assert_eq!(s.seconds_left, Some(3));
     }
 
     /// The first person into a room of bots joins the match on the clock.
@@ -955,13 +873,17 @@ mod melee_tests {
             let mut c = ctx(&mut w, &names);
             m.tick(&mut c);
         }
-        assert_eq!(m.match_state().unwrap().seconds_left, 2);
+        assert_eq!(m.match_state().unwrap().seconds_left, Some(2));
         assert_eq!(m.match_state().unwrap().score, vec![3, 1]);
 
         let mut c = ctx(&mut w, &names);
         m.tick(&mut c);
         assert!(!c.open_match, "nothing opens at the door");
-        assert_eq!(m.match_state().unwrap().seconds_left, 2, "the same clock");
+        assert_eq!(
+            m.match_state().unwrap().seconds_left,
+            Some(2),
+            "the same clock"
+        );
         assert_eq!(m.match_state().unwrap().score, vec![3, 1], "and score");
     }
 
@@ -986,7 +908,7 @@ mod melee_tests {
         assert!(!c.close_match, "and no podium goes up on the way");
         let state = m.match_state().unwrap();
         assert!(state.playing);
-        assert_eq!(state.seconds_left, 3, "a whole clock again");
+        assert_eq!(state.seconds_left, Some(3), "a whole clock again");
         assert_eq!(state.score, vec![0, 0], "and nothing on the board");
     }
 
@@ -1069,19 +991,20 @@ mod melee_tests {
         assert_eq!(banner, "a draw");
     }
 
-    /// A mode that is not a match game has no clock, and the room reads that
-    /// as "nothing to send and nobody to hold still".
-    /// The open arena is the only mode with no clock: it runs forever, sends
-    /// no match message and never holds anybody's controls. Every game a zone
-    /// ships is a match game, which is what gives each of them a score, an
-    /// ending board and a reason to change ground.
+    /// The open arena is the only mode the room sends no match message for:
+    /// it runs forever and never holds anybody's controls. Every game a zone
+    /// ships is a match game, which is what gives each of them an ending
+    /// board and a reason to change ground. A flag game is one of them and
+    /// still answers, with a state that spends most of a match saying there
+    /// is nothing to count.
     #[test]
-    fn the_open_arena_is_the_one_mode_with_no_clock() {
+    fn the_open_arena_is_the_one_mode_with_no_match() {
         assert!(FreeForAll.match_state().is_none());
-        assert!(Warzone::new(4, 2, 24_000, 1_500).match_state().is_some());
         assert!(Melee::new(2, 300, 100).match_state().is_some());
-        assert!(Turf::new(2, 300, 100, 500).match_state().is_some());
         assert!(Duel::new(2, 2, 300, 100).match_state().is_some());
+        let flags = Flags::new(4, 2, 1_500).match_state().expect("a match");
+        assert!(flags.playing);
+        assert_eq!(flags.seconds_left, None, "and no clock on it");
     }
 
     #[test]
@@ -1091,16 +1014,14 @@ mod melee_tests {
             teams: 2,
             match_ticks: 18_000,
             intermission_ticks: 2_500,
-            turf_period: 500,
             first_to: 2,
         };
         assert_eq!(build("melee", &setup).name(), "melee");
-        assert_eq!(build("warzone", &setup).name(), "warzone");
-        assert_eq!(build("turf", &setup).name(), "turf");
+        assert_eq!(build("flags", &setup).name(), "flags");
         assert_eq!(build("duel", &setup).name(), "duel");
         assert_eq!(build("arena", &setup).name(), "arena");
         assert!(exists("melee"), "and the catalog will accept the name");
-        assert!(exists("turf"));
+        assert!(exists("flags"));
         assert!(exists("duel"));
     }
 }
@@ -1225,7 +1146,7 @@ mod duel_tests {
         assert!(!reset, "so nobody is put back on the ground for another");
         let state = m.match_state().unwrap();
         assert!(!state.playing, "the podium is up");
-        assert_eq!(state.seconds_left, 15, "for its whole length");
+        assert_eq!(state.seconds_left, Some(15), "for its whole length");
     }
 
     /// The shipped duel, per decision 146. One round is the match, and the
@@ -1309,7 +1230,7 @@ mod duel_tests {
     fn a_death_on_the_whistle_scores_and_opens_no_round() {
         let (mut m, mut w, names) = (Duel::new(2, 5, 300, 1_500), arena(), sides());
         tick(&mut m, &mut w, &names);
-        while m.match_state().unwrap().seconds_left > 1 {
+        while m.match_state().unwrap().seconds_left > Some(1) {
             tick(&mut m, &mut w, &names);
         }
         kill(&mut m, &mut w, &names, 1);
@@ -1345,7 +1266,7 @@ mod duel_tests {
         let state = m.match_state().unwrap();
         assert!(state.playing);
         assert_eq!(state.score, vec![0, 0]);
-        assert_eq!(state.seconds_left, 180, "a whole clock");
+        assert_eq!(state.seconds_left, Some(180), "a whole clock");
 
         // And the window the old match's death opened does not fire into it.
         let mut reset_asked = false;
@@ -1372,16 +1293,30 @@ mod duel_tests {
 }
 
 #[cfg(test)]
-mod turf_tests {
+mod flag_tests {
     use super::*;
 
-    /// A room with `n` stands in it, owned by nobody yet.
+    /// A room with `n` flags in it, on stands, owned by nobody yet.
     fn stands(n: usize) -> World {
-        let mut w = World::new(5);
-        for i in 0..n {
-            w.add_flag(500 + i as i32 * 8, 512);
+        let mut w = World::new(3);
+        let spots = [
+            (486, 486),
+            (538, 486),
+            (538, 538),
+            (486, 538),
+            (512, 512),
+            (512, 486),
+        ];
+        for spot in spots.iter().take(n) {
+            w.add_flag(spot.0, spot.1);
         }
         w
+    }
+
+    /// A game with a short podium, so a test can run through one and into the
+    /// match after it without a thousand ticks of waiting.
+    fn game(flags: u8, teams: u8) -> Flags {
+        Flags::new(flags, teams, 100)
     }
 
     fn ctx<'a>(world: &'a mut World, names: &'a [String]) -> ModeCtx<'a> {
@@ -1400,255 +1335,163 @@ mod turf_tests {
         vec!["Keel".into(), "Vantage".into()]
     }
 
-    /// The clock pays a point per stand held, every period. Holding two of
-    /// four is not a losing position, it is two points a period, which is
-    /// what spreads a turf fight over the map.
-    #[test]
-    fn every_period_pays_a_point_for_each_stand_held() {
-        let names = sides();
-        let mut w = stands(4);
-        w.state.flags[0].team = 0;
-        w.state.flags[1].team = 0;
-        w.state.flags[2].team = 1;
-        // The fourth is loose, and pays nobody.
-        let mut m = Turf::new(2, 10_000, 500, 100);
+    /// Ticks of hold that take a match, which is what every count in here is
+    /// measured against.
+    const HOLD: usize = (HOLD_SECONDS * TICKS_PER_SECOND) as usize;
 
-        for _ in 0..100 {
-            m.tick(&mut ctx(&mut w, &names));
-        }
-        assert_eq!(m.match_state().unwrap().score, vec![2, 1], "one period");
-
-        for _ in 0..200 {
-            m.tick(&mut ctx(&mut w, &names));
-        }
-        assert_eq!(m.match_state().unwrap().score, vec![6, 3], "three of them");
+    /// One tick to open the match, which reads nothing off the field: in a
+    /// room the flags are stood back up after it. Every count below starts
+    /// from the tick after this one.
+    fn open(m: &mut Flags, w: &mut World, names: &[String]) {
+        m.tick(&mut ctx(w, names));
     }
 
-    /// Taking a stand off the other side is worth two points a period: one
-    /// they stop earning and one you start.
     #[test]
-    fn taking_a_stand_moves_what_the_next_period_pays() {
+    fn a_match_has_no_clock_until_somebody_holds_the_set() {
         let names = sides();
-        let mut w = stands(2);
-        w.state.flags[0].team = 0;
-        w.state.flags[1].team = 0;
-        let mut m = Turf::new(2, 10_000, 500, 100);
-        for _ in 0..100 {
+        let mut w = stands(3);
+        let mut m = game(3, 2);
+        for _ in 0..1_000 {
             m.tick(&mut ctx(&mut w, &names));
         }
-        assert_eq!(m.match_state().unwrap().score, vec![2, 0]);
-
-        w.state.flags[1].team = 1;
-        for _ in 0..100 {
-            m.tick(&mut ctx(&mut w, &names));
-        }
-        assert_eq!(m.match_state().unwrap().score, vec![3, 1]);
-    }
-
-    /// The podium is not a live scoreboard. A stand still held while nobody
-    /// is flying must not keep paying under the result.
-    #[test]
-    fn the_clock_stops_paying_at_the_whistle() {
-        let names = sides();
-        let mut w = stands(1);
-        w.state.flags[0].team = 0;
-        let mut m = Turf::new(2, 250, 500, 100);
-        for _ in 0..250 {
-            m.tick(&mut ctx(&mut w, &names));
-        }
-        let at_whistle = m.match_state().unwrap();
-        assert!(!at_whistle.playing, "the podium is up");
-        assert_eq!(at_whistle.score, vec![2, 0]);
-
-        for _ in 0..300 {
-            m.tick(&mut ctx(&mut w, &names));
-        }
-        assert_eq!(m.match_state().unwrap().score, vec![2, 0], "and it holds");
-    }
-
-    /// A fresh match, on the whistle out of the podium, starts at nothing.
-    #[test]
-    fn the_next_match_starts_from_zero() {
-        let names = sides();
-        let mut w = stands(1);
-        w.state.flags[0].team = 1;
-        let mut m = Turf::new(2, 200, 100, 100);
-        let mut opens = 0;
-        for _ in 0..301 {
-            let mut c = ctx(&mut w, &names);
-            m.tick(&mut c);
-            if c.open_match {
-                opens += 1;
-            }
-        }
-        assert_eq!(opens, 2, "one at the start and one at the whistle");
         let s = m.match_state().unwrap();
-        assert!(s.playing);
-        assert_eq!(s.score, vec![0, 0]);
+        assert!(s.playing, "and it is still going");
+        assert_eq!(s.seconds_left, None, "nothing is being counted");
+        assert!(!s.scored, "and there is no score to read");
     }
 
     #[test]
-    fn the_banner_names_who_took_it_and_calls_a_tie_a_draw() {
+    fn holding_every_flag_for_fifteen_seconds_takes_the_match() {
         let names = sides();
-        let mut w = stands(2);
-        w.state.flags[0].team = 1;
-        w.state.flags[1].team = 1;
-        let mut m = Turf::new(2, 200, 500, 100);
-        let mut banner = String::new();
-        for _ in 0..201 {
-            let mut c = ctx(&mut w, &names);
-            m.tick(&mut c);
-            banner = c.banner;
-        }
-        assert!(banner.contains("Vantage"), "who won: {banner:?}");
-        assert!(banner.contains("0 to 4"), "and by what: {banner:?}");
-
-        let mut w = stands(2);
-        w.state.flags[0].team = 0;
-        w.state.flags[1].team = 1;
-        let mut m = Turf::new(2, 200, 500, 100);
-        let mut banner = String::new();
-        for _ in 0..201 {
-            let mut c = ctx(&mut w, &names);
-            m.tick(&mut c);
-            banner = c.banner;
-        }
-        assert_eq!(banner, "a draw");
-    }
-}
-
-#[cfg(test)]
-mod warzone_tests {
-    use super::*;
-
-    /// A warzone whose match clock is long enough that the round under test
-    /// finishes well inside it. What these are about is the round; the match
-    /// wrapped around it has tests of its own.
-    fn rounds(flags: u8, teams: u8) -> Warzone {
-        Warzone::new(flags, teams, 100_000, 500)
-    }
-
-    fn arena_with_flags(n: usize) -> World {
-        let mut w = World::new(3);
-        let spots = [(486, 486), (538, 486), (538, 538), (486, 538), (512, 512)];
-        for spot in spots.iter().take(n) {
-            w.add_flag(spot.0, spot.1);
-        }
-        w
-    }
-
-    fn ctx(world: &mut World) -> ModeCtx<'_> {
-        ModeCtx {
-            world,
-            team_names: &[],
-            banner: String::new(),
-            finished: false,
-            open_match: false,
-            round_reset: false,
-            close_match: false,
-        }
-    }
-
-    #[test]
-    fn holding_every_flag_wins_a_round() {
-        let mut w = arena_with_flags(3);
-        let mut m = rounds(3, 2);
+        let mut w = stands(3);
+        let mut m = game(3, 2);
+        open(&mut m, &mut w, &names);
         for i in 0..3 {
             w.state.flags[i].team = 1;
         }
-        // The set has to be held, not merely touched.
-        m.tick(&mut ctx(&mut w));
-        assert_eq!(m.wins[1], 0, "the set must be held, not just completed");
-        for _ in 0..1_100 {
-            m.tick(&mut ctx(&mut w));
+        // The set has to be held, not merely completed.
+        m.tick(&mut ctx(&mut w, &names));
+        assert!(m.match_state().unwrap().playing, "not on the first tick");
+        for _ in 0..HOLD - 1 {
+            m.tick(&mut ctx(&mut w, &names));
         }
-        assert_eq!(m.wins[1], 1, "holding the set for the timer wins");
+        assert!(m.match_state().unwrap().playing, "nor a tick early");
+        let mut c = ctx(&mut w, &names);
+        m.tick(&mut c);
+        assert!(c.close_match, "the whistle goes on the fifteenth second");
+        let s = m.match_state().unwrap();
+        assert!(!s.playing, "and the podium is up");
+        assert_eq!(s.score, vec![0, 1], "with the match against Vantage");
     }
 
+    /// The countdown is the whole clock this game has: it appears when the
+    /// set is completed, reads fifteen, and runs down to the whistle.
     #[test]
-    fn losing_one_flag_stops_the_clock() {
-        let mut w = arena_with_flags(3);
-        let mut m = rounds(3, 2);
+    fn the_countdown_starts_at_fifteen_and_runs_out() {
+        let names = sides();
+        let mut w = stands(2);
+        let mut m = game(2, 2);
+        open(&mut m, &mut w, &names);
+        for i in 0..2 {
+            w.state.flags[i].team = 0;
+        }
+        m.tick(&mut ctx(&mut w, &names));
+        assert_eq!(m.match_state().unwrap().seconds_left, Some(15));
+        for _ in 0..TICKS_PER_SECOND {
+            m.tick(&mut ctx(&mut w, &names));
+        }
+        assert_eq!(m.match_state().unwrap().seconds_left, Some(14));
+        for _ in 0..HOLD - TICKS_PER_SECOND as usize - 2 {
+            m.tick(&mut ctx(&mut w, &names));
+        }
+        assert_eq!(m.match_state().unwrap().seconds_left, Some(1), "the last");
+    }
+
+    /// Taking one flag back during the countdown takes the countdown away.
+    #[test]
+    fn losing_one_flag_stops_the_countdown() {
+        let names = sides();
+        let mut w = stands(3);
+        let mut m = game(3, 2);
         for i in 0..3 {
             w.state.flags[i].team = 0;
         }
-        for _ in 0..100 {
-            m.tick(&mut ctx(&mut w));
+        for _ in 0..500 {
+            m.tick(&mut ctx(&mut w, &names));
         }
+        assert!(m.match_state().unwrap().seconds_left.is_some());
+
         w.state.flags[2].team = 1; // stolen back
-        for _ in 0..1_100 {
-            m.tick(&mut ctx(&mut w));
-        }
-        assert_eq!(m.wins[0], 0, "the countdown restarts when the set breaks");
-    }
+        m.tick(&mut ctx(&mut w, &names));
+        assert_eq!(
+            m.match_state().unwrap().seconds_left,
+            None,
+            "no clock while the set is broken"
+        );
 
-    #[test]
-    fn a_reset_puts_the_flags_back_where_they_were() {
-        // Ownership alone is not a reset. Flags travel with whoever carries them,
-        // so a round that only neutralised them left them lying wherever the
-        // winning side had gathered them -- and the winners were standing on all
-        // four when the next round began. Measured before: the first round took
-        // fifty seconds and every one after it took exactly seven, the reset
-        // delay plus the hold. After: 58, 118, 241, 179 seconds, won by both
-        // sides.
-        let mut w = arena_with_flags(2);
-        let mut m = rounds(2, 2);
-        m.tick(&mut ctx(&mut w)); // learns where they belong
-        let home: Vec<(i32, i32)> = (0..2)
-            .map(|i| (w.state.flags[i].x, w.state.flags[i].y))
-            .collect();
-
-        // Carried across the map and held to a win.
-        for i in 0..2 {
-            w.state.flags[i].team = 1;
-            w.state.flags[i].carried = 1;
-            w.state.flags[i].carrier = 7;
-            w.state.flags[i].x += 300 * 16 * 256;
-            w.state.flags[i].y += 120 * 16 * 256;
+        // And the hold that was five seconds in does not resume where it was:
+        // retaking the flag starts the whole fifteen again.
+        w.state.flags[2].team = 0;
+        m.tick(&mut ctx(&mut w, &names));
+        assert_eq!(m.match_state().unwrap().seconds_left, Some(15));
+        for _ in 0..HOLD - 2 {
+            m.tick(&mut ctx(&mut w, &names));
         }
-        for _ in 0..1_800 {
-            m.tick(&mut ctx(&mut w));
-        }
-        assert_eq!(m.round, 2, "the round ended");
-        for (i, was) in home.iter().enumerate() {
-            assert_eq!(
-                (w.state.flags[i].x, w.state.flags[i].y),
-                *was,
-                "flag {i} did not go home"
-            );
-            assert_eq!(w.state.flags[i].team, sim::TEAM_NONE);
-            assert_eq!(w.state.flags[i].carried, 0);
-            assert_eq!(w.state.flags[i].carrier, 0);
-        }
+        assert!(
+            m.match_state().unwrap().playing,
+            "a whole hold from scratch"
+        );
     }
 
     #[test]
     fn a_simultaneous_change_of_flag_owner_restarts_the_hold() {
-        let mut w = arena_with_flags(2);
-        let mut m = rounds(2, 2);
+        let names = sides();
+        let mut w = stands(2);
+        let mut m = game(2, 2);
         for i in 0..2 {
             w.state.flags[i].team = 0;
         }
-        m.tick(&mut ctx(&mut w));
-        for _ in 0..500 {
-            m.tick(&mut ctx(&mut w));
+        for _ in 0..HOLD / 2 {
+            m.tick(&mut ctx(&mut w, &names));
         }
-
         for i in 0..2 {
             w.state.flags[i].team = 1;
         }
-        m.tick(&mut ctx(&mut w));
-        for _ in 0..999 {
-            m.tick(&mut ctx(&mut w));
-        }
-        assert_eq!(m.wins, vec![0, 0], "the new side gets its own full hold");
-        m.tick(&mut ctx(&mut w));
-        assert_eq!(m.wins, vec![0, 1]);
+        assert_eq!(m.match_state().unwrap().seconds_left, Some(8), "halfway");
+        m.tick(&mut ctx(&mut w, &names));
+        assert_eq!(
+            m.match_state().unwrap().seconds_left,
+            Some(15),
+            "the new side gets its own full hold"
+        );
     }
 
     #[test]
-    fn a_disconnected_carrier_drops_the_flag_before_scoring() {
-        let mut w = arena_with_flags(1);
+    fn a_side_above_three_can_win() {
+        // Four sides were hardcoded in the leader search. A free-for-all
+        // gives every pilot their own side, so a zone with flags and
+        // `teams = 1` had matches only ships zero to three could ever take,
+        // and a win by ship five was tallied against ship one's row.
+        let names = sides();
+        let mut w = stands(2);
+        let mut m = game(2, 8);
+        open(&mut m, &mut w, &names);
+        for i in 0..2 {
+            w.state.flags[i].team = 5;
+        }
+        for _ in 0..HOLD + 1 {
+            m.tick(&mut ctx(&mut w, &names));
+        }
+        let s = m.match_state().unwrap();
+        assert!(!s.playing, "side five holding the set takes it");
+        assert_eq!(s.score[5], 1);
+        assert_eq!(s.score[1], 0, "and it is not credited to side one");
+    }
+
+    #[test]
+    fn a_disconnected_carrier_drops_the_flag_before_it_counts() {
+        let names = sides();
+        let mut w = stands(1);
         w.spawn(0, 0, 512, 512, 0);
         let ship = w.state.ships[0];
         let flag = &mut w.state.flags[0];
@@ -1660,106 +1503,90 @@ mod warzone_tests {
         w.state.ships[0].active = 0;
 
         w.step(&[]);
-        let mut m = rounds(1, 2);
-        m.tick(&mut ctx(&mut w));
+        let mut m = game(1, 2);
+        open(&mut m, &mut w, &names);
+        m.tick(&mut ctx(&mut w, &names));
 
         assert_eq!(w.state.flags[0].carried, 0);
         assert_eq!(w.state.flags[0].carrier, 0);
-        assert_eq!(m.wins, vec![0, 0]);
+        // Still theirs, and still on the fifteen seconds it has just started:
+        // a flag put down by a disconnect is not a flag taken back.
+        assert_eq!(w.state.flags[0].team, 0);
+        assert_eq!(m.match_state().unwrap().seconds_left, Some(15));
     }
 
+    /// The podium is not a live board. A set still gathered while nobody is
+    /// flying must not start a hold against a match that is over.
     #[test]
-    fn a_side_above_three_can_win() {
-        // Four sides were hardcoded here. A free-for-all gives every pilot their
-        // own side, so a zone with flags and `teams = 1` had rounds that only
-        // ships zero to three could ever win, and a win by ship five was tallied
-        // against ship one's row.
-        let mut w = arena_with_flags(2);
-        let mut m = rounds(2, 8);
-        for i in 0..2 {
-            w.state.flags[i].team = 5;
-        }
-        for _ in 0..1_100 {
-            m.tick(&mut ctx(&mut w));
-        }
-        assert_eq!(m.wins[5], 1, "side five holding the set wins");
-        assert_eq!(m.wins[1], 0, "and it is not credited to side one");
-    }
-
-    #[test]
-    fn a_round_resets_the_flags() {
-        let mut w = arena_with_flags(2);
-        let mut m = rounds(2, 2);
+    fn the_podium_counts_itself_down_and_nothing_else() {
+        let names = sides();
+        let mut w = stands(2);
+        let mut m = game(2, 2);
+        open(&mut m, &mut w, &names);
         for i in 0..2 {
             w.state.flags[i].team = 1;
         }
-        for _ in 0..1_800 {
-            m.tick(&mut ctx(&mut w));
+        for _ in 0..HOLD + 1 {
+            m.tick(&mut ctx(&mut w, &names));
         }
-        assert_eq!(m.round, 2, "a new round starts");
+        let s = m.match_state().unwrap();
+        assert!(!s.playing, "the podium is up");
+        assert_eq!(s.seconds_left, Some(1), "counting to the next match");
+        assert_eq!(s.score, vec![0, 1], "and the result holds");
+    }
+
+    /// A fresh match, on the whistle out of the podium, starts from nothing.
+    #[test]
+    fn the_next_match_starts_from_nothing() {
+        let names = sides();
+        let mut w = stands(2);
+        let mut m = game(2, 2);
+        for i in 0..2 {
+            w.state.flags[i].team = 1;
+        }
+        let mut opens = 0;
+        for _ in 0..HOLD + 102 {
+            let mut c = ctx(&mut w, &names);
+            m.tick(&mut c);
+            opens += u32::from(c.open_match);
+        }
+        assert_eq!(opens, 2, "one at the start and one out of the podium");
+        let s = m.match_state().unwrap();
+        assert!(s.playing);
+        assert_eq!(s.score, vec![0, 0], "nobody has taken this one");
+        // And nothing carried across the whistle, though the flags in this
+        // world are still gathered: an opening tick reads nothing, because
+        // the room stands them back up after it. That half is
+        // `a_flag_match_ends_on_the_hold_and_the_next_one_opens_neutral` in
+        // main.rs, which has a room to do it.
         assert_eq!(
-            w.state.flags[0].team,
-            sim::TEAM_NONE,
-            "flags go neutral again"
+            s.seconds_left, None,
+            "the hold that took the last match is not still running"
         );
     }
 
-    /// Rounds are what a War match is scored in, so the wins are on the wire
-    /// as the score and the podium reads them.
     #[test]
-    fn the_match_score_is_rounds_taken() {
-        let names = vec!["Keel".to_string(), "Vantage".to_string()];
-        let mut w = arena_with_flags(2);
-        // Long enough for one round to be taken and short enough to finish.
-        let mut m = Warzone::new(2, 2, 1_500, 500);
+    fn the_banner_names_the_side_holding_the_set_and_the_one_that_took_it() {
+        let names = sides();
+        let mut w = stands(2);
+        let mut m = game(2, 2);
+        let mut c = ctx(&mut w, &names);
+        m.tick(&mut c);
+        assert_eq!(c.banner, "", "nothing to say while the set is loose");
+
         for i in 0..2 {
             w.state.flags[i].team = 1;
         }
+        let mut c = ctx(&mut w, &names);
+        m.tick(&mut c);
+        assert_eq!(c.banner, "Vantage holds all 2 flags");
+
         let mut banner = String::new();
-        for _ in 0..1_500 {
-            let mut c = ModeCtx {
-                world: &mut w,
-                team_names: &names,
-                banner: String::new(),
-                finished: false,
-                open_match: false,
-                round_reset: false,
-                close_match: false,
-            };
+        for _ in 0..HOLD {
+            let mut c = ctx(&mut w, &names);
             m.tick(&mut c);
             banner = c.banner;
         }
-        let state = m.match_state().expect("a war match has a clock");
-        assert!(!state.playing, "the podium is up");
-        assert_eq!(state.score, vec![0, 1], "one round to Vantage");
-        assert!(banner.contains("Vantage takes it"), "{banner:?}");
-    }
-
-    /// The whistle out of the podium starts a fresh match: no rounds to
-    /// anybody, and the round count back to one.
-    #[test]
-    fn a_new_match_starts_the_rounds_over() {
-        let mut w = arena_with_flags(2);
-        let mut m = Warzone::new(2, 2, 1_500, 100);
-        for i in 0..2 {
-            w.state.flags[i].team = 1;
-        }
-        for _ in 0..1_550 {
-            m.tick(&mut ctx(&mut w));
-        }
-        assert_eq!(m.wins, vec![0, 1], "the first match was taken");
-        assert!(!m.match_state().unwrap().playing, "and the podium is up");
-
-        // Through the rest of the podium and into the next match.
-        let mut opened = false;
-        for _ in 0..60 {
-            let mut c = ctx(&mut w);
-            m.tick(&mut c);
-            opened |= c.open_match;
-        }
-        assert!(opened, "a fresh match opens");
-        assert_eq!(m.wins, vec![0, 0], "counting from nothing");
-        assert_eq!(m.round, 1);
-        assert!(m.match_state().unwrap().playing);
+        assert_eq!(banner, "Vantage takes it");
     }
 }

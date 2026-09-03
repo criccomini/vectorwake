@@ -63,12 +63,13 @@ max_instances = 8
 [[zone]]
 name = "melee"
 
-# Turf is the same eight seats over six stands that pay whoever holds them.
+# Turf is the same eight seats over six stands nobody can carry, and the match
+# goes to whoever holds all six for fifteen seconds.
 [[zone]]
 name = "turf"
 
-# Capture the Flag is the flag game: four flags, and a round to whoever holds
-# the set. Keyed `war`, which is what its ratings are filed under.
+# Capture the Flag is the same rule over four flags that do travel. Keyed
+# `war`, which is what its ratings are filed under.
 [[zone]]
 name = "war"
 
