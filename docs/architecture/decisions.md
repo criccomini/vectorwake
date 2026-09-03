@@ -9039,16 +9039,20 @@ none and neither is a pilot who has not earned one. The movement is the live
 figure less what the whistle latched, subtracted on the client, so nothing new
 crosses the wire.
 
-Two zones read differently, because a row says what its zone counts. A duel
-draws no score at all: one clean kill takes one
-([decision 146](#146-a-duel-is-one-kill-and-the-room-deals-you-a-rival)), so the score would stand at
-nil to nil for the whole match and then the match would be over, and what its
-two sides are is two pilots, so it carries their call signs. A room that runs
-forever has no clock and no score, so its middle is how many are in it.
+Two zones read differently, because a row says what its zone counts, and
+neither of them fills the gap with something else. A duel draws no score at
+all: one clean kill takes one
+([decision 146](#146-a-duel-is-one-kill-and-the-room-deals-you-a-rival)), so
+the score would stand at nil to nil for the whole match and then the match
+would be over, and what its two sides are is two pilots, so it carries their
+call signs. A room that runs forever has no clock and no score, so the middle
+of its row is empty and the top edge of that zone is the fight's.
 
-At the whistle both sides stay on the row with the beaten one stood down, and
-`NEXT MATCH IN` moves to the line under the clock, which is the flag strip's
-line during a match and free at the whistle.
+At the whistle both sides stay on the row at their own strength, and `NEXT
+MATCH IN` goes on the line under the clock, which is the flag strip's line
+during a match and free at the whistle. Not on a window held upright, or one
+too narrow for it: the caption's line is the dial's, and the dial is a third
+of a phone across.
 
 **Why:** three reasons, and the last one is the one that started it.
 

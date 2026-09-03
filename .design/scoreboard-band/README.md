@@ -40,14 +40,18 @@ clock is the reading ink, the rating is ink with its movement colored.
 - **A duel** is one kill (decision 146), so there is no score to show
   until it is over: the row is the two pilots either side of the clock.
   Their names keep their case, and a phone keeps them.
-- **Free Roam** has no clock and no score, so its middle is the room's
-  count.
-- **At the whistle** the side that took it keeps its ink and the other
-  stands down to a third, and `NEXT MATCH IN` sits under the clock at
-  the row's size, on the line the flags use during the match and leave
-  free at the whistle. Inline it was eighteen characters and ran into
-  the dial's strip on an upright phone; under the clock the row keeps
-  its shape and nothing on it moves.
+- **Free Roam** has no clock and no score, so the middle of its row is
+  empty and the whole top edge of that zone is the fight's. Nothing
+  moves in to fill the gap: the room's count was drawn there and taken
+  out, since an instrument reading a number nobody is playing for is
+  furniture and the sheet carries a line per pilot anyway.
+- **At the whistle** both sides stay at their own strength. The band
+  stood the beaten one down to a third for a while; the two scores say
+  who won, which is what a score is for. `NEXT MATCH IN` sits under the
+  clock at the row's size, on the line the flags use during the match
+  and leave free at the whistle: inline it was eighteen characters and
+  ran into the dial's strip. It is a monitor's, since on a phone that
+  line is the dial's and there is no room for it.
 - **The clock** goes to the warning color under thirty seconds rather
   than growing.
 - The band is still the press that opens the players sheet.

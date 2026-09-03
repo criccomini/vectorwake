@@ -444,15 +444,31 @@ end
 
 -- --- a room that runs forever ----------------------------------------------
 --
--- Free Roam has no clock and no score, so the middle carries how many are in
--- the room. An empty row over a room of thirty one reads as an instrument
--- that has given up rather than as a quiet room.
+-- Free Roam has no clock and no score, so the middle of the row is empty and
+-- the top edge of that zone is the fight's. How many are in the room is a
+-- line each on the players sheet; an instrument reading out a number nobody
+-- is playing for is furniture.
 
 frame({zone = "roam", match = false})
-check("a room with no match counts the room instead",
-      drawn("4 flying") ~= nil, table.concat(words(), " | "))
+do
+    -- Nothing where the clock stands, which is asked of the whole middle of
+    -- the row rather than of one string: a check for a missing word passes on
+    -- a row that draws a different one.
+    local middle = {}
+    for i = 1, state.n do
+        local t = state.text[i]
+        if math.abs(t.x - w_now / 2) < w_now / 4
+            and down(t) < h_now / 4 then
+            middle[#middle + 1] = t.s
+        end
+    end
+    check("a room with no match says nothing in the middle", #middle == 0,
+          table.concat(middle, " | "))
+end
 check("and still carries your standing",
       drawn("1494") ~= nil, table.concat(words(), " | "))
+check("and offers no press, since there is no board to open",
+      box("players_open") == nil, "something opens the sheet")
 
 -- --- the top row is a row ---------------------------------------------------
 
@@ -792,35 +808,46 @@ do
               or "a figure is missing")
 end
 do
-    -- Who won, said by weight rather than by a word: the winner keeps its ink
-    -- and the beaten side stands down. Read off the score rather than the
-    -- name, since a name is dropped where the row runs out of room and a
-    -- score never is.
+    -- And stands neither of them down. The band said who took it by weight
+    -- for a while, the winner at its own strength and the loser at a third,
+    -- and a figure read through an alpha is a figure the interface is
+    -- editorializing about: the two scores say who won, which is what a score
+    -- is for. Read off the scores rather than the names, since a name is
+    -- dropped where the row runs out of room and a score never is.
     local lost, won = drawn("15"), drawn("19")
     local la = lost and lost.col and lost.col[4]
     local wa = won and won.col and won.col[4]
-    check("the side that took it keeps its ink",
-          la ~= nil and wa ~= nil and wa > la * 1.5,
+    check("and reads both sides at one strength",
+          la ~= nil and wa ~= nil and math.abs(wa - la) < 0.01,
           la and wa and string.format("%.2f won, %.2f lost", wa, la)
           or "a score is missing")
 end
 -- The caption's line is the dial's, and the dial is a third of a phone
--- across. On a narrow enough window it is dropped, the way a side's name is:
--- the clock it is about is on the row above, counting.
-frame({w = 320, h = 568,
-       match = {playing = false, left = 18, score = {[0] = 15, [1] = 19}}})
-check("and drops the caption on a window with no room for it",
+-- across. A window held upright does not draw it at all, and neither does one
+-- too narrow for it however it is held: the clock it is about is on the row
+-- above, counting, and the sheet the whistle raises is over the rest of the
+-- screen saying the match is done.
+local WHISTLE = {playing = false, left = 18, score = {[0] = 15, [1] = 19}}
+frame({w = 390, h = 844, match = WHISTLE})
+check("no caption on a phone held upright",
       drawn("NEXT MATCH IN") == nil and drawn("0:18") ~= nil,
       table.concat(words(), " | "))
+frame({w = 320, h = 240, match = WHISTLE})
+check("and none on a window with no room for it either",
+      drawn("NEXT MATCH IN") == nil and drawn("0:18") ~= nil,
+      table.concat(words(), " | "))
+frame({w = 844, h = 390, match = WHISTLE})
+check("and one on a phone held on its side, which has the room",
+      drawn("NEXT MATCH IN") ~= nil, table.concat(words(), " | "))
 
--- A draw stands neither side down, which is what a draw is.
+-- A draw is two of the same figure and reads as one, which is what a draw is.
 frame({match = {playing = false, left = 18, score = {[0] = 17, [1] = 17}}})
 do
     local both = 0
     for i = 1, state.n do
         if state.text[i].s == "17" then both = both + 1 end
     end
-    check("and a draw stands neither of them down", both == 2,
+    check("and a draw is both sides at the same figure", both == 2,
           both .. " scores drawn")
 end
 

@@ -369,10 +369,16 @@ def rating(zone, px=13, caption=True, dim=1.0, align="left", cap_px=None):
             f'opacity:{.9 * dim}">{at}</span>{signed(moved, px, dim)}</span>')
 
 
-def stood(room, s, state):
+def stood(room, s, state, down=True):
     """What the whistle does to a side: the one that took it keeps its
-    ink, the other stands down to a third. A draw stands neither down."""
-    if state != "end":
+    ink, the other stands down to a third. A draw stands neither down.
+
+    The scoreline passes `down=False` and stands neither of them down.
+    The two scores say who won, which is what a score is for, and a
+    figure read through an alpha is a figure the interface is
+    editorializing about. The three shapes on the second page were drawn
+    before that and keep it, since they are the record of a first pass."""
+    if state != "end" or not down:
         return 1
     best = max(x.score for x in room["sides"])
     return .35 if s.score < best else 1
@@ -455,11 +461,10 @@ def band_scoreline(w, room, zone, compact, state="open", px=13):
     line = (f'top:{top}px;height:{KEY_H}px;display:flex;align-items:center;'
             f'position:absolute')
     out = [rating_readout(zone, compact, px)]
+    # A room that runs forever has no clock and no score, and nothing moves in
+    # to fill the gap: the middle of the row is empty and the top edge of that
+    # zone is the fight's.
     if room["clock"] is None:
-        out.append(
-            f'<div class="hud" style="{line};left:50%;transform:translateX(-50%);'
-            f'font-size:{px}px;color:{INK};opacity:.9;white-space:nowrap">'
-            f'<span class="num">{room["flying"]}</span>&nbsp;flying</div>')
         return "".join(out)
     clock = clock_text(room, state)
     ended = state == "end"
@@ -471,7 +476,10 @@ def band_scoreline(w, room, zone, compact, state="open", px=13):
     middle = (f'<span class="num" style="font-size:{px}px;color:{READ};'
               f'opacity:.95">{clock}</span>')
     mid_w = adv(clock, px)
-    if ended:
+    # And not on a window held upright, where the dial leaves the line under
+    # the clock no room for it. The clock it captions is on the row above,
+    # counting, and the sheet the whistle raises says the match is done.
+    if ended and not compact:
         out.append(
             f'<div class="abs hud" style="left:50%;top:{top + KEY_H + 4}px;'
             f'transform:translateX(-50%);font-size:{px}px;color:{DIM};'
@@ -482,7 +490,7 @@ def band_scoreline(w, room, zone, compact, state="open", px=13):
     half = mid_w / 2
     duel = zone == "duel"
     for i, s in enumerate(room["sides"]):
-        dim = stood(room, s, state)
+        dim = stood(room, s, state, down=False)
         edge = w / 2 - half - gap if i == 0 else w / 2 + half + gap
         pos = (f"right:{w - edge:.0f}px" if i == 0 else f"left:{edge:.0f}px")
         # A phone has no room for a team's name, and so has any window where
@@ -853,7 +861,7 @@ STATES = [("melee", "open", "Team Battle: kills"),
           ("turf", "open", "Turf: points and six stands"),
           ("war", "open", "Capture the Flag: rounds and four flags"),
           ("duel", "open", "Duel: one kill, two pilots, no score"),
-          ("roam", "open", "Free Roam: no clock, no score"),
+          ("roam", "open", "Free Roam: no clock, no score, no middle"),
           ("melee", "end", "At the whistle: Caisson took it")]
 
 DIRECTIONS = [
@@ -918,10 +926,12 @@ def scoreline_sheet():
             "and stops short of the dial; a phone drops the names and the "
             "rating's caption, and the figures always draw. Flags hang under "
             "the clock as the radar's beacon; a duel is one kill, so its row is "
-            "the two pilots either side of the clock and no score; and at "
-            "the whistle the line under the clock, the flags' line during the "
-            "match, says what it is counting to at the same size, so the row "
-            "keeps its shape and fits a phone.",
+            "the two pilots either side of the clock and no score; a room "
+            "that runs forever has no middle at all; and at the whistle both "
+            "sides stay at their own strength, with the line under the clock, "
+            "the flags' line during the match, saying what it is counting to "
+            "at the same size. That caption is a monitor's: on a phone the "
+            "dial leaves the line under the clock no room for it.",
             900),
         f'<div style="height:22px"></div>',
         title("Every zone, and the whistle"),

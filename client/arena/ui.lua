@@ -3042,36 +3042,11 @@ end
 -- column stands at the foot and reaches nothing up here.
 local band_l, band_r = 0, 0
 
--- The whistle, and the one thing about it this file still works out.
---
--- The ending was a block of its own: a line naming the side that took the
--- match, a bar carrying each side's share of the score, and the roster under
--- both, grown 1.45 times over a wash of the whole window. All of that is
--- gone. What the whistle raises now is the players sheet, opened as though a
--- hand had pressed its stop, and what says who took the match is the band:
--- both sides stay on it, the winner at its own strength and the loser stood
--- down. See `match_clock`.
---
--- So this table is down to one question, which side took it, and it stays a
--- table rather than becoming a local because this chunk is close to the two
--- hundred a Lua main function may declare. See upvalues_test.
-local END = {}
-
--- Which side took it, what the ending calls that, and in what color. A draw is
--- a real result at three minutes and says so, rather than a winner being named
--- by tie-break.
-function END.result(o, m, names)
-    local best, best_at, drawn = -1, nil, false
-    for team, n in pairs(m.score or {}) do
-        if n > best then best, best_at, drawn = n, team, false
-        elseif n == best then drawn = true end
-    end
-    if drawn or best_at == nil then return "drawn", pal.INK, nil, false end
-    -- The side keeps the case it was supplied in; the verb is the interface
-    -- speaking, so it is drawn separately by the caller.
-    return (names and names[best_at]) or "a side",
-           best_at == view_team and pal.FRIEND or pal.ENEMY, best_at, true
-end
+-- The whistle used to be a table here, working out which side had taken the
+-- match so the band could stand the other one down to a third of its ink.
+-- Both sides read at their own strength now: the scores say who won, which is
+-- what a score is for, and a figure that has to be read through an alpha is a
+-- figure the interface is editorializing about. See decision 163.
 
 local function match_clock(o, m, names, alone)
     local row, px = band_type()
@@ -3081,16 +3056,12 @@ local function match_clock(o, m, names, alone)
     -- The near corner first, because it is the end the band on its right has
     -- to stop short of.
     local near = TOP.rating(o, mid, px)
-    -- A room that runs forever has no clock and no score, so the middle
-    -- carries how many are in it instead. Free Roam is the one zone with
-    -- neither, and an empty row over a room of thirty one reads as an
-    -- instrument that has given up rather than as a quiet room.
-    if not m then
-        local n = 0
-        for _ in pairs(o.pilots or {}) do n = n + 1 end
-        txt(n .. " flying", F.w / 2, mid, px, pal.a(pal.INK, 0.9), "center")
-        return
-    end
+    -- A room that runs forever has no clock and no score, so the middle of
+    -- the row is empty. Free Roam is the one zone with neither, and how many
+    -- are in the room is a fact the players sheet carries a line each for: an
+    -- instrument that reads out a number nobody is playing for is furniture,
+    -- and the whole top edge of that zone is the fight's.
+    if not m then return end
     local left = m.left or 0
     local clock = string.format("%d:%02d", math.floor(left / 60), left % 60)
     local ended = match_ended(m)
@@ -3148,19 +3119,19 @@ local function match_clock(o, m, names, alone)
     -- strip on an upright phone. It is a caption rather than a reading, and
     -- the row is for readings.
     if ended then
-        -- And only where it fits. What stands on that line is the dial, which
-        -- is a third of a phone across, so a narrow enough window runs the
-        -- caption into the instrument; a caption that will not fit is dropped
-        -- the way a side's name is, and the clock it is about is on the row
-        -- above either way.
+        -- Not on an upright window, and not on any window too narrow for it.
+        -- What stands on that line is the dial, which is a third of a phone
+        -- across, so a phone held upright has the caption running into the
+        -- instrument or hard against it; a caption that will not fit is
+        -- dropped the way a side's name is. The clock it is about is on the
+        -- row above, counting, and the sheet the whistle raises is over the
+        -- rest of the screen saying the match is done.
         local cap, dial_l = "NEXT MATCH IN", TOP.dial_x()
-        if F.w / 2 + text_w(cap, px) / 2 <= dial_l then
+        if F.w >= F.h and F.w / 2 + text_w(cap, px) / 2 <= dial_l then
             txt(cap, F.w / 2, band_bottom() + 8 * F.scale, px,
                 pal.a(pal.DIM, 0.8), "center")
         end
     end
-    local _, _, won = END.result(o, m, names)
-
     -- A side is its score and its name, in that order out from the middle, so
     -- the two figures sit at the ends of the band and the two names bracket
     -- the clock.
@@ -3198,11 +3169,7 @@ local function match_clock(o, m, names, alone)
                           TOP.row_right() - F.w / 2 - half) - 2 * gap
     for i, side in ipairs(sides) do
         local ours = side.team == mine
-        -- What the whistle does to a side: the one that took it keeps its
-        -- ink, the other stands down. Nothing at all while the match is being
-        -- played, and nothing to either side of a draw.
-        local stood = (ended and won ~= nil and side.team ~= won) and 0.35 or 1
-        local col = pal.a(ours and pal.FRIEND or pal.ENEMY, 0.95 * dim * stood)
+        local col = pal.a(ours and pal.FRIEND or pal.ENEMY, 0.95 * dim)
         local figure = (not duel) and tostring(side.n) or ""
         -- A side's name is a label and wears the interface's own case; a
         -- pilot's is quoted, the way the roster and the plate on their hull
@@ -3233,7 +3200,7 @@ local function match_clock(o, m, names, alone)
         -- the band's own edge and `reach` has one number to walk out to.
         local fx = edge
         if label ~= "" then
-            txt(label, edge, mid, px, pal.a(col, 0.85 * dim * stood), pivot,
+            txt(label, edge, mid, px, pal.a(col, 0.85 * dim), pivot,
                 nil, quoted)
             local step = text_w(label, px) + inner
             fx = i == 1 and edge - step or edge + step

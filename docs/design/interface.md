@@ -411,8 +411,8 @@ brackets after it. The standing is set in the ink the figures beside it are,
 since no rating is good or bad; only the movement is green up and red down.
 Who took the match is the band's to
 say, in the pixels that have carried the score for three minutes: both sides
-stay on it, the winner at its own strength and the beaten side stood down to a
-third, over the clock counting to the next one. A draw stands neither down.
+stay on it at their own strength, over the clock counting to the next one. The
+two figures are the whole of it, since that is what a score is for.
 
 Top center is the band: the clock, with a side either side of it as its score
 and its name. It is one line and one size, the body size the whole interface
@@ -428,10 +428,11 @@ The row is a key tall at every window size, so the band and the way into the
 menu are the same height and the top row reads as a row. Under it, the flag
 strip and whatever the room has to say.
 
-What a zone does not count, it does not draw. A duel is one clean kill, so its
-score would read nil to nil for the whole match: what its row carries is the
-two pilots' call signs and the clock. A room that runs forever has neither, so
-its middle is how many are in it.
+What a zone does not count, it does not draw, and nothing else moves in to
+fill the gap. A duel is one clean kill, so its score would read nil to nil for
+the whole match: what its row carries is the two pilots' call signs and the
+clock. A room that runs forever has neither, so the middle of its row is empty
+and the whole top edge of that zone is the fight's.
 
 The band is also the control, in a room you are in: a press opens
 the players sheet, which is a panel of the menu rather than a column of its
