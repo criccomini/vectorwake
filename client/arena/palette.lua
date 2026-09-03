@@ -414,16 +414,16 @@ end
 --
 -- The bottom band is the mute the sheet has always drawn this mark in, so a
 -- new pilot's badge is the badge as it was, and nobody is colored for being
--- new. The top is the interface's own ink, the one color up here that is not
--- a color: a Legend's badge is the brightest thing in the corner and it gets
--- there by having no hue at all, which leaves green, gold and violet for the
--- three bands in between, far enough apart to be called at a glance.
+-- new. The top is the interface's own ink, which has no hue in it at all: a
+-- Legend's badge is the brightest thing in the corner without borrowing a
+-- color from anything else on screen. That leaves green, gold and violet for
+-- the three bands between, far enough apart to be called at a glance.
 --
 -- `placing` is what a pilot reads for their first ten rated games and it has
 -- no band behind it, so it takes the same mute as the floor. What separates
--- them is the alpha the corner draws it at, not the hue: the band is unknown
--- rather than low, and a color that guessed at it would be a lie in five
--- ways.
+-- them is the alpha the corner draws it at rather than the hue, because the
+-- band is unknown rather than low: any of the five would claim something the
+-- room does not know yet.
 M.TIER = {
     Newb = M.MUTE,
     Wing = M.GREEN,
