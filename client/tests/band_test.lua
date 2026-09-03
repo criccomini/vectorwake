@@ -162,14 +162,27 @@ local function frame(o)
     ui.hud({
         me = 0,
         side = 0,
+        watch = o.watch,
+        -- A seat holds a rating and the row reads it, so the harness carries
+        -- one: every measurement below is taken against the row a pilot in a
+        -- match actually has in front of them. `rated_from` is what the
+        -- whistle latched, so this pilot is six points down on the match.
+        ratings = o.ratings ~= false and (o.ratings or {[0] = 1494}) or nil,
+        rated_from = o.ratings ~= false and (o.rated_from or {[0] = 1500})
+            or nil,
         viewer_name = "you",
         class_names = {"Apex", "Wedge"},
         menu_open = o.menu_open or false,
         pilots = o.pilots or PILOTS,
         watchers = nil,
         teams = {},
-        match = o.match or {playing = true, left = 33,
-                            score = {[0] = 15, [1] = 19}},
+        -- `false` for a room that runs forever, which is what a zone with no
+        -- match sends: Free Roam is the one, and the row reads differently
+        -- there.
+        match = o.match ~= false
+            and (o.match or {playing = true, left = 33,
+                             score = {[0] = 15, [1] = 19}})
+            or nil,
         side_names = NAMES,
         feed = {},
         hurt = 0,
@@ -178,7 +191,7 @@ local function frame(o)
         half_w = w_now / 2, half_h = h_now / 2,
         banner = o.banner or "",
         rtt = 4,
-        zone = "melee",
+        zone = o.zone or "melee",
         fps = 60, frame_ms = 16.7, rx_rate = 0, tx_rate = 0,
     })
     ui.finish()
@@ -220,7 +233,7 @@ end
 -- published counting down from the top. Everything here compares the two.
 local function down(t) return h_now - t.y end
 
--- --- a side is a name over a number ----------------------------------------
+-- --- a side is a figure and a name, on the row's one line ------------------
 
 frame()
 
@@ -234,15 +247,31 @@ check("both scores are drawn", fifteen ~= nil and nineteen ~= nil,
 check("and the clock between them", clock ~= nil)
 
 if pylon and fifteen and caisson and nineteen and clock then
-    check("a team's score sits under its own name",
-          down(fifteen) > down(pylon) and down(nineteen) > down(caisson),
-          string.format("%.0f under %.0f, %.0f under %.0f",
-                        down(fifteen), down(pylon),
-                        down(nineteen), down(caisson)))
-    check("and shares its edge",
-          math.abs(pylon.x - fifteen.x) < 0.5
-              and math.abs(caisson.x - nineteen.x) < 0.5,
-          string.format("%.1f/%.1f and %.1f/%.1f", pylon.x, fifteen.x,
+    -- One line. A side was a name over a number and the two of them together
+    -- were as tall as the clock, which is three sizes in eight characters and
+    -- the largest of them on the clock. Everything on the row shares the
+    -- row's own middle now. See decision 162.
+    check("a side stands on the clock's own line",
+          math.abs(pylon.y - clock.y) < 0.5
+              and math.abs(fifteen.y - clock.y) < 0.5
+              and math.abs(caisson.y - clock.y) < 0.5
+              and math.abs(nineteen.y - clock.y) < 0.5,
+          string.format("%.1f %.1f | %.1f | %.1f %.1f", fifteen.y, pylon.y,
+                        clock.y, caisson.y, nineteen.y))
+    -- And at one size, which is the whole of the change: what tells a score
+    -- from a name from the clock is color and order, not weight.
+    check("and everything on it is set in one size",
+          math.abs(pylon.px - clock.px) < 0.5
+              and math.abs(fifteen.px - clock.px) < 0.5
+              and math.abs(caisson.px - clock.px) < 0.5
+              and math.abs(nineteen.px - clock.px) < 0.5,
+          string.format("%.0f %.0f | %.0f | %.0f %.0f", fifteen.px, pylon.px,
+                        clock.px, caisson.px, nineteen.px))
+    -- The figure leads, reading outward from the middle, so the two numbers
+    -- sit at the band's own ends and the two names bracket the clock.
+    check("a side's figure is the far half of it",
+          fifteen.x < pylon.x and nineteen.x > caisson.x,
+          string.format("%.0f/%.0f and %.0f/%.0f", fifteen.x, pylon.x,
                         caisson.x, nineteen.x))
     -- Your own side first, whichever way the zone numbered the teams, so the
     -- reading is positional and never has to be worked out from a color.
@@ -261,27 +290,169 @@ if pylon and fifteen and caisson and nineteen and clock then
               and nineteen.col[1] == pal.ENEMY[1],
           "a side is in the wrong ink")
 
-    -- The whole point of the stack: a side is exactly as tall as the clock it
-    -- stands beside, so the band reads as one line of instrument rather than
-    -- as a block with a clock in the middle of it.
-    local tall = (pylon.y + pylon.px / 2) - (fifteen.y - fifteen.px / 2)
-    check("a side is as tall as the clock",
-          tall <= clock.px + 0.5 and tall > clock.px * 0.9,
-          string.format("%.1f against %.1f", tall, clock.px))
-    -- And it ends where the row ends. The band and the dial's readouts are
-    -- what the top row carries, so the clock's own foot and the meter's box
-    -- come down on one line, which says both that the clock is a key tall and
-    -- that it is standing where the row is. Measured against a published box
-    -- rather than against a number written down here.
+    -- The clock is the reading ink rather than either side's color or the
+    -- interface's own: it is the one number up here nobody is playing for,
+    -- and at one size the ink is what says so.
+    check("and the clock is the reading between them",
+          clock.col[1] == pal.READ[1] and clock.col[2] == pal.READ[2],
+          "the clock is in the wrong ink")
+    -- And the row still stands in a box a key tall, which is what the flags,
+    -- the room's line and the board under the band are placed against. The
+    -- clock filled that box on its own once; now it sits inside it, and the
+    -- meter's own box is what publishes where it ends.
     local meter = box("debug")
-    check("the clock's line ends where the row does", meter ~= nil
-              and math.abs((down(clock) + clock.px / 2)
-                           - (meter.y + meter.h)) < 0.5,
-          meter and string.format("%.1f against %.1f",
+    check("the row's line sits inside the row's box", meter ~= nil
+              and down(clock) + clock.px / 2 < meter.y + meter.h
+              and down(clock) - clock.px / 2 > meter.y,
+          meter and string.format("clock %.1f to %.1f, row %.1f to %.1f",
+                                  down(clock) - clock.px / 2,
                                   down(clock) + clock.px / 2,
-                                  meter.y + meter.h)
+                                  meter.y, meter.y + meter.h)
               or "no meter in the corner")
 end
+
+-- --- your standing is on the row ------------------------------------------
+--
+-- A rating is the one durable thing a pilot has, and until decision 162 there
+-- was nowhere to watch it: the sheet carries it at the whistle and the ending
+-- is where it was read, which is a figure you are told about after the fact.
+-- It stands in the near corner now, the way POS stands over the dial at the
+-- far one, and it says what the sheet says in the same words.
+
+frame()
+do
+    local caption, standing, moved = drawn("RATING"), drawn("1494"), drawn("(-6)")
+    check("the row carries your own standing",
+          caption ~= nil and standing ~= nil and moved ~= nil,
+          table.concat(words(), " | "))
+    if caption and standing and moved and clock then
+        check("on the row's own line",
+              math.abs(standing.y - clock.y) < 0.5
+                  and math.abs(moved.y - clock.y) < 0.5
+                  and math.abs(caption.y - clock.y) < 0.5,
+              string.format("%.1f %.1f %.1f against %.1f", caption.y,
+                            standing.y, moved.y, clock.y))
+        check("and at the row's own size",
+              math.abs(standing.px - clock.px) < 0.5
+                  and math.abs(moved.px - clock.px) < 0.5,
+              string.format("%.0f %.0f against %.0f", standing.px, moved.px,
+                            clock.px))
+        -- Reading order, in the near corner and nowhere near the middle.
+        check("in the corner, the caption first",
+              caption.x < standing.x and standing.x < moved.x
+                  and moved.x < W / 4,
+              string.format("%.0f %.0f %.0f", caption.x, standing.x, moved.x))
+        -- The standing is a reading and no rating is good or bad, so only the
+        -- movement takes a color. Six points down, so this one is the hurt.
+        check("with the movement colored and the standing not",
+              moved.col[1] == pal.HURT[1] and standing.col[1] == pal.INK[1],
+              "the pair is in one ink")
+    end
+    -- And the band stops short of it, the way it stops short of the dial's
+    -- strip at the other end. The row has an instrument at each end now and
+    -- the band grows between them.
+    local press = box("players_open")
+    if press and moved then
+        check("and the band starts clear of it",
+              press.x > moved.x, string.format("band at %.0f, standing ends "
+                                               .. "somewhere past %.0f",
+                                               press.x, moved.x))
+    end
+end
+
+-- A match that has moved nothing reads a bracketed zero, because "this one
+-- has cost you nothing so far" is an answer and a blank is not.
+frame({ratings = {[0] = 1494}, rated_from = {[0] = 1494}})
+check("a standing that has not moved says so", drawn("(0)") ~= nil,
+      table.concat(words(), " | "))
+
+-- A phone spends the caption, the way the middle of the row spends the sides'
+-- names. The figures always draw: they are the reading.
+frame({w = 390, h = 844})
+check("a phone keeps the figures and drops the caption",
+      drawn("1494") ~= nil and drawn("(-6)") ~= nil and drawn("RATING") == nil,
+      table.concat(words(), " | "))
+
+-- Nothing for a watcher, whose rating this room is not moving: a figure under
+-- a caption reading RATING in that corner would be read as theirs. Nothing
+-- either for a pilot who has no rating yet, which is a guest before their
+-- first rated death.
+frame({watch = true})
+check("a watcher is shown no standing at all",
+      drawn("RATING") == nil and drawn("1494") == nil,
+      table.concat(words(), " | "))
+frame({ratings = false})
+check("and neither is a pilot who has not earned one",
+      drawn("RATING") == nil and drawn("(0)") == nil,
+      table.concat(words(), " | "))
+
+-- --- the clock says how long is left, and then that it is nearly gone ------
+--
+-- Under half a minute the clock goes to the warning color. It is the one
+-- reading on the row that says something other than what it reads, and the
+-- band said it by being twice the size of everything beside it for the whole
+-- three minutes.
+
+frame({match = {playing = true, left = 92, score = {[0] = 15, [1] = 19}}})
+do
+    local early = drawn("1:32")
+    frame({match = {playing = true, left = 29, score = {[0] = 15, [1] = 19}}})
+    local late = drawn("0:29")
+    check("the clock is a reading with a minute to go",
+          early ~= nil and early.col[1] == pal.READ[1],
+          early and "in the wrong ink" or "no clock")
+    check("and a warning under half a minute",
+          late ~= nil and late.col[1] == pal.HURT[1],
+          late and "in the wrong ink" or "no clock")
+    check("at the same size either way",
+          early and late and math.abs(early.px - late.px) < 0.5,
+          "the clock grows")
+end
+
+-- --- a duel is two pilots and the clock ------------------------------------
+--
+-- One clean kill takes a duel (decision 146), so its score stands at nil to
+-- nil for the whole match and then the match is over: there is nothing there
+-- to read. What its two sides are is the two pilots, and the zone's own names
+-- for them, Pilot and Rival, name neither.
+
+frame({zone = "duel",
+       match = {playing = true, left = 97, score = {[0] = 0, [1] = 0}},
+       pilots = {[0] = {name = "you", label = "human", team = 0},
+                 [1] = {name = "DRiFT", label = "human", team = 1}}})
+do
+    local mine, theirs, tick = drawn("you"), drawn("DRiFT"), drawn("1:37")
+    check("a duel names its two pilots on the row",
+          mine ~= nil and theirs ~= nil and tick ~= nil
+              and math.abs(mine.y - tick.y) < 0.5
+              and math.abs(theirs.y - tick.y) < 0.5,
+          table.concat(words(), " | "))
+    check("and neither side by the zone's word for it",
+          drawn("PYLON") == nil and drawn("CAISSON") == nil,
+          table.concat(words(), " | "))
+    -- A call sign keeps the case its owner gave it, the way the roster and
+    -- the plate on the hull keep it. The interface's own words are capitals.
+    check("in the case its owner gave it", theirs and theirs.s == "DRiFT",
+          theirs and theirs.s or "no name")
+    local zeros = 0
+    for i = 1, state.n do
+        if state.text[i].s == "0" then zeros = zeros + 1 end
+    end
+    check("and no score, because a duel has none to show", zeros == 0,
+          zeros .. " zeros on the row")
+end
+
+-- --- a room that runs forever ----------------------------------------------
+--
+-- Free Roam has no clock and no score, so the middle carries how many are in
+-- the room. An empty row over a room of thirty one reads as an instrument
+-- that has given up rather than as a quiet room.
+
+frame({zone = "roam", match = false})
+check("a room with no match counts the room instead",
+      drawn("4 flying") ~= nil, table.concat(words(), " | "))
+check("and still carries your standing",
+      drawn("1494") ~= nil, table.concat(words(), " | "))
 
 -- --- the top row is a row ---------------------------------------------------
 
@@ -313,14 +484,15 @@ local function row_shares_a_center(where, w, h)
     check("and where you are is written out on " .. where,
           drawn("POS") ~= nil and drawn("6,6") ~= nil,
           table.concat(words(), " | "))
-    -- The clock is the row's line, and the meter's box comes down on the same
-    -- foot it does. That is the height the row takes from, said between two
+    -- The clock is the row's line and the meter's box is the row's box, so
+    -- the clock stands inside it at every window size. Said between two
     -- things that were drawn rather than worked out here.
     local mid = down(tick)
-    check("the row shares one foot on " .. where,
-          math.abs((mid + tick.px / 2) - (meter.y + meter.h)) < 0.5,
-          string.format("clock foot %.1f, row ends %.1f",
-                        mid + tick.px / 2, meter.y + meter.h))
+    check("the row's line sits inside the row's box on " .. where,
+          mid + tick.px / 2 < meter.y + meter.h and mid - tick.px / 2 > meter.y,
+          string.format("clock %.1f to %.1f, row %.1f to %.1f",
+                        mid - tick.px / 2, mid + tick.px / 2,
+                        meter.y, meter.y + meter.h))
     -- The readout at the far end stands on the clock's own line, which is the
     -- whole of what the row is: a clock and two readings on one line. It took
     -- its own vertical off the padding once and came out four points high on a

@@ -212,11 +212,17 @@ end
 
 -- The whole record a string was drawn as, for the one column that draws two
 -- kinds of fact side by side and has to keep them apart in ink and in place.
+--
+-- The last one filed rather than the first, because your own standing is
+-- drawn twice: the band up on the row carries it all match (decision 162) and
+-- the sheet says it again for the room. The sheet draws after the band, so
+-- the last copy is the column's.
 local function entry(what)
+    local found
     for i = 1, state.n do
-        if state.text[i].s == what then return state.text[i] end
+        if state.text[i].s == what then found = state.text[i] end
     end
-    return nil
+    return found
 end
 
 local NAMES = {[0] = "Pylon", [1] = "Caisson"}
@@ -509,11 +515,15 @@ sheet({match = ENDED,
        rated_from = {[0] = 1506, [1] = 1611, [2] = 1400, [3] = 1315}})
 check("the whistle adds where the ladder has everybody", at("RATING") ~= nil,
       table.concat(words(), " | "))
+-- Once each, except your own, which the band on the row above has carried
+-- all match and the column says again for the room. Two of a figure is what
+-- the readout up there is: a standing you can watch while you fly, in the
+-- same words the sheet uses. See decision 162.
 check("and the column carries the standing itself",
-      counted("1500") == 1 and counted("1620") == 1,
+      counted("1500") == 2 and counted("1620") == 1,
       table.concat(words(), " | "))
 check("with what the match paid in brackets after it, either way",
-      counted("(-6)") == 1 and counted("(+9)") == 1,
+      counted("(-6)") == 2 and counted("(+9)") == 1,
       table.concat(words(), " | "))
 -- The two are different kinds of fact and are set in different ink: a
 -- standing is a reading like the three figures beside it, and no rating is

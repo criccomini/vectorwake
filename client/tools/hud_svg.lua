@@ -102,6 +102,13 @@ end
 function layer:ring(x, y, r, w, segs, col)
     shapes[#shapes + 1] = {k = "ring", x = x, y = y, r = r, w = w, col = col}
 end
+-- The flag's own ring, which is a ring with its edge softened. The transponder
+-- decision 149 drew for a flag calls this and nothing else did, so the turf
+-- scenario stopped rendering the day flags became beacons and no other
+-- scenario noticed.
+function layer:ring_aa(x, y, r, w, col, segs)
+    shapes[#shapes + 1] = {k = "ring", x = x, y = y, r = r, w = w, col = col}
+end
 function layer:ring_fade(x, y, r, w, segs, col)
     shapes[#shapes + 1] = {k = "ring", x = x, y = y, r = r, w = w, col = col, fade = 0.5}
 end
@@ -480,8 +487,18 @@ ui.hud({
         [0] = {name = "Kestrel 8", label = "unknown", tier = "Wing", games = 41},
         [1] = {name = "Ozone 12", label = "bot", ai = true, tier = "Ace", games = 900},
     },
-    ratings = (watching or scenario == "ending") and {}
+    -- A rating a seat, since the row carries the viewer's own all match and
+    -- the sheet at the whistle carries the room's.
+    ratings = ending and {[0] = 1494, 1620, 1408, 1377,
+                          1551, 1502, 1466, 1439}
+              or watching and {}
               or {[0] = 1183.4, [1] = 1346.6},
+    -- What the whistle latched, which the row and the sheet both subtract
+    -- from the live figure to say what this match has been worth.
+    rated_from = ending and {[0] = 1500, 1611, 1413, 1382,
+                             1542, 1497, 1461, 1440}
+                 or watching and {}
+                 or {[0] = 1189.4, [1] = 1346.6},
     watchers = nil,
     teams = {},
     match = match,

@@ -1224,6 +1224,62 @@ function TOP.row_right()
     return TOP.dial_x() - KEY_GAP * F.scale
 end
 
+-- Half a minute, which is where the clock stops being a reading and becomes a
+-- warning. The band used to say this by standing 26 points tall for three
+-- minutes; a row set in one size says it in the ink instead, at the moment it
+-- is worth saying.
+TOP.WARN = 30
+
+-- Your own standing, at the left end of the row, and what this match has done
+-- to it.
+--
+-- A rating is the one durable thing a pilot has and it moved all match with
+-- nowhere to watch it: the players sheet carries it at the whistle and the
+-- ending is where it was read, which is a figure you are told about after the
+-- fact. It stands in the near corner the way POS stands over the dial, at the
+-- row's own size, and it says what the sheet says in the same words: the
+-- standing in the interface's ink, because no rating is good or bad, and the
+-- movement in brackets, green up, red down and mute where nothing happened.
+--
+-- Nothing for a watcher, whose rating this room is not moving, since a figure
+-- under a caption reading RATING in that corner would be read as theirs.
+-- Nothing either for a pilot who has no rating yet, which is a guest before
+-- their first rated death.
+--
+-- Answers where the row's left end is, which is what the band beside it grows
+-- toward: the readout's own right edge where there is one, and the window's
+-- margin where there is not, so a room that does not use this corner gives it
+-- back to the band.
+function TOP.rating(o, mid, px)
+    local x = F.safe_l + PAD * F.scale
+    local at = (not o.watch) and o.me and o.ratings and o.ratings[o.me]
+    if not at then return x end
+    -- Rounded at each end rather than once at the difference, the way the
+    -- sheet rounds it: a movement worked out from the unrounded pair would be
+    -- a point off the two numbers it is there to explain.
+    local now = math.floor(at + 0.5)
+    local was = o.rated_from and o.rated_from[o.me]
+    local by = was and (now - math.floor(was + 0.5)) or 0
+    -- A match that moved nothing reads a bracketed zero, because "this one
+    -- has cost you nothing so far" is an answer and a blank is not. The form
+    -- is the sheet's exactly, down to the unsigned zero.
+    local moved = "(" .. (by > 0 and "+" or "") .. by .. ")"
+    -- The caption goes on a phone, the way the sides' names do out in the
+    -- middle: 390 points hold the way into the menu, a band and a dial a
+    -- third of the screen wide, and a word naming a reading is the first
+    -- thing to spend. The figures always draw.
+    if not M.compact then
+        txt("RATING", x, mid, px, pal.a(pal.DIM, 0.8))
+        x = x + text_w("RATING ", px)
+    end
+    txt(tostring(now), x, mid, px, pal.a(pal.INK, 0.9))
+    x = x + text_w(now .. " ", px)
+    txt(moved, x, mid, px,
+        pal.a(by > 0 and pal.PAID or by < 0 and pal.HURT or pal.MUTE,
+              by == 0 and 0.8 or 0.95))
+    return x + text_w(moved, px)
+end
+
 -- Both instruments this corner holds, since they are the same corner and one
 -- replaces the other: the radar at rest, and the map when a player has asked
 -- for it. They start on one line and differ in width alone.
@@ -1767,22 +1823,21 @@ end
 -- end, and a test can ask what the band is rather than working the sizes out
 -- a second time.
 --
--- Everything on the band is a fraction of the clock. A side is two lines,
--- who they are over how they are doing, and those two plus the gap between
--- them add up to exactly the clock's height, so the band reads as one line of
--- instrument however many words are in it.
+-- Two numbers: the box the row stands in, which is a key tall, and the one
+-- size everything set on it is set in.
 --
--- The clock is one key tall. It stood at 36 on a monitor, half again the key
--- beside it, and a number that size in the middle of the top row is a
--- headline rather than a reading: the row carries the way into the menu, the
--- clock and the dial's readouts, and a row wants one height. KEY_H is the
--- same at every window size, so the band is too, and the sizes here stopped
--- needing a column for a phone and a column for a monitor.
+-- The band was three sizes inside eight characters. The clock was a key tall
+-- at 26 points and each side was a 9 point name over a 14 point number, which
+-- put the largest type on the screen's top row on the one reading that
+-- changes by itself and the smallest on the two a match is played for. Every
+-- reading up here is the body size now, the size POS and the feed are already
+-- set in, and what tells them apart is color and order. See decision 162.
+--
+-- The box stays a key tall. Nothing on the row fills it any more, but it is
+-- what the flags, the room's line and the board hanging under the band are
+-- placed against, and a row of one size is not a reason to move them.
 local function band_type()
-    local clock = KEY_H * F.scale
-    local name = 9 * F.scale
-    local gap = 3 * F.scale
-    return clock, name, clock - name - gap
+    return KEY_H * F.scale, FONT * F.scale
 end
 
 -- The top row's own line, at every window size. The way into the menu is at
@@ -2958,8 +3013,16 @@ local function flag_strip(m)
     end
 end
 
--- The clock and the score, dead center at the top, which are the two facts a
--- three minute match is about.
+-- The row across the top of the window: your standing at the left of it, the
+-- clock with a side either side of it in the middle, and the dial's own
+-- readouts at the far end (see `over_dial`). One line, set in one size.
+--
+-- What tells a score from a name from a clock is color and order rather than
+-- weight. A side's two words wear the side's color and its figure leads,
+-- reading outward from the middle; the clock between them is the reading ink,
+-- since it is the one number up here that nobody is playing for; your own
+-- standing is the interface's ink with only its movement colored. See
+-- decision 162, and `band_type` for what the sizes used to be.
 --
 -- Both sides in the viewer's own colors rather than in the zone's: which one
 -- is yours is the first thing the number has to say, and every other
@@ -3011,32 +3074,39 @@ function END.result(o, m, names)
 end
 
 local function match_clock(o, m, names, alone)
-    if not m then return end
+    local row, px = band_type()
+    -- Every reading on the row shares the row's own middle, which is what
+    -- makes it one line rather than three things that happen to be up here.
+    local mid = band_top() + row / 2
+    -- The near corner first, because it is the end the band on its right has
+    -- to stop short of.
+    local near = TOP.rating(o, mid, px)
+    -- A room that runs forever has no clock and no score, so the middle
+    -- carries how many are in it instead. Free Roam is the one zone with
+    -- neither, and an empty row over a room of thirty one reads as an
+    -- instrument that has given up rather than as a quiet room.
+    if not m then
+        local n = 0
+        for _ in pairs(o.pilots or {}) do n = n + 1 end
+        txt(n .. " flying", F.w / 2, mid, px, pal.a(pal.INK, 0.9), "center")
+        return
+    end
     local left = m.left or 0
     local clock = string.format("%d:%02d", math.floor(left / 60), left % 60)
-    local big, name_px, under_px = band_type()
-    local top = band_top()
-    -- Every line is placed off the clock's own box rather than off a baseline
-    -- of its own, which is what keeps a side the same height as the clock
-    -- beside it: the name sits at the top of that box, the number under it
-    -- fills the rest, and the two are as tall together as the numerals in the
-    -- middle. See `band_type`.
-    local mid = top + big / 2
-    local name_y = top + name_px / 2
-    local under_y = top + big - under_px / 2
-
-    -- The middle first, because everything else is placed off it.
-    --
-    -- The dim is for numbers that have stopped moving, which at the whistle is
-    -- both sides' points. The numerals themselves keep full strength wherever
-    -- they are counting something, and between matches they are counting the
-    -- hardest: the clock is the whole of what the band has left to say then.
-    -- Only the rival search's --:--, which is counting nothing, goes quiet.
+    local ended = match_ended(m)
+    -- The dim is for a figure that has stopped moving, which at the whistle
+    -- is both sides' points and in a room still looking for a rival is the
+    -- clock counting nothing.
     local dim = m.playing and 1 or 0.55
-    txt(clock, F.w / 2, mid, big, pal.a(pal.INK, 0.95), "center")
-    local half = text_w(clock, big) / 2
+    -- Under half a minute the clock goes to the warning color. It is the one
+    -- thing on the row that says something other than what it reads, and the
+    -- old band said it by being twice the size of everything beside it for
+    -- the whole three minutes.
+    local ink = (m.playing and left <= TOP.WARN) and pal.HURT or pal.READ
+    txt(clock, F.w / 2, mid, px, pal.a(ink, 0.95 * dim), "center")
+    local half = text_w(clock, px) / 2
     -- What the band came to, walked outward from the clock as each side is
-    -- laid down and read next frame by the question above.
+    -- laid down and read next frame by the press below.
     band_l, band_r = F.w / 2 - half, F.w / 2 + half
     local function reach(x)
         if x < band_l then band_l = x end
@@ -3061,33 +3131,29 @@ local function match_clock(o, m, names, alone)
     local function press()
         if alone then return end
         local x0, x1 = band_l, band_r
-        hit(x0 - 6 * F.scale, top - 4 * F.scale,
-            x1 - x0 + 12 * F.scale, big + 8 * F.scale, "players_open")
+        hit(x0 - 6 * F.scale, mid - row / 2 - 4 * F.scale,
+            x1 - x0 + 12 * F.scale, row + 8 * F.scale, "players_open")
     end
 
     -- A match that has finished keeps both its sides, and the band is what
     -- says who took it: the winner at its own strength, the beaten side stood
     -- down to a third, over the clock counting to the next match.
     --
-    -- It used to give the sides up here and hand the result to a block of its
-    -- own a few lines down the window, on the grounds that a side drawn in
-    -- both places was one read twice. The block is gone: what the whistle
-    -- raises is the players sheet, which is a list of a room and knows
-    -- nothing about who won. So the one instrument that has carried the score
-    -- for three minutes carries the result as well, in the same pixels, and a
-    -- player who has spent the match reading the top of the window reads the
-    -- ending there too. See decision 147.
-    --
-    -- A draw stands neither side down, which is what a draw is.
-    local ended = match_ended(m)
+    -- What that clock is counting to goes on the line under it, which is the
+    -- flags' line while a match is on and free at the whistle, when no mode
+    -- draws any. It rode the row itself for a while and did not fit: eighteen
+    -- characters between the two scores put the far one through the dial's
+    -- strip on an upright phone. It is a caption rather than a reading, and
+    -- the row is for readings.
     if ended then
-        txt("NEXT MATCH IN", F.w / 2, band_bottom() + 8 * F.scale,
-            (M.compact and 9 or 11) * F.scale, pal.a(pal.DIM, 0.8), "center")
+        txt("NEXT MATCH IN", F.w / 2, band_bottom() + 8 * F.scale, px,
+            pal.a(pal.DIM, 0.8), "center")
     end
     local _, _, won = END.result(o, m, names)
 
-    -- A side is a team: its name over what it has scored, which is the pair a
-    -- player checks the clock to find out about.
+    -- A side is its score and its name, in that order out from the middle, so
+    -- the two figures sit at the ends of the band and the two names bracket
+    -- the clock.
     local mine = view_team
     local sides = {}
     for team, n in pairs(m.score or {}) do
@@ -3097,25 +3163,29 @@ local function match_clock(o, m, names, alone)
         if (a.team == mine) ~= (b.team == mine) then return a.team == mine end
         return a.team < b.team
     end)
-    -- How much room a name has, which is the tighter of the row's two ends
-    -- rather than each end's own.
+    -- A duel is one clean kill, so its score is not a reading: it stands at
+    -- nil to nil for the whole match and then the match is over. What its two
+    -- sides are is the two pilots, and Pilot against Rival names neither of
+    -- them, so the row carries their call signs and the clock. See decision
+    -- 146.
+    local duel = o.zone == "duel"
+    local gap = (M.compact and 12 or 16) * F.scale
+    local inner = 8 * F.scale
+    -- How much room a side has, which is the tighter of the row's two ends
+    -- rather than each end's own: your standing at the near one, the dial's
+    -- strip at the far one.
     --
-    -- The two ends are not the same width and never were: the left one is the
-    -- window's own edge now that the corner is empty, and the dial at the
-    -- right is a square a third of a phone across. Asking each side against
-    -- the end it happens to face therefore dropped the right name at widths
-    -- where the left one still drew, which reads as a fault rather than as a
-    -- band running out of room, and an upright phone hit it every match once
-    -- the dial came up into the corner and took the right end back. One
-    -- measure for both sides means two names of a size go together.
+    -- The two ends are not the same width and never were, so asking each side
+    -- against the end it happens to face drops the right name at widths where
+    -- the left one still draws, which reads as a fault rather than as a band
+    -- running out of room. One measure for both sides means two names of a
+    -- size go together.
     --
     -- Two names of very different lengths still part company, and should: a
     -- name that will not fit is a name that will not fit. What this stops is
     -- the same name fitting on one side of the clock and not the other.
-    local gap = (M.compact and 14 or 22) * F.scale
-    local room = math.min(
-        F.w / 2 - half - gap,
-        TOP.row_right() - (F.w / 2 + half + gap)) - KEY_GAP * F.scale
+    local room = math.min(F.w / 2 - half - near,
+                          TOP.row_right() - F.w / 2 - half) - 2 * gap
     for i, side in ipairs(sides) do
         local ours = side.team == mine
         -- What the whistle does to a side: the one that took it keeps its
@@ -3123,41 +3193,43 @@ local function match_clock(o, m, names, alone)
         -- played, and nothing to either side of a draw.
         local stood = (ended and won ~= nil and side.team ~= won) and 0.35 or 1
         local col = pal.a(ours and pal.FRIEND or pal.ENEMY, 0.95 * dim * stood)
-        local label = (names and names[side.team]) or ""
+        local figure = (not duel) and tostring(side.n) or ""
         -- A side's name is a label and wears the interface's own case; a
         -- pilot's is quoted, the way the roster and the plate on their hull
         -- quote it. Which of the two this is decides the case.
-        local quoted = false
-        local under, faint = tostring(side.n), false
+        local label, quoted = (names and names[side.team]) or "", false
+        if duel then
+            for _, p in pairs(o.pilots or {}) do
+                if p.team == side.team then
+                    label, quoted = p.name, true
+                    break
+                end
+            end
+        end
         -- Right-aligned against the clock on the left of it and left-aligned
-        -- on the right, so both lines of a side run away from the middle and
-        -- the numbers that matter sit against the numerals they are read with.
-        --
-        -- And only as far as the row lets it. The band is centered and grows
-        -- with whatever the sides are called, and what it grows toward at
-        -- each end is an instrument: the way into the menu on the left, the
-        -- dial on the right. A name with nowhere to go is dropped, the way
-        -- the ending's bar drops one that will not fit its share. The number
-        -- under it always draws: it is the reading, and it is four characters.
-        local edge, pivot
-        if i == 1 then
-            edge = F.w / 2 - half - gap
-            pivot = "right"
-        else
-            edge = F.w / 2 + half + gap
-            pivot = nil
-        end
-        if label ~= "" and text_w(label, name_px) > room then label = "" end
-        local wide = math.max(label ~= "" and text_w(label, name_px) or 0,
-                              text_w(under, under_px))
-        reach(i == 1 and edge - wide or edge + wide)
+        -- on the right, so both sides run away from the middle.
+        local edge = i == 1 and F.w / 2 - half - gap or F.w / 2 + half + gap
+        local pivot = i == 1 and "right" or nil
+        -- A name that will not fit is dropped and the figure always draws:
+        -- the figure is the reading and it is two characters.
+        local wide = text_w(figure, px)
         if label ~= "" then
-            txt(label, edge, name_y, name_px, pal.a(col, 0.85 * dim * stood),
-                pivot,
-                nil, quoted)
+            wide = wide + text_w(label, px) + (figure ~= "" and inner or 0)
         end
-        txt(under, edge, under_y, under_px,
-            faint and pal.a(pal.DIM, 0.8 * dim) or col, pivot)
+        if label ~= "" and wide > room then
+            label, wide = "", text_w(figure, px)
+        end
+        -- The name is the half nearest the clock, so the figure ends up at
+        -- the band's own edge and `reach` has one number to walk out to.
+        local fx = edge
+        if label ~= "" then
+            txt(label, edge, mid, px, pal.a(col, 0.85 * dim * stood), pivot,
+                nil, quoted)
+            local step = text_w(label, px) + inner
+            fx = i == 1 and edge - step or edge + step
+        end
+        if figure ~= "" then txt(figure, fx, mid, px, col, pivot) end
+        reach(i == 1 and edge - wide or edge + wide)
     end
     press()
 end
