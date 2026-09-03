@@ -12,8 +12,8 @@
 -- and watching-account open a stop's list, watching-login the panel an
 -- account act opens over one), waiting (what the loader hands off to
 -- before a room answers), loadout (a loaded hull with charges in hand, for
--- the corner stack), menu (the in-match column; menu-settings, menu-side and
--- menu-zone open a stop's panel).
+-- the corner stack), menu (the in-match column; menu-settings, menu-players
+-- and menu-zone open a stop's panel).
 -- Rasterize with any browser:
 --
 --     chromium --headless --screenshot=out.png --window-size=1280,800 out.svg
@@ -253,6 +253,12 @@ end
 -- ending was redesigned against, and the one worth a picture, since it is the
 -- board drawn in a column of its own with a head and a foot around it.
 local ending = scenario == "ending"
+-- The players sheet over a match that is still being flown, which is the one
+-- panel in this menu whose contents are the room rather than a fixture. The
+-- reading it is opened for is the RATING column, and that column read at the
+-- whistle alone until decision 164, so there was no frame in this tool that
+-- drew it at all.
+local players = scenario == "menu-players"
 if ending then
     room.count = 8
     room.teams = {[0] = 0, 0, 0, 0, 1, 1, 1, 1}
@@ -287,6 +293,18 @@ if scenario == "duel" then
     match = {playing = true, left = 97, score = {[0] = 0, [1] = 0}}
 end
 
+-- A room for the sheet to list: two full sides, a score that has been paid a
+-- while, and figures that differ down every column so a reading landing in
+-- the wrong one is visible.
+if players then
+    room.count = 8
+    room.teams = {[0] = 0, 0, 0, 0, 1, 1, 1, 1}
+    room.kills = {[0] = 4, 8, 6, 3, 6, 5, 5, 4}
+    room.deaths = {[0] = 2, 4, 3, 7, 5, 5, 6, 4}
+    room.assists = {[0] = 6, 4, 5, 3, 3, 3, 7, 8}
+    match = {playing = true, left = 96, score = {[0] = 9, [1] = 11}}
+end
+
 -- Free Roam, which is the one zone that puts prizes on the ground, so it is
 -- the one frame that can show what a dial holds when they are out. Sown six
 -- to twenty-eight tiles from a live pilot, which is the ring the zone uses
@@ -311,7 +329,7 @@ end
 -- Four frames of the front end: the stops closed, and each of the three
 -- lists down.
 local in_menu = scenario == "menu" or scenario == "menu-settings"
-    or scenario == "menu-side" or scenario == "menu-zone"
+    or scenario == "menu-players" or scenario == "menu-zone"
 local watching = scenario == "watching" or scenario == "watching-zones"
     or scenario == "watching-ships" or scenario == "watching-account"
     or scenario == "watching-login"
@@ -454,6 +472,11 @@ elseif scenario == "watching-ships" then
     ui.col_sel, ui.col_sel_value = "land_kit_row", 16
 elseif scenario == "watching-account" then
     ui.col_sel, ui.col_sel_value = "land_pick_account", 1
+elseif players then
+    -- A row on the far side, which is the one a press has somewhere to go:
+    -- its card carries the key that crosses you over. Your own side's rows
+    -- and the watcher's have no key behind them.
+    ui.col_sel, ui.col_sel_value = "board_row", 5
 end
 
 ui.details = true
@@ -480,10 +503,11 @@ ui.hud({
     -- is quieted where it is written or not at all.
     card = (scenario == "watching-login") or nil,
     side = 0,
-    viewer_name = scenario == "ending" and "DRiFT" or "Kestrel 8",
+    viewer_name = (ending and "DRiFT") or (players and "Krait 4")
+        or "Kestrel 8",
     class_names = {"Apex", "Wedge", "Chord", "Anvil", "Facet", "Cipher", "Lattice"},
     menu_open = in_menu,
-    pilots = (watching or scenario == "ending") and (function()
+    pilots = (watching or ending or players) and (function()
         local out = {}
         local names = ending
             and {"DRiFT", "Gantry", "Bellwether", "Ozone",
@@ -505,21 +529,30 @@ ui.hud({
                games = 900, team = 1},
     },
     -- A rating a seat, since the row carries the viewer's own all match and
-    -- the sheet at the whistle carries the room's.
-    ratings = ending and {[0] = 1494, 1620, 1408, 1377,
-                          1551, 1502, 1466, 1439}
+    -- the sheet carries the room's, also all match.
+    ratings = (ending or players) and {[0] = 1494, 1620, 1408, 1377,
+                                       1551, 1502, 1466, 1439}
               or watching and {}
               or {[0] = 1183.4, [1] = 1346.6},
     -- What the whistle latched, which the row and the sheet both subtract
     -- from the live figure to say what this match has been worth.
-    rated_from = ending and {[0] = 1500, 1611, 1413, 1382,
-                             1542, 1497, 1461, 1440}
+    rated_from = (ending or players) and {[0] = 1500, 1611, 1413, 1382,
+                                          1542, 1497, 1461, 1440}
                  or watching and {}
                  or {[0] = 1189.4, [1] = 1346.6},
-    watchers = nil,
-    teams = {},
+    -- Somebody in the room without being in the match, whose row reads
+    -- nothing in the column the others are read for.
+    watchers = players and {{name = "Halyard", label = "human"}} or nil,
+    -- The zone's own answer about its sides, which the sheet's Team column
+    -- reads: a side it marks public is anybody's to see named, and one it
+    -- does not is `private` on every row of it. Without this the column says
+    -- private about a room whose sides the band above is naming out loud.
+    teams = players and {
+        {team = 0, name = "Pylon", public = true, may_join = false},
+        {team = 1, name = "Caisson", public = true, may_join = true},
+    } or {},
     match = match,
-    side_names = (watching or scenario == "ending")
+    side_names = (watching or ending or players)
                  and {[0] = "Pylon", [1] = "Caisson"}
                  or (scenario == "turf" and {[0] = "Keel", [1] = "Vantage"})
                  or {[0] = "Pilot", [1] = "Rival"},
@@ -604,9 +637,8 @@ end
 -- menu.lua, which wants an account, a directory and a socket to answer.
 if in_menu then
     local open = scenario ~= "menu"
-    local side = scenario == "menu-side"
     local zone = scenario == "menu-zone"
-    local at = (side and "side") or (zone and "zone") or "settings"
+    local at = (players and "players") or (zone and "zone") or "settings"
     ui.menu({
         open = true,
         at = at,
@@ -614,15 +646,17 @@ if in_menu then
         depth = open and 1 or nil,
         -- The four stops `menu.stops` builds. LEAVE SEAT stood here until
         -- decision 136 took it out: leaving is choosing another game off the
-        -- zone stop, which is why that stop heads the column.
+        -- zone stop, which is why that stop heads the column. SIDE stood here
+        -- too until decision 147 moved crossing over inside PLAYERS, which is
+        -- the stop that took its place.
         stops = {
             {stop = "zone", label = "zone", value = "Team Battle",
              named = true, open = zone},
+            {stop = "players", label = "players", value = "Pylon",
+             named = true, open = players},
             {stop = "ship", label = "ship", value = "Wedge", named = true},
             {stop = "settings", label = "settings",
-             open = open and not side and not zone},
-            {stop = "side", label = "side", value = "Pylon", named = true,
-             open = side},
+             open = open and not players and not zone},
         },
         rows = open and (zone and {
             -- The games list, as `menu.zone_rows` builds it and `M.menu`
@@ -636,11 +670,10 @@ if in_menu then
              index = 1, pick = true},
             {label = "Capture the Flag", named = true, note = "4v4",
              dim = true, waiting = true, index = 2, pick = true},
-        } or side and {
-            {label = "Pylon", detail = "4 pilots", named = true,
-             mark = true, tint = 0, index = 0},
-            {label = "Caisson", detail = "4 pilots", named = true,
-             tint = 1, index = 1},
+        } or players and {
+            -- Nothing. The sheet is the room, read off the roster and the
+            -- simulation by `ui.hud` a moment ago, so the panel wants no rows
+            -- handed to it.
         } or {
             -- The settings page as `menu.lua` builds it: one run of rows,
             -- with nothing banding them.

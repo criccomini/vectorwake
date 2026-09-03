@@ -99,11 +99,13 @@
 > a row like any other, reading `Watching` where a side would be.
 >
 > Its answer down the column is where you stand: the side you fly for, or
-> `watching`. The band opens the same panel, and at the whistle the arena
-> raises it the way a hand would, with one column added for where the ladder
-> has each pilot and what the match paid them. Who took the match is said by
-> the band rather than by the sheet.
-> See [decision 147](../architecture/decisions.md).
+> `watching`. A `RATING` column carries where the ladder has each pilot and
+> what this match has done to it, for the whole match rather than at the
+> whistle alone. The band opens the same panel, and at the whistle the arena
+> raises it the way a hand would. Who took the match is said by the band
+> rather than by the sheet.
+> See [decision 147](../architecture/decisions.md) and
+> [decision 164](../architecture/decisions.md).
 
 > **The ship stop is in a room too, and LEAVE SEAT is gone.** The panel the
 > landing opens is the panel the in-match column opens: the same five parts

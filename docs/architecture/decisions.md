@@ -9098,3 +9098,72 @@ figures, a watcher and an unrated pilot getting no standing at all, a duel
 drawing two call signs and no score, and a room with no match counting itself.
 `players_test` holds the sheet's own column beside it. `client/tools/hud_svg.lua`
 draws the row in every scenario for a look.
+
+---
+
+## 164. The players sheet says where the room stands, all match
+
+**Status:** accepted, amending
+[decision 97](#97-ships-are-preconstructed-and-nothing-is-bought), which drew
+the rating column at the whistle and never during the fight, and
+[decision 147](#147-the-players-sheet-is-the-menus-and-the-band-says-who-won),
+which carried that into the sheet
+
+**What:** the sheet's `RATING` column reads whenever the room has standings,
+not only once the whistle has gone. It says what it has always said: where the
+ladder has each pilot, in the interface's ink, and what this match has done to
+it in brackets after it, green up, red down and mute at nothing. A watcher
+reads nothing, since the room is not moving theirs, and a room whose ratings
+have not arrived gets no column at all rather than a column of empty brackets.
+Neither does one seat inside a room that has them, which is a pilot the
+snapshot carries and the roster has not named yet: a bracket with no figure in
+front of it says the match has cost them nothing, and what is known about them
+is nothing.
+
+Nothing else about the panel changes. The band opens it, the `PLAYERS` stop
+opens it, the whistle raises it, and it is the same column in the same words in
+all three, so what the whistle adds now is the sheet rather than a reading
+inside it. An upright phone keeps the column and still gives up assists first.
+
+**Why:** asked for. Decision 97 put the column behind the whistle because a
+number climbing over somebody's head while they are being shot at is the shape
+the bounty had, and decision 163 then put your own standing at the near end of
+the row for the whole match, on the argument that a number you are told about
+after the fact is not one you can play toward. Both cannot be right about the
+same figure, and the one that has been on screen since decision 163 is the
+second: a rating a pilot can watch while they fly is a rating the room can be
+read for.
+
+97's objection survives, and it is about something else. It was written about a
+price on every hull, drawn in the world, unasked for, all the time. This is a
+column in a panel a player chose to open, over a fight they are not looking at
+while they read it, and
+[decision 152](#152-a-death-floats-what-it-did-to-your-rating) already drew
+that line for the figure that floats off a wreck.
+
+What the column answers is who you are up against, and that is worth knowing
+before a fight rather than after one. Three of the four columns beside it say
+what somebody has done in this match; this is the one that says how they
+usually do, and in a room of strangers it is most of the reason a name gets
+pressed at all.
+
+**Cost:** in a flag zone the column reads `(0)` for every seat until the
+whistle, since those zones rate the whistle and not the wreck
+([decision 157](#157-a-flag-game-rates-the-whistle-and-not-the-wreck)). That
+is the honest reading of a match that has moved nobody rather than a hole, and
+decision 163 took the same reading for one seat in the corner of the row.
+
+An upright phone carries four columns for the length of a match where it
+carried three, and a call sign is cut at them. That is the sheet's own rule,
+that the figures are what it is opened for, but it bites more often now: a name
+at the 24-character limit loses its last few characters on a 390-point window.
+
+**Verified:** `players_test` reads the column mid-match on a monitor and on an
+upright phone, with every seat's standing and its movement, and reads no column
+at all in a room whose standings have not arrived and nothing on the one row
+inside such a room that has none; put back behind the whistle, four of those
+checks fail. The whistle's own checks are unchanged and pass.
+`client/tools/hud_svg.lua` grew a `menu-players` scenario, which is the first
+picture of this panel the tool could draw, and the column reads down a room of
+eight with a watcher's row at the foot at both 1280x800 and 390x844. The client
+suite and luacheck are clean.

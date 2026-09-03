@@ -504,17 +504,71 @@ check("a pilot with no tier at all still gets the row",
       said("unrated") ~= nil, table.concat(words(), " | "))
 ui.col_pilot = nil
 
+-- --- where the ladder has the room -----------------------------------------
+--
+-- The RATING column, which is the one reading on a row that is not about this
+-- match: the standing, then what the match has done to it in brackets.
+--
+-- It was the whistle's for a while, on decision 97's argument that a number
+-- climbing over somebody's head while they are being shot at is the shape the
+-- bounty had. What that came to was a room told where it stands once the
+-- flying is over, and decision 163 put your own standing in the corner of the
+-- row for the whole match on exactly the opposite argument. It reads all
+-- match now, for everybody in the room. See decision 164.
+--
+-- Two of the caption on a monitor, because the band's copy is on screen as
+-- well: the sheet's is the column's heading, and a check that finds one
+-- string cannot tell them apart.
+
+local STANDINGS = {[0] = 1500, [1] = 1620, [2] = 1400, [3] = 1310}
+local LATCHED = {[0] = 1506, [1] = 1611, [2] = 1400, [3] = 1315}
+
+sheet({ratings = STANDINGS, rated_from = LATCHED})
+check("the column reads while the match is still being flown",
+      exactly("RATING") == 2, table.concat(words(), " | "))
+check("with every seat's standing in it",
+      counted("1620") == 1 and counted("1400") == 1 and counted("1310") == 1,
+      table.concat(words(), " | "))
+check("and what the match has done to it so far",
+      counted("(+9)") == 1 and counted("(-5)") == 1,
+      table.concat(words(), " | "))
+
+-- An upright phone keeps it. It is the one column here that says how somebody
+-- usually does, which is the reading a stranger's name is pressed for, and
+-- the phone is where most of this game is played. The caption goes off the
+-- band up there rather than off the column, since the column's is its heading.
+sheet({w = 390, h = 844, ratings = STANDINGS, rated_from = LATCHED})
+check("a phone keeps the column too",
+      exactly("RATING") == 1 and counted("1620") == 1 and counted("(+9)") == 1,
+      table.concat(words(), " | "))
+
+-- A room whose standings have not arrived draws no column at all, rather than
+-- a column of empty brackets: `rating_moves` answers nothing where it found
+-- nothing to subtract, and an empty table is an answer that reads as yes.
+sheet({ratings = {}, rated_from = {}})
+check("a room with no standings yet draws no column",
+      exactly("RATING") == 0, table.concat(words(), " | "))
+
+-- And one seat inside a room that has them: a pilot the snapshot carries whom
+-- the roster has not named yet. Their row reads nothing in the column rather
+-- than a bracket with no figure in front of it, which would say the match has
+-- cost them nothing when what is known about them is nothing. None of the
+-- three standings here moved by zero, so a `(0)` on screen is that row's.
+sheet({ratings = {[0] = 1500, [1] = 1620, [2] = 1408},
+       rated_from = {[0] = 1506, [1] = 1611, [2] = 1413}})
+check("a seat whose standing has not arrived reads nothing, not a zero",
+      exactly("(0)") == 0 and counted("(+9)") == 1,
+      table.concat(words(), " | "))
+
 -- --- at the whistle ---------------------------------------------------------
 --
--- The same sheet, raised by the arena rather than by a hand, plus the one
--- column a mid-fight list has no business carrying.
+-- The same sheet, raised by the arena rather than by a hand. The column is
+-- unchanged by the whistle now: what the whistle adds is the sheet.
 
 local ENDED = {playing = false, left = 18, score = {[0] = 4, [1] = 7}}
-sheet({match = ENDED,
-       ratings = {[0] = 1500, [1] = 1620, [2] = 1400, [3] = 1310},
-       rated_from = {[0] = 1506, [1] = 1611, [2] = 1400, [3] = 1315}})
-check("the whistle adds where the ladder has everybody", at("RATING") ~= nil,
-      table.concat(words(), " | "))
+sheet({match = ENDED, ratings = STANDINGS, rated_from = LATCHED})
+check("the whistle raises a sheet that already had the column",
+      exactly("RATING") == 2, table.concat(words(), " | "))
 -- Once each, except your own, which the band on the row above has carried
 -- all match and the column says again for the room. Two of a figure is what
 -- the readout up there is: a standing you can watch while you fly, in the

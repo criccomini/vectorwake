@@ -3270,27 +3270,33 @@ end
 -- The arena counts a phrase out against it.
 M.SAY_LIFE = 4.0
 
--- What this match did to everybody's rating, by ship.
+-- What this match has done to everybody's rating, by ship.
 --
 -- The client's own subtraction rather than a number off the wire. A rating
 -- moves only through rated deaths and the zone reports both pilots' rating
--- after every one, so the copy this client holds is exact and the figure at
--- the whistle less the figure at the last one is what the match was worth.
+-- after every one, so the copy this client holds is exact and the figure now
+-- less the figure at the whistle that started the match is what the match has
+-- been worth so far.
 --
 -- Rounded on each end rather than once at the difference. What a pilot sees
 -- on their own card is the rounded rating, and a movement worked out from the
 -- unrounded pair would be a point off the two numbers it is supposed to
 -- explain.
+--
+-- Nothing at all for a room with no standings to subtract, which is what the
+-- sheet's column asks about. An empty table is a truthy answer, and it would
+-- put a column of brackets over a room whose ratings have not arrived.
 local function rating_moves(o)
     if not (o.ratings and o.rated_from) then return nil end
-    local out = {}
+    local out, any = {}, false
     for ship, now in pairs(o.ratings) do
         local was = o.rated_from[ship]
         if was then
             out[ship] = math.floor(now + 0.5) - math.floor(was + 0.5)
+            any = true
         end
     end
-    return out
+    return any and out or nil
 end
 
 -- The landing: the game's name over the one key the screen exists for.
@@ -4676,11 +4682,15 @@ function M.hud(o)
             -- The roster rows, for the card a pressed row opens: what the
             -- zone vouches for a seat as, and where the ladder has them.
             pilots = o.pilots, ratings = o.ratings, me = o.me,
-            -- And what the match did to each rating, which is a column only
-            -- at the whistle. A rating is a standing rather than a running
-            -- total, and a number climbing over somebody's head while they
-            -- are trying to fly is the shape the bounty had.
-            ending = ending, moved = ending and rating_moves(o) or nil,
+            -- And what the match has done to each rating, which the column
+            -- reads beside the standing for the whole match rather than at
+            -- the whistle alone. Where the ladder has the room is the reading
+            -- this panel is opened for, and a standing handed over once the
+            -- fighting is finished is one nobody could fly against. Your own
+            -- has stood in the corner of the band all match since decision
+            -- 163, in these words; the column says it for everybody in the
+            -- room.
+            moved = rating_moves(o),
         }
     end
     -- The band and the room's line under it read at full strength over the
@@ -5890,7 +5900,8 @@ end
 --
 -- The room it draws is `rows`, filled by `refresh_players` while the menu is
 -- up, and `M.sheet`, which carries what a row cannot read off the simulation:
--- the sides' names, whether the zone will say them, and what the match paid.
+-- the sides' names, whether the zone will say them, and where the ladder has
+-- everybody.
 
 -- What a row says about a side, and in what color.
 --
@@ -6016,15 +6027,15 @@ local function sheet_row(kx, kw, y, h, r, cols, i)
             local name, tcol, named = pages.sheet_side(r)
             txt(name, x, mid, px, pal.a(tcol, 0.9), "right", nil, named)
         elseif c.key == "moved" then
-            -- Where the ladder has them, and what the match paid, and nothing
-            -- at all for somebody who was not in it.
+            -- Where the ladder has them, and what the match has done to it,
+            -- and nothing at all for somebody who is not in it.
             --
             -- Two colors, because the two are different kinds of fact. The
             -- standing is a reading like the three figures beside it and is
-            -- set in their ink; the movement is what this column is added at
-            -- the whistle to say, and it is green up, red down and mute where
-            -- nothing happened. One ink over the pair would have said a
-            -- standing was good or bad, which no rating is.
+            -- set in their ink; the movement is what the match has done to
+            -- it, green up, red down and mute where nothing has happened. One
+            -- ink over the pair would have said a standing was good or bad,
+            -- which no rating is.
             if r.moved_by then
                 local by = r.moved
                 local mcol = pal.a(pal.MUTE, 1)
@@ -6069,8 +6080,8 @@ end
 function pages.board_list(kx, kw, top, bottom, rowh)
     local pad = M.ROW_INSET * F.scale
     local n = #rows
-    -- Where the ladder has each pilot, and what the match paid them: the
-    -- standing first and the movement after it in brackets, which is the
+    -- Where the ladder has each pilot, and what this match has done to it:
+    -- the standing first and the movement after it in brackets, which is the
     -- order the two are read in. A signed figure on its own says how the
     -- evening went and not where anybody stands, and where a pilot stands is
     -- what the column is called.
@@ -6093,9 +6104,17 @@ function pages.board_list(kx, kw, top, bottom, rowh)
         local at = scores and seated and scores[r.i] or nil
         r.rating_at = at and tostring(math.floor(at + 0.5)) or nil
         -- A pilot whose rating did not move reads a bracketed zero, because
-        -- "this match changed nothing for you" is an answer and a blank is
-        -- not. A watcher was not in the match and reads nothing at all.
-        r.moved_by = moved and seated
+        -- "this match has changed nothing for you" is an answer and a blank is
+        -- not. A watcher is in the room without being in the match and reads
+        -- nothing at all.
+        --
+        -- Nor does a seat whose standing has not arrived, which is a pilot the
+        -- snapshot carries and the roster has not named yet. A bracket with no
+        -- figure in front of it says the match has cost them nothing, and what
+        -- the client actually knows about them is nothing. Keyed on the
+        -- standing rather than on the seat for that reason, and a watcher has
+        -- no standing either, so the seat no longer needs asking about twice.
+        r.moved_by = moved and r.rating_at
             and ("(" .. ((by and by > 0) and "+" or "")
                  .. tostring(by or 0) .. ")") or nil
         if r.moved_by then

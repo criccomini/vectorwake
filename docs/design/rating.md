@@ -272,15 +272,15 @@ same thing.
 
 In these zones a death still writes its feed line and its row on the board,
 and the figure that floats off a wreck does not appear, since there is nothing
-to report. The podium's rating column reads the whistle's exchange, which is
-on the roster before the board goes up.
+to report. The players sheet reads a bracketed zero for every seat until the
+whistle, which is the honest reading of a match that has moved nobody yet, and
+then the whistle's exchange, which is on the roster before the sheet goes up.
 
 ## Where a rating is read
 
-Five surfaces. The four pages name a zone, because a rating with no zone on it
-reads as a career figure and there is no career figure; the fifth is the top
-of the window in a room, where a zone needs no naming because a room is in
-one.
+Six surfaces. The four pages name a zone, because a rating with no zone on it
+reads as a career figure and there is no career figure; the other two are in a
+room, where a zone needs no naming because a room is in one.
 
 **The row across the top of the arena** carries the viewer's own standing for
 the whole match, at the near end of the row, the way the tile you are on
@@ -294,7 +294,20 @@ without a byte on the wire.
 It is drawn for a pilot in a seat. A watcher is shown none, since the room is
 not moving theirs, and neither is a pilot who has no rating yet, which is a
 guest before their first rated death. See
-[decision 163](../architecture/decisions.md#163-the-row-is-one-line-at-one-size).
+[decision 163](../architecture/decisions.md#163-the-row-is-one-line-at-one-size-and-it-carries-your-rating).
+
+**The players sheet** says that pair for everybody in the room, in a `RATING`
+column: the standing, then the movement in brackets, as `1500 (-6)`. A signed
+figure on its own says how the evening went rather than where anybody stands,
+and where a pilot stands is what the column is called. It needs no label
+either, since a match is in one zone by definition.
+
+The column reads for the length of the match and not at the whistle alone,
+because who you are up against is worth knowing before the fight rather than
+once it is scored. A watcher reads nothing, being in the room without being in
+the match, and so does a seat whose standing has not arrived; a room where
+none has gets no column at all rather than a column of empty brackets. See
+[decision 164](../architecture/decisions.md#164-the-players-sheet-says-where-the-room-stands-all-match).
 
 **The pilot's profile** on the site is the full answer: `/v1/pilot` returns a
 row per zone with that zone's rating, tier and rank, and the page draws them
@@ -315,11 +328,6 @@ why the filter exists.
 
 **The admin console** prints the tier with its zone in parentheses, always.
 There is no zone whose rating is the unmarked default any more.
-
-The podium's rating column, per the top of this document, is the match's own
-and needs no label: a match is in one zone by definition. It carries the
-standing and the movement together, as `1500 (-6)`, because a signed figure
-alone says how the evening went and not where anybody stands.
 
 ## Storage
 
