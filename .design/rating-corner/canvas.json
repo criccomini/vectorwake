@@ -1,0 +1,63 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "The rating corner, the sheet",
+      "x": 0,
+      "y": 0,
+      "w": 1552,
+      "h": 2860
+    },
+    {
+      "file": "Desktop.dc.html",
+      "title": "Team Battle, monitor",
+      "x": 1652,
+      "y": 0,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Turf.dc.html",
+      "title": "Turf, monitor",
+      "x": 1652,
+      "y": 930,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "End.dc.html",
+      "title": "Turf at the whistle, monitor",
+      "x": 1652,
+      "y": 1860,
+      "w": 1440,
+      "h": 810
+    },
+    {
+      "file": "Portrait.dc.html",
+      "title": "Team Battle, phone",
+      "x": 3192,
+      "y": 0,
+      "w": 390,
+      "h": 844
+    },
+    {
+      "file": "PortraitTurf.dc.html",
+      "title": "Turf, phone",
+      "x": 3662,
+      "y": 0,
+      "w": 390,
+      "h": 844
+    },
+    {
+      "file": "Shipped.dc.html",
+      "title": "As shipped, monitor",
+      "x": 1652,
+      "y": 2790,
+      "w": 1440,
+      "h": 810
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}
