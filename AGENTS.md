@@ -116,6 +116,15 @@ mostly in C comments and commit messages, and they are the same tell wearing a
 hat. New prose does not use them. Existing lines get fixed when you are editing
 them for another reason, never in a sweep of their own.
 
+Mannered prose substitutes metaphor and flourish for direct statement. Instead
+of "a parameter worth varying," the mannered writer produces "a dial worth
+turning." Instead of "this point still matters," they write "this point earns
+its keep." The phrases exist to display the writer, not to convey the idea, and
+readers can tell. That is why mannered prose irritates: it makes the reader
+work harder so the writer can perform. It is also imprecise. Metaphors drag in
+connotations the writer did not choose and cannot control. The fix is to say
+what you mean. When a literal phrase is available, use it.
+
 American spelling, everywhere: color, not colour. This holds for what the game
 says to a player, for comments, for commit messages and for chat. The
 repository was written in British spelling to start with and has been swept
