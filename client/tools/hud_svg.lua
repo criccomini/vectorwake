@@ -293,6 +293,9 @@ end
 -- and the reason a green is meant to land on somebody's radar: these sit
 -- where that ring puts them, in tiles off the camera.
 if scenario == "roam" then
+    -- And the one zone that sends no match at all, which is what the row
+    -- reads off to count the room instead of drawing a clock and two scores.
+    match = nil
     local function green(tx, ty, slot)
         greens[#greens + 1] = {3000 + tx * 16, 3000 + ty * 16, slot}
     end
