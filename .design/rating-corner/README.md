@@ -2,46 +2,45 @@
 
 Decision 163 put your own standing at the near end of the row as
 `RATING 1228 (0)`: a caption in the dim, the figure in ink, and what the
-match has done to it in brackets. Chris's notes on it the day after: it
-looks boring, on a phone it is a bare number since the caption is the first
-thing dropped, and the bracketed zero says nothing in Turf and Capture the
-Flag, where a death moves nothing and the whistle moves everybody
-(decision 157).
+match has done to it in brackets. Chris's call on it, the day after: the
+corner is the figure and a badge, nothing else. The badge is the pilot's
+wings, the mark the players sheet draws beside a human seat, and it wears a
+color a tier.
 
-Three changes are drawn, each on its own and then together. Nothing here is
-built.
+So the caption goes, and so does the bracket, in every zone. What a death
+did to the rating is still said where it happens, on the wreck and at the
+end of the feed's line (decisions 152 and 155), and the players sheet still
+carries the movement in its column. The corner says where you stand and, as
+a color, what band that is, which is one mark beside one figure and reads
+the same on a phone. Nothing here is built.
 
-- **The tier is the caption.** The band the figure is in, Newb to Legend,
-  goes where `RATING` was, in the caption's dim, and stays on a phone. A
-  pilot inside their first ten rated games reads `PLACING` with the figure
-  in the mute, which is what the pilot card already does. A duel keeps its
-  two call signs on a phone and has no room for a word beside them, so
-  there the caption drops as it does today.
-- **A flag zone's bracket says what the score is worth.** The plain answer
-  draws no bracket until the whistle. The better one draws what the whistle
-  would pay if it went now, worked out on the client from the roster's
-  ratings, sides and game counts, a step dimmer than a fact; at the whistle
-  the server's figure lands in the same place at full strength. A level
-  score costs the stronger side, which is the thing a projection says and
-  a score alone does not.
-- **A bar under it.** Two points tall, as wide as the readout, filled to
-  where the figure stands in its band, on the line the flags use under the
-  clock. The track is the pick; five steps, one a band, are drawn beside it
-  for the comparison. A placing pilot's bar counts their games toward ten.
+- **Five colors for five bands**, none of them a side's: cyan is yours and
+  amber is theirs everywhere on the HUD. The bottom band is the mute the
+  sheet already draws the mark in, so a new pilot's badge is the badge as
+  it is today; the top band is the ink itself. A second ladder with a hotter
+  top is drawn for the comparison, and its cost is a fourth color near the
+  other side's amber.
+- **A placing pilot** has no band, so the badge is the mute, dimmed, and the
+  figure is the mute the pilot card already gives a placing pilot.
+- **Fourteen points** for the badge, a shade over the row's thirteen point
+  type; eleven, the sheet's size beside a name, and eighteen are drawn
+  beside it.
+- **The bracket kept** is drawn once at the end, for the comparison only.
 
 ## What is here
 
-`build.py` is the source, carrying forward the chrome of
-`../scoreboard-band/build.py`: hues from `client/arena/palette.lua`, the
-row's measures from `client/arena/ui.lua`, the beacon the radar draws for a
-flag. The rooms are the ones every band mock has been judged against, with
-the viewer's standing in Team Battle set to the 1228 in Chris's screenshot.
-The projection is `rating.md`'s team Elo at one K of 24, from side means
-the rooms declare.
+`build.py` is the source. The badge is `pilot_mark` from
+`client/arena/ui.lua`, ported quad for quad: the Apex hull in three pieces
+and the six feathers `wing_cut` cuts, at the width asked for. The rest of
+the chrome is `../scoreboard-band/build.py`'s: hues from
+`client/arena/palette.lua`, the row's measures from `client/arena/ui.lua`,
+the beacon the radar draws for a flag. The rooms are the ones every band
+mock has been judged against, with the viewer's standing in Team Battle set
+to the 1228 in Chris's screenshot.
 
-`Main.dc.html` is the sheet. The boards beside it are the whole proposal on
-a monitor in Team Battle, Turf and Turf at the whistle, on a phone in Team
-Battle and Turf, and the shipped corner on a monitor for the comparison.
+`Main.dc.html` is the sheet. The boards beside it are the corner on a
+monitor in Team Battle, Turf and for a Legend, on a phone in Team Battle
+and Turf, and the shipped corner on a monitor for the comparison.
 
 Rebuild with `python3 build.py`; the seven `.dc.html` files and
 `canvas.json` beside them are what the design canvas is seeded from.

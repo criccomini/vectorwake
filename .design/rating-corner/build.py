@@ -3,31 +3,27 @@
 
 Decision 163 put your own standing at the near end of the top row as
 `RATING 1228 (0)`: a caption in the dim, the figure in ink, and what the
-match has done to it in brackets. Chris's notes on it, the day after: it
-looks boring, on a phone it is a bare number since the caption drops, and
-the bracketed zero says nothing in Turf and Capture the Flag, where
-nothing moves until the whistle (decision 157).
+match has done to it in brackets. Chris's call on it, the day after: the
+corner is the figure and a badge, nothing else. The badge is the pilot's
+wings, the mark the players sheet draws beside a human seat, and it wears
+a color a tier: five tiers, five colors.
 
-Three changes are drawn here, each alone and then together:
+So the caption goes, and so does the bracket, in every zone. What a death
+did to the rating is still said where it happens, on the wreck and at the
+end of the feed's line (decisions 152 and 155), and the players sheet
+still carries the movement in its column. The corner says where you stand
+and what band that is, and it says the band as a color rather than a word,
+which is one mark beside one figure and reads the same on a phone.
 
-- the tier as the caption, in place of the word RATING, so the word beside
-  the figure says something and survives on a phone;
-- the flag zones either drawing no bracket until the whistle or drawing
-  what the score would pay if the match ended now, which the client can
-  work out from the roster it already holds;
-- a bar under the readout showing where the figure stands inside its
-  band, so the corner has a shape and not only a line of type.
-
-The rooms are the ones every band mock has been judged against, with the
-viewer's standing in Team Battle set to the 1228 in Chris's screenshot.
-The chrome is `../scoreboard-band/build.py`'s: hues from
-client/arena/palette.lua, the row's measures from ui.lua, the beacon the
-radar draws for a flag.
+The badge is `pilot_mark` from client/arena/ui.lua, ported quad for quad:
+the Apex hull in three pieces and the six feathers `wing_cut` cuts. The
+rest of the chrome is `../scoreboard-band/build.py`'s.
 
 Rebuild with: python3 build.py
 """
 
 import json
+import math
 import random
 from pathlib import Path
 
@@ -50,6 +46,14 @@ TILE = "#3f5878"
 PAID = "#8dffb0"
 HURT = "#ff505a"
 BOUNTY = "#ffe08a"
+GREEN = "#5be08a"
+CHARGE = "#ffd166"
+BURST = "#c27bff"
+BOMB = "#ff5ea8"
+DOOR = "#35e0a0"
+HOLE = "#a06bff"
+RUNG3 = "#ff7000"
+RUNG4 = "#f42e3d"
 
 # --- the geography, from ui.lua ----------------------------------------------
 PAD = 14
@@ -58,12 +62,23 @@ KEY_GAP = 6
 RADAR = 168
 RADAR_COMPACT = 112
 MONO_ADV = 0.602      # the mono's advance, as a share of its size
+MARK_K = 14           # the badge's width in the corner; the sheet draws 11
 
-# --- the ladder, from server/src/rating.rs and net.lua -----------------------
+# --- the ladder, from server/src/rating.rs -----------------------------------
 TIERS = [("Newb", None), ("Wing", 1050), ("Lead", 1200), ("Ace", 1350),
          ("Legend", 1700)]
 PLACING_GAMES = 10
-K = 24                # a placed pilot's K, for the projection
+
+# Five colors for five bands. Neither side's color is in it: cyan is yours
+# and amber is theirs everywhere on the HUD, and a badge in either would
+# read as a side. The bottom band is the mute the sheet already draws the
+# mark in, so a new pilot's badge is the badge as it is today, and the top
+# is the ink itself, the one color on the HUD that is not a color.
+LADDERS = {
+    "A": [MUTE, GREEN, CHARGE, BURST, INK],
+    "B": [MUTE, DOOR, CHARGE, RUNG3, RUNG4],
+}
+LADDER = "A"
 
 
 def adv(text, px):
@@ -75,45 +90,106 @@ def radar_side(compact):
 
 
 def row_right(w, compact):
-    """Where the top row ends: the dial's left edge, a gap short of it."""
     return w - PAD - radar_side(compact) - KEY_GAP
 
 
 def band(at):
-    """The tier a figure is in, as its index, floor and ceiling. The top
-    band has no ceiling and the bottom no floor."""
     idx = 0
     for i, (_, floor) in enumerate(TIERS):
         if floor is not None and at >= floor:
             idx = i
-    floor = TIERS[idx][1] or 900
-    ceil = TIERS[idx + 1][1] if idx + 1 < len(TIERS) else None
-    return idx, floor, ceil
+    return idx
 
 
-def tier_word(at):
-    return TIERS[band(at)[0]][0]
+def tier_col(at, ladder=None):
+    return LADDERS[ladder or LADDER][band(at)]
+
+
+# --- the badge, ported from pilot_mark and wing_cut in ui.lua ----------------
+
+WING = dict(
+    roots=[(0.118, -0.06), (0.166, 0.06), (0.238, 0.18)],
+    rake=[(0.500, -0.30), (0.389, 0.09)],
+    root_line=[(0.118, -0.06), (0.238, 0.18)],
+    deg=30, w0=0.020, w1=0.039,
+)
+
+
+def wing_hit(pt, u, line):
+    (ax, ay), (bx, by) = line
+    nx, ny = -(by - ay), bx - ax
+    return (nx * (ax - pt[0]) + ny * (ay - pt[1])) / (nx * u[0] + ny * u[1])
+
+
+def wing_cut(k):
+    """The six feathers at one mark width, as runs of four corners, in the
+    mark's own units. The client's arithmetic, line for line."""
+    a = math.radians(WING["deg"])
+    u = (math.cos(a), -math.sin(a))
+    n = (-u[1], u[0])
+    floor = 0.45 / max(1, k)
+    w0 = max(WING["w0"], floor)
+    w1 = max(WING["w1"], floor)
+    out, far = [], 0
+    for root in WING["roots"]:
+        s = wing_hit(root, u, WING["rake"])
+        q = []
+        for w, cut, along in ((w0, WING["root_line"], 0),
+                              (w1, WING["rake"], s),
+                              (-w1, WING["rake"], s),
+                              (-w0, WING["root_line"], 0)):
+            pt = (root[0] + u[0] * along + n[0] * w,
+                  root[1] + u[1] * along + n[1] * w)
+            t = wing_hit(pt, u, cut)
+            q.append((pt[0] + u[0] * t, pt[1] + u[1] * t))
+        out.append(q)
+        far = max(far, max(abs(p[0]) for p in q))
+    squeeze = 0.5 / far
+    both = []
+    for q in out:
+        both.append([(p[0] * squeeze, p[1]) for p in q])
+        both.append([(-p[0] * squeeze, p[1]) for p in q])
+    return both
+
+
+HULL = [
+    [(0, -0.325), (0.070, 0.225), (0, 0.325), (-0.070, 0.225)],
+    [(0.052, -0.005), (0.220, 0.275), (0.170, 0.325), (0.070, 0.225)],
+    [(-0.052, -0.005), (-0.220, 0.275), (-0.170, 0.325), (-0.070, 0.225)],
+]
+
+
+def badge(col, k, alpha=1.0):
+    """Pilot's wings: the hull with three feathers off each side, drawn
+    `k` points across as the client draws it, in one color."""
+    quads = HULL + wing_cut(k)
+    paths = "".join(
+        '<path d="M' + " L".join(f"{x * k:.2f} {y * k:.2f}" for x, y in q)
+        + f' Z" fill="{col}"/>' for q in quads)
+    w, h = 1.2 * k, 0.8 * k
+    return (f'<svg width="{w:.1f}" height="{h:.1f}" '
+            f'viewBox="{-w / 2:.2f} {-h / 2:.2f} {w:.2f} {h:.2f}" '
+            f'style="flex:none;opacity:{alpha}">{paths}</svg>')
 
 
 # --- the rooms ---------------------------------------------------------------
 
 
 class Side:
-    def __init__(self, name, col, score, mine, held=0, pilot=False, mean=None):
+    def __init__(self, name, col, score, mine, held=0, pilot=False):
         self.name, self.col, self.score, self.mine = name, col, score, mine
-        self.held = held          # stands or flags this side holds
-        self.pilot = pilot        # a side named by its pilot keeps its case
-        self.mean = mean          # the side's mean rating, for the projection
+        self.held = held
+        self.pilot = pilot
 
 
-# The viewer: DRiFT, their standing per zone, what a kill game has done to it
-# since they sat down, and how many rated games they have there.
+# The viewer: DRiFT, their standing per zone, and what a kill game has done
+# to it since they sat down, which the corner no longer draws.
 ME = {
-    "melee": (1228, -6, 41),
-    "turf": (1533, 0, 23),
-    "war": (1512, 0, 17),
-    "duel": (1471, -12, 58),
-    "roam": (1500, 0, 12),
+    "melee": (1228, -6),
+    "turf": (1533, 0),
+    "war": (1512, 0),
+    "duel": (1471, -12),
+    "roam": (1500, 0),
 }
 
 ROOMS = {
@@ -121,27 +197,16 @@ ROOMS = {
         Side("Pylon", FRIEND, 17, True),
         Side("Caisson", ENEMY, 20, False)]),
     "turf": dict(label="Turf", clock="1:48", stands=6, sides=[
-        Side("Keel", FRIEND, 34, True, held=3, mean=1540),
-        Side("Vantage", ENEMY, 27, False, held=2, mean=1490)]),
+        Side("Keel", FRIEND, 34, True, held=3),
+        Side("Vantage", ENEMY, 27, False, held=2)]),
     "war": dict(label="Capture the Flag", clock="3:12", stands=4, sides=[
-        Side("Keel", FRIEND, 2, True, held=2, mean=1560),
-        Side("Vantage", ENEMY, 2, False, held=1, mean=1500)]),
+        Side("Keel", FRIEND, 2, True, held=2),
+        Side("Vantage", ENEMY, 1, False, held=1)]),
     "duel": dict(label="Duel", clock="1:37", stands=0, sides=[
         Side("DRiFT", FRIEND, 1, True, pilot=True),
         Side("Carrack", ENEMY, 1, False, pilot=True)]),
     "roam": dict(label="Free Roam", clock=None, stands=0, flying=31, sides=[]),
 }
-
-
-def project(room, scores=None):
-    """Team Elo for the viewer's side, from the two sides' means and the
-    score as it stands: what the whistle would pay if it went now. The
-    same arithmetic rating.md gives for the flag games, at one K."""
-    a, b = room["sides"]
-    sa, sb = scores if scores else (a.score, b.score)
-    e = 1 / (1 + 10 ** ((b.mean - a.mean) / 400))
-    s = 1 if sa > sb else .5 if sa == sb else 0
-    return round(K * (s - e))
 
 
 # --- the page's chrome -------------------------------------------------------
@@ -242,8 +307,6 @@ def scene(w, h, seed, compact):
 
 
 def over_dial(w, compact):
-    """The strip over the dial: POS at its left edge, the link bars flush
-    against its right."""
     side = radar_side(compact)
     x = w - PAD - side
     bars = "".join(
@@ -279,7 +342,7 @@ def radar(w, compact):
 
 def feed(w):
     lines = ["Carrack killed Ozone", "Gantry killed Isobar",
-             "Cirrus killed DRiFT"]
+             "Cirrus killed DRiFT (-6)"]
     y = PAD + KEY_H + RADAR + 12
     return (f'<div class="abs mono" style="right:{PAD}px;top:{y}px;'
             f'text-align:right;font-size:11px;line-height:17px;color:{DIM}">'
@@ -324,9 +387,6 @@ def menu_key(w, h):
             f'</span></div>')
 
 
-# --- marks -------------------------------------------------------------------
-
-
 def beacon(col, k=1.0, a=1.0):
     s = 10 * k
     return (f'<svg width="{s:.0f}" height="{s:.0f}" viewBox="-5 -5 10 10" '
@@ -362,123 +422,74 @@ def clock_text(room, state):
 
 
 class Corner:
-    """One way of drawing the top left, as a set of choices:
+    """The top left: the badge in the tier's color, then the figure in ink.
 
-    caption   "rating": the word RATING, dropped on a phone, as shipped.
-              "tier": the band the figure is in, kept on a phone.
-    flag      what a flag zone's bracket reads before the whistle:
-              "zero": (0) all match, as shipped.
-              "none": no bracket until the whistle.
-              "project": what the score would pay if the match ended now.
-    bar       "none", "track" (one bar filled to where the figure stands
-              in its band) or "steps" (a segment a band, the current one
-              filled to the figure).
-    placing   the viewer is inside their first ten rated games.
-    scores    the flag room's score, if not the room's own.
+    at        a standing other than the room's, to draw one tier or another.
+    k         the badge's width in points.
+    placing   inside the first ten rated games: no band, so the badge is
+              the mute the sheet draws it in today, dimmed, and the figure
+              is the mute the pilot card gives a placing pilot.
+    bracket   keep decision 163's movement after the figure, for the
+              comparison only.
+    ladder    which five colors.
+    shipped   decision 163's corner as it is on main, for the record.
     """
 
-    def __init__(self, caption="tier", flag="project", bar="none",
-                 placing=False, scores=None):
-        self.caption, self.flag, self.bar = caption, flag, bar
-        self.placing, self.scores = placing, scores
+    def __init__(self, at=None, k=MARK_K, placing=False, bracket=False,
+                 ladder=None, shipped=False):
+        self.at, self.k, self.placing = at, k, placing
+        self.bracket, self.ladder, self.shipped = bracket, ladder, shipped
 
-    def parts(self, zone, compact, state):
-        """The caption, the figure and the movement as (text, color,
-        alpha) triples, the movement None where nothing is drawn."""
-        at, moved, games = ME[zone]
-        room = ROOMS[zone]
-        flagzone = room["stands"] > 0
-        if flagzone and state == "end":
-            by, alpha = project(room, self.scores), 1
-        elif flagzone and self.flag == "none":
-            by, alpha = None, 1
-        elif flagzone and self.flag == "project":
-            by, alpha = project(room, self.scores), .7
-        elif flagzone:
-            by, alpha = 0, 1
-        else:
-            by, alpha = moved, 1
-        # A duel keeps its two call signs on a phone, and the row has no
-        # room for a word in the corner beside them, so there the caption
-        # drops as it does today and the figures stand alone.
-        if self.caption == "rating" or (compact and zone == "duel"):
-            cap = None if compact else ("Rating", DIM, .8)
-        elif self.placing:
-            cap = ("Placing", DIM, .8)
-        else:
-            cap = (tier_word(at), DIM, .8)
-        fig = (str(at), MUTE if self.placing else INK, .9)
-        if by is None:
-            mv = None
-        else:
-            col = PAID if by > 0 else HURT if by < 0 else MUTE
-            mv = (f"({by:+d})" if by else "(0)", col,
-                  alpha * (.8 if by == 0 else .95))
-        return cap, fig, mv
+    def standing(self, zone):
+        at, moved = ME[zone]
+        return (self.at if self.at is not None else at), moved
 
-    def width(self, zone, compact, state, px):
-        cap, fig, mv = self.parts(zone, compact, state)
-        words = [t for t in (cap, fig, mv) if t]
-        return sum(adv(t[0], px) for t in words) + 5 * (len(words) - 1)
+    def width(self, zone, compact, px):
+        at, moved = self.standing(zone)
+        if self.shipped:
+            w = adv(str(at), px) + 5 + adv(f"({moved:+d})", px)
+            return w if compact else w + adv("Rating", px) + 5
+        w = 1.2 * self.k + 6 + adv(str(at), px)
+        if self.bracket:
+            w += 5 + adv(f"({moved:+d})", px)
+        return w
 
-    def html(self, zone, compact, state, px=13):
-        cap, fig, mv = self.parts(zone, compact, state)
+    def html(self, zone, compact, px=13):
+        at, moved = self.standing(zone)
         spans = []
-        if cap:
-            spans.append(f'<span class="hud" style="font-size:{px}px;'
-                         f'color:{cap[1]};opacity:{cap[2]}">{cap[0]}</span>')
-        for t in (fig, mv):
-            if t:
-                spans.append(f'<span class="num" style="font-size:{px}px;'
-                             f'color:{t[1]};opacity:{t[2]}">{t[0]}</span>')
-        width = self.width(zone, compact, state, px)
-        out = [f'<div class="abs row" style="left:{PAD}px;top:{PAD}px;'
-               f'height:{KEY_H}px;gap:5px">{"".join(spans)}</div>']
-        if self.bar != "none":
-            out.append(self.bar_html(zone, width))
-        return "".join(out)
-
-    def bar_html(self, zone, width):
-        """Under the readout, as wide as it: where the figure stands in its
-        band. A placing pilot's bar counts their games toward ten instead,
-        in the dim, since they have no band yet."""
-        at, _, games = ME[zone]
-        y = PAD + KEY_H + 1
-        h = 2
-        if self.placing:
-            frac, col, idx = games / PLACING_GAMES, DIM, None
+        if self.shipped:
+            if not compact:
+                spans.append(f'<span class="hud" style="font-size:{px}px;'
+                             f'color:{DIM};opacity:.8">Rating</span>')
+            spans.append(f'<span class="num" style="font-size:{px}px;'
+                         f'color:{INK};opacity:.9">{at}</span>')
+            spans.append(self.moved(moved, px))
+            gap = 5
         else:
-            idx, floor, ceil = band(at)
-            frac = 1 if ceil is None else (at - floor) / (ceil - floor)
-            col = READ
-        if self.bar == "track" or idx is None:
-            return (f'<div class="abs" style="left:{PAD}px;top:{y}px;'
-                    f'width:{width:.0f}px;height:{h}px;background:{TILE};'
-                    f'opacity:.45"></div>'
-                    f'<div class="abs" style="left:{PAD}px;top:{y}px;'
-                    f'width:{width * frac:.0f}px;height:{h}px;'
-                    f'background:{col};opacity:.85"></div>')
-        n = len(TIERS)
-        gap = 2
-        seg = (width - gap * (n - 1)) / n
-        out = []
-        for i in range(n):
-            x = PAD + i * (seg + gap)
-            out.append(f'<div class="abs" style="left:{x:.1f}px;top:{y}px;'
-                       f'width:{seg:.1f}px;height:{h}px;background:{TILE};'
-                       f'opacity:.45"></div>')
-            fill = 1 if i < idx else frac if i == idx else 0
-            if fill:
-                out.append(f'<div class="abs" style="left:{x:.1f}px;top:{y}px;'
-                           f'width:{seg * fill:.1f}px;height:{h}px;'
-                           f'background:{col};opacity:{.85 if i == idx else .4}">'
-                           '</div>')
-        return "".join(out)
+            if self.placing:
+                spans.append(badge(MUTE, self.k, .55))
+                spans.append(f'<span class="num" style="font-size:{px}px;'
+                             f'color:{MUTE};opacity:.9">{at}</span>')
+            else:
+                spans.append(badge(tier_col(at, self.ladder), self.k, .95))
+                spans.append(f'<span class="num" style="font-size:{px}px;'
+                             f'color:{INK};opacity:.9">{at}</span>')
+            if self.bracket:
+                spans.append(self.moved(moved, px))
+            gap = 6
+        return (f'<div class="abs row" style="left:{PAD}px;top:{PAD}px;'
+                f'height:{KEY_H}px;gap:{gap}px">{"".join(spans)}</div>')
+
+    @staticmethod
+    def moved(by, px):
+        col = PAID if by > 0 else HURT if by < 0 else MUTE
+        text = f"({by:+d})" if by else "(0)"
+        return (f'<span class="num" style="font-size:{px}px;color:{col};'
+                f'opacity:{.8 if by == 0 else .95}">{text}</span>')
 
 
-SHIPPED = Corner(caption="rating", flag="zero")
-TIER = Corner(caption="tier", flag="zero")
-PROPOSED = Corner(caption="tier", flag="project", bar="track")
+SHIPPED = Corner(shipped=True)
+PICK = Corner()
 
 
 # --- the row -----------------------------------------------------------------
@@ -492,14 +503,7 @@ def band_row(w, room, zone, compact, state, corner, px=13):
     gap = 12 if compact else 16
     line = (f'top:{top}px;height:{KEY_H}px;display:flex;align-items:center;'
             f'position:absolute')
-    room = dict(room)
-    if corner.scores and room["stands"]:
-        a, b = room["sides"]
-        room["sides"] = [Side(a.name, a.col, corner.scores[0], a.mine, a.held,
-                              a.pilot, a.mean),
-                         Side(b.name, b.col, corner.scores[1], b.mine, b.held,
-                              b.pilot, b.mean)]
-    out = [corner.html(zone, compact, state, px)]
+    out = [corner.html(zone, compact, px)]
     if room["clock"] is None:
         return "".join(out)
     clock = clock_text(room, state)
@@ -517,7 +521,7 @@ def band_row(w, room, zone, compact, state, corner, px=13):
         f'gap:8px">{middle}</div>')
     half = mid_w / 2
     duel = zone == "duel"
-    corner_w = corner.width(zone, compact, state, px)
+    corner_w = corner.width(zone, compact, px)
     for i, s in enumerate(room["sides"]):
         edge = w / 2 - half - gap if i == 0 else w / 2 + half + gap
         pos = (f"right:{w - edge:.0f}px" if i == 0 else f"left:{edge:.0f}px")
@@ -564,12 +568,10 @@ PHONE_W = 390
 
 
 def strip(zone, corner, state="open", compact=False, seed=None):
-    """The top of a window and nothing else: the row, the strip over the
-    dial and the top edge of the dial."""
     w = PHONE_W if compact else STRIP_W
     room = ROOMS[zone]
     inner = radar(w, compact) + band_row(w, room, zone, compact, state, corner)
-    seed = seed if seed is not None else 3 + hash(zone + corner.caption) % 97
+    seed = seed if seed is not None else 3 + hash(zone + str(corner.at)) % 97
     return (f'<div style="position:relative;width:{w}px;height:{STRIP_H}px;'
             f'overflow:hidden;background-color:{BG};flex:none;'
             f'background-image:{starfield(w, STRIP_H, seed)}">{inner}</div>')
@@ -609,161 +611,128 @@ def cell(html, note):
             f'</span></div>')
 
 
-def grid(cells, cols=2):
-    return (f'<div style="display:grid;grid-template-columns:repeat({cols}, '
-            f'minmax(0, 1fr));gap:14px 16px;width:{2 * STRIP_W + 16}px">'
-            f'{"".join(cells)}</div>')
-
-
 def flow(cells):
     return (f'<div style="display:flex;flex-wrap:wrap;gap:14px 16px;'
             f'width:{2 * STRIP_W + 16}px;align-items:flex-start">'
             f'{"".join(cells)}</div>')
 
 
+def swatches(ladder, k=40):
+    """The five badges at forty points with the band's name and the hex
+    under each, so the colors are judged as a set."""
+    cells = []
+    for (name, floor), col in zip(TIERS, LADDERS[ladder]):
+        rng = (f"{floor} and up" if name == "Legend"
+               else f"under {TIERS[1][1]}" if floor is None
+               else f"{floor} to {TIERS[band(floor) + 1][1] - 1}")
+        cells.append(
+            f'<div style="display:flex;flex-direction:column;align-items:center;'
+            f'gap:8px;width:120px">{badge(col, k)}'
+            f'<span class="hud" style="font-size:11px;color:{INK};opacity:.9">'
+            f'{name}</span>'
+            f'<span class="lbl" style="letter-spacing:.08em;text-transform:none">'
+            f'{rng}</span>'
+            f'<span class="lbl" style="letter-spacing:.08em;text-transform:none">'
+            f'{col}</span></div>')
+    return (f'<div style="display:flex;gap:24px;padding:18px 0 4px">'
+            f'{"".join(cells)}</div>')
+
+
+TIER_AT = [1010, 1120, 1228, 1494, 1745]
+
+
 def main_sheet():
     body = [
         title("The rating corner · the row's near end"),
-        h1("A standing with a word beside it"),
-        cap("Decision 163 put your own rating at the near end of the row as "
-            "RATING 1228 (0): a caption in the dim, the figure in ink, the "
-            "movement in brackets. Chris's notes on it the next day: it looks "
-            "boring, on a phone it is a bare number because the caption is "
-            "the first thing dropped, and the bracketed zero says nothing in "
-            "Turf and Capture the Flag, where a death moves nothing and the "
-            "whistle moves everybody. Three changes are drawn below, each on "
-            "its own and then together on the boards to the right. Nothing "
-            "here is built.", 900),
+        h1("A badge and a figure"),
+        cap("Chris's call: the corner is the rating and a badge, nothing "
+            "else. The badge is the pilot's wings, the mark the players sheet "
+            "draws beside a human seat, and it wears a color a tier. So the "
+            "caption goes and so does the bracket, in every zone; what a "
+            "death did to the rating is still said on the wreck and at the "
+            "end of the feed's line (decisions 152 and 155), and the sheet "
+            "still carries the movement in its column. The corner says where "
+            "you stand and, as a color, what band that is. Nothing here is "
+            "built.", 900),
         gap(22),
         title("As shipped"),
-    ]
-    body.append(flow([
-        cell(strip("melee", SHIPPED), "Team Battle, monitor"),
-        cell(strip("melee", SHIPPED, compact=True), "Team Battle, phone"),
-        cell(strip("turf", SHIPPED), "Turf, monitor: the (0) that reads all match"),
-        cell(strip("turf", SHIPPED, compact=True), "Turf, phone"),
-    ]))
-
-    # 1. the tier as the caption
-    body += [
+        flow([cell(strip("melee", SHIPPED), "Team Battle, monitor"),
+              cell(strip("melee", SHIPPED, compact=True), "Team Battle, phone")]),
         gap(34),
-        h2("1 · The tier is the caption"),
+        h2("The five tiers"),
         gap(6),
-        cap("The ladder already has five named bands, Newb to Legend, and "
-            "the pilot card already prints the figure with its band beside "
-            "it. The band goes where RATING was, in the caption's own dim, "
-            "and stays on a phone: RATING under a figure in that corner said "
-            "nothing the corner had not said already, and a phone was right "
-            "to drop it, but LEAD says what the figure means and what it is "
-            "next to. A pilot inside their first ten rated games has no band "
-            "and reads PLACING, with the figure in the mute the card gives "
-            "it. A duel keeps its two call signs on a phone and there is no "
-            "room for a word beside them, so there the caption drops as it "
-            "does today. Nothing else on the row moves: the figures, the "
-            "brackets and the colors are decision 163's.", 900),
+        cap("The bands are rating.rs's: Newb under 1050, Wing to 1200, Lead "
+            "to 1350, Ace to 1700, Legend above. Neither side's color is in "
+            "the ladder, since cyan is yours and amber is theirs everywhere "
+            "on the HUD and a badge in either would read as a side. The "
+            "bottom band is the mute the sheet already draws the mark in, so "
+            "a new pilot's badge is the badge as it is today, and the top "
+            "band is the ink itself. The badge is drawn at fourteen points "
+            "here, the row's type being thirteen; the sheet draws it at "
+            "eleven beside a name, and the three sizes are compared "
+            "further down.", 900),
+        swatches("A"),
         gap(12),
     ]
     body.append(flow([
-        cell(strip("melee", TIER), "Team Battle: Lead, down six"),
-        cell(strip("melee", TIER, compact=True), "Team Battle, phone: the band stays"),
-        cell(strip("duel", TIER), "Duel: Ace, down twelve"),
-        cell(strip("duel", TIER, compact=True), "Duel, phone: the names stay, the caption goes"),
-        cell(strip("roam", TIER), "Free Roam: no clock, no score, the corner alone"),
-        cell(strip("roam", Corner(caption="tier", flag="zero", placing=True),
-                   compact=True), "Free Roam, phone: a pilot still placing"),
-        cell(strip("melee", TIER, state="end"), "At the whistle"),
-        cell(strip("melee", Corner(caption="tier", flag="zero", placing=True)),
-             "Placing: the figure in the mute, the movement still colored"),
-    ]))
-
-    # 2. the flag zones
+        cell(strip("melee", Corner(at=at)), f"{name}: {at}")
+        for (name, _), at in zip(TIERS, TIER_AT)
+    ] + [cell(strip("melee", Corner(placing=True)),
+              "Placing: no band yet, badge and figure in the mute")]))
     body += [
-        gap(34),
-        h2("2 · A flag zone's bracket says what the score is worth"),
-        gap(6),
-        cap("Turf and Capture the Flag rate the whistle (decision 157), so "
-            "the bracket cannot move while it is on screen: it reads (0) for "
-            "three minutes and then jumps. Two answers. The plain one draws "
-            "no bracket in a flag zone until the whistle latches the "
-            "exchange. The better one draws what the whistle would pay if it "
-            "went now. Team Elo needs the two sides' mean ratings and your K, "
-            "and the roster already carries every seat's rating, side and "
-            "game count, so the client can work it out; it is drawn a step "
-            "dimmer than a fact while the match runs, and at the whistle the "
-            "server's own figure lands in the same place at full strength. "
-            "Keel's mean is fifty over Vantage's in Turf, so a level score "
-            "costs Keel two, which is the thing a projection says and a "
-            "score alone does not.", 900),
+        gap(28),
+        title("A second ladder, for the comparison"),
+        cap("The same bottom and a hotter top: teal, gold, then the two "
+            "upper rungs of the weapon ladder. Its cost is that the fourth "
+            "color sits close to the other side's amber.", 900),
+        swatches("B"),
         gap(12),
-    ]
-    none = Corner(caption="tier", flag="none")
-    proj = Corner(caption="tier", flag="project")
-    body.append(flow([
-        cell(strip("turf", TIER), "With the bracket as shipped: (0), all match"),
-        cell(strip("turf", none), "No bracket until the whistle"),
-        cell(strip("turf", proj), "Projected, ahead 34 to 27: plus ten"),
-        cell(strip("turf", Corner(caption="tier", flag="project",
-                                  scores=(27, 27))),
-             "Projected, level: minus two, since Keel is the stronger side"),
-        cell(strip("turf", Corner(caption="tier", flag="project",
-                                  scores=(27, 34))),
-             "Projected, behind: minus fourteen"),
-        cell(strip("turf", proj, state="end"), "The whistle: the fact, at full strength"),
-        cell(strip("war", proj), "Capture the Flag, level at two rounds each"),
-        cell(strip("turf", proj, compact=True), "Turf, phone"),
-    ]))
-
-    # 3. the bar
-    body += [
+        flow([cell(strip("melee", Corner(at=at, ladder="B")), f"{name}: {at}")
+              for (name, _), at in zip(TIERS, TIER_AT)]),
         gap(34),
-        h2("3 · A bar under it, for where you stand in the band"),
+        h2("Every zone"),
         gap(6),
-        cap("The far end of the row has an instrument under its readouts and "
-            "the near end has a line of type. The band word says which rung; "
-            "a two point bar under the readout, as wide as it, says how far "
-            "along the rung, which is the question a rating answers for a "
-            "player: Lead runs from 1200 to 1350, and 1228 is a fifth of the "
-            "way to Ace. It sits on the line the flags use under the clock, "
-            "so the row keeps its one line and the corner gains a shape. Two "
-            "forms. The track is one bar filled to the figure. The steps are "
-            "five segments, one a band, the ones below filled and the current "
-            "one filled to the figure, so the whole ladder is in the corner. "
-            "The track is the pick: the word already says which band, and "
-            "five segments say it a second time. A placing pilot's bar counts "
-            "their games toward ten, in the dim, since they have no band "
-            "yet.", 900),
-        gap(12),
-    ]
-    track = Corner(caption="tier", flag="project", bar="track")
-    steps = Corner(caption="tier", flag="project", bar="steps")
-    body.append(flow([
-        cell(strip("melee", track), "Track: Lead, a fifth of the way to Ace"),
-        cell(strip("melee", steps), "Steps: the third of five, a fifth filled"),
-        cell(strip("turf", track), "Track, in Turf with the projection"),
-        cell(strip("turf", steps), "Steps, in Turf"),
-        cell(strip("melee", track, compact=True), "Track, phone"),
-        cell(strip("melee", steps, compact=True), "Steps, phone"),
-        cell(strip("melee", Corner(caption="tier", flag="project", bar="track",
-                                   placing=True)),
-             "Placing: four games of ten, in the dim"),
-        cell(strip("duel", track), "Duel: Ace, a third of the way to Legend"),
-    ]))
-
-    body += [
-        gap(34),
-        h2("Together"),
-        gap(6),
-        cap("The band as the caption, the projection in a flag zone, the "
-            "track under it. The boards to the right are this on a monitor "
-            "and a phone, in Team Battle and in Turf.", 900),
+        cap("One mark and one figure, so a phone draws the same corner as a "
+            "monitor. A flag zone's corner is the same corner, since there is "
+            "no bracket to stand still in it. A watcher is shown none, as "
+            "today.", 900),
         gap(12),
     ]
     body.append(flow([
-        cell(strip("melee", PROPOSED), "Team Battle"),
-        cell(strip("turf", PROPOSED), "Turf"),
-        cell(strip("melee", PROPOSED, compact=True), "Team Battle, phone"),
-        cell(strip("turf", PROPOSED, compact=True), "Turf, phone"),
+        cell(strip("melee", PICK), "Team Battle: Lead"),
+        cell(strip("melee", PICK, compact=True), "Team Battle, phone"),
+        cell(strip("turf", PICK), "Turf: Ace"),
+        cell(strip("turf", PICK, compact=True), "Turf, phone"),
+        cell(strip("duel", PICK), "Duel: Ace"),
+        cell(strip("duel", PICK, compact=True), "Duel, phone"),
+        cell(strip("roam", PICK), "Free Roam: no clock, no score, the corner alone"),
+        cell(strip("melee", PICK, state="end"), "At the whistle"),
     ]))
+    body += [
+        gap(34),
+        h2("The badge's size"),
+        gap(6),
+        cap("Eleven is what the players sheet draws the mark at beside a "
+            "name, and at that size the feathers are three strokes a point "
+            "across, which carries the shape and not much of the color. "
+            "Fourteen is the pick: a shade over the type, so the mark is "
+            "seen first and the figure read second. Eighteen stands taller "
+            "than the row.", 900),
+        gap(12),
+        flow([cell(strip("melee", Corner(k=k)), f"{k} points{' · the pick' if k == 14 else ''}")
+              for k in (11, 14, 18)]),
+        gap(34),
+        h2("If the movement stays"),
+        gap(6),
+        cap("For the comparison only: decision 163's bracket after the "
+            "figure, green up, red down. Chris asked for the figure and the "
+            "badge alone, and the strip above the feed on the boards shows "
+            "where the movement is still said.", 900),
+        gap(12),
+        flow([cell(strip("melee", Corner(bracket=True)), "Team Battle, monitor"),
+              cell(strip("melee", Corner(bracket=True), compact=True),
+                   "Team Battle, phone")]),
+    ]
     return (f'<div style="padding:40px 48px 56px;width:{2 * STRIP_W + 16 + 96}px;'
             f'background:{BG};display:flex;flex-direction:column;gap:2px">'
             f'{"".join(body)}</div>')
@@ -794,11 +763,11 @@ def page(name, body):
 
 
 BOARDS = [
-    ("Desktop", "Desktop", "melee", PROPOSED, "open", "Team Battle, monitor"),
-    ("Turf", "Desktop", "turf", PROPOSED, "open", "Turf, monitor"),
-    ("End", "Desktop", "turf", PROPOSED, "end", "Turf at the whistle, monitor"),
-    ("Portrait", "Portrait", "melee", PROPOSED, "open", "Team Battle, phone"),
-    ("PortraitTurf", "Portrait", "turf", PROPOSED, "open", "Turf, phone"),
+    ("Desktop", "Desktop", "melee", PICK, "open", "Team Battle, monitor: Lead"),
+    ("Turf", "Desktop", "turf", PICK, "open", "Turf, monitor: Ace"),
+    ("Legend", "Desktop", "melee", Corner(at=1745), "open", "A Legend, monitor"),
+    ("Portrait", "Portrait", "melee", PICK, "open", "Team Battle, phone"),
+    ("PortraitTurf", "Portrait", "turf", PICK, "open", "Turf, phone"),
     ("Shipped", "Desktop", "melee", SHIPPED, "open", "As shipped, monitor"),
 ]
 
@@ -814,10 +783,8 @@ def main():
 
 
 def canvas(boards):
-    """The sheet at the left, the monitors down a column beside it and
-    the phones beside those."""
     arts = [dict(file="Main.dc.html", title="The rating corner, the sheet",
-                 x=0, y=0, w=2 * STRIP_W + 16 + 96, h=2860)]
+                 x=0, y=0, w=2 * STRIP_W + 16 + 96, h=2820)]
     x0 = 2 * STRIP_W + 16 + 96 + 100
     my, py = 0, 0
     for name, form, zone, corner, state, t in BOARDS:

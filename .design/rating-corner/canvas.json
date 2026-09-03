@@ -6,11 +6,11 @@
       "x": 0,
       "y": 0,
       "w": 1552,
-      "h": 2860
+      "h": 2820
     },
     {
       "file": "Desktop.dc.html",
-      "title": "Team Battle, monitor",
+      "title": "Team Battle, monitor: Lead",
       "x": 1652,
       "y": 0,
       "w": 1440,
@@ -18,15 +18,15 @@
     },
     {
       "file": "Turf.dc.html",
-      "title": "Turf, monitor",
+      "title": "Turf, monitor: Ace",
       "x": 1652,
       "y": 930,
       "w": 1440,
       "h": 810
     },
     {
-      "file": "End.dc.html",
-      "title": "Turf at the whistle, monitor",
+      "file": "Legend.dc.html",
+      "title": "A Legend, monitor",
       "x": 1652,
       "y": 1860,
       "w": 1440,
