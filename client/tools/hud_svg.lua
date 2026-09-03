@@ -102,15 +102,14 @@ end
 function layer:ring(x, y, r, w, segs, col)
     shapes[#shapes + 1] = {k = "ring", x = x, y = y, r = r, w = w, col = col}
 end
--- The flag's own ring, which is a ring with its edge softened. The transponder
--- decision 149 drew for a flag calls this and nothing else did, so the turf
--- scenario stopped rendering the day flags became beacons and no other
--- scenario noticed.
-function layer:ring_aa(x, y, r, w, col, segs)
-    shapes[#shapes + 1] = {k = "ring", x = x, y = y, r = r, w = w, col = col}
-end
 function layer:ring_fade(x, y, r, w, segs, col)
     shapes[#shapes + 1] = {k = "ring", x = x, y = y, r = r, w = w, col = col, fade = 0.5}
+end
+-- The soft-edged ring, which is the one a flag mark is drawn with. Note the
+-- order: this takes its color before the segment count, where the two above
+-- take it after, so it cannot borrow either body.
+function layer:ring_aa(x, y, r, w, col, segs)
+    shapes[#shapes + 1] = {k = "ring", x = x, y = y, r = r, w = w, col = col}
 end
 function layer:arc(x, y, r, a0, a1, w, segs, col)
     shapes[#shapes + 1] = {k = "arc", x = x, y = y, r = r, a0 = a0, a1 = a1,

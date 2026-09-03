@@ -1040,44 +1040,55 @@ end
 --
 -- Kills are most of it and a refusal aimed at this pilot rides along, because
 -- the two arrive the same way and `update` has no enclosing local to spare
--- for a fifth drain. See `drain_no_team`.
+-- for a fifth drain. See `drain_refusals`.
 -- Kills come off the wire rather than out of the local simulation. The local
 -- death event still drives the explosion, but as a feed line it printed the
 -- same kill once per rollback: prediction runs a few ticks ahead, a snapshot
 -- from before the death revives the victim, and the next predicted ticks
 -- kill them again. The zone announces each death exactly once, with what it
 -- paid, and that message is already how ratings arrive.
--- A side the room would not give us, said once.
+-- Something the room would not give us, said once: a side, or a ship.
 --
 -- The key that asks checks a full bar before it sends, so every refusal that
 -- arrives here is one the client had no way to see coming: a seat taken, a
 -- side reaped, or a round that landed while the ask was in the air. Read and
 -- cleared, because it answers one press rather than describing a state.
--- See decision 150.
+-- See decisions 150 and 162.
 --
--- Said wherever the pilot is looking. The panel is usually still up, since
--- the card steps back onto the sheet and the room answers a moment later, and
--- there the note is the register the client's own refusal already speaks in.
--- A pilot who shut the panel and flew off reads the feed instead, for the
+-- Said wherever the pilot is looking. After a crossing the panel is usually
+-- still up, since the card steps back onto the sheet and the room answers a
+-- moment later, and there the note is the register the client's own refusal
+-- already speaks in. After a ship it usually is not: the key that spends a
+-- draft closes the column on the way out, because a pilot put back at their
+-- start should be looking at the map. So that one lands in the feed, for the
 -- reason a dropped ship is said there: an ask that vanished in silence is how
 -- an interface teaches somebody to stop trusting it.
 --
 -- Drained beside the kills rather than in `update`, which has no enclosing
 -- local to spare: this needs `notify`, and that is one more than the sixty
 -- LuaJIT counts to.
-local function drain_no_team()
-    if not net.no_team then return end
+local function drain_refusals()
+    local team, ship = net.no_team, net.no_ship
+    if not (team or ship) then return end
+    net.no_team, net.no_ship = nil, nil
+    -- Both when both are standing. Two asks can be in the air at once, and a
+    -- second refusal dropped here is exactly the silence this exists to end.
     if menu.open then
-        menu.note = net.no_team
+        -- The panel that is up is the one that asked, and a crossing is the
+        -- ask that leaves it up. So the note takes that one and the feed
+        -- takes what it cannot hold.
+        menu.note = team or ship
+        if team and ship then notify({ship}, nil, true) end
     else
-        notify({net.no_team}, nil, true)
+        if team then notify({team}, nil, true) end
+        if ship then notify({ship}, nil, true) end
     end
-    net.no_team = nil
+    -- One deny for the pair: it is one moment's worth of bad news either way.
     sfx.ui("ui_deny")
 end
 
 local function drain_announced()
-    drain_no_team()
+    drain_refusals()
     for _, k in ipairs(net.kills) do
         local vn = pilot_named(k.victim, true)
         -- Your own bomb counts as your kill in the ledger, which is correct

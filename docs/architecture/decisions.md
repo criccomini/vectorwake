@@ -8940,3 +8940,75 @@ the middle anyway.
 **Verified:** `spectate_test` holds the three states on four windows, that the
 name is clear above the top stop and whole on the screen, and that the loading
 screen puts it exactly where the column will.
+
+## 162. A refused ship says what stopped it
+
+**Status:** accepted, finishing
+[decision 150](#150-a-refused-crossing-says-what-stopped-it), which closed
+this hole in one of the two asks a menu makes on a full bar and left it open
+in the other.
+
+**What:** the room answers a ship it will not deal. `S2C_NOSHIP` carries one
+byte to the pilot who asked, saying what stopped it: the seat is gone, or the
+pilot is down, or hurt. The client turns the byte into a sentence and puts it
+where the pilot is looking, which for a ship is the feed. Protocol 39.
+
+**Why:** because it is the same fault in the same shape, and decision 150 read
+it as being about sides. `Room::set_ship_kit` returned nothing at all. The
+comment over the `C2S_KIT` arm in `session.rs` said as much and called it
+harmless, on the grounds that the next snapshot carries the hull either way,
+which is the reasoning a refused crossing sat on for as long as it did.
+
+The gate is one flight time wide, exactly as it is for a crossing. A ship
+costs a full bar and a respawn, the client checks the bar before it sends, and
+`sim_set_ship_class` reads it again when the ask lands. So the refusal a
+player actually meets is the one nobody can see coming: press the key whole,
+take a round while the message is in the air, and the room keeps you in the
+hull you were in.
+
+What that looked like was worse than for a crossing. The column key spends the
+draft and closes the panel on the way out, because a pilot put back at their
+start should be looking at the map. So a refused ship closed the menu, played
+the yes, changed nothing, and said nothing. The playtest journey met it often
+enough to need a retry, and its own failure message is the plainest statement
+of the fault there is: the client said nothing about it.
+
+**Three reasons, not five, and they are the crossing's own bytes.** What
+refuses both asks is one rule in the core: it will not move a pilot who is not
+there, who is down, or who is hurt. `Room::why_refused` is that reading, used
+by both, and `REFUSED_GONE`, `REFUSED_DOWN` and `REFUSED_HURT` are named for
+the rule rather than for whichever message needed them first. A side can also
+be gone, private or full, and those stay the room's own. A hull is always
+there.
+
+The words are still the client's, per decision 150: the room sends which
+reason, never the sentence. Two tables rather than one, because the same byte
+wants different words. "That side is gone" is a side somebody chose and lost;
+a seat that went while an ask was in the air is the connection, and a player
+who is told "that side is gone" about their own ship has been told something
+untrue.
+
+**What was considered and rejected:** reopening the menu on a refusal, so the
+note carries it the way the client's own gate does. The player is flying by
+then, usually because a round just landed on them, and a panel that comes back
+uninvited during a fight is worse than the silence. The feed is where a
+dropped ship is already said.
+
+Generalizing `S2C_NOTEAM` to carry which ask it is answering was rejected too.
+The two have different reason sets and different words, so the byte after the
+tag would have had to say which table to read, which is a tag with extra
+steps.
+
+**The cost:** a protocol bump for a message an old client would have skipped
+rather than misread, which refuses every tab built for 38. The number moves
+for the reason 37's did, written out beside `CLIENT_PROTOCOL`.
+
+**Verified:** `a_refused_ship_says_what_stopped_it` in the server pins each
+reason against the gate that produces it, and that a ship which is dealt says
+nothing, because the snapshot carrying the new hull is the answer.
+`client/tests/no_ship_test.lua` pins the parse, the read-once, the silence on
+a byte this build does not know, and that a private or full side names nothing
+on this message. `constant_drift_test` now reads both tags and all five reason
+bytes out of `protocol.rs` and checks the client has words at each, since only
+the byte crosses the wire and a renumbering would tell a player the wrong
+thing rather than fail to parse.

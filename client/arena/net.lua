@@ -69,6 +69,11 @@ local S2C_STREAK = 19
 -- goes out on a full bar and the core wants one when it lands, so the refusal
 -- a player meets is a round arriving while their message did.
 local S2C_NOTEAM = 20
+-- And the same answer for a ship, which is the other ask a menu makes on a
+-- full bar. See decision 162: the client's gate and the core's bracket a
+-- flight time, and a round landing inside it used to close the panel on
+-- nothing.
+local S2C_NOSHIP = 21
 local C2S_SAY = 11
 
 -- The fixed things, in the order the wire numbers them. Short, positive, and
@@ -92,6 +97,20 @@ M.NO_TEAM = {
     [5] = "a hit landed while that was on its way",
 }
 
+-- Why a ship was refused. Three of the five above, by the same bytes, because
+-- what refuses both is one rule in the core: it will not move a pilot who is
+-- not there, who is down, or who is hurt. A side can also be gone, private or
+-- full, and a hull never is.
+--
+-- Worded for a ship rather than shared with the table above. The last two are
+-- the same sentence either way, and the first is not: a side that was reaped
+-- is a thing a player chose and lost, and a seat that went is the connection.
+M.NO_SHIP = {
+    [1] = "you are not in the game",
+    [4] = "not while you are waiting to respawn",
+    [5] = "a hit landed while that was on its way",
+}
+
 -- Who said what, and when, keyed by ship. The podium reads it and lets a line
 -- go after a few seconds; nothing here is a log.
 M.said = {}
@@ -99,7 +118,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 38
+local CLIENT_PROTOCOL = 39
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -164,6 +183,8 @@ M.denied = nil
 -- arena drains it into the menu's note; nothing else holds it, because a
 -- reason that stayed would be shown again next time the panel opened.
 M.no_team = nil
+-- And why the last ship was, read the same way and for the same reason.
+M.no_ship = nil
 M.lost = nil
 M.pilots = {}
 M.ratings = {}
@@ -1570,6 +1591,8 @@ local function on_message(s)
         -- sayings are: the room sends which, and a build that does not know a
         -- reason says nothing rather than inventing one.
         M.no_team = M.NO_TEAM[string.byte(s, 2) or 0]
+    elseif kind == S2C_NOSHIP then
+        M.no_ship = M.NO_SHIP[string.byte(s, 2) or 0]
     elseif kind == S2C_STREAK then
         on_streak(s)
     elseif kind == S2C_CHARGE then
@@ -1745,6 +1768,7 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room, instance)
     M.denied = nil
     M.deny_code = 0
     M.no_team = nil
+    M.no_ship = nil
     M.room = nil
     M.pilots = {}
     M.ratings = {}

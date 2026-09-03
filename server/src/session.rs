@@ -599,6 +599,10 @@ pub(crate) async fn serve_client(
                 // credits is asking about a ship they are not in, and the
                 // way back into one is `C2S_SHIP`, which their client sends
                 // first.
+                //
+                // The room answers a ship it would not deal, which it does
+                // for itself: `Room::set_ship_kit` sends `S2C_NOSHIP` with
+                // the reason on the way out. See decision 162.
                 if data.len() >= 3 {
                     let cls = data[1];
                     let spent = data[2] as usize;
@@ -626,10 +630,16 @@ pub(crate) async fn serve_client(
             C2S_SHIP => {
                 // A hull change, in place. The core refuses it unless
                 // the pilot is alive and at a full bar, which is what
-                // stops it being an escape from a fight -- a fresh
-                // ship is a fresh bar. Nothing is sent back: the next
-                // snapshot carries the new class, and a refusal leaves
-                // the old one, which is the same answer either way.
+                // stops it being an escape from a fight: a fresh ship
+                // is a fresh bar.
+                //
+                // Nothing is sent back, and this is the one hull ask
+                // where that is still right. A pilot changing ship in
+                // a match sends `C2S_KIT`, because a build belongs to
+                // a hull, and that is the path decision 162 gave an
+                // answer to. What reaches here from a seat is a client
+                // naming a hull with no build behind it, which this
+                // one stopped doing.
                 //
                 // From a watcher it is the other thing a hull ask can
                 // mean: put me back in the game, in this one. Refused

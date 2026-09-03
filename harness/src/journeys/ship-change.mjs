@@ -137,6 +137,37 @@ export async function run (pilot, { log = () => {} } = {}) {
     // seat the column's one key is the refit.
     log('pressing the key')
     await whole(pilot, log)
+
+    // And the key is still on the column to press.
+    //
+    // The same hole join-side had, for the same reason. This wait is the long
+    // one: a bar emptied while the panel was walked takes seconds to come
+    // back, and nothing pauses behind the column. A whistle raises the players
+    // sheet over it by itself, and `ui.lua` stops publishing the key's hit box
+    // once a panel is half way up, so a sheet rising where the column was is a
+    // key that cannot be pressed well before it is out of sight. The tap
+    // answers that with a timeout thrown clear of the retry below, which
+    // reports a client that stopped drawing its own key.
+    //
+    // Going round is the whole answer, and it costs nothing: closing the
+    // column drops the draft, so the next try builds its ship again from the
+    // hull this pilot is actually flying.
+    //
+    // The test `tap` itself waits on: a box that fires the key, or one that
+    // drew it and lost the press to something on top. The second is a real
+    // finding and stays the tap's to name; this catches neither being there.
+    const armed = await pilot.read()
+    const reaches = b => b.hits === 'menu_go' || b.action === 'menu_go'
+    if (!armed.boxes.some(reaches)) {
+      log('the column key went behind a raised sheet, which is a whistle')
+      if (go === TRIES) {
+        throw new Error(
+          `the column key was never there to press on a full bar, ${TRIES} ` +
+          'tries running. A whistle takes the column; it also gives it back.')
+      }
+      continue
+    }
+
     await pilot.tap('menu_go')
 
     log(`waiting for the room to answer hull ${want}`)
@@ -147,29 +178,24 @@ export async function run (pilot, { log = () => {} } = {}) {
         s => s.me && s.me.class === want,
         { timeout: ANSWER_MS })
     } catch (why) {
-      // Refused. The client says so where it can: its own gate mirrors the
-      // core's, so a bar it can see is short names a reason in the menu's
-      // note, and a ship dropped in silence is a menu that did nothing.
+      // Refused, and that is the design rather than a fault. The client will
+      // not send on a part bar and the core reads the bar again when the ask
+      // lands, so the two checks bracket a flight time: press whole, take a
+      // round while the ask is in the air, and the room keeps you in the hull
+      // you were in. A player answers that by waiting a moment and asking
+      // again, and so does this, on the budget the loop already carries.
       //
-      // The room's gate cannot say it yet. The client will not send on a part
-      // bar and the core will not move a hurt pilot's hull, so the two checks
-      // bracket a flight time: press whole, take a round while the ask is in
-      // the air, and the room keeps you where you are without a word. That is
-      // the hole decision 150 closed for crossing sides and has not closed for
-      // ships. So one silence is retried on the budget this loop already
-      // carries, and only a run of them is a fault worth stopping on.
+      // The room says which of the gates it was, since decision 162. Where it
+      // lands is the feed, because the key that spends a draft closes the
+      // column on its way out, and this reads a screen rather than a feed: so
+      // what is checked here is the client's own note, which carries a refusal
+      // the client saw for itself. A run of refusals with no ship at the end
+      // of it is what stops the journey.
       const after = await pilot.read()
       log(after.screen.note
         ? `refused: ${after.screen.note}`
-        : 'refused, and nothing was said: a round landed during the ask')
-      if (go === TRIES) {
-        if (!after.screen.note) {
-          throw new Error(
-            `hull ${want} never arrived and the client said nothing about it, ` +
-            `${TRIES} tries running. A refused ship has to name its reason.`)
-        }
-        throw why
-      }
+        : 'refused: a round landed while the ask was in the air')
+      if (go === TRIES) throw why
       continue
     }
 

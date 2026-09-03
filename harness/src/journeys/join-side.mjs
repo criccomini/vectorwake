@@ -238,6 +238,38 @@ export async function run (pilot, { log = () => {} } = {}) {
 
     log(`pressing the key for side ${want}`)
     await whole(pilot)
+
+    // And the key is still there to press.
+    //
+    // The wait above is the long one. Every other step here reads and presses
+    // in the same breath, but a bar emptied while the sheet was walked takes
+    // seconds to come back, and nothing pauses behind this panel: a whistle
+    // raises the players sheet by itself and the next match closes it again,
+    // so what a card loses in that window is not its key but the whole panel
+    // under it. Read on a full bar, hit on the way to pressing, wait out the
+    // recharge, and the press lands at a screen with no column on it at all.
+    //
+    // Same staleness a row has, one level up, and the same answer: look
+    // again and go round rather than press at something that is not there.
+    // Without this the journey reported a client that had stopped drawing the
+    // key, which is the one thing it was not doing.
+    //
+    // The test is the one `tap` itself waits on: a box that fires the key, or
+    // one that drew it and lost the press to something on top. The second is
+    // a real finding rather than a stale panel, so it is left to the tap to
+    // name; what this catches is neither being there at all.
+    const armed = await pilot.read()
+    const reaches = b => (b.hits === 'board_join' && b.hits_value === want) ||
+      (b.action === 'board_join' && b.value === want)
+    if (!armed.boxes.some(reaches)) {
+      why = `the card offering side ${want} went while the bar refilled, ` +
+        'which is what a whistle raising the sheet from under it looks like ' +
+        'from here'
+      log(`the key went: ${why}`)
+      if (go === TRIES) break
+      continue
+    }
+
     await pilot.tap('board_join', { value: want })
 
     let crossed = null

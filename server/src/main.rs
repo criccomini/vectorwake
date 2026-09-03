@@ -3932,7 +3932,7 @@ mod tests {
 
     /// Every reason a crossing is refused for, said to the pilot who asked.
     ///
-    /// The one that matters is `NOTEAM_HURT`. A client will not send the ask
+    /// The one that matters is `REFUSED_HURT`. A client will not send the ask
     /// on a part-full bar, so the only way to meet that refusal is to be whole
     /// when the key goes down and hurt when the message lands, which is a
     /// round arriving in between. It used to be answered with a team list that
@@ -3958,7 +3958,7 @@ mod tests {
         assert!(!a.join_team(ship, other), "the core keeps a hurt pilot");
         assert_eq!(
             refusal(&drain(&mut rx)),
-            Some(NOTEAM_HURT),
+            Some(REFUSED_HURT),
             "and the room says so rather than answering with where they are"
         );
 
@@ -3968,7 +3968,7 @@ mod tests {
         sh.energy = whole;
         sh.alive = 0;
         assert!(!a.join_team(ship, other));
-        assert_eq!(refusal(&drain(&mut rx)), Some(NOTEAM_DOWN));
+        assert_eq!(refusal(&drain(&mut rx)), Some(REFUSED_DOWN));
 
         // And a crossing that works says nothing, because the roster it
         // broadcasts is the answer.
@@ -3982,6 +3982,79 @@ mod tests {
             "a crossing that happened is not refused"
         );
         assert_eq!(a.world.state.ships[ship as usize].team, other);
+    }
+
+    /// And every reason a ship is refused for, said the same way.
+    ///
+    /// The mirror of the test above, because it is the same rule read twice:
+    /// a ship costs a full bar and a respawn, the client will not send the ask
+    /// on less, and the core reads the bar again when the ask lands. So the
+    /// refusal a player meets is the one nobody can see coming, and it used to
+    /// arrive as nothing at all. See decision 162.
+    #[test]
+    fn a_refused_ship_says_what_stopped_it() {
+        fn refusal(msgs: &[Vec<u8>]) -> Option<u8> {
+            msgs.iter()
+                .find(|m| m.first() == Some(&S2C_NOSHIP))
+                .map(|m| m[1])
+        }
+
+        let cfg: config::ZoneConfig = toml::from_str("[arena]\nmode = \"arena\"\n").unwrap();
+        let mut a = Room::new_from(&cfg);
+        let (ship, _, mut rx) = seat_rx(&mut a, "one");
+        let was = a.world.state.ships[ship as usize].cls;
+        let other = was + 1;
+        assert!(other < a.world.cfg.class_count, "a second hull to ask for");
+        let mut mine = [0u8; sim::SLOT_COUNT];
+        mine[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 1;
+        drain(&mut rx);
+        let whole = a.world.state.ships[ship as usize].energy;
+
+        // Hurt: whole when the key went down, a round short when it landed.
+        a.world.state.ships[ship as usize].energy -= 1;
+        assert!(
+            !a.set_ship_kit(ship, other, &mine),
+            "the core keeps a hurt pilot in the hull they are in"
+        );
+        assert_eq!(
+            refusal(&drain(&mut rx)),
+            Some(REFUSED_HURT),
+            "and the room says so rather than closing the panel on nothing"
+        );
+        assert_eq!(a.world.state.ships[ship as usize].cls, was);
+
+        // Down: a ship hands out a fresh start, so a pilot already waiting on
+        // one would be taking the better of two respawns.
+        let sh = &mut a.world.state.ships[ship as usize];
+        sh.energy = whole;
+        sh.alive = 0;
+        assert!(!a.set_ship_kit(ship, other, &mine));
+        assert_eq!(refusal(&drain(&mut rx)), Some(REFUSED_DOWN));
+
+        // A build alone, from that same pilot waiting to respawn, is dealt in
+        // place and says nothing: there is no fight to leave and no bar to
+        // have, so nothing was refused.
+        assert!(
+            a.set_ship_kit(ship, was, &mine),
+            "a build is dealt to a seat"
+        );
+        assert_eq!(refusal(&drain(&mut rx)), None);
+
+        // And a ship that is dealt says nothing either, because the snapshot
+        // carrying the new hull is the answer.
+        let sh = &mut a.world.state.ships[ship as usize];
+        sh.alive = 1;
+        sh.energy = whole;
+        assert!(
+            a.set_ship_kit(ship, other, &mine),
+            "whole, alive, and a hull to move to"
+        );
+        assert_eq!(
+            refusal(&drain(&mut rx)),
+            None,
+            "a ship that arrived is not refused"
+        );
+        assert_eq!(a.world.state.ships[ship as usize].cls, other);
     }
 
     #[test]
