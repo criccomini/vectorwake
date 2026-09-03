@@ -41,8 +41,11 @@ clock is the reading ink, the rating is ink with its movement colored.
 - **Free Roam** has no clock and no score, so its middle is the room's
   count.
 - **At the whistle** the side that took it keeps its ink and the other
-  stands down to a third, and the middle reads `NEXT MATCH IN 0:12` on
-  the line itself, since a second line would be a second size.
+  stands down to a third, and `NEXT MATCH IN` sits under the clock at
+  the row's size, on the line the flags use during the match and leave
+  free at the whistle. Inline it was eighteen characters and ran into
+  the dial's strip on an upright phone; under the clock the row keeps
+  its shape and nothing on it moves.
 - **The clock** goes to the warning color under thirty seconds rather
   than growing.
 - The band is still the press that opens the players sheet.
@@ -50,7 +53,7 @@ clock is the reading ink, the rating is ink with its movement colored.
 The first sheet draws it for every zone and at the whistle, then at 12,
 13 and 14 points side by side, then beside the shipped band. The boards
 after it are a monitor in Team Battle, Turf, the duel and at the whistle,
-and an upright phone in Team Battle and Turf.
+and an upright phone in Team Battle, Turf and at the whistle.
 
 ## The first pass, for the record
 
@@ -83,5 +86,5 @@ a flag, and the two faces the client carries. The rooms are the ones every
 band mock has been judged against: Pylon against Caisson at 17 to 20 with
 the viewer, DRiFT, on the losing side.
 
-Rebuild with `python3 build.py`; the twenty seven `.dc.html` files and
+Rebuild with `python3 build.py`; the twenty eight `.dc.html` files and
 `canvas.json` beside them are what the design canvas is seeded from.

@@ -463,15 +463,19 @@ def band_scoreline(w, room, zone, compact, state="open", px=13):
         return "".join(out)
     clock = clock_text(room, state)
     ended = state == "end"
-    # At the whistle the middle says what the clock is counting to, on the
-    # line itself: a second line under the row would be a second size.
+    # At the whistle the line under the clock says what it is counting to,
+    # at the row's own size. That line is the flags' during the match and
+    # the flags are not drawn at the whistle, so it is free exactly then;
+    # the row keeps its shape and nothing on it moves. Inline it was 18
+    # characters wide and ran into the dial's strip on an upright phone.
     middle = (f'<span class="num" style="font-size:{px}px;color:{READ};'
               f'opacity:.95">{clock}</span>')
     mid_w = adv(clock, px)
     if ended:
-        middle = (f'<span class="hud" style="font-size:{px}px;color:{DIM};'
-                  f'white-space:nowrap">Next match in</span>' + middle)
-        mid_w += adv("Next match in", px) + 8
+        out.append(
+            f'<div class="abs hud" style="left:50%;top:{top + KEY_H + 4}px;'
+            f'transform:translateX(-50%);font-size:{px}px;color:{DIM};'
+            f'white-space:nowrap">Next match in</div>')
     out.append(
         f'<div class="row" style="{line};left:50%;transform:translateX(-50%);'
         f'gap:8px">{middle}</div>')
@@ -915,8 +919,9 @@ def scoreline_sheet():
             "rating's caption, and the figures always draw. Flags hang under "
             "the clock as the radar's beacon; a duel is one kill, so its row is "
             "the two pilots either side of the clock and no score; and at "
-            "the whistle the middle reads what the clock is counting to on the "
-            "line itself rather than on a second line at a second size.",
+            "the whistle the line under the clock, the flags' line during the "
+            "match, says what it is counting to at the same size, so the row "
+            "keeps its shape and fits a phone.",
             900),
         f'<div style="height:22px"></div>',
         title("Every zone, and the whistle"),
@@ -1063,6 +1068,8 @@ def main():
         boards[f"{key}End"] = screen("Desktop", key, "melee", "end")
         boards[f"{key}Portrait"] = screen("Portrait", key, "melee")
         boards[f"{key}PortraitTurf"] = screen("Portrait", key, "turf")
+    boards["ScorelinePortraitEnd"] = screen("Portrait", "Scoreline", "melee",
+                                            "end")
     for name, body in boards.items():
         page(name, body)
     canvas(boards)
@@ -1099,6 +1106,9 @@ def canvas(boards):
                          h=844, page=pid))
 
     boards_of("Scoreline", "page-1", 0, 1320)
+    arts.append(dict(file="ScorelinePortraitEnd.dc.html",
+                     title="At the whistle, phone", x=2520, y=1320, w=390,
+                     h=844, page="page-1"))
     for n, (key, head, *_) in enumerate(DIRECTIONS[1:], start=3):
         pid = f"page-{n}"
         pages.append({"id": pid, "name": head.replace(" · ", ": ")})
