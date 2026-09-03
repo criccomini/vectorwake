@@ -137,6 +137,37 @@ export async function run (pilot, { log = () => {} } = {}) {
     // seat the column's one key is the refit.
     log('pressing the key')
     await whole(pilot, log)
+
+    // And the key is still on the column to press.
+    //
+    // The same hole join-side had, for the same reason. This wait is the long
+    // one: a bar emptied while the panel was walked takes seconds to come
+    // back, and nothing pauses behind the column. A whistle raises the players
+    // sheet over it by itself, and `ui.lua` stops publishing the key's hit box
+    // once a panel is half way up, so a sheet rising where the column was is a
+    // key that cannot be pressed well before it is out of sight. The tap
+    // answers that with a timeout thrown clear of the retry below, which
+    // reports a client that stopped drawing its own key.
+    //
+    // Going round is the whole answer, and it costs nothing: closing the
+    // column drops the draft, so the next try builds its ship again from the
+    // hull this pilot is actually flying.
+    //
+    // The test `tap` itself waits on: a box that fires the key, or one that
+    // drew it and lost the press to something on top. The second is a real
+    // finding and stays the tap's to name; this catches neither being there.
+    const armed = await pilot.read()
+    const reaches = b => b.hits === 'menu_go' || b.action === 'menu_go'
+    if (!armed.boxes.some(reaches)) {
+      log('the column key went behind a raised sheet, which is a whistle')
+      if (go === TRIES) {
+        throw new Error(
+          `the column key was never there to press on a full bar, ${TRIES} ` +
+          'tries running. A whistle takes the column; it also gives it back.')
+      }
+      continue
+    }
+
     await pilot.tap('menu_go')
 
     log(`waiting for the room to answer hull ${want}`)
