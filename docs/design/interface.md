@@ -385,21 +385,22 @@ it is captioned over rather than standing a stranger's tiles under that word.
 What the band keeps either way is the clock and both scores, which are the
 fight reading out rather than an instrument about a seat.
 
-The top of that geography is a row with an instrument at each end. The corner
-key and the band share one center, a key's height is what that center is taken
-from, and the band grows outward from the middle until it reaches the key on
-one side or the dial's readouts on the other. Those readouts are measured
-against the dial's resting box, so the strip is exactly as wide as the
-instrument under it and one number answers for the band, the meter and the
-tile readout together. Anything up there that works its own vertical out of the
-padding drifts, because the padding is a horizontal measurement.
+The top of that geography is a row with an instrument at each end and the
+band between them: your own standing at the near corner, the dial's two
+readouts at the far one. Everything on the row shares one center, a key's
+height is what that center is taken from, and the band grows outward from the
+middle until it reaches one end or the other. The dial's readouts are measured
+against its resting box, so the strip is exactly as wide as the instrument
+under it and one number answers for the band, the meter and the tile readout
+together. Anything up there that works its own vertical out of the padding
+drifts, because the padding is a horizontal measurement.
 
 A band with nowhere left to grow gives up the two side names rather than the
-line it stands on, and gives up both or neither: the row's ends are a small
-key and a square a third of a phone across, so measuring each name against the
-end it happens to face drew one and dropped the other. An upright phone is the
-window that runs out, and reads as the clock with a figure either side of it.
-The names are on the players sheet a press on the band opens.
+line it stands on, and gives up both or neither: the row's two ends are not
+the same width, so measuring each name against the end it happens to face drew
+one and dropped the other. An upright phone is the window that runs out, and
+reads as the clock with a figure either side of it. The names are on the
+players sheet a press on the band opens.
 
 The match ending is that sheet, raised by the arena rather than by a hand.
 There is no page of its own and no block over the fight: the whistle opens the
@@ -413,13 +414,26 @@ say, in the pixels that have carried the score for three minutes: both sides
 stay on it, the winner at its own strength and the beaten side stood down to a
 third, over the clock counting to the next one. A draw stands neither down.
 
-Top center is the band: the clock, with a side either side of it as a name
-over a number, a team over its score, the two lines of a side adding up to the
-clock's own height so the whole
-thing reads as one line. The clock is one key tall, the same at every window
-size, so the band and the way into the menu are the same height and the top
-row reads as a row. Under it, the flag strip and whatever the room
-has to say. The band is also the control, in a room you are in: a press opens
+Top center is the band: the clock, with a side either side of it as its score
+and its name. It is one line and one size, the body size the whole interface
+is set in, and what tells a score from a name from the clock is color and
+order. The figure leads and reads outward, so the two numbers sit at the
+band's own ends and the two names bracket the middle; the sides wear their own
+colors and the clock between them is the reading ink, since it is the one
+number up there nobody is playing for. Under half a minute it goes to the
+warning color, which is the one thing on the row that says something other
+than what it reads.
+
+The row is a key tall at every window size, so the band and the way into the
+menu are the same height and the top row reads as a row. Under it, the flag
+strip and whatever the room has to say.
+
+What a zone does not count, it does not draw. A duel is one clean kill, so its
+score would read nil to nil for the whole match: what its row carries is the
+two pilots' call signs and the clock. A room that runs forever has neither, so
+its middle is how many are in it.
+
+The band is also the control, in a room you are in: a press opens
 the players sheet, which is a panel of the menu rather than a column of its
 own. While that sheet is up the fight behind it is washed and every other
 instrument's type recedes, because it is what is being read, which is the same
@@ -575,12 +589,22 @@ changes nothing, which is what escape gives.
 The corner stack is the model of the whole surface: rows of marks and
 counts, no panel, no rules between rows, the color separation doing the
 grouping (what a trigger does is drawn in its round's rung color, what you
-carry is gold). Two numbers are not in it, and for the same reason: the
-corner is what a press changes. Energy is not, because your own hull carries
-the same pip every hull carries and a corner bar was the same number twice in
-the place you least look. Your rating is not, because it is what other people
-see when they look at you rather than anything you can act on, and the players
-sheet says what a match did to it at the whistle. Damage is the vignette, red creeping in from the
+carry is gold). One number is not in it, because the corner is what a press
+changes: energy, since your own hull carries the same pip every hull carries
+and a corner bar was the same number twice in the place you least look.
+
+Your rating is not in it either, and is on the screen: it is a reading rather
+than a thing a press changes, so it stands at the near end of the top row the
+way the tile you are on stands at the far end, in the words the players sheet
+uses. The figure is set in the interface's ink, since no rating is good or
+bad, and what the match has done to it follows in brackets, green up and red
+down. A watcher is shown none, since the room is not moving theirs, and
+neither is a pilot who has not earned one yet. It was off the HUD for a while
+on the grounds that it is what other people see when they look at you rather
+than anything you can act on; a rating is the only durable thing a pilot has
+now, and watching it move is most of what a match is for.
+
+Damage is the vignette, red creeping in from the
 edges, which never hides the ship shooting you. The words for any row are an
 ask away: rest the pointer and a card names it, says what it does, and says
 which key spends it.

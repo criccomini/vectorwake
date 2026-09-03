@@ -214,7 +214,7 @@ end
 -- kinds of fact side by side and has to keep them apart in ink and in place.
 --
 -- The last one filed rather than the first, because your own standing is
--- drawn twice: the band up on the row carries it all match (decision 162) and
+-- drawn twice: the band up on the row carries it all match (decision 163) and
 -- the sheet says it again for the room. The sheet draws after the band, so
 -- the last copy is the column's.
 local function entry(what)
@@ -518,7 +518,7 @@ check("the whistle adds where the ladder has everybody", at("RATING") ~= nil,
 -- Once each, except your own, which the band on the row above has carried
 -- all match and the column says again for the room. Two of a figure is what
 -- the readout up there is: a standing you can watch while you fly, in the
--- same words the sheet uses. See decision 162.
+-- same words the sheet uses. See decision 163.
 check("and the column carries the standing itself",
       counted("1500") == 2 and counted("1620") == 1,
       table.concat(words(), " | "))

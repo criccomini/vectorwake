@@ -277,8 +277,24 @@ on the roster before the board goes up.
 
 ## Where a rating is read
 
-Four surfaces, and every one of them names a zone, because a rating with no
-zone on it reads as a career figure and there is no career figure.
+Five surfaces. The four pages name a zone, because a rating with no zone on it
+reads as a career figure and there is no career figure; the fifth is the top
+of the window in a room, where a zone needs no naming because a room is in
+one.
+
+**The row across the top of the arena** carries the viewer's own standing for
+the whole match, at the near end of the row, the way the tile you are on
+stands at the far end over the dial. The figure is set in the interface's ink
+and what the match has done to it follows in brackets, green up and red down
+and mute where nothing has happened, which is the form the players sheet uses
+for the same pair. The movement is the live figure less what the whistle
+latched, subtracted on the client, so it is exact between two rated deaths
+without a byte on the wire.
+
+It is drawn for a pilot in a seat. A watcher is shown none, since the room is
+not moving theirs, and neither is a pilot who has no rating yet, which is a
+guest before their first rated death. See
+[decision 163](../architecture/decisions.md#163-the-row-is-one-line-at-one-size).
 
 **The pilot's profile** on the site is the full answer: `/v1/pilot` returns a
 row per zone with that zone's rating, tier and rank, and the page draws them

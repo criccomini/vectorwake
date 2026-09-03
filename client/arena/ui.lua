@@ -1831,7 +1831,7 @@ end
 -- put the largest type on the screen's top row on the one reading that
 -- changes by itself and the smallest on the two a match is played for. Every
 -- reading up here is the body size now, the size POS and the feed are already
--- set in, and what tells them apart is color and order. See decision 162.
+-- set in, and what tells them apart is color and order. See decision 163.
 --
 -- The box stays a key tall. Nothing on the row fills it any more, but it is
 -- what the flags, the room's line and the board hanging under the band are
@@ -3022,7 +3022,7 @@ end
 -- reading outward from the middle; the clock between them is the reading ink,
 -- since it is the one number up here that nobody is playing for; your own
 -- standing is the interface's ink with only its movement colored. See
--- decision 162, and `band_type` for what the sizes used to be.
+-- decision 163, and `band_type` for what the sizes used to be.
 --
 -- Both sides in the viewer's own colors rather than in the zone's: which one
 -- is yours is the first thing the number has to say, and every other
@@ -3095,15 +3095,17 @@ local function match_clock(o, m, names, alone)
     local clock = string.format("%d:%02d", math.floor(left / 60), left % 60)
     local ended = match_ended(m)
     -- The dim is for a figure that has stopped moving, which at the whistle
-    -- is both sides' points and in a room still looking for a rival is the
-    -- clock counting nothing.
+    -- is both sides' points. The clock is not one of them and never takes it:
+    -- it is counting something wherever it stands, and between matches it is
+    -- counting the hardest, since it is the whole of what the row has left to
+    -- say.
     local dim = m.playing and 1 or 0.55
-    -- Under half a minute the clock goes to the warning color. It is the one
-    -- thing on the row that says something other than what it reads, and the
-    -- old band said it by being twice the size of everything beside it for
+    -- Under half a minute it goes to the warning color, which is the one
+    -- thing on the row that says something other than what it reads. The old
+    -- band said it by standing twice the height of everything beside it for
     -- the whole three minutes.
     local ink = (m.playing and left <= TOP.WARN) and pal.HURT or pal.READ
-    txt(clock, F.w / 2, mid, px, pal.a(ink, 0.95 * dim), "center")
+    txt(clock, F.w / 2, mid, px, pal.a(ink, 0.95), "center")
     local half = text_w(clock, px) / 2
     -- What the band came to, walked outward from the clock as each side is
     -- laid down and read next frame by the press below.
@@ -3146,8 +3148,16 @@ local function match_clock(o, m, names, alone)
     -- strip on an upright phone. It is a caption rather than a reading, and
     -- the row is for readings.
     if ended then
-        txt("NEXT MATCH IN", F.w / 2, band_bottom() + 8 * F.scale, px,
-            pal.a(pal.DIM, 0.8), "center")
+        -- And only where it fits. What stands on that line is the dial, which
+        -- is a third of a phone across, so a narrow enough window runs the
+        -- caption into the instrument; a caption that will not fit is dropped
+        -- the way a side's name is, and the clock it is about is on the row
+        -- above either way.
+        local cap, dial_l = "NEXT MATCH IN", TOP.dial_x()
+        if F.w / 2 + text_w(cap, px) / 2 <= dial_l then
+            txt(cap, F.w / 2, band_bottom() + 8 * F.scale, px,
+                pal.a(pal.DIM, 0.8), "center")
+        end
     end
     local _, _, won = END.result(o, m, names)
 

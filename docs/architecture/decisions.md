@@ -9012,3 +9012,85 @@ on this message. `constant_drift_test` now reads both tags and all five reason
 bytes out of `protocol.rs` and checks the client has words at each, since only
 the byte crosses the wire and a renumbering would tell a player the wrong
 thing rather than fail to parse.
+
+## 163. The row is one line at one size, and it carries your rating
+
+**Status:** accepted, replacing
+[decision 67](#67-the-scoreboard-is-a-band-you-press), which made the
+scoreboard a band at top center, and amending
+[decision 94](#94-the-ending-has-no-foot-and-the-clock-never-moves)'s countdown caption.
+
+**What:** the top of the window is one row set in one size. Your own standing
+stands at its near end, the clock with a side either side of it in the middle,
+and the dial's two readouts at the far end. Everything on it is the body size,
+13 points, the size POS and the feed are already set in.
+
+A side is its score and its name, the figure leading and reading outward, so
+the two numbers sit at the band's own ends and the two names bracket the
+clock. The sides keep their colors, cyan for yours and amber for theirs; the
+clock between them is the reading ink, and under thirty seconds it goes to the
+warning color. A name that will not fit is dropped, both or neither, measured
+against the tighter of the row's two ends.
+
+Your standing is the figure in the interface's ink with what this match has
+done to it in brackets after it, green up, red down, mute at nothing, which is
+the pair the players sheet already draws in those words. A watcher is shown
+none and neither is a pilot who has not earned one. The movement is the live
+figure less what the whistle latched, subtracted on the client, so nothing new
+crosses the wire.
+
+Two zones read differently, because a row says what its zone counts. A duel
+draws no score at all: one clean kill takes one
+([decision 146](#146-a-duel-is-one-kill-and-the-room-deals-you-a-rival)), so the score would stand at
+nil to nil for the whole match and then the match would be over, and what its
+two sides are is two pilots, so it carries their call signs. A room that runs
+forever has no clock and no score, so its middle is how many are in it.
+
+At the whistle both sides stay on the row with the beaten one stood down, and
+`NEXT MATCH IN` moves to the line under the clock, which is the flag strip's
+line during a match and free at the whistle.
+
+**Why:** three reasons, and the last one is the one that started it.
+
+The band was three sizes inside eight characters: a 26 point clock with a 9
+point name over a 14 point number either side of it. That put the largest type
+on the screen on the one reading nobody is playing for, and the smallest on
+the two a match is played for. It read as a headline with two footnotes rather
+than as an instrument, and nothing about the three sizes said anything, since
+what a player wants from the top of the window is which figure is whose.
+Color and order carry that at one size, and the row picks up the same body
+size everything else on the HUD is set in.
+
+The clock's size was doing one real job, saying "nearly out of time", and it
+did it for the whole three minutes. The warning color says it at the moment it
+is worth saying and costs the row nothing.
+
+And a rating had nowhere to live. It is the only durable thing a pilot has
+([decision 100](#100-seven-credits-and-every-step-costs-one) took the last of
+the rest away), it moves on every rated death, and the only places it was
+written were the sheet at the whistle and the pages on the site. A number you
+are told about after the fact is not something you can play toward. It sits in
+the near corner because that corner had emptied
+([decision 158](#158-nobody-is-told-they-are-on-camera)) and because the row
+already had an instrument at the far end in the same register; the argument
+against, that a figure climbing over your head while you fly is the shape the
+bounty had, is about a figure on a hull rather than a reading in a corner.
+
+The band is also carrying less than it did. The players sheet holds the roster
+now ([decision 147](#147-the-players-sheet-is-the-menu-s-and-the-band-says-who-won)), so what the
+band has left is the clock, the score and the result, and a smaller instrument
+is the honest size for that.
+
+Four shapes were drawn for it in `.design/scoreboard-band`: this one, a pair
+of corner stacks, a filled bar with the stands sitting on it, and a broadcast
+tally in the corner. This one keeps the first glance where it has been all
+along and changes the least about where a player looks.
+
+**Verified:** `band_test` holds the row at one size on one line, the figure
+outside the name, the clock in the reading ink and in the warning color under
+thirty seconds, the standing and its movement in the corner with only the
+movement colored, the phone dropping the caption and the names but never the
+figures, a watcher and an unrated pilot getting no standing at all, a duel
+drawing two call signs and no score, and a room with no match counting itself.
+`players_test` holds the sheet's own column beside it. `client/tools/hud_svg.lua`
+draws the row in every scenario for a look.

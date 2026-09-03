@@ -250,7 +250,7 @@ if pylon and fifteen and caisson and nineteen and clock then
     -- One line. A side was a name over a number and the two of them together
     -- were as tall as the clock, which is three sizes in eight characters and
     -- the largest of them on the clock. Everything on the row shares the
-    -- row's own middle now. See decision 162.
+    -- row's own middle now. See decision 163.
     check("a side stands on the clock's own line",
           math.abs(pylon.y - clock.y) < 0.5
               and math.abs(fifteen.y - clock.y) < 0.5
@@ -313,7 +313,7 @@ end
 
 -- --- your standing is on the row ------------------------------------------
 --
--- A rating is the one durable thing a pilot has, and until decision 162 there
+-- A rating is the one durable thing a pilot has, and until decision 163 there
 -- was nowhere to watch it: the sheet carries it at the whistle and the ending
 -- is where it was read, which is a figure you are told about after the fact.
 -- It stands in the near corner now, the way POS stands over the dial at the
@@ -781,6 +781,17 @@ check("the whistle keeps both sides on the band",
 check("and says what the clock is counting to",
       drawn("NEXT MATCH IN") ~= nil, table.concat(words(), " | "))
 do
+    -- And the countdown keeps its strength while both scores stand down. It
+    -- is the one number on the screen that is still moving, and it was the
+    -- faintest thing on it for as long as the ending washed everything.
+    local tick, lost = drawn("0:18"), drawn("15")
+    check("with the countdown at full strength over two stopped scores",
+          tick and lost and tick.col[4] > lost.col[4],
+          tick and lost and string.format("%.2f clock, %.2f score",
+                                          tick.col[4], lost.col[4])
+              or "a figure is missing")
+end
+do
     -- Who won, said by weight rather than by a word: the winner keeps its ink
     -- and the beaten side stands down. Read off the score rather than the
     -- name, since a name is dropped where the row runs out of room and a
@@ -793,6 +804,15 @@ do
           la and wa and string.format("%.2f won, %.2f lost", wa, la)
           or "a score is missing")
 end
+-- The caption's line is the dial's, and the dial is a third of a phone
+-- across. On a narrow enough window it is dropped, the way a side's name is:
+-- the clock it is about is on the row above, counting.
+frame({w = 320, h = 568,
+       match = {playing = false, left = 18, score = {[0] = 15, [1] = 19}}})
+check("and drops the caption on a window with no room for it",
+      drawn("NEXT MATCH IN") == nil and drawn("0:18") ~= nil,
+      table.concat(words(), " | "))
+
 -- A draw stands neither side down, which is what a draw is.
 frame({match = {playing = false, left = 18, score = {[0] = 17, [1] = 17}}})
 do

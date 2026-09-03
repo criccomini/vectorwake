@@ -2408,11 +2408,15 @@ function update(self, dt)
             -- and a rating changes on every rated death between two of them.
             ratings = net.ratings,
             -- And what everybody was rated at when the match opened, which
-            -- the podium subtracts from the live figure to say what the
-            -- match did. Only the ending reads it: mid-fight a rating is a
-            -- standing rather than a running total, and a number climbing
-            -- over somebody's head while they are trying to fly is the shape
-            -- the bounty had.
+            -- both the podium and the row subtract from the live figure to
+            -- say what the match has been worth.
+            --
+            -- The row reading it mid-fight is decision 163. The argument
+            -- against was the bounty's shape, a number climbing over
+            -- somebody's head while they are trying to fly, and what makes
+            -- this the other thing is that it is one reading in a corner
+            -- rather than a figure on a hull: a standing you can watch going
+            -- up and down is the whole of what a pilot has to play for now.
             rated_from = net.rated_from,
             -- The sides, as the zone is willing to describe them. A pilot's
             -- box names the one they are on only when the zone marked it

@@ -11,8 +11,10 @@ the match is timed, sides and scores where there are sides, flags where
 there are flags; nothing invasive; and for it to look good.
 
 Four shapes were drawn. Chris picked the scoreline and asked for one thing
-changed: nothing on the row varies in size. Drawings of a proposal, not a
-plan of record. Nothing here is built.
+changed: nothing on the row varies in size. That is built, as
+[decision 163](../../docs/architecture/decisions.md#163-the-row-is-one-line-at-one-size-and-it-carries-your-rating);
+the boards here are what it was drawn from and what it was built to, and the
+three shapes it was picked over are on the second page for the record.
 
 ## The pick: the scoreline, at one size
 
