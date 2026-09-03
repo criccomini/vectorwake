@@ -797,7 +797,7 @@ impl ArenaServer {
         room.set_teams(&def);
         // Where the flags stand is the map's, whatever game is played on it.
         // This asked the mode instead and laid the built-in arena's four
-        // quadrant tiles for a warzone, which on a zone map is four flags out
+        // quadrant tiles for a flag game, which on a zone map is four flags out
         // past its own wall; a turf zone got none at all, since nothing here
         // had ever read a stand off the ground.
         room.place_flags();
@@ -1379,7 +1379,7 @@ impl ArenaServer {
     /// names no zone, and the bot server, which asks each arena directly what
     /// it wants rather than reading the catalog, fills it to `bot_fill`. Two
     /// spare instances on the live fleet spent a night that way, running a
-    /// warzone nobody could see in any listing, at a quarter of a one-core box
+    /// room nobody could see in any listing, at a quarter of a one-core box
     /// between them. Rooms exist because somebody is served by them, and until
     /// a zone arrives nobody is.
     ///
@@ -1474,7 +1474,7 @@ impl ArenaServer {
                         // somebody arrives, so a room packed with AI is not
                         // shut.
                         full: r.humans() >= self.max_players(),
-                        clock: m.as_ref().map(|m| m.seconds_left as u32).unwrap_or(0),
+                        clock: m.as_ref().and_then(|m| m.seconds_left).unwrap_or(0) as u32,
                         playing: m.is_some_and(|m| m.playing),
                     }
                 })

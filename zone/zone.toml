@@ -33,7 +33,7 @@ max_players = 16
 bans = []
 
 [arena]
-mode = "warzone"
+mode = "flags"
 flags = 4
 
 # Misc:BounceFactor: the speed a hit gives back, out of 16, against `friction`
@@ -151,9 +151,10 @@ wormhole_top_speed = 100
 # shot with an arc the map decides.
 gravity_bombs = true
 
-# The clock, for `mode = "melee"` and ignored by every other mode. A room that
-# has one plays a match, puts up a podium, and plays another; a room without
-# one runs until nobody is in it.
+# The clock. `match_seconds` is read by `mode = "melee"` and `mode = "duel"`
+# and ignored by the rest; `intermission_seconds` is the podium every match
+# game puts up, a flag game included, since that one has no match length of
+# its own. A room with neither runs until nobody is in it.
 #
 # match_seconds = 180
 # intermission_seconds = 15

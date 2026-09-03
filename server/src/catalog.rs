@@ -2,7 +2,7 @@
 //!
 //! docs/architecture/catalog.md is the schema. The load path here is deliberately
 //! strict, because a catalog that half-applies is worse than one that refuses:
-//! a listed zone nobody can join, or a mode that silently fell back to warzone,
+//! a listed zone nobody can join, or a mode that silently fell back to a flag game,
 //! is hard to diagnose from inside a game. Every rejection carries the reason.
 //!
 //! This is also the piece that retires the oldest dead keys in the project.
@@ -26,7 +26,7 @@ pub struct ZoneDef {
     /// existed.
     #[serde(default)]
     pub label: Option<String>,
-    /// arena | warzone | melee. Read, unlike before.
+    /// arena | flags | melee | duel. Read, unlike before.
     pub mode: String,
     /// The maps this zone plays, relative to its own directory, in the order
     /// a room rotates through them. At least one; a match game takes the next
@@ -173,7 +173,6 @@ impl ZoneDef {
         };
         match self.mode.as_str() {
             "melee" => (teams(), time(), "kills".into()),
-            "turf" => (teams(), time(), "turf".into()),
             // A duel states the rounds that take it rather than "kills". The
             // clock is the backstop here, not the referee, but it still gets
             // printed: a match that reaches the whistle level is a draw, so
@@ -194,10 +193,11 @@ impl ZoneDef {
                 };
                 (teams(), time(), scoring)
             }
-            // A warzone runs rounds rather than a clock, so it states the
-            // sides and what wins and leaves the time blank rather than
-            // printing a number it does not have.
-            "warzone" => (teams(), String::new(), "flags".into()),
+            // A flag game runs until somebody holds the set rather than
+            // against a clock, so it states the sides and what wins and
+            // leaves the time blank rather than printing a number it does not
+            // have.
+            "flags" => (teams(), String::new(), "flags".into()),
             _ => (String::new(), String::new(), String::new()),
         }
     }
@@ -877,7 +877,7 @@ mod tests {
         write(
             dir,
             "zones/war/zone.toml",
-            "mode = \"warzone\"\nmaps = [\"war.vwmap\"]\nfill_target = 8\n",
+            "mode = \"flags\"\nmaps = [\"war.vwmap\"]\nfill_target = 8\n",
         );
         write(
             dir,
@@ -953,15 +953,16 @@ mod tests {
             read("melee").format(),
             ("4 v 4".into(), "3:00".into(), "kills".into())
         );
+        // Both flag zones run until somebody holds the set rather than
+        // against a clock, so what they say they score in is flags and the
+        // time column is blank. The war zone's key is the mode it was once
+        // named after and its label is the game everybody else calls it,
+        // which is the widest the two have ever been apart.
         assert_eq!(read("turf").label("turf"), "Turf");
         assert_eq!(
             read("turf").format(),
-            ("4 v 4".into(), "3:00".into(), "turf".into())
+            ("4 v 4".into(), String::new(), "flags".into())
         );
-        // A war zone runs rounds inside its match, so what it says it scores
-        // in is flags, and the clock beside it is the match's. Its key is the
-        // mode it was named after and its label is the game everybody else
-        // calls it, which is the widest the two have ever been apart.
         assert_eq!(read("war").label("war"), "Capture the Flag");
         assert_eq!(
             read("war").format(),
@@ -1102,7 +1103,7 @@ mod tests {
                     write(
                         d,
                         "zones/war/zone.toml",
-                        "mode = \"warzone\"\nmaps = [\"gone.vwmap\"]\n",
+                        "mode = \"flags\"\nmaps = [\"gone.vwmap\"]\n",
                     )
                 }),
                 "missing",
@@ -1113,7 +1114,7 @@ mod tests {
                     write(
                         d,
                         "zones/war/zone.toml",
-                        "mode = \"warzone\"\nmaps = [\"war.vwmap\"]\nmax_ships = 300\n",
+                        "mode = \"flags\"\nmaps = [\"war.vwmap\"]\nmax_ships = 300\n",
                     )
                 }),
                 "300",
@@ -1124,7 +1125,7 @@ mod tests {
                     write(
                         d,
                         "zones/war/zone.toml",
-                        "mode = \"warzone\"\nmaps = [\"war.vwmap\"]\nmax_rooms = 0\n",
+                        "mode = \"flags\"\nmaps = [\"war.vwmap\"]\nmax_rooms = 0\n",
                     )
                 }),
                 "max_rooms",
@@ -1135,7 +1136,7 @@ mod tests {
                     write(
                         d,
                         "zones/war/zone.toml",
-                        "mode = \"warzone\"\nmaps = [\"war.vwmap\"]\n\
+                        "mode = \"flags\"\nmaps = [\"war.vwmap\"]\n\
                                                  fill_target = 40\nmax_players = 8\n",
                     )
                 }),
@@ -1173,7 +1174,7 @@ mod tests {
                     write(
                         d,
                         "zones/war/zone.toml",
-                        "mode = \"warzone\"\nmaps = [\"war.vwmap\"]\n\
+                        "mode = \"flags\"\nmaps = [\"war.vwmap\"]\n\
                                                  teams = [\"Keel\", \"\"]\n",
                     )
                 }),
@@ -1185,7 +1186,7 @@ mod tests {
                     write(
                         d,
                         "zones/war/zone.toml",
-                        "mode = \"warzone\"\nmaps = [\"war.vwmap\"]\n\
+                        "mode = \"flags\"\nmaps = [\"war.vwmap\"]\n\
                                                  teams = [\"Keel\", \"Vantage\"]\n\
                                                  max_teams = 1\n",
                     )
@@ -1226,7 +1227,7 @@ mod tests {
         write(
             &d,
             "zones/war/zone.toml",
-            "mode = \"warzone\"\nmaps = [\"war.vwmap\"]\nmax_ships = 255\n",
+            "mode = \"flags\"\nmaps = [\"war.vwmap\"]\nmax_ships = 255\n",
         );
         assert_eq!(load(&d).unwrap().zone("war").unwrap().max_ships, Some(255));
     }

@@ -117,7 +117,11 @@ function M.load(payload, sim, net)
     end
     local score = {}
     for index, value in ipairs(artifact.score or {}) do score[index - 1] = value end
-    net.match = {playing = true, left = 0, score = score, artifact = artifact.id}
+    -- No clock. A replay is a record rather than a match being counted, and
+    -- `left` nil is how the band is told there is nothing to count: it used to
+    -- be a zero, which drew a stopped 0:00 over every replay.
+    net.match = {playing = true, left = nil, score = score,
+                 artifact = artifact.id}
     net.zone = payload.zone or "replay"
     net.map_name = artifact.map or ""
     net.room = artifact.room

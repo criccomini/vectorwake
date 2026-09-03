@@ -128,7 +128,7 @@ The zone fields are:
 | Field | Meaning |
 |---|---|
 | `label` | What players read the game as, where it differs from the zone's key. The key is what a join names and what a rating is filed under, so renaming the game a player sees cannot move either. |
-| `mode` | `arena`, `warzone`, `melee`, or `turf`. |
+| `mode` | `arena`, `flags`, `melee`, or `duel`. |
 | `maps` | One or more `.vwmap` files relative to the zone directory, in rotation order. |
 | `max_ships` | Total seats in one room, bots included. A ship index is one byte, so 255 is the parse ceiling. |
 | `max_players` | Human seats in one room. |
@@ -167,7 +167,6 @@ than a differently tuned one:
 | `flags` | How many of the map's flag stands this zone plays for. Absent is all of them. Flags come down but never up: where a stand is belongs to the map, which draws them with `SIM_TILE_TURF`, and a map that draws none is not a flag game. |
 | `flag_carry` | Whether taking a flag picks it up. True is Capture the Flag, where a flag rides its taker and drops where they die; false is Turf, where a stand changes hands where it stands. |
 | `flag_carry_seconds` | How long one pilot may hold a flag before it drops on its own, keeping their side. Absent or zero is no limit. |
-| `turf_seconds` | Seconds between two turf payouts, each paying a side one point per stand it holds. Turf only. |
 | `greens` | Greens the room keeps on the field. Absent or zero is a zone with none, which is every match game. |
 | `green_seconds`, `green_every_seconds` | How long one lies there, and how often one is put out. |
 | `green_near_tiles`, `green_far_tiles` | The ring around a live pilot a green may appear in. See [design/maps.md](../design/maps.md) for why greens are placed around people rather than over the map. |

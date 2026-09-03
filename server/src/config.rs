@@ -48,7 +48,7 @@ pub struct ZoneConfig {
 /// for a file that leaves the key out, and ZoneConfig for a file with no
 /// `[arena]` table at all.
 fn default_mode() -> String {
-    "warzone".into()
+    "flags".into()
 }
 
 /// Everything the core calls a setting, in the units an operator thinks in:
@@ -156,18 +156,15 @@ pub struct ArenaConfig {
     /// A match game's two clocks, in seconds. Three minutes of play and
     /// fifteen seconds of podium is what `docs/design/match-game.md`
     /// settles on: long enough for a match to have a shape, short enough that
-    /// a bad one is nearly over. Only a match game reads them.
+    /// a bad one is nearly over. Only a match game reads them, and a flag
+    /// game reads only the second: its match runs until somebody holds every
+    /// flag, so it has no length to state.
     pub match_seconds: Option<u16>,
     pub intermission_seconds: Option<u16>,
     /// Rounds that take a duel. Two by default: a match is then three rounds
     /// at most, and losing the opening exchange leaves a pilot one round from
     /// level rather than watching out a decided fight. Only Duel reads it.
     pub first_to: Option<u16>,
-    /// Seconds between two turf payouts, each paying a side one point per
-    /// stand it holds. Five by default, which over a three minute match makes
-    /// a stand held end to end worth 36 and a match worth arguing about.
-    /// Only Turf reads it.
-    pub turf_seconds: Option<u16>,
     /// How many kills without dying put a pilot on a streak. Zero turns
     /// streaks off in this zone.
     pub streak_kills: Option<u16>,
@@ -405,7 +402,7 @@ listen = "0.0.0.0:9100"
 bans = ["griefer"]
 
 [arena]
-mode = "warzone"
+mode = "flags"
 flags = 3
 bounce = 12
 
@@ -432,19 +429,19 @@ rotation = 260
             c.arena.bounce, None,
             "an unset setting is absent, so the core's own"
         );
-        assert_eq!(c.arena.mode, "warzone");
+        assert_eq!(c.arena.mode, "flags");
         assert_eq!(c.max_players, 16);
     }
 
     #[test]
-    fn a_table_with_no_mode_in_it_is_still_a_warzone() {
+    fn a_table_with_no_mode_in_it_is_still_a_flag_game() {
         // The mode is the arena's own rather than the core's and has a value
         // for a default, whether the file writes an [arena] table or not.
         // Everything else in there is absent when unset, which is a different
         // thing from zero: the flag count absent is every stand the map draws,
         // and zero would be a flag game with no flags in it.
         let c: ZoneConfig = toml::from_str("[arena]\nbounce = 0\n").unwrap();
-        assert_eq!(c.arena.mode, "warzone");
+        assert_eq!(c.arena.mode, "flags");
         assert_eq!(c.arena.flags, None);
         assert_eq!(
             c.arena.bounce,
@@ -482,7 +479,7 @@ bans = ["griefer"]
             c.arena.ships.is_empty(),
             "the reference zone tunes no hull: they differ by footprint alone"
         );
-        assert_eq!(c.arena.mode, "warzone");
+        assert_eq!(c.arena.mode, "flags");
     }
 
     #[test]

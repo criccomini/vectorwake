@@ -247,10 +247,15 @@ fn fresh_brain(
 /// `[S2C_MATCH, flags, seconds left, sides, ...]`, and only while the match is
 /// running: between matches that byte counts an intermission down rather than a
 /// match, and there is no rack to spend during one.
+///
+/// A zero is the room counting nothing, which is a flag game for all of a
+/// match except the fifteen seconds somebody spends holding every flag. Those
+/// fifteen are seconds until the whistle like any other, so they are what a
+/// pilot with charges left should be pacing against.
 fn seconds_left(data: &[u8]) -> Option<f32> {
     let playing = data.get(1)? & crate::MATCH_PLAYING != 0;
-    let left = *data.get(2)? as f32;
-    playing.then_some(left)
+    let left = *data.get(2)?;
+    (playing && left > 0).then_some(left as f32)
 }
 
 fn match_transition(playing: &mut bool, match_number: &mut u32, next: bool) -> bool {

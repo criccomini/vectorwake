@@ -2971,11 +2971,11 @@ M.match_ended = match_ended
 -- was a staff and a pennant, measured from the tip of the staff down; the
 -- mark is round now and a radius is the whole of it.
 --
--- One table holding both the measurements and the reach, rather than three
--- constants and a function, because ui.lua sits on Lua 5.1's ceiling of 200
--- locals in a chunk and had exactly one left. A fourth `local` at this level
--- does not fail a test, it fails to load the file.
-local FLAG = {gap = 9, r = 5}
+-- One table holding the measurements and the functions that read them, rather
+-- than a handful of constants and some loose locals, because ui.lua sits on
+-- Lua 5.1's ceiling of 200 locals in a chunk and had exactly one left. A
+-- `local` at this level does not fail a test, it fails to load the file.
+local FLAG = {gap = 9, r = 5, pitch = 16}
 
 -- How far the strip pushes the rest of the stack down: nothing in a mode with
 -- no flags, and nothing at the whistle, where the band's own line is what the
@@ -2996,11 +2996,18 @@ function FLAG.stack(m)
     return (FLAG.gap + FLAG.r * 2) * F.scale
 end
 
+-- How far the strip reaches either side of the window's middle, which the
+-- band's own press has to cover in a game that draws no score.
+function FLAG.half_span()
+    local n = sim.flag_count()
+    return ((n - 1) * FLAG.pitch / 2 + FLAG.r) * F.scale
+end
+
 local function flag_strip(m)
     if FLAG.stack(m) == 0 then return end
     local n = sim.flag_count()
     local my_team = view_team
-    local pitch = 16 * F.scale
+    local pitch = FLAG.pitch * F.scale
     local x0 = F.w / 2 - (n - 1) * pitch / 2
     local y = band_bottom() + (FLAG.gap + FLAG.r) * F.scale
     for i = 0, n - 1 do
@@ -3011,6 +3018,23 @@ local function flag_strip(m)
         -- wherever it is shown.
         flag_mark(x0 + i * pitch, y, F.scale, col)
     end
+end
+
+-- The side holding every flag, and nil where nobody is. Worked out from the
+-- flags themselves rather than sent, because the client already has all of
+-- them and this is the same question the pennants answer a mark at a time.
+--
+-- On the table beside the measurements for the reason given there.
+function FLAG.holder()
+    local n = sim.flag_count()
+    if n == 0 then return nil end
+    local held = nil
+    for i = 0, n - 1 do
+        local _, _, team = sim.flag_at(i)
+        if team == 255 or (held and team ~= held) then return nil end
+        held = team
+    end
+    return held
 end
 
 -- The row across the top of the window: your standing at the left of it, the
@@ -3062,8 +3086,6 @@ local function match_clock(o, m, names, alone)
     -- instrument that reads out a number nobody is playing for is furniture,
     -- and the whole top edge of that zone is the fight's.
     if not m then return end
-    local left = m.left or 0
-    local clock = string.format("%d:%02d", math.floor(left / 60), left % 60)
     local ended = match_ended(m)
     -- The dim is for a figure that has stopped moving, which at the whistle
     -- is both sides' points. The clock is not one of them and never takes it:
@@ -3071,13 +3093,32 @@ local function match_clock(o, m, names, alone)
     -- counting the hardest, since it is the whole of what the row has left to
     -- say.
     local dim = m.playing and 1 or 0.55
-    -- Under half a minute it goes to the warning color, which is the one
-    -- thing on the row that says something other than what it reads. The old
-    -- band said it by standing twice the height of everything beside it for
-    -- the whole three minutes.
-    local ink = (m.playing and left <= TOP.WARN) and pal.HURT or pal.READ
-    txt(clock, F.w / 2, mid, px, pal.a(ink, 0.95), "center")
-    local half = text_w(clock, px) / 2
+    -- A flag game has no match clock: it runs until somebody holds every
+    -- flag, and the only thing worth counting is the fifteen seconds that
+    -- decide it. So the middle of the row is empty for most of one, and the
+    -- clock appears when the set is completed and goes again when it breaks.
+    -- See decision 165.
+    local left = m.left
+    local half = 0
+    if left then
+        local clock = string.format("%d:%02d", math.floor(left / 60), left % 60)
+        -- Under half a minute a match clock goes to the warning color, which
+        -- is the one thing on the row that says something other than what it
+        -- reads. A hold is different: fifteen seconds is the whole of it, so
+        -- red would be its only color, and it is a warning to one side and
+        -- the other side's win. It wears whoever is holding the set instead,
+        -- the same two colors the pennants under it are wearing.
+        local ink = pal.READ
+        if not m.score then
+            local who = FLAG.holder()
+            ink = (who == nil and pal.READ)
+                or (who == view_team and pal.FRIEND or pal.ENEMY)
+        elseif m.playing and left <= TOP.WARN then
+            ink = pal.HURT
+        end
+        txt(clock, F.w / 2, mid, px, pal.a(ink, 0.95), "center")
+        half = text_w(clock, px) / 2
+    end
     -- What the band came to, walked outward from the clock as each side is
     -- laid down and read next frame by the press below.
     band_l, band_r = F.w / 2 - half, F.w / 2 + half
@@ -3103,9 +3144,21 @@ local function match_clock(o, m, names, alone)
     -- at all, so the band is a reading of the fight behind the name.
     local function press()
         if alone then return end
+        -- The pennants are the band in a game that draws no score, so the box
+        -- reaches down over them: without that a flag zone has a top row with
+        -- nothing on it for most of a match and no way into the sheet but the
+        -- menu. Nothing to reach for in the games that draw a score, where the
+        -- strip is either absent or hanging under a band already wide enough
+        -- to press.
         local x0, x1 = band_l, band_r
+        local strip = FLAG.stack(m)
+        if strip > 0 then
+            local span = FLAG.half_span()
+            x0 = math.min(x0, F.w / 2 - span)
+            x1 = math.max(x1, F.w / 2 + span)
+        end
         hit(x0 - 6 * F.scale, mid - row / 2 - 4 * F.scale,
-            x1 - x0 + 12 * F.scale, row + 8 * F.scale, "players_open")
+            x1 - x0 + 12 * F.scale, row + 8 * F.scale + strip, "players_open")
     end
 
     -- A match that has finished keeps both its sides, and the band is what
@@ -3118,7 +3171,12 @@ local function match_clock(o, m, names, alone)
     -- characters between the two scores put the far one through the dial's
     -- strip on an upright phone. It is a caption rather than a reading, and
     -- the row is for readings.
-    if ended then
+    --
+    -- A game with no score gives that line to `match_note` instead. The band
+    -- there carries a clock and nothing else at the whistle, so a caption
+    -- about the clock would be the only thing under it and who took the match
+    -- would be said nowhere at all.
+    if ended and m.score then
         -- Not on an upright window, and not on any window too narrow for it.
         -- What stands on that line is the dial, which is a third of a phone
         -- across, so a phone held upright has the caption running into the
@@ -3135,6 +3193,11 @@ local function match_clock(o, m, names, alone)
     -- A side is its score and its name, in that order out from the middle, so
     -- the two figures sit at the ends of the band and the two names bracket
     -- the clock.
+    --
+    -- Nothing at all in a game whose standing is not a number. A flag game
+    -- sends no sides: what it is scored in is the ground, the pennants draw
+    -- that, and a pair of figures up here would be the same fact written out
+    -- longhand under the picture of itself. See decision 165.
     local mine = view_team
     local sides = {}
     for team, n in pairs(m.score or {}) do
@@ -3227,12 +3290,17 @@ end
 local function match_note(o, m)
     local line = o.banner
     if not line or line == "" then return end
-    -- Not while the ending is up. The podium is the room's own account of the
-    -- match that just finished and this slot is where the band says what the
-    -- clock is counting down to, so a line here would be a third statement
-    -- laid over the second. The banner used to be drawn after the ending's
-    -- early return, which is the same rule written as an accident of order.
-    if match_ended(m) then return end
+    -- Not while the ending is up, in a game the band scores. The podium is
+    -- the room's own account of the match that just finished and the band
+    -- carries it, so a line here would be a third statement laid over the
+    -- second. The banner used to be drawn after the ending's early return,
+    -- which is the same rule written as an accident of order.
+    --
+    -- A game the band does not score is the other way round. Its whistle
+    -- leaves a clock and nothing else up there, so this line is where "Keel
+    -- takes it" lands, and the caption about the clock stands down for it.
+    -- See `match_clock`.
+    if match_ended(m) and m.score then return end
     -- In ink rather than in the warning color. The lines left, an opponent
     -- who left mid-fight and a clock that has run out, would wear red well
     -- enough, but the lag notice under this one is the red one and two reds in
