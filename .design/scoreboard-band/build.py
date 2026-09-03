@@ -447,8 +447,9 @@ def band_scoreline(w, room, zone, compact, state="open", px=13):
     the top right, at the same size again. What tells a score from a
     name from the clock is color and order, not weight: a side's two
     words wear its color, the clock is the reading ink, the rating is
-    ink with its movement colored. Flags hang under the clock as beacons
-    and a duel's rounds are pips in place of numbers."""
+    ink with its movement colored. Flags hang under the clock as beacons,
+    and a duel, being one kill, is its two pilots either side of the clock
+    with no score at all."""
     top = PAD
     gap = 12 if compact else 16
     line = (f'top:{top}px;height:{KEY_H}px;display:flex;align-items:center;'
@@ -490,11 +491,11 @@ def band_scoreline(w, room, zone, compact, state="open", px=13):
         fits = adv(s.name, px) + 8 + adv(str(s.score), px) <= (
             room_l if i == 0 else room_r)
         name = "" if ((compact or not fits) and not duel) else label(s, px, dim)
-        if duel:
-            figure = pips(s, px / 13, 3, reverse=(i == 0))
-        else:
-            figure = (f'<span class="num" style="font-size:{px}px;'
-                      f'color:{s.col};opacity:{dim}">{s.score}</span>')
+        # A duel is one kill (decision 146), so there is no score to show
+        # until it is over: the row is the two pilots and the clock.
+        figure = "" if duel else (
+            f'<span class="num" style="font-size:{px}px;'
+            f'color:{s.col};opacity:{dim}">{s.score}</span>')
         bits = [figure, name] if i == 0 else [name, figure]
         bits = [x for x in bits if x]
         out.append(f'<div class="row" style="{line};{pos};gap:8px">'
@@ -847,7 +848,7 @@ def h2(text):
 STATES = [("melee", "open", "Team Battle: kills"),
           ("turf", "open", "Turf: points and six stands"),
           ("war", "open", "Capture the Flag: rounds and four flags"),
-          ("duel", "open", "Duel: rounds, first to two, both ratings"),
+          ("duel", "open", "Duel: one kill, two pilots, no score"),
           ("roam", "open", "Free Roam: no clock, no score"),
           ("melee", "end", "At the whistle: Caisson took it")]
 
@@ -912,7 +913,8 @@ def scoreline_sheet():
             "tall as before and the band still grows outward from the clock "
             "and stops short of the dial; a phone drops the names and the "
             "rating's caption, and the figures always draw. Flags hang under "
-            "the clock as the radar's beacon, a duel's rounds are pips, and at "
+            "the clock as the radar's beacon; a duel is one kill, so its row is "
+            "the two pilots either side of the clock and no score; and at "
             "the whistle the middle reads what the clock is counting to on the "
             "line itself rather than on a second line at a second size.",
             900),

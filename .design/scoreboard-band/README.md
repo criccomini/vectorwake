@@ -35,9 +35,9 @@ clock is the reading ink, the rating is ink with its movement colored.
 - **Flags** hang under the clock as the beacon the radar draws for one,
   held ones in the holder's color and loose ones dim. Turf shows six,
   Capture the Flag four.
-- **A duel's rounds** are two pips a side, filled when taken, in place of
-  a number. Its sides are pilots, so their names keep their case and a
-  phone keeps them.
+- **A duel** is one kill (decision 146), so there is no score to show
+  until it is over: the row is the two pilots either side of the clock.
+  Their names keep their case, and a phone keeps them.
 - **Free Roam** has no clock and no score, so its middle is the room's
   count.
 - **At the whistle** the side that took it keeps its ink and the other
@@ -56,7 +56,10 @@ and an upright phone in Team Battle and Turf.
 
 Four directions, each drawn for every zone and at the whistle, then on a
 monitor and a phone. The scoreline in this pass had its scores at 22, the
-clock at 15 and the names at 10, which is what Chris picked from.
+clock at 15 and the names at 10, which is what Chris picked from. Its
+duel, like the other three, was drawn as rounds first to two with pips
+for the rounds; the duel had been one kill since decision 146, and the
+pick corrects it.
 
 - **A, the scoreline**: one line at top center with the score leading,
   the rating a readout in the top left.
