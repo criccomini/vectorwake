@@ -261,6 +261,31 @@ local ending = scenario == "ending"
 -- whistle alone until decision 164, so there was no frame in this tool that
 -- drew it at all.
 local players = scenario == "menu-players"
+
+-- The room's standings, and what the whistle latched, for the two scenarios
+-- that draw a room of eight. Spread across the ladder on purpose: the mark
+-- after every name wears its pilot's band as a color (decision 166), so a
+-- room where everybody sat in one band would draw a picture of one color and
+-- prove nothing about the five.
+local RATINGS = {1494, 1720, 1208, 1377, 1041, 1102, 1466, 1239}
+local LATCHED = {1500, 1711, 1213, 1382, 1032, 1097, 1461, 1240}
+local RATINGS_AT, LATCHED_AT = {}, {}
+for i = 1, 8 do
+    RATINGS_AT[i - 1], LATCHED_AT[i - 1] = RATINGS[i], LATCHED[i]
+end
+
+-- The five bands, from server/src/rating.rs by way of arena/net.lua, so a
+-- badge drawn here is the color the client would draw for that figure. The
+-- provisional band is not in it: every pilot in these rooms has flown enough
+-- to be placed, which is what the scenarios are about.
+local function tier_of(at)
+    local name = "Newb"
+    for _, band in ipairs({{1050, "Wing"}, {1200, "Lead"}, {1350, "Ace"},
+                           {1700, "Legend"}}) do
+        if at >= band[1] then name = band[2] end
+    end
+    return name
+end
 if ending then
     room.count = 8
     room.teams = {[0] = 0, 0, 0, 0, 1, 1, 1, 1}
@@ -532,7 +557,14 @@ ui.hud({
         for i = 0, 7 do
             out[i] = {name = names[i + 1],
                       label = i % 2 == 0 and "unknown" or "bot",
-                      ai = i % 2 == 1}
+                      ai = i % 2 == 1,
+                      -- The band, which is the color the mark after the name
+                      -- is drawn in. Worked out from the rating rather than
+                      -- written down beside it, so a room drawn here cannot
+                      -- show a badge its own figures disagree with, and left
+                      -- unset where the room has no standings at all.
+                      tier = (ending or players)
+                          and tier_of(RATINGS[i + 1]) or nil}
         end
         return out
     end)() or {
@@ -545,14 +577,12 @@ ui.hud({
     },
     -- A rating a seat, since the row carries the viewer's own all match and
     -- the sheet carries the room's, also all match.
-    ratings = (ending or players) and {[0] = 1494, 1620, 1408, 1377,
-                                       1551, 1502, 1466, 1439}
+    ratings = (ending or players) and RATINGS_AT
               or watching and {}
               or {[0] = 1183.4, [1] = 1346.6},
     -- What the whistle latched, which the row and the sheet both subtract
     -- from the live figure to say what this match has been worth.
-    rated_from = (ending or players) and {[0] = 1500, 1611, 1413, 1382,
-                                          1542, 1497, 1461, 1440}
+    rated_from = (ending or players) and LATCHED_AT
                  or watching and {}
                  or {[0] = 1189.4, [1] = 1346.6},
     -- Somebody in the room without being in the match, whose row reads

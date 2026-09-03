@@ -9283,3 +9283,99 @@ and checks that a countdown appearing from nothing is not read as a match
 started over. `client/tools/hud_svg.lua` grew a `hold` scenario beside `turf`,
 and both render at 1280x800 and 390x844. Server suite, client suite, luacheck
 and clippy are clean.
+
+---
+
+## 166. The corner is a badge and a figure, and every mark wears its band
+
+**Status:** accepted, amending
+[decision 163](#163-the-row-is-one-line-at-one-size-and-it-carries-your-rating),
+which put the standing in the corner under a `RATING` caption with the match's
+movement in brackets after it
+
+**What:** the near end of the row is your standing and the pilot's badge, in
+the color of the band you are in. Nothing else stands there. The caption is
+deleted and so is the bracketed movement.
+
+Five bands, five colors, and they are the ones already in
+`server/src/rating.rs`: Newb in the mute this mark has always been drawn in,
+Wing green, Lead gold, Ace violet, Legend in the interface's own ink. Neither
+side's color is in the set, since cyan is yours and amber is theirs everywhere
+else up here and a badge in either would be read as a side. A pilot inside
+their first ten rated games has no band, so the badge takes the mute at a lower
+alpha and the figure goes to the mute with it, which is what the pilot's card
+already does with the word `placing`. A watcher gets none of it, and neither
+does a pilot who has not earned a rating, both as before.
+
+The badge is 14 points wide against the row's 13 point type, so the mark is
+seen first and the figure read second.
+
+The same color goes on every mark beside a name, wherever one is drawn: the
+plate hanging off a hull in the fight, and the players sheet's rows. Those were
+drawn in the side's color on a plate and in one flat mute in the sheet. The
+shape still says what is in the seat, wings for a pilot and a chip for a bot,
+and the color now says how good they are. On a plate that lifts the alpha a
+tenth, from 0.45 to 0.55: the ladder's floor is a mute where both sides'
+colors are bright, and at the old alpha the band most pilots are in would have
+come out fainter than the mark it replaced.
+
+**Why:** asked for, and the reasons are worth writing down because two of them
+were faults rather than tastes.
+
+The caption was a word that said nothing. `RATING` under a four-digit figure in
+a corner names a reading the reader has already made, and it was the first
+thing a narrow window dropped, which left a phone showing a bare number with
+nothing to say what kind of number it was. That is the opposite of what a
+caption is for.
+
+The bracket was worse, because it read differently by zone without saying so.
+Turf and Capture the Flag rate the whistle and not the wreck
+([decision 157](#157-a-flag-game-rates-the-whistle-and-not-the-wreck)), so in
+those zones the movement read `(0)` for the length of a match and then jumped.
+A figure that cannot change while it is on screen tells a reader nothing.
+What a death did to a rating is still said twice where it happens, on the
+wreck and at the end of the feed's line
+([decisions 152](#152-a-death-floats-what-it-did-to-your-rating) and
+[155](#155-a-kill-says-what-it-did-to-your-rating-and-a-pickup-wears-a-color)),
+and the players sheet still carries the movement in its column for the whole
+room
+([decision 164](#164-the-players-sheet-says-where-the-room-stands-all-match)).
+The corner said it a third time, in the one place it could be wrong.
+
+What replaces both is a mark rather than a word, and it says the thing a
+caption could not: which band the figure is in. That is the reading a number
+needs from somebody who has not memorized the ladder, it survives a narrow
+window because it is not made of type, and the mark itself is one a player has
+been reading all along beside every name in the room.
+
+Colorizing those other marks is the same argument taken to where the mark
+already was. A plate over a hull carried its side three times, in the name's
+color, in the hull under it and in the mark after the name, and a third reading
+of one fact is a color spent saying nothing; how good the pilot is was written
+nowhere in the world. The sheet's column gives the room's standings in figures,
+and the colored marks give the same reading down the list at a glance, which is
+most of what a room of strangers is opened for.
+
+**Cost:** the movement is no longer on the row at all, so a pilot who wants to
+know what this match has cost them reads it off the wreck as it happens or
+opens the players sheet. That is the trade decision 163 made in the other
+direction, and what changes it is that the figure it was drawing was a
+bracketed zero in two of the five zones.
+
+Five colors is also five things to learn, and nothing on the HUD teaches them.
+The pilot's card names the band in words beside the same figure, which is where
+the pairing is learned, and the ladder is coarse enough that most pilots see
+their own color change a handful of times ever.
+
+**Verified:** `band_test` holds the corner: the badge and the figure with no
+caption and no bracket, the badge in the band's color and the figure in the
+interface's ink, the badge first and both inside the near quarter of the
+window, a Legend drawn in the ink and a placing pilot drawn in the mute badge
+and figure both, a phone keeping both since there is nothing left to drop, and
+a watcher and an unrated pilot getting neither. `players_test` holds the sheet:
+every band in the room on a mark, the watcher's mark in the mute, and a room
+whose roster carries no bands drawing every mark in the mute; its counts of
+`RATING` and of the viewer's own movement drop from two to one, which is the
+corner's copy going. `client/tools/hud_svg.lua` draws the marks in their bands
+in every scenario, working the band out from each pilot's rating rather than
+writing it down beside it. Client suite and luacheck are clean.

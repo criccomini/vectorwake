@@ -283,23 +283,37 @@ then the whistle's exchange, which is on the roster before the sheet goes up.
 
 ## Where a rating is read
 
-Six surfaces. The four pages name a zone, because a rating with no zone on it
-reads as a career figure and there is no career figure; the other two are in a
-room, where a zone needs no naming because a room is in one.
+Seven surfaces. The four pages name a zone, because a rating with no zone on
+it reads as a career figure and there is no career figure; the other three are
+in a room, where a zone needs no naming because a room is in one.
 
 **The row across the top of the arena** carries the viewer's own standing for
 the whole match, at the near end of the row, the way the tile you are on
-stands at the far end over the dial. The figure is set in the interface's ink
-and what the match has done to it follows in brackets, green up and red down
-and mute where nothing has happened, which is the form the players sheet uses
-for the same pair. The movement is the live figure less what the whistle
-latched, subtracted on the client, so it is exact between two rated deaths
-without a byte on the wire.
+stands at the far end over the dial. It is the figure in the interface's ink
+and the pilot's badge beside it, in the color of the band the figure is in:
+the mute for a Newb, then green, gold, violet, and the ink itself for a
+Legend. A pilot still placing has no band, so the badge takes the mute at a
+lower alpha and the figure goes to the mute with it.
+
+There is no caption and no movement in brackets. A word naming the reading was
+the first thing a narrow window dropped, and the movement read a bracketed zero
+for the length of a match in the zones that rate the whistle. What a death did
+to a rating is said on the wreck and in the feed, and the players sheet carries
+the movement for the whole room.
 
 It is drawn for a pilot in a seat. A watcher is shown none, since the room is
 not moving theirs, and neither is a pilot who has no rating yet, which is a
 guest before their first rated death. See
-[decision 163](../architecture/decisions.md#163-the-row-is-one-line-at-one-size-and-it-carries-your-rating).
+[decision 163](../architecture/decisions.md#163-the-row-is-one-line-at-one-size-and-it-carries-your-rating)
+and
+[decision 166](../architecture/decisions.md#166-the-corner-is-a-badge-and-a-figure-and-every-mark-wears-its-band).
+
+**The mark beside a name** wears the same five colors, wherever one is drawn:
+on the plate hanging off a hull in the fight, and on every row of the players
+sheet. The shape says what is in the seat, wings for a pilot and a chip for a
+bot; the color says which band they are in. It is the sheet's `RATING` column
+read at a glance, and in the world it is the only place a stranger's standing
+is written at all.
 
 **The players sheet** says that pair for everybody in the room, in a `RATING`
 column: the standing, then the movement in brackets, as `1500 (-6)`. A signed

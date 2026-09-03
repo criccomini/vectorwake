@@ -1230,21 +1230,46 @@ end
 -- is worth saying.
 TOP.WARN = 30
 
--- Your own standing, at the left end of the row, and what this match has done
--- to it.
+-- How wide the badge in the near corner is drawn, in points.
+--
+-- A shade over the row's thirteen point type, which is what makes it the mark
+-- beside the figure rather than a note after it. The sheet draws the same
+-- wings at eleven, where they stand at the end of a call sign and must not
+-- out-read it; here there is no name to defer to and the mark is half of what
+-- the corner says. Eighteen was drawn too and stands taller than the row.
+TOP.MARK = 14
+
+-- Your own standing, at the left end of the row: a badge and a figure.
 --
 -- A rating is the one durable thing a pilot has and it moved all match with
 -- nowhere to watch it: the players sheet carries it at the whistle and the
 -- ending is where it was read, which is a figure you are told about after the
 -- fact. It stands in the near corner the way POS stands over the dial, at the
--- row's own size, and it says what the sheet says in the same words: the
--- standing in the interface's ink, because no rating is good or bad, and the
--- movement in brackets, green up, red down and mute where nothing happened.
+-- row's own size.
 --
--- Nothing for a watcher, whose rating this room is not moving, since a figure
--- under a caption reading RATING in that corner would be read as theirs.
--- Nothing either for a pilot who has no rating yet, which is a guest before
--- their first rated death.
+-- Two words stood beside it and both are gone. `RATING` named a reading the
+-- figure had already named, and a phone dropped it first, which left a phone
+-- showing a number with nothing to say what kind of number it was. The
+-- movement in brackets was the other, and in a flag game it read a bracketed
+-- zero for the length of a match, since those zones rate the whistle and not
+-- the wreck (decision 157): a figure that cannot change while it is on screen
+-- tells a reader nothing. What a death did to your rating is still said twice
+-- where it happens, on the wreck and at the end of the feed's line (decisions
+-- 152 and 155), and the players sheet still carries the movement in its
+-- column for the whole room.
+--
+-- The badge takes their place, in the band's own color: the same wings the
+-- sheet draws beside a human seat, drawn a shade over the row's type so the
+-- mark is seen first and the figure read second. It says which of the five
+-- bands the figure is in without spending a word on it, which is the reading a
+-- caption could not carry and a phone could not keep. `pal.tier` is where the
+-- five colors live and why they are those five.
+--
+-- A pilot inside their first ten rated games is placing: no band yet, so the
+-- badge is the floor's mute at a lower alpha and the figure is in the mute the
+-- pilot's own card gives it. Nothing at all for a watcher, whose rating this
+-- room is not moving, and nothing for a pilot who has no rating yet, which is
+-- a guest before their first rated death.
 --
 -- Answers where the row's left end is, which is what the band beside it grows
 -- toward: the readout's own right edge where there is one, and the window's
@@ -1254,30 +1279,21 @@ function TOP.rating(o, mid, px)
     local x = F.safe_l + PAD * F.scale
     local at = (not o.watch) and o.me and o.ratings and o.ratings[o.me]
     if not at then return x end
-    -- Rounded at each end rather than once at the difference, the way the
-    -- sheet rounds it: a movement worked out from the unrounded pair would be
-    -- a point off the two numbers it is there to explain.
-    local now = math.floor(at + 0.5)
-    local was = o.rated_from and o.rated_from[o.me]
-    local by = was and (now - math.floor(was + 0.5)) or 0
-    -- A match that moved nothing reads a bracketed zero, because "this one
-    -- has cost you nothing so far" is an answer and a blank is not. The form
-    -- is the sheet's exactly, down to the unsigned zero.
-    local moved = "(" .. (by > 0 and "+" or "") .. by .. ")"
-    -- The caption goes on a phone, the way the sides' names do out in the
-    -- middle: 390 points hold the way into the menu, a band and a dial a
-    -- third of the screen wide, and a word naming a reading is the first
-    -- thing to spend. The figures always draw.
-    if not M.compact then
-        txt("RATING", x, mid, px, pal.a(pal.DIM, 0.8))
-        x = x + text_w("RATING ", px)
-    end
-    txt(tostring(now), x, mid, px, pal.a(pal.INK, 0.9))
-    x = x + text_w(now .. " ", px)
-    txt(moved, x, mid, px,
-        pal.a(by > 0 and pal.PAID or by < 0 and pal.HURT or pal.MUTE,
-              by == 0 and 0.8 or 0.95))
-    return x + text_w(moved, px)
+    local tier = (o.pilots and o.pilots[o.me] or {}).tier
+    local placing = tier == "placing" or tier == nil
+    -- The mark is laid out on its own width, which `pilot_mark` cuts the
+    -- feathers to exactly, so it is handed the middle of that span rather
+    -- than its left edge.
+    local k = TOP.MARK * F.scale
+    pilot_mark(x + k / 2, mid, pal.a(pal.tier(tier), placing and 0.55 or 0.95),
+               k)
+    x = x + k + 6 * F.scale
+    -- Rounded here rather than left as the server sent it, the way the sheet
+    -- and the pilot's card round it: one figure in three places, or it is
+    -- three readings of one number.
+    local now = tostring(math.floor(at + 0.5))
+    txt(now, x, mid, px, pal.a(placing and pal.MUTE or pal.INK, 0.9))
+    return x + text_w(now, px)
 end
 
 -- Both instruments this corner holds, since they are the same corner and one
@@ -1754,6 +1770,15 @@ local function nameplates(o)
                     -- looking at the ship rather than at a panel. Dim and
                     -- after the name, so it reads as a note about the label
                     -- and never competes with the name it follows.
+                    --
+                    -- In the band's color rather than the side's, which is
+                    -- the one thing this mark can say that the name beside it
+                    -- cannot: the plate already carries the side twice over,
+                    -- in the name's color and in the hull under it, and a
+                    -- third reading of the same fact is a color spent saying
+                    -- nothing. How good they are is not written anywhere else
+                    -- in the world, and it is what the decision this plate is
+                    -- read for turns on.
                     if p then
                         -- A mark set four points off the last letter reads as
                         -- the end of the name rather than as a thing beside
@@ -1761,12 +1786,19 @@ local function nameplates(o)
                         -- somebody will end in a bracket or a dot.
                         local mx = sx + 12 * F.scale
                             + text_w(nm, 11 * F.scale) + 9 * F.scale
+                        -- A tenth up on the alpha the side's color was drawn
+                        -- at, because the ladder's floor is a mute and both
+                        -- sides' colors are bright: at 0.45 the band most
+                        -- pilots are in would have read fainter than the mark
+                        -- it replaced, which is a change nobody asked for.
+                        -- Still well under the name it follows.
+                        local band = pal.a(pal.tier(p.tier), 0.55)
                         if p.ai then
-                            bot_mark(mx, sy + 13 * F.scale,
-                                     pal.a(col, 0.45), 10 * F.scale)
+                            bot_mark(mx, sy + 13 * F.scale, band,
+                                     10 * F.scale)
                         else
                             pilot_mark(mx + 5 * F.scale, sy + 13 * F.scale,
-                                       pal.a(col, 0.45), 10 * F.scale)
+                                       band, 10 * F.scale)
                         end
                     end
                 end
@@ -1954,6 +1986,10 @@ local function refresh_players(pilots, watchers, side, viewer_name)
             -- What the zone is willing to say this seat is, which is a stronger
             -- statement than "AI" and is what the counts below are made of.
             r.label = (p and p.label) or "unknown"
+            -- The band the roster has them in, which is the color their mark
+            -- wears. Kept on the row for the same reason the side is: the
+            -- drawing wants it, and the roster is where it is answered.
+            r.tier = p and p.tier or nil
             -- Kept on the row, because the drawing wants it too: reading the
             -- simulation again at draw time painted every out-of-sight name in
             -- team zero's color, one shared violet that reshuffled as pilots
@@ -1979,6 +2015,10 @@ local function refresh_players(pilots, watchers, side, viewer_name)
         r.lname = string.lower(r.name)
         r.ai = w.label == "bot" or w.label == "bot?"
         r.label = w.label
+        -- A watcher is in the room without being in the match, so the room
+        -- knows no band for them and their mark takes the mute the whole
+        -- column used to wear.
+        r.tier = nil
         r.mine = false
         r.self = viewer_name ~= nil and r.name == viewer_name
         r.watch = true
@@ -6075,10 +6115,16 @@ local function sheet_row(kx, kw, y, h, r, cols, i)
     -- figures.
     local mark_x = tx + text_w(r.name, TYPE.ROW * F.scale, MENU_FONT, true)
         + 6 * F.scale
+    -- In the band's color, the same five the corner's badge wears, so one
+    -- mark answers two questions at once: what is in the seat, by its shape,
+    -- and how good they are, by its color. The column beside it says where
+    -- the ladder has everybody in figures; this says it down the list at a
+    -- glance, which is what a room of strangers is read for.
+    local band = pal.a(pal.tier(r.tier), 0.85)
     if r.ai then
-        bot_mark(mark_x, mid, pal.a(pal.MUTE, 0.85), 11 * F.scale)
+        bot_mark(mark_x, mid, band, 11 * F.scale)
     else
-        pilot_mark(mark_x, mid, pal.a(pal.MUTE, 0.85), 11 * F.scale)
+        pilot_mark(mark_x, mid, band, 11 * F.scale)
     end
     F.clip_r = kept
     -- The figures, in the face every number in this game is set in.

@@ -36,10 +36,21 @@ end
 -- that geometry was emitted, never what it looked like.
 local layer = {n = 0}
 local function noop(self) self.n = self.n + 1 end
-for _, name in ipairs({"arc", "disc", "flush", "frame", "halo", "outline", "quad", "rect",
-                       "reset", "ring", "seg", "seg_fade", "seg_flat",
+for _, name in ipairs({"arc", "disc", "flush", "frame", "halo", "outline",
+                       "rect", "reset", "ring", "seg", "seg_fade", "seg_flat",
                        "skirt", "tri", "tri_fade"}) do
     layer[name] = noop
+end
+
+-- Quads are kept with their color, because the mark riding after a name is
+-- the one thing on a row that is not a word: wings for a pilot, a chip for a
+-- bot, and the band its owner is in as the color both are drawn in. What the
+-- shape says is tested by counting the two kinds; what the color says needs
+-- the color.
+local quads = {}
+layer.quad = function(self, x1, y1, _, _, _, _, _, _, col)
+    self.n = self.n + 1
+    quads[#quads + 1] = {x = x1, y = y1, col = col}
 end
 
 -- Rectangles are kept as well as counted, because one question here is
@@ -124,6 +135,9 @@ package.loaded["arena.world"] = {
 }
 
 local ui = require("arena.ui")
+-- For the bands: the five colors a mark can wear are the palette's, and a
+-- check that spelled them out again would pass while the interface changed.
+local pal = require("arena.palette")
 
 -- --- the harness -----------------------------------------------------------
 
@@ -136,6 +150,7 @@ local function frame(o)
     o = o or {}
     rects = {}
     segs = {}
+    quads = {}
     package.loaded["arena.state"].n = 0
     ui.begin(layer, o.w or W, o.h or H, 1, false, o.now)
     ui.hud({
@@ -146,11 +161,16 @@ local function frame(o)
         class_names = {"Apex", "Wedge", "Chord", "Anvil", "Facet", "Cipher",
                        "Lattice"},
         menu_open = o.menu_open or false,
+        -- Each with the band the roster has them in, since the mark beside
+        -- a name wears the band's color and the roster is where a band is
+        -- answered. Four different ones, so a check can tell them apart.
         pilots = o.pilots or {
-            [0] = {name = "you", label = "human"},
-            [1] = {name = "Kestrel", label = "human"},
-            [2] = {name = "Plinth", label = "bot", ai = true, house = true},
-            [3] = {name = "Vesper", label = "bot", ai = true, house = true},
+            [0] = {name = "you", label = "human", tier = "Lead"},
+            [1] = {name = "Kestrel", label = "human", tier = "Legend"},
+            [2] = {name = "Plinth", label = "bot", ai = true, house = true,
+                   tier = "Wing"},
+            [3] = {name = "Vesper", label = "bot", ai = true, house = true,
+                   tier = "Ace"},
         },
         ratings = o.ratings,
         rated_from = o.rated_from,
@@ -516,16 +536,16 @@ ui.col_pilot = nil
 -- row for the whole match on exactly the opposite argument. It reads all
 -- match now, for everybody in the room. See decision 164.
 --
--- Two of the caption on a monitor, because the band's copy is on screen as
--- well: the sheet's is the column's heading, and a check that finds one
--- string cannot tell them apart.
+-- One of the caption, whatever the window is. The band's corner carried a
+-- second copy until decision 166 put the badge there instead, so the only
+-- RATING on screen now is this column's own heading.
 
 local STANDINGS = {[0] = 1500, [1] = 1620, [2] = 1400, [3] = 1310}
 local LATCHED = {[0] = 1506, [1] = 1611, [2] = 1400, [3] = 1315}
 
 sheet({ratings = STANDINGS, rated_from = LATCHED})
 check("the column reads while the match is still being flown",
-      exactly("RATING") == 2, table.concat(words(), " | "))
+      exactly("RATING") == 1, table.concat(words(), " | "))
 check("with every seat's standing in it",
       counted("1620") == 1 and counted("1400") == 1 and counted("1310") == 1,
       table.concat(words(), " | "))
@@ -541,6 +561,47 @@ sheet({w = 390, h = 844, ratings = STANDINGS, rated_from = LATCHED})
 check("a phone keeps the column too",
       exactly("RATING") == 1 and counted("1620") == 1 and counted("(+9)") == 1,
       table.concat(words(), " | "))
+
+-- --- and the mark beside a name wears the band -----------------------------
+--
+-- The shape says what is in the seat and the color says how good they are,
+-- which is the badge the corner of the row wears (decision 166) said again
+-- for everybody in the room. A list of strangers is opened to find out who
+-- you are up against, and this is that reading at a glance, beside the
+-- column that gives it in figures.
+--
+-- Every mark is mesh, so these are counted by color rather than read. A
+-- watcher keeps the mute the whole column used to wear: the room is not in
+-- the business of banding somebody who is not in the match.
+
+local function wearing(col)
+    local n = 0
+    for _, q in ipairs(quads) do
+        if q.col[1] == col[1] and q.col[2] == col[2] and q.col[3] == col[3]
+        then
+            n = n + 1
+        end
+    end
+    return n
+end
+
+sheet({ratings = STANDINGS, rated_from = LATCHED})
+check("every band in the room is on a mark",
+      wearing(pal.CHARGE_COL) > 0 and wearing(pal.INK) > 0
+          and wearing(pal.GREEN) > 0 and wearing(pal.BURST) > 0,
+      "a band went missing from the list")
+check("and the watcher, who has no band, keeps the mute",
+      wearing(pal.MUTE) > 0, "no muted mark for the watcher")
+
+-- A room the roster has not answered for yet draws every mark in the mute,
+-- which is what this column looked like before the color said anything.
+sheet({ratings = STANDINGS, rated_from = LATCHED,
+       pilots = {[0] = {name = "you", label = "human"},
+                 [1] = {name = "Kestrel", label = "human"}}})
+check("a room with no bands draws every mark in the mute",
+      wearing(pal.MUTE) > 0 and wearing(pal.CHARGE_COL) == 0
+          and wearing(pal.INK) == 0,
+      "a band was claimed for a seat that has none")
 
 -- A room whose standings have not arrived draws no column at all, rather than
 -- a column of empty brackets: `rating_moves` answers nothing where it found
@@ -568,16 +629,19 @@ check("a seat whose standing has not arrived reads nothing, not a zero",
 local ENDED = {playing = false, left = 18, score = {[0] = 4, [1] = 7}}
 sheet({match = ENDED, ratings = STANDINGS, rated_from = LATCHED})
 check("the whistle raises a sheet that already had the column",
-      exactly("RATING") == 2, table.concat(words(), " | "))
--- Once each, except your own, which the band on the row above has carried
+      exactly("RATING") == 1, table.concat(words(), " | "))
+-- Once each, except your own, which the corner of the row above has carried
 -- all match and the column says again for the room. Two of a figure is what
--- the readout up there is: a standing you can watch while you fly, in the
--- same words the sheet uses. See decision 163.
+-- the readout up there is: a standing you can watch while you fly, beside the
+-- badge saying which band it is in. See decisions 163 and 166.
 check("and the column carries the standing itself",
       counted("1500") == 2 and counted("1620") == 1,
       table.concat(words(), " | "))
+-- The movement is the column's alone. The corner drew it too until decision
+-- 166 took the bracket off the row, where in a flag game it stood at zero for
+-- the length of a match.
 check("with what the match paid in brackets after it, either way",
-      counted("(-6)") == 2 and counted("(+9)") == 1,
+      counted("(-6)") == 1 and counted("(+9)") == 1,
       table.concat(words(), " | "))
 -- The two are different kinds of fact and are set in different ink: a
 -- standing is a reading like the three figures beside it, and no rating is

@@ -36,10 +36,20 @@ local rects = {}
 local layer = {n = 0}
 local function noop(self) self.n = self.n + 1 end
 for _, name in ipairs({"arc", "arc_aa", "arc_fade", "bloom", "flush", "halo",
-                       "outline", "quad", "reset", "ring", "ring_aa",
+                       "outline", "reset", "ring", "ring_aa",
                        "ring_fade", "seg", "seg_fade", "seg_flat",
                        "skirt", "tri", "tri_fade"}) do
     layer[name] = noop
+end
+
+-- Quads are kept with the color they were drawn in, because the badge in the
+-- near corner is the one reading on this row that is not a word: it is the
+-- pilot's wings, and which of the five bands its pilot is in is the color it
+-- wears. A check that only counted them could not tell a Legend from a Newb.
+local quads = {}
+layer.quad = function(self, x1, y1, _, _, _, _, _, _, col)
+    self.n = self.n + 1
+    quads[#quads + 1] = {x = x1, y = y1, col = col}
 end
 
 -- Outlines were measured here for a while: a hard-edged rect thinner than a
@@ -135,11 +145,13 @@ local state = package.loaded["arena.state"]
 
 local W, H = 1280, 800
 local NAMES = {[0] = "Pylon", [1] = "Caisson"}
+-- Each with the band the roster has them in, since the mark beside a name
+-- wears the band's color now and the roster is where that is answered.
 local PILOTS = {
-    [0] = {name = "you", label = "human"},
-    [1] = {name = "Mantis 7", label = "bot", ai = true},
-    [2] = {name = "Vireo 9", label = "human"},
-    [3] = {name = "Sable 09", label = "bot", ai = true},
+    [0] = {name = "you", label = "human", tier = "Lead"},
+    [1] = {name = "Mantis 7", label = "bot", ai = true, tier = "Ace"},
+    [2] = {name = "Vireo 9", label = "human", tier = "Newb"},
+    [3] = {name = "Sable 09", label = "bot", ai = true, tier = "placing"},
 }
 
 local w_now, h_now = W, H
@@ -156,6 +168,7 @@ local function frame(o)
     w_now, h_now = o.w or W, o.h or H
     rects = {}
     marks = {}
+    quads = {}
     flags = o.flags or {}
     state.n = 0
     ui.begin(layer, w_now, h_now, 1, false, o.now)
@@ -317,73 +330,111 @@ end
 -- was nowhere to watch it: the sheet carries it at the whistle and the ending
 -- is where it was read, which is a figure you are told about after the fact.
 -- It stands in the near corner now, the way POS stands over the dial at the
--- far one, and it says what the sheet says in the same words.
+-- far one, as a badge and a figure and nothing else.
+--
+-- The two words that used to stand there are gone. `RATING` named a reading
+-- the figure had already named and a phone dropped it first, and the movement
+-- in brackets read a bracketed zero for the length of a match in the zones
+-- that rate the whistle. The badge says what neither could: which of the five
+-- bands the figure is in, in the band's own color. See decision 166.
+
+-- The badge is mesh rather than type, so it is found where it stands: inside
+-- the near margin, on the row's own line. Mesh y is measured off the bottom of
+-- the window, which is what `h_now -` undoes here. Nothing else on the frame
+-- draws a quad in that corner, the plates hanging off the hulls being out in
+-- the middle where their ships are.
+local function badge()
+    for _, q in ipairs(quads) do
+        if q.x < W / 4 and h_now - q.y < 50 then return q end
+    end
+    return nil
+end
 
 frame()
 do
-    local caption, standing, moved = drawn("RATING"), drawn("1494"), drawn("(-6)")
+    local standing, mark = drawn("1494"), badge()
     check("the row carries your own standing",
-          caption ~= nil and standing ~= nil and moved ~= nil,
+          standing ~= nil and mark ~= nil,
           table.concat(words(), " | "))
-    if caption and standing and moved and clock then
+    check("and no caption or bracket beside it",
+          drawn("RATING") == nil and drawn("(-6)") == nil,
+          table.concat(words(), " | "))
+    if standing and mark and clock then
         check("on the row's own line",
-              math.abs(standing.y - clock.y) < 0.5
-                  and math.abs(moved.y - clock.y) < 0.5
-                  and math.abs(caption.y - clock.y) < 0.5,
-              string.format("%.1f %.1f %.1f against %.1f", caption.y,
-                            standing.y, moved.y, clock.y))
+              math.abs(standing.y - clock.y) < 0.5,
+              string.format("%.1f against %.1f", standing.y, clock.y))
         check("and at the row's own size",
-              math.abs(standing.px - clock.px) < 0.5
-                  and math.abs(moved.px - clock.px) < 0.5,
-              string.format("%.0f %.0f against %.0f", standing.px, moved.px,
-                            clock.px))
-        -- Reading order, in the near corner and nowhere near the middle.
-        check("in the corner, the caption first",
-              caption.x < standing.x and standing.x < moved.x
-                  and moved.x < W / 4,
-              string.format("%.0f %.0f %.0f", caption.x, standing.x, moved.x))
-        -- The standing is a reading and no rating is good or bad, so only the
-        -- movement takes a color. Six points down, so this one is the hurt.
-        check("with the movement colored and the standing not",
-              moved.col[1] == pal.HURT[1] and standing.col[1] == pal.INK[1],
-              "the pair is in one ink")
+              math.abs(standing.px - clock.px) < 0.5,
+              string.format("%.0f against %.0f", standing.px, clock.px))
+        -- Reading order, in the near corner and nowhere near the middle: the
+        -- mark first, then the figure it is about.
+        check("in the corner, the badge first",
+              mark.x < standing.x and standing.x < W / 4,
+              string.format("%.0f %.0f", mark.x, standing.x))
+        -- The figure is a reading and no rating is good or bad, so it is the
+        -- interface's ink. What carries the band is the badge: this pilot is a
+        -- Lead, which is the gold.
+        check("the badge wears the band's color and the figure does not",
+              mark.col[1] == pal.CHARGE_COL[1]
+                  and mark.col[2] == pal.CHARGE_COL[2]
+                  and standing.col[1] == pal.INK[1],
+              "the badge and the figure are in one ink")
     end
     -- And the band stops short of it, the way it stops short of the dial's
     -- strip at the other end. The row has an instrument at each end now and
     -- the band grows between them.
     local press = box("players_open")
-    if press and moved then
+    if press and standing then
         check("and the band starts clear of it",
-              press.x > moved.x, string.format("band at %.0f, standing ends "
-                                               .. "somewhere past %.0f",
-                                               press.x, moved.x))
+              press.x > standing.x, string.format("band at %.0f, standing "
+                                                  .. "ends somewhere past "
+                                                  .. "%.0f", press.x,
+                                                  standing.x))
     end
 end
 
--- A match that has moved nothing reads a bracketed zero, because "this one
--- has cost you nothing so far" is an answer and a blank is not.
-frame({ratings = {[0] = 1494}, rated_from = {[0] = 1494}})
-check("a standing that has not moved says so", drawn("(0)") ~= nil,
-      table.concat(words(), " | "))
+-- Another band, another color, and the figure never moves: the corner says
+-- where a pilot stands twice over, once as a number anybody can compare and
+-- once as a color read at a glance.
+frame({pilots = {[0] = {name = "you", label = "human", tier = "Legend"}}})
+do
+    local mark = badge()
+    check("a Legend's badge is the interface's own ink",
+          mark ~= nil and mark.col[1] == pal.INK[1]
+              and mark.col[2] == pal.INK[2],
+          "no badge in the corner")
+end
 
--- A phone spends the caption, the way the middle of the row spends the sides'
--- names. The figures always draw: they are the reading.
+-- A pilot inside their first ten rated games has no band, so the badge takes
+-- the floor's mute and the figure goes to the mute with it. The card says
+-- `placing` in words; the corner says it by not claiming a band.
+frame({pilots = {[0] = {name = "you", label = "human", tier = "placing"}}})
+do
+    local mark, standing = badge(), drawn("1494")
+    check("a placing pilot is drawn in the mute, badge and figure both",
+          mark ~= nil and standing ~= nil
+              and mark.col[1] == pal.MUTE[1]
+              and standing.col[1] == pal.MUTE[1],
+          "the corner claimed a band for a pilot who has none")
+end
+
+-- A phone keeps both. There is nothing left up here to spend: what a phone
+-- used to drop was the caption, and the caption is what the badge replaced.
 frame({w = 390, h = 844})
-check("a phone keeps the figures and drops the caption",
-      drawn("1494") ~= nil and drawn("(-6)") ~= nil and drawn("RATING") == nil,
+check("a phone keeps the badge and the figure",
+      drawn("1494") ~= nil and badge() ~= nil and drawn("RATING") == nil,
       table.concat(words(), " | "))
 
--- Nothing for a watcher, whose rating this room is not moving: a figure under
--- a caption reading RATING in that corner would be read as theirs. Nothing
--- either for a pilot who has no rating yet, which is a guest before their
--- first rated death.
+-- Nothing for a watcher, whose rating this room is not moving: a badge and a
+-- figure in that corner would be read as theirs. Nothing either for a pilot
+-- who has no rating yet, which is a guest before their first rated death.
 frame({watch = true})
 check("a watcher is shown no standing at all",
-      drawn("RATING") == nil and drawn("1494") == nil,
+      drawn("1494") == nil and badge() == nil,
       table.concat(words(), " | "))
 frame({ratings = false})
 check("and neither is a pilot who has not earned one",
-      drawn("RATING") == nil and drawn("(0)") == nil,
+      drawn("1494") == nil and badge() == nil,
       table.concat(words(), " | "))
 
 -- --- the clock says how long is left, and then that it is nearly gone ------

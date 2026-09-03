@@ -401,4 +401,42 @@ function M.rung(lvl)
     return M.RUNG[math.max(1, math.min(lvl + 1, #M.RUNG))]
 end
 
+-- A color a tier, for the badge every name wears.
+--
+-- The five bands are the server's, in `server/src/rating.rs`, and the client
+-- names them in `arena/net.lua`. What this adds is the reading: a badge in
+-- one of these says which band its pilot is in without a word beside it,
+-- which is what a mark in a corner can do and a caption cannot.
+--
+-- Neither side's color is in the set. Cyan is yours and amber is theirs
+-- everywhere on this HUD, and a badge in either would be read as a side by
+-- a player who has been reading those two colors all match.
+--
+-- The bottom band is the mute the sheet has always drawn this mark in, so a
+-- new pilot's badge is the badge as it was, and nobody is colored for being
+-- new. The top is the interface's own ink, the one color up here that is not
+-- a color: a Legend's badge is the brightest thing in the corner and it gets
+-- there by having no hue at all, which leaves green, gold and violet for the
+-- three bands in between, far enough apart to be called at a glance.
+--
+-- `placing` is what a pilot reads for their first ten rated games and it has
+-- no band behind it, so it takes the same mute as the floor. What separates
+-- them is the alpha the corner draws it at, not the hue: the band is unknown
+-- rather than low, and a color that guessed at it would be a lie in five
+-- ways.
+M.TIER = {
+    Newb = M.MUTE,
+    Wing = M.GREEN,
+    Lead = M.CHARGE_COL,
+    Ace = M.BURST,
+    Legend = M.INK,
+}
+
+-- The color of a badge worn by a pilot in that band, by the name `net.tier`
+-- answers. Always answers: an unrated seat, a watcher and a pilot still
+-- placing all take the mute, which is where this mark started.
+function M.tier(name)
+    return M.TIER[name] or M.MUTE
+end
+
 return M

@@ -12,7 +12,14 @@ did to the rating is still said where it happens, on the wreck and at the
 end of the feed's line (decisions 152 and 155), and the players sheet still
 carries the movement in its column. The corner says where you stand and, as
 a color, what band that is, which is one mark beside one figure and reads
-the same on a phone. Nothing here is built.
+the same on a phone.
+
+That is built, as
+[decision 166](../../docs/architecture/decisions.md#166-the-corner-is-a-badge-and-a-figure-and-every-mark-wears-its-band),
+which took the color to the marks beside every name as well: the plate
+hanging off a hull and the players sheet's rows, where the shape says what is
+in the seat and the color now says how good they are. The first ladder below
+is the one that shipped.
 
 - **Five colors for five bands**, none of them a side's: cyan is yours and
   amber is theirs everywhere on the HUD. The bottom band is the mute the
@@ -40,7 +47,14 @@ to the 1228 in Chris's screenshot.
 
 `Main.dc.html` is the sheet. The boards beside it are the corner on a
 monitor in Team Battle, Turf and for a Legend, on a phone in Team Battle
-and Turf, and the shipped corner on a monitor for the comparison.
+and Turf, and the corner as it stood before this on a monitor for the
+comparison.
+
+The Turf boards here draw a score and a match clock, which is the row that
+zone had when these were drawn. Decision 165 landed the same week and took
+both away: a flag game is won by holding every flag, so the middle of its
+row is the pennants and the countdown alone. What the boards are about, the
+near corner, is unaffected.
 
 Rebuild with `python3 build.py`; the seven `.dc.html` files and
 `canvas.json` beside them are what the design canvas is seeded from.
