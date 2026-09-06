@@ -360,20 +360,13 @@ local assets = {
      page:match('rel="apple%-touch%-icon" '
                 .. 'href="data:image/png;base64,([^"]+)"'),
      read_file("client/web/apple-touch-icon.png")},
-    {"the manifest embeds its 192 px icon",
-     page:match('var ICON192 = "data:image/png;base64,([^"]+)"'),
-     read_file("client/web/icon-192.png")},
-    {"the manifest embeds its 512 px icon",
-     page:match('var ICON512 = "data:image/png;base64,([^"]+)"'),
-     read_file("client/web/icon-512.png")},
+
 }
 for _, asset in ipairs(assets) do
     local name, encoded, source = asset[1], asset[2], asset[3]
     check(name, encoded and unb64(encoded) == source,
           encoded and "embedded bytes differ" or "data URI missing")
 end
-check("the web manifest lists both install icons",
-      has(page, "{src: ICON192") and has(page, "{src: ICON512"))
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

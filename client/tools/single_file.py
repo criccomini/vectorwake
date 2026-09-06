@@ -5,9 +5,9 @@ Defold ships a directory: an index, a loader, an engine .js, a .wasm, and a
 split game archive, all fetched over HTTP at startup. That is the right shape
 for a web server and the wrong shape for handing somebody a build to try.
 
-This inlines the lot into a single .html with no network requests at all --
-not to a CDN, not to its own origin. It works from a static host, from a
-strict content-security-policy, and from a file:// URL.
+Runtime assets are embedded in the HTML. Full documents also copy their
+install manifest and icons beside the output; --fragment omits those files.
+The game still needs network access to its directory and arena servers.
 
     ./client/tools/single_file.py client/bundle/wasm-web/vectorwake out.html
 
@@ -22,6 +22,7 @@ import base64
 import json
 import os
 import re
+import shutil
 import sys
 
 # Everything the loader asks for, by basename. The pthread pair is deliberately
@@ -599,6 +600,13 @@ def to_fragment(html, title):
             + "\n".join(scripts) + body.group(1))
 
 
+def copy_web_manifest(destination):
+    """Publish the install metadata from the same sources as the game shell."""
+    web = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web")
+    for name in ("manifest.webmanifest", "icon-192.png", "icon-512.png"):
+        shutil.copyfile(os.path.join(web, name), os.path.join(destination, name))
+
+
 def main():
     if len(sys.argv) < 3:
         sys.exit(__doc__)
@@ -647,6 +655,8 @@ def main():
 
     if fragment:
         html = to_fragment(html, "vectorwake")
+    else:
+        copy_web_manifest(os.path.dirname(os.path.abspath(out)))
 
     with open(out, "w") as f:
         f.write(html)

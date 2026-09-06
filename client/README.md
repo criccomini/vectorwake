@@ -23,9 +23,10 @@ nothing in a browser. To get something playable:
 ./client/tools/single_file.py client/bundle/wasm-web/vectorwake play.html
 ```
 
-`single_file.py` folds the engine, the archive and the loader into one HTML
-with no network requests, so it runs from a static host, under a strict CSP,
-or straight off a disk.
+`single_file.py` folds the engine, archive, and loader into one HTML file.
+It also copies `manifest.webmanifest`, `icon-192.png`, and `icon-512.png` beside
+the output for browser installation and VectorBox discovery. Serve those files
+alongside the page. The game connects to its directory and arena servers.
 
 `--fragment` drops the document shell for hosts that supply their own, which
 takes Defold's `<meta name="viewport">` with it -- so the fragment puts one

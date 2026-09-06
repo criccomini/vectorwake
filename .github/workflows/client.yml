@@ -82,6 +82,9 @@ jobs:
       - name: client tests
         run: for t in client/tests/*_test.lua; do echo "== $t"; lua5.1 "$t" || exit 1; done
 
+      - name: web manifest packaging
+        run: python3 -m unittest discover -s client/tests -p "*_test.py"
+
       - name: browser page tests
         run: for t in client/tests/*_test.js; do echo "== $t"; node "$t" || exit 1; done
 
@@ -186,7 +189,9 @@ jobs:
       # harness whose watchers have quietly stopped watching reports green.
       # Needs no browser and no stage, so it runs first and fails in a second.
       - name: the harness watches
-        run: node harness/test/oracles_test.mjs
+        run: |
+          node harness/test/oracles_test.mjs
+          node harness/test/stage_test.mjs
 
       # Four windows: desktop, a short desktop where the landing lies down into
       # its rail, and a phone in both orientations. A shorter flight than a
@@ -251,7 +256,7 @@ jobs:
       # page in quirks mode with no title and no icon, leaning on injected
       # scripts for the viewport meta the head would have carried. Prod serves
       # this file as the page, so it gets the real head.
-      - name: fold it into one file
+      - name: package the page and install metadata
         run: |
           mkdir -p page
           python3 client/tools/single_file.py \
@@ -273,7 +278,7 @@ jobs:
         with:
           # The built page alone is the context. Pointing this at the repository
           # would ship the whole tree, including the unpacked bundle, to build a
-          # layer that holds one file.
+          # layer that holds the page, manifest, and icons.
           context: page
           file: ./deploy/Dockerfile.client
           push: ${{ github.event_name != 'pull_request' }}

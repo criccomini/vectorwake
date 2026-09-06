@@ -1,0 +1,41 @@
+{
+  "id": "/",
+  "name": "Vectorwake",
+  "short_name": "Vectorwake",
+  "description": "Live multiplayer space combat. Fly, fight, and capture flags in shared arenas.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#05070d",
+  "theme_color": "#05070d",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "vectorbox": {
+    "schema_version": "0.1",
+    "artwork": { "hero": "https://vectorwake.net/share-card.png" },
+    "players": { "local_min": 1, "local_max": 1, "online": true },
+    "input": { "gamepad": true, "keyboard": true, "touch": true },
+    "capabilities": ["webgl", "webaudio", "websocket", "webtransport", "fullscreen"],
+    "network": "required",
+    "permissions": {
+      "network_origins": [
+        "wss://dfw-a1.vectorwake.net",
+        "https://dfw-a1.vectorwake.net:9443",
+        "https://dfw-a1.vectorwake.net:9444",
+        "https://dfw-a1.vectorwake.net:9445",
+        "https://dfw-a1.vectorwake.net:9446",
+        "https://dfw-a1.vectorwake.net:9447"
+      ],
+      "persistent_storage": true
+    },
+    "offline": "unsupported",
+    "content": {
+      "violence": "Fantasy space combat",
+      "user_interaction": "Online multiplayer"
+    },
+    "ratings": [],
+    "support_url": "https://vectorwake.net/support.html"
+  }
+}

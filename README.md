@@ -62,7 +62,7 @@ python3 client/tools/single_file.py \
   client/bundle/wasm-web/vectorwake vectorwake.html
 ```
 
-The result is one self-contained HTML file. By default it opens the official games directory. CI builds and publishes the production page whenever `client/` or `sim/` changes; generated bundles are not committed.
+The result is an HTML file with embedded runtime assets, plus an install manifest and two icons to serve beside it. By default it opens the official games directory. CI builds and publishes the production page on every push to `main`; generated bundles are not committed.
 
 ## Repository guide
 

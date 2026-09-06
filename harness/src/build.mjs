@@ -106,13 +106,16 @@ export async function buildPage (directoryUrl, opts = {}) {
 // conservative: it looks at the trees rather than at the dependency graph, so
 // it rebuilds a little more often than it strictly must.
 function fresh (page) {
+  for (const name of ['manifest.webmanifest', 'icon-192.png', 'icon-512.png']) {
+    if (!existsSync(path.join(path.dirname(page), name))) return false
+  }
   const built = statSync(page).mtimeMs
   // `client/ext` is the native extension, and it was missing from this list.
   // It is the one source here that is not Lua: it wraps the simulation core
   // for the client and compiles a boot's worth of sound, so a run against a
   // stale bundle would be a run against a different game than the tree says.
   const watched = ['client/arena', 'client/ext', 'client/render', 'client/ui',
-    'client/main', 'client/web', 'client/game.project', 'client/build.sh',
+    'client/main', 'client/web', 'client/tools/single_file.py', 'client/game.project', 'client/build.sh',
     'sim/src', 'sim/include']
   for (const rel of watched) {
     const full = path.join(ROOT, rel)

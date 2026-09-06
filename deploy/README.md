@@ -176,6 +176,26 @@ psql "$(./deploy/fleet.sh db --url)" \
 
 The script prints the account and any registered bot accounts, then requires the word `DELETE`. It removes credentials, names, ratings, career totals, and linked pilot activity. Rated match rows remain because they are the audit trail behind other pilots' ratings; without the deleted account row, their internal number no longer resolves to a call sign or credential.
 
+## VectorBox
+
+The game publishes its Web App Manifest at
+<https://play.vectorwake.net/manifest.webmanifest>. Add that URL in VectorBox's
+**Library → Add game**. The play page also advertises it with `rel="manifest"`.
+Use the manifest URL directly while VectorBox's website discovery is limited
+to 1 MiB; the game page is larger because it embeds the engine and archive.
+
+The source is [`client/web/manifest.webmanifest`](../client/web/manifest.webmanifest).
+Standard fields describe the app. The `vectorbox` extension declares gamepad
+support, one local player, online play, persistent storage, and the current
+arena network origins. The launch origin already permits `/dir` and `/meta`.
+Update the additional origins when arena hosts or WebTransport ports change.
+The manifest uses the existing public share card for launcher artwork and
+does not claim an official age rating.
+
+Both the raw web bundle and `single_file.py` publish the manifest and icons.
+CI packages those files with the page. The client container copies the icons,
+manifest, and page into Caddy's volume, using an atomic rename for each file.
+
 ## Releases and updates
 
 Pushes to `main` build both server and client images in [GitHub Actions](../.github/workflows/). Each uses the same immutable `sha-<commit>` tag. The moving `prod` tags remain useful for local and manual work, but production does not follow them.

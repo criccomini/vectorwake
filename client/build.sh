@@ -97,3 +97,9 @@ fi
 # failures, which is the half that did not matter. `set -e` carries the exit
 # status out of here unchanged.
 "$JAVA" -jar "$BOB" "$@" resolve build "$TASK"
+
+
+# The unpacked browser bundle needs the same install metadata as production.
+if [ "$PLATFORM" = "wasm-web" ] && [ "$TASK" = "bundle" ]; then
+  cp web/manifest.webmanifest web/icon-192.png web/icon-512.png bundle/wasm-web/vectorwake/
+fi

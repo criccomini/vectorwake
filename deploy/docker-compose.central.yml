@@ -61,14 +61,18 @@ services:
       - ALL
     volumes:
       - client-page:/srv/play
-    # Named literally, with no shell variables. Compose escapes `$` as `$$` and
-    # `docker compose config` re-escapes on the way out, so a loop over /page/*
-    # can be verified by reading neither the file nor the rendered output, and
-    # an unverifiable deploy step is worse than a literal one.
+    # Publish icons before the manifest, then replace the page last. Each
+    # rename is atomic, so Caddy never serves a partially copied file.
     command:
       - /bin/sh
       - -c
-      - cp -a /page/index.html /srv/play/.index.html.new
+      - cp -a /page/icon-192.png /srv/play/.icon-192.png.new
+        && mv -f /srv/play/.icon-192.png.new /srv/play/icon-192.png
+        && cp -a /page/icon-512.png /srv/play/.icon-512.png.new
+        && mv -f /srv/play/.icon-512.png.new /srv/play/icon-512.png
+        && cp -a /page/manifest.webmanifest /srv/play/.manifest.webmanifest.new
+        && mv -f /srv/play/.manifest.webmanifest.new /srv/play/manifest.webmanifest
+        && cp -a /page/index.html /srv/play/.index.html.new
         && mv -f /srv/play/.index.html.new /srv/play/index.html
         && ls -l /srv/play/index.html
 

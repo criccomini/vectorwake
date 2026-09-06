@@ -195,6 +195,14 @@ export class Stage {
       throw new Error(`no page to serve at ${file}; build one first`)
     }
     const html = await readFile(file)
+    const assets = new Map()
+    for (const [name, type] of [
+      ['manifest.webmanifest', 'application/manifest+json'],
+      ['icon-192.png', 'image/png'],
+      ['icon-512.png', 'image/png']
+    ]) {
+      assets.set('/' + name, { body: await readFile(path.join(path.dirname(file), name)), type })
+    }
     this.clientErrors = []
     this.page = createServer((req, res) => {
       // The client's own diagnostics post here. It is the same endpoint the
@@ -217,8 +225,13 @@ export class Stage {
         })
         return
       }
-      // One file, one route, every other path. The bundle is packed to a
-      // single document, so there is nothing else to ask for.
+      const asset = assets.get(new URL(req.url, this.pageUrl).pathname)
+      if (asset) {
+        res.writeHead(200, { 'content-type': asset.type, 'cache-control': 'no-store' })
+        res.end(asset.body)
+        return
+      }
+      // Runtime assets are embedded; the install metadata is served above.
       res.writeHead(200, {
         'content-type': 'text/html; charset=utf-8',
         'cache-control': 'no-store'
