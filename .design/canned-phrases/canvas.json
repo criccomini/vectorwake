@@ -1,4 +1,14 @@
 {
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Under the band"
+    },
+    {
+      "id": "page-2",
+      "name": "Earlier directions"
+    }
+  ],
   "artboards": [
     {
       "file": "Main.dc.html",
@@ -10,7 +20,7 @@
     },
     {
       "file": "Desktop.dc.html",
-      "title": "Team Battle, monitor: the picker open, Gantry calling",
+      "title": "Team Battle, monitor: the picker under the row, Gantry calling",
       "x": 1652,
       "y": 0,
       "w": 1440,
@@ -33,16 +43,8 @@
       "h": 810
     },
     {
-      "file": "Strip.dc.html",
-      "title": "The alternate picker: chips along the bottom",
-      "x": 1652,
-      "y": 2790,
-      "w": 1440,
-      "h": 810
-    },
-    {
       "file": "Portrait.dc.html",
-      "title": "Phone: the CALL key and its rows",
+      "title": "Phone: the CALL key and the board under the row",
       "x": 3192,
       "y": 0,
       "w": 390,
@@ -55,9 +57,28 @@
       "y": 0,
       "w": 390,
       "h": 844
+    },
+    {
+      "file": "Column.dc.html",
+      "title": "Earlier: the menu language's rows on the left edge",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 810,
+      "page": "page-2"
+    },
+    {
+      "file": "Strip.dc.html",
+      "title": "Earlier: chips along the bottom",
+      "x": 1540,
+      "y": 0,
+      "w": 1440,
+      "h": 810,
+      "page": "page-2"
     }
   ],
   "launch": {
-    "view": "canvas"
+    "view": "canvas",
+    "page": "page-1"
   }
 }

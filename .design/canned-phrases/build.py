@@ -465,24 +465,81 @@ def band_row(w, compact, px=13):
 
 
 # --- the picker --------------------------------------------------------------
+#
+# Decision 67's board, the one the band opened before the players sheet took
+# the roster into the menu: a column hanging centered under the band, a wash
+# of the field color with a lit rule down its left edge and no border, a
+# head in dim capitals with a tick rule under it, and rows one HUD line
+# tall in the mono. Chris asked for the picker in that grammar, under the
+# scoreboard, and this is it.
+
+LINE = 18           # one row of a HUD list, as the board drew it
+BOARD_W = 236
 
 
-def picker_row(digit, phrase, cursor=False, dim=False):
+def hrule(alpha=".45"):
+    return f'<div style="height:1px;background:rgba(63,88,120,{alpha})"></div>'
+
+
+def ticks(alpha=".35"):
+    return (f'<div style="height:4px;background:'
+            f'repeating-linear-gradient(90deg,rgba(63,88,120,{alpha}) 0 1px,'
+            f'transparent 1px 14px),linear-gradient(rgba(63,88,120,{alpha}),'
+            f'rgba(63,88,120,{alpha})) bottom/100% 1px no-repeat"></div>')
+
+
+def board_row(digit, phrase, cursor=False):
+    wash = "background:rgba(79,214,255,.18);" if cursor else ""
+    return (f'<div class="row" style="height:{LINE}px;gap:10px;'
+            f'padding:0 10px 0 8px;{wash}">'
+            f'<span class="num" style="font-size:10px;color:{DIM};width:8px;'
+            f'text-align:right">{digit}</span>'
+            f'<span class="name" style="font-size:11px;color:{INK};opacity:.9">'
+            f'{phrase}</span></div>')
+
+
+def board_head(word, key):
+    right = (f'<span class="hud" style="font-size:10px;color:{DIM}">{key}</span>'
+             if key else "")
+    return (f'<div class="row hud" style="height:16px;gap:7px;'
+            f'padding:0 10px 0 8px"><span class="lbl">{word}</span>'
+            f'<div style="flex:1"></div>{right}</div>')
+
+
+def picker(phrases, cursor=0, width=BOARD_W, key="C"):
+    """The board: a head naming it and the key that opened it, the tick
+    rule, then a row a phrase. No wash on the fight behind it, since it is
+    up for a second and the fight is what you are reading."""
+    rows = "".join(board_row(i + 1, p, i == cursor)
+                   for i, p in enumerate(phrases))
+    return (f'<div style="width:{width}px;background:rgba(5,7,12,.62);'
+            f'box-shadow:inset 1.5px 0 0 rgba(63,88,120,.7);padding:6px 0 8px">'
+            f'{board_head("Call", key)}{ticks()}{rows}</div>')
+
+
+def picker_under_band(w, phrases, cursor=0, width=BOARD_W):
+    """Hanging centered under the row, where the board hung."""
+    x = (w - width) / 2
+    return (f'<div class="abs" style="left:{x:.0f}px;top:{PAD + KEY_H + 10}px">'
+            f'{picker(phrases, cursor, width)}</div>')
+
+
+# The earlier pick, kept for the record: the menu language's rows on the
+# glass, standing on the left edge over the charge marks.
+
+
+def column_row(digit, phrase, cursor=False):
     wash = WASH_CURSOR if cursor else ""
-    col = DIM if dim else INK
     return (f'<div class="row" style="height:{ROW_H}px;padding:0 {ROW_INSET}px;'
             f'gap:12px;{wash}">'
             f'<span class="num" style="font-size:14px;color:{READ};width:12px">'
             f'{digit}</span>'
-            f'<span style="font-size:17px;color:{col};opacity:.85">{phrase}</span>'
+            f'<span style="font-size:17px;color:{INK};opacity:.85">{phrase}</span>'
             f'</div>')
 
 
-def picker(phrases, cursor=0, width=232, key="C"):
-    """The box: a band naming it and the key that opened it, then the rows.
-    No head, since there is nowhere to walk back to; the key that opened it
-    closes it, and so does a pick."""
-    rows = "".join(picker_row(i + 1, p, i == cursor)
+def column_picker(phrases, cursor=0, width=232, key="C"):
+    rows = "".join(column_row(i + 1, p, i == cursor)
                    for i, p in enumerate(phrases))
     return (f'<div class="glass" style="width:{width}px;display:flex;'
             f'flex-direction:column">'
@@ -494,14 +551,12 @@ def picker(phrases, cursor=0, width=232, key="C"):
 
 
 def picker_desktop(h, phrases, cursor=0):
-    """Standing on the left edge over the charge marks, which is the one
-    edge the fight is never at."""
     return (f'<div class="abs" style="left:{PAD}px;bottom:{PAD + 8 + STACK_H + 12}px">'
-            f'{picker(phrases, cursor)}</div>')
+            f'{column_picker(phrases, cursor)}</div>')
 
 
 def strip_desktop(w, h, phrases, cursor=0):
-    """The alternate: chips along the bottom, the digit inside each."""
+    """The other earlier pick: chips along the bottom, the digit inside each."""
     chips = "".join(
         f'<span class="key" style="height:30px;padding:0 12px;gap:9px;'
         f'{WASH_CURSOR if i == cursor else ""}'
@@ -519,18 +574,21 @@ def call_key(x, y, lit=False):
             f'padding:0 10px;font-size:10px;{wash}">Call</div>')
 
 
-def picker_phone(phrases, cursor=None):
+def picker_phone(w, phrases, cursor=None):
+    """The key stays under the corner; the board hangs under the row as it
+    does on a monitor, and a thumb picks a row."""
     top = PAD + KEY_H + 6
     return (call_key(PAD, top, True)
-            + f'<div class="abs" style="left:{PAD}px;top:{top + KEY_H + 6}px">'
-            f'{picker(phrases, cursor if cursor is not None else -1, 212, "")}</div>')
+            + f'<div class="abs" style="left:{(w - BOARD_W) / 2:.0f}px;'
+            f'top:{top + KEY_H + 6}px">'
+            f'{picker(phrases, cursor if cursor is not None else -1, BOARD_W, "")}</div>')
 
 
 # --- the boards --------------------------------------------------------------
 
 
 def screen(form, seed=1, lines=None, own=None, feed_lines=None, ring=None,
-           pick=None, strip=None, phone_pick=False, show_key=True):
+           pick=None, column=None, strip=None, phone_pick=False, show_key=True):
     w, h = FORMS[form]
     compact = form == "Portrait"
     out = [scene(w, h, 11 + w, compact, lines, own), radar(w, compact, ring)]
@@ -539,12 +597,14 @@ def screen(form, seed=1, lines=None, own=None, feed_lines=None, ring=None,
         if show_key and not phone_pick:
             out.append(call_key(PAD, PAD + KEY_H + 6))
         if phone_pick:
-            out.append(picker_phone(MATCH))
+            out.append(picker_phone(w, MATCH))
     else:
         out.append(feed(w, feed_lines))
         out.append(corner_stack(h))
         if pick is not None:
-            out.append(picker_desktop(h, MATCH, pick))
+            out.append(picker_under_band(w, MATCH, pick))
+        if column is not None:
+            out.append(picker_desktop(h, MATCH, column))
         if strip is not None:
             out.append(strip_desktop(w, h, MATCH, strip))
     out.append(band_row(w, compact))
@@ -648,18 +708,29 @@ def main_sheet():
         gap(26),
         h2("The picker"),
         gap(6),
-        cap("One key opens it and the same key, a pick, escape or four idle "
-            "seconds close it. It is not a menu panel: it appears in a frame "
-            "rather than sliding, the flight keys keep working under it, and "
-            "it stands on the left edge over the charge marks because the "
-            "middle of the glass is where you are. A digit picks its row, and "
-            "so do the arrows and enter, and so does a pointer. Between matches "
-            "the same box lists decision 51's six instead, since that is what "
+        cap("It is decision 67's board, the one the band opened before the "
+            "players sheet took the roster into the menu: a column hanging "
+            "centered under the row, a wash of the field color with a lit "
+            "rule down its left edge and no border, a head in dim capitals "
+            "with a tick rule under it, and rows one HUD line tall in the "
+            "mono. Chris asked for the picker in that grammar, under the "
+            "scoreboard. One key opens it and the same key, a pick, escape or "
+            "four idle seconds close it. It appears in a frame rather than "
+            "sliding, the flight keys keep working under it, and the fight is "
+            "not washed behind it, since it is up for a second and the fight "
+            "is what you are reading. A digit picks its row, and so do the "
+            "arrows and enter, and so does a pointer. Between matches the "
+            "same board lists decision 51's six instead, since that is what "
             "the moment allows.", 900),
         gap(12),
         flow([cell(picker(MATCH, 1), "During a match, nine, to your side"),
               cell(picker(PODIUM, 0), "Between matches, the six, to the room")],
              w=900),
+        gap(18),
+        cap("Two earlier shapes are on the second page for the record: the "
+            "menu language's rows on the glass standing on the left edge, and "
+            "a strip of chips along the bottom. Both put a second voice on the "
+            "HUD; the board is the HUD's own.", 900),
         gap(26),
         h2("The phrase"),
         gap(6),
@@ -764,7 +835,7 @@ def main():
          sheet_w, SHEET_H, 0, 0)
 
     dx = sheet_w + 100
-    emit("Desktop", "Team Battle, monitor: the picker open, Gantry calling",
+    emit("Desktop", "Team Battle, monitor: the picker under the row, Gantry calling",
          screen("Desktop", 1, lines={"Gantry": ("help!", 0.4)},
                 feed_lines=[("Gantry: help!", FRIEND), ("Carrack killed Ozone", DIM),
                             ("Gantry killed Isobar", DIM)],
@@ -781,22 +852,34 @@ def main():
                 own=("retreat!", 0.6),
                 feed_lines=[("Ozone: falling back", FRIEND), ("Carrack killed Isobar", DIM)]),
          1440, 810, dx, 1860)
-    emit("Strip", "The alternate picker: chips along the bottom",
-         screen("Desktop", 4, lines={"Gantry": ("help!", 0.4)},
-                feed_lines=[("Gantry: help!", FRIEND), ("Carrack killed Ozone", DIM)],
-                strip=1),
-         1440, 810, dx, 2790)
 
     px = dx + 1440 + 100
-    emit("Portrait", "Phone: the CALL key and its rows",
+    emit("Portrait", "Phone: the CALL key and the board under the row",
          screen("Portrait", 5, lines={"Gantry": ("help!", 0.4)}, phone_pick=True),
          390, 844, px, 0)
     emit("PortraitSaid", "Phone: a phrase under a plate",
          screen("Portrait", 6, lines={"Ozone": ("on it", 0.2)}, own=("help!", 0.8)),
          390, 844, px + 470, 0)
 
+    # The earlier shapes, on a page of their own.
+    emit("Column", "Earlier: the menu language's rows on the left edge",
+         screen("Desktop", 4, lines={"Gantry": ("help!", 0.4)},
+                feed_lines=[("Gantry: help!", FRIEND), ("Carrack killed Ozone", DIM)],
+                column=1),
+         1440, 810, 0, 0)
+    boards[-1]["page"] = "page-2"
+    emit("Strip", "Earlier: chips along the bottom",
+         screen("Desktop", 4, lines={"Gantry": ("help!", 0.4)},
+                feed_lines=[("Gantry: help!", FRIEND), ("Carrack killed Ozone", DIM)],
+                strip=1),
+         1440, 810, 1540, 0)
+    boards[-1]["page"] = "page-2"
+
     (HERE / "canvas.json").write_text(json.dumps(
-        {"artboards": boards, "launch": {"view": "canvas"}}, indent=2) + "\n")
+        {"pages": [{"id": "page-1", "name": "Under the band"},
+                   {"id": "page-2", "name": "Earlier directions"}],
+         "artboards": boards,
+         "launch": {"view": "canvas", "page": "page-1"}}, indent=2) + "\n")
     print(f"wrote {len(boards)} boards")
 
 

@@ -75,32 +75,37 @@ nothing else.
 
 ## What is drawn
 
-- **The picker.** One key opens it (`c`, a new row in `controls.lua`) and
-  the same key, a pick, escape or four idle seconds close it. It is not a
-  menu panel: it appears in a frame rather than sliding, the flight keys
-  keep working under it, and it stands on the left edge over the charge
-  marks because the middle of the glass is where you are. A digit picks its
-  row, and so do the arrows and enter, and so does a pointer. Rows are the
-  menu language's, 44 tall, inset 14, the digit in the mono at 14 and the
-  phrase in the menu face at 17; the band over them says CALL and the key.
+- **The picker.** Decision 67's board, the one the band opened before
+  the players sheet took the roster into the menu: a column hanging
+  centered under the row, a wash of the field color with a lit rule down
+  its left edge and no border, a head in dim capitals with a tick rule
+  under it, and rows one HUD line tall in the mono. Chris asked for the
+  picker in that grammar, under the scoreboard. One key opens it (`c`, a
+  new row in `controls.lua`) and the same key, a pick, escape or four idle
+  seconds close it. It appears in a frame rather than sliding, the flight
+  keys keep working under it, and the fight is not washed behind it. A
+  digit picks its row, and so do the arrows and enter, and so does a
+  pointer.
 - **The phrase.** One line under the nameplate in ink, eleven points, lower
   case, three seconds with the last eight tenths spent leaving. Your own
   hull wears no plate, so your own line stands where the plate would.
 - **A caller off the glass.** The feed carries `Gantry: help!` in the
   side's color, and the caller's radar dot wears a ring while the line
   lives. That ring is the ping decision 51's reconsider clause asked for.
-- **The phone.** A CALL key under the rating corner drops the same rows.
-- **The alternate.** Chips along the bottom, the digit inside each. Reads
-  left to right with no cursor, and it is a desktop-only shape: nine chips
-  do not fit a phone, and it stands over the fight's bottom edge.
+- **The phone.** A CALL key under the rating corner drops the same board
+  under the row.
+- **Earlier shapes**, on the canvas's second page for the record: the menu
+  language's rows on the glass standing on the left edge, and a strip of
+  chips along the bottom. Both put a second voice on the HUD; the board is
+  the HUD's own.
 
 `build.py` is the source. The chrome is `../rating-corner/build.py`'s
 (hues from `client/arena/palette.lua`, measures from `client/arena/ui.lua`)
 and the rows are `../menu-language/build.py`'s. `Main.dc.html` is the
 sheet; the boards beside it are the picker open on a monitor with a
 teammate calling, the second after with your answer and the bot's, a
-retreat called, the alternate strip, and the phone with the key and with
-a phrase.
+retreat called, and the phone with the key and with a phrase. The two
+earlier pickers are on the second page.
 
-Rebuild with `python3 build.py`; the seven `.dc.html` files and
+Rebuild with `python3 build.py`; the eight `.dc.html` files and
 `canvas.json` beside them are what the design canvas is seeded from.
