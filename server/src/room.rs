@@ -1983,20 +1983,27 @@ impl Room {
         dealt
     }
 
-    /// One of the fixed things, said to the room.
+    /// One of the fixed things, said to the room or to a side.
     ///
-    /// Between matches only. That is where it is for, and it is also what
-    /// keeps it out of a fight: nothing here can be used to talk over somebody
-    /// who is trying to play. The phrase is an index into a list the clients
+    /// Two lists in one range. The podium phrases go to the whole room
+    /// between matches only, which is where they are for. The calls go to
+    /// the sender's own side while a match is running, which is the one time
+    /// a call means anything, and never to the other side: a "retreat!" the
+    /// enemy can read is a call nobody would make. Each list is refused at
+    /// the other time, so nothing here can be used to talk over somebody who
+    /// is trying to play. The phrase is an index into a list the clients
     /// hold, so this never sees a word and there is nothing here to moderate.
     ///
-    /// Throttled to one every two seconds a seat. A line nobody can repeat
-    /// faster than it can be read is a line that cannot be used to shout.
+    /// Throttled to one every two seconds a seat, both lists on one clock. A
+    /// line nobody can repeat faster than it can be read is a line that
+    /// cannot be used to shout.
     pub(crate) fn say(&mut self, ship: u8, phrase: u8) {
         if phrase >= crate::protocol::SAY_COUNT {
             return;
         }
-        if self.mode.match_state().is_some_and(|m| m.playing) {
+        let call = phrase >= crate::protocol::SAY_CALL_FIRST;
+        let playing = self.mode.match_state().is_some_and(|m| m.playing);
+        if call != playing {
             return;
         }
         let now = self.world.state.tick;
@@ -2010,6 +2017,17 @@ impl Room {
             None => return,
         }
         let msg = vec![crate::protocol::S2C_SAID, ship, phrase];
+        if call {
+            let side = self.world.state.ships[ship as usize].team;
+            for p in self.players.values() {
+                if self.world.state.ships[p.ship as usize].team == side {
+                    let _ = p.tx.try_send(Message::Binary(msg.clone()));
+                }
+            }
+            // Not the stands: a call is the side's business, and the channel
+            // shows the room to whoever is watching.
+            return;
+        }
         for p in self.players.values() {
             let _ = p.tx.try_send(Message::Binary(msg.clone()));
         }

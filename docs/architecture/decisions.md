@@ -9379,3 +9379,77 @@ whose roster carries no bands drawing every mark in the mute; its counts of
 corner's copy going. `client/tools/hud_svg.lua` draws the marks in their bands
 in every scenario, working the band out from each pilot's rating rather than
 writing it down beside it. Client suite and luacheck are clean.
+
+## 167. Five calls to your own side, under the scoreboard
+
+**Status:** accepted, amending
+[decision 51](#51-six-phrases-and-no-way-to-add-a-seventh), whose reconsider
+clause named a phrase during a match as the thing it would not do, and
+taking up the one door [decision 28](#28-no-chat) left open, team-only
+signals during play
+
+**What:** five things a pilot can say to their own side while a match runs:
+`follow me`, `help!`, `retreat!`, `attack!`, `hold here`. The `S` key lists
+them under the scoreboard row, a digit says the one it numbers, and the list
+goes down with the press. What was said stands under the plate of whoever
+said it for three seconds, in ink rather than the side's color, and under
+your own hull at the same offset, which is how you know it went. A call from
+a teammate goes in the feed as `Gantry: help!` in the side's color, since the
+hull calling may not be on your glass.
+
+The wire is decision 51's unchanged: `C2S_SAY` carries one byte, an index
+into a list the client build holds, and the room checks it against a count.
+The list is now two lists in one range. The first six are the podium's and
+go to the whole room between matches; the calls, from `SAY_CALL_FIRST`, go
+to the sender's side while a match runs and never to the other side, since
+a `retreat!` the enemy can read is a call nobody would make. Each is refused
+at the other time. The stands are not told a call. One throttle covers both,
+a line every two seconds a seat.
+
+The list is decision 67's board, the one the band opened before the players
+sheet took the roster into the menu: a column hanging centered under the row,
+a wash of the field color with a lit rule down its left edge and no border,
+rows one HUD line tall in the mono. No head, since the rows are the whole of
+what there is to read. It appears in a frame rather than sliding, the flight
+keys keep working under it, and the fight behind is not washed. Escape, the
+key again, the menu, the whistle and four idle seconds all take it down.
+
+`S` was the second charge key. That moves to `Q`, which is where the pair
+was first dealt: `W` and `Q` read across under the left hand.
+
+Not on a touchscreen yet: the pads own the glass there and the key has no
+thumb to land under.
+
+**Why:** the six phrases have had no way to be sent since decision 68 took
+the chips off the ending, and the call to give them a key answered a
+different question than the podium asked. What a fight needs to communicate
+is not a courtesy but an ask, and decision 28 already priced that: fixed
+phrases and team-only signals cost no moderation, because the room never
+sees a word. A call to your own side during play is the bounded channel that
+record described, and the digit-and-board shape keeps it to a second's
+attention in a game whose vocabulary is maneuver.
+
+Side-only is what makes it a signal rather than a taunt. Nothing on the list
+can be aimed at somebody, and nothing on it reaches anybody who is not
+already on your side, which is also why the stands are not told: a call is
+the side's business, and the channel shows the room to whoever is watching.
+
+The board grammar, rather than the menu language's rows on the glass or a
+strip of chips, because the list is an instrument read in the same glance as
+the row it hangs under. Both other shapes put a second voice on the HUD; the
+board is the HUD's own.
+
+**Cost:** the second charge moves off a key pilots have learned. Two of the
+six podium phrases' worth of argument in decision 51 is spent: the list
+grew, and a phrase now exists during a match. The mock in
+`.design/canned-phrases` also drew the house bots saying calls and acting on
+them, and none of that is built; the brain hears nothing yet. A touchscreen
+has no way to call.
+
+**Verified:** `a_call_reaches_the_side_during_a_match_and_nobody_else` holds
+the room: a call reaches the caller and their side, not the other side, not
+the stands, and not on the podium. `hud_hits_test` holds the client: no box
+with the key up, five boxes numbered from the wire's first call hanging
+centered under the row, a press on a row saying its call, and the line under
+a plate and under your own hull. `binds_test` routes the new control.
+Server suite, clippy, client suite and luacheck are clean.

@@ -139,13 +139,18 @@ pub(crate) const C2S_KIT: u8 = 10;
 /// `[C2S_SAY, phrase]`: say one of the fixed things. One byte, and it names a
 /// line rather than carrying one, which is the whole design:
 /// [decision 28](../../docs/architecture/decisions.md) says no chat, and this
-/// does not become chat by adding entries. Refused while a match is running,
-/// because the podium is where it is for.
+/// does not become chat by adding entries. The list is two lists in one
+/// range: the six podium phrases, said to the room between matches, and the
+/// calls from `SAY_CALL_FIRST` up, said to the sender's own side while a match
+/// is running. Each is refused at the other time.
 pub(crate) const C2S_SAY: u8 = 11;
 /// How many there are. A phrase past the end is a client talking about a list
 /// this arena does not have, and is dropped rather than clamped: clamping
 /// would put words in somebody's mouth.
-pub(crate) const SAY_COUNT: u8 = 6;
+pub(crate) const SAY_COUNT: u8 = 11;
+/// The first of the calls: follow me, help!, retreat!, attack!, hold here.
+/// Everything under it is a podium phrase. See decision 167.
+pub(crate) const SAY_CALL_FIRST: u8 = 6;
 /// This client is a bot and says so. Everything that follows from the
 /// declaration is in the arena's favor, which is why a well-behaved bot sets
 /// it: a declared bot is labeled in the roster, sits outside the human cap, and
@@ -290,7 +295,7 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// why the number has to: a client built for 39 reads a flag game's packet
 /// cleanly and draws 0:00 over an empty score for the whole match. See
 /// decision 165.
-pub(crate) const CLIENT_PROTOCOL: u8 = 40;
+pub(crate) const CLIENT_PROTOCOL: u8 = 41;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of

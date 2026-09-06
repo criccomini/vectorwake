@@ -1730,6 +1730,19 @@ end
 
 local function nameplates(o)
     if not o.half_w or o.half_w <= 0 then return end
+    -- What a hull just said, one line under its plate, in ink rather than
+    -- the side's color: the plate says who, the line says what, and a line
+    -- in the side's color read as a longer name. The plate's own size, in the
+    -- case the phrase was written in, and gone in three seconds.
+    local function said_line(i, sx, sy)
+        local s = o.said and o.said[i]
+        if not s then return end
+        local a = 0.9
+        local left = M.SAY_LIFE - s.t
+        if left < M.SAY_FADE then a = a * math.max(0, left / M.SAY_FADE) end
+        txt(s.phrase, sx + 12 * F.scale, sy, 11 * F.scale, pal.a(pal.INK, a),
+            nil, nil, true)
+    end
     -- The render script publishes its own half-extents for exactly this, so
     -- that nothing keeps a second copy of the projection. Deriving one from
     -- the view_tiles setting put every name adrift the moment the camera
@@ -1764,6 +1777,7 @@ local function nameplates(o)
                     -- case wherever it is drawn.
                     txt(nm, sx + 12 * F.scale, sy + 13 * F.scale, 11 * F.scale, pal.a(col, 0.7),
                         nil, nil, true)
+                    said_line(i, sx, sy + 27 * F.scale)
                     -- The same mark the scoreboard wears, on the hull itself:
                     -- who is flying a ship is worth knowing while you are
                     -- deciding whether to chase it, and that decision is made
@@ -1804,6 +1818,13 @@ local function nameplates(o)
                 end
             end
         end
+    end
+    -- Your own hull wears no plate, so your own line stands where the plate
+    -- would. That is how you know a call went: the room echoes it to the
+    -- side, you included.
+    if own >= 0 and own < sim.ship_count() and sim.ship_alive(own) == 1 then
+        local sx, sy = on_glass(o, scale, sim.ship_x(own), sim.ship_y(own))
+        said_line(own, sx, sy + 13 * F.scale)
     end
     -- The figures, drifting off the wrecks they were earned on. Walked
     -- backwards into itself so an expired one is dropped in the same pass
@@ -3371,12 +3392,13 @@ end
 
 -- How long a phrase stands on somebody's row once one arrives.
 --
--- Nothing on this client sends one any more: the six chips at the foot of the
--- old card were the only way to, and they were the widest thing on it. The
--- wire, the roster's own line and this clock are the spine of the feature and
--- stay, so the key that replaces the chips is a key rather than a rebuild.
--- The arena counts a phrase out against it.
-M.SAY_LIFE = 4.0
+-- How long a phrase stays under the plate of whoever said it, in seconds.
+-- The arena counts a phrase out against it. Three, the last eight tenths
+-- spent leaving: a call is read in a glance and a fight moves on. The six
+-- podium phrases share the clock and nothing on this client sends one; the
+-- calls do, from the list `M.say_board` draws. See decision 167.
+M.SAY_LIFE = 3.0
+M.SAY_FADE = 0.8
 
 -- What this match has done to everybody's rating, by ship.
 --
@@ -4598,6 +4620,38 @@ function M.waiting(note)
     end
 end
 
+-- The calls, listed under the scoreboard while the call key has them up.
+--
+-- Decision 67's board, the one the band opened before the players sheet took
+-- the roster into the menu: a column hanging centered under the row, a wash
+-- of the field color with a lit rule down its left edge and no border, and
+-- rows one HUD line tall in the mono. No head: the rows are the whole of
+-- what there is to read, and the key that put them up is the key that takes
+-- them down. A digit says the row it numbers; so does a pointer, through the
+-- box each row publishes. The fight behind is not washed, since the list is
+-- up for a second and the fight is what you are reading. See decision 167.
+function M.say_board(o)
+    local calls = o.calls
+    if not calls or #calls == 0 then return end
+    local s = F.scale
+    local w = 236 * s
+    local x = math.floor((F.w - w) / 2)
+    local y = TOP.mid() + KEY_H * s / 2 + 10 * s
+    local line = LINE * s
+    local h = #calls * line + 14 * s
+    rect(x, y, w, h, pal.a(pal.BG, 0.62))
+    rect(x, y, 1.5 * s, h, pal.a(pal.RADAR_TILE, 0.7))
+    local top = y + 6 * s
+    for i, phrase in ipairs(calls) do
+        local mid = top + line / 2
+        txt(tostring(i), x + 12 * s, mid, 10 * s, pal.DIM, nil, nil, true)
+        txt(phrase, x + 26 * s, mid, 11 * s, pal.a(pal.INK, 0.9),
+            nil, nil, true)
+        hit(x, top, w, line, "say", (o.call_first or 0) + i - 1)
+        top = top + line
+    end
+end
+
 function M.hud(o)
     F.case = "upper"
     -- There is a room on the glass: this is the one thing that draws one. See
@@ -4818,6 +4872,7 @@ function M.hud(o)
     -- carries the score, so the band gives its two sides up while that block
     -- is on screen and keeps the numerals. See `match_clock`.
     match_clock(o, o.match, o.side_names, o.menu_open)
+    if o.say then M.say_board(o) end
     -- The pennants belong to the band and are drawn with it, which puts them
     -- above the menu's early return below. Same reason the clock is: the menu
     -- is a scrim rather than a curtain, and who is holding what is exactly the

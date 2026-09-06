@@ -3647,6 +3647,67 @@ mod tests {
         );
     }
 
+    /// A call goes to the caller's own side, during a match, and nowhere
+    /// else: not to the other side, not to the stands, and not on the podium.
+    /// See decision 167.
+    #[test]
+    fn a_call_reaches_the_side_during_a_match_and_nobody_else() {
+        let mut a = match_room(5, 3);
+        let (caller, _, mut rx_caller) = seat_rx(&mut a, "caller");
+        let (other, _, mut rx_other) = seat_rx(&mut a, "other");
+        let (mate, _, mut rx_mate) = seat_rx(&mut a, "mate");
+        let team = |a: &Room, s: u8| a.world.state.ships[s as usize].team;
+        assert_ne!(team(&a, caller), team(&a, other), "arrivals alternate");
+        assert_eq!(
+            team(&a, caller),
+            team(&a, mate),
+            "and the third lands beside the first"
+        );
+        let heard = |rx: &mut mpsc::Receiver<Message>| -> Option<Vec<u8>> {
+            drain(rx)
+                .into_iter()
+                .find(|m| m.first() == Some(&crate::protocol::S2C_SAID))
+        };
+        let help = crate::protocol::SAY_CALL_FIRST + 1;
+
+        a.tick();
+        assert!(a.mode.match_state().unwrap().playing);
+        for rx in [&mut rx_caller, &mut rx_other, &mut rx_mate] {
+            let _ = drain(rx);
+        }
+
+        a.say(caller, help);
+        assert_eq!(
+            heard(&mut rx_mate),
+            Some(vec![crate::protocol::S2C_SAID, caller, help]),
+            "the side hears which call, and whose"
+        );
+        assert_eq!(
+            heard(&mut rx_caller),
+            Some(vec![crate::protocol::S2C_SAID, caller, help]),
+            "and so does the caller, which is how they know it went"
+        );
+        assert!(
+            heard(&mut rx_other).is_none(),
+            "the other side hears nothing"
+        );
+        assert!(
+            a.channel.pending_feed.is_empty(),
+            "and the stands are not told"
+        );
+
+        // To the whistle, and past the throttle with it.
+        for _ in 0..620 {
+            a.tick();
+        }
+        assert!(!a.mode.match_state().unwrap().playing, "the podium is up");
+        for rx in [&mut rx_caller, &mut rx_other, &mut rx_mate] {
+            let _ = drain(rx);
+        }
+        a.say(caller, help);
+        assert!(heard(&mut rx_mate).is_none(), "no calls on the podium");
+    }
+
     /// The one thing a player can send another player, and the rules that
     /// keep it from becoming chat.
     ///

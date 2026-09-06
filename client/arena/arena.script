@@ -98,6 +98,14 @@ local watching = false
 -- down inside it both spend their last five seconds out loud. The rule is
 -- `net.clock_says`; this is the half of its state that fits up here.
 local counted_at = nil
+-- The calls are listed under the scoreboard while `ui.say_open` is set: the
+-- call key put it up, and a digit, the key again, escape, the menu, the
+-- whistle or four idle seconds (`ui.say_idle`) take it down. On the interface
+-- module beside `ui.help` and `ui.map`, the other two panels a key toggles,
+-- and because the frame loop is at its ceiling of sixty upvalues. See
+-- decision 167.
+ui.say_open = false
+ui.say_idle = 0
 
 -- The ship whose perspective drives the camera, the colors and the sounds:
 -- your own hull, or the snapshot's subject while watching. Nil when there is
@@ -686,7 +694,9 @@ TUNE.PANEL_HANDLERS = {
             return true
         end
         -- Escape dismisses the innermost open panel before opening the menu.
-        if ui.help then
+        if ui.say_open then
+            ui.say_open = false
+        elseif ui.help then
             ui.help = false
         else
             toggle_menu()
@@ -705,6 +715,19 @@ TUNE.PANEL_HANDLERS = {
     map = function(_, live)
         if live then
             toggle_map()
+            sfx.ui("ui_move")
+        end
+    end,
+    say = function(_, live)
+        -- The calls, listed under the scoreboard for as long as it takes to
+        -- press a digit. Only over a match, since that is the one time the
+        -- room takes one; the key toggles, so a pilot who changes their mind
+        -- has the same way out they had in. See decision 167.
+        local playing = net.match and net.match.playing
+        if live and not watching and playing and not menu.open
+           and not menu.typing() then
+            ui.say_open = not ui.say_open
+            ui.say_idle = 0
             sfx.ui("ui_move")
         end
     end,
@@ -1615,11 +1638,11 @@ function update(self, dt)
     -- Fixed 100 Hz stepping under our own accumulator rather than Defold's
     -- fixed_update: prediction and rollback want this clock, not the physics
     -- timestep, and Defold's physics is off entirely.
-    -- Q and W spend a hull's charge slots in order, the way a charge pad
+    -- W and Q spend a hull's charge slots in order, the way a charge pad
     -- already does on a touchscreen: two keys under the left hand, read across
     -- against a stack read top to bottom. By the slots the hull carries rather
     -- than by absolute slot number, so a hull that carries only some still puts
-    -- Q on the first of them.
+    -- W on the first of them.
     --
     -- The hull's slots, not the rows drawn: the corner shows only what is in
     -- hand now, so binding to the drawing would move Q onto your burst the
@@ -1635,6 +1658,19 @@ function update(self, dt)
                 tapped[route.action] = nil
                 local slot = my_slots()[i]
                 if slot then key_charge = slot end
+            end
+        end
+    end
+    -- A digit says the call on that row while the list is up, and takes the
+    -- list down with it. The room throttles, so a second press inside two
+    -- seconds is a press that does nothing rather than one to guard here.
+    if ui.say_open and not menu.open then
+        for i = 1, #net.CALLS do
+            local a = hash("k_" .. i)
+            if tapped[a] then
+                tapped[a] = nil
+                ui.say_open = false
+                if net.say(net.CALL_FIRST + i - 1) then sfx.ui("ui_go") end
             end
         end
     end
@@ -1941,6 +1977,27 @@ function update(self, dt)
     for ship, said in pairs(net.said) do
         said.t = said.t + dt
         if said.t > ui.SAY_LIFE then net.said[ship] = nil end
+    end
+    -- A call from somebody on your side goes in the feed as well, since the
+    -- whole point of "help!" is that the hull calling may not be on your
+    -- glass. Not your own: the line under your hull already says it went.
+    for _, c in ipairs(net.calls) do
+        if watching or c.ship ~= me then
+            local col = sim.ship_team(c.ship) == eye_team() and pal.FRIEND
+                or pal.ENEMY
+            notify({pilot_named(c.ship), ": " .. c.phrase}, col)
+        end
+    end
+    net.calls = {}
+    -- The list stands for four idle seconds, and only over a match: the
+    -- room refuses a call at any other time, so a list that outlived the
+    -- whistle would be one of rows that do nothing.
+    if ui.say_open then
+        ui.say_idle = ui.say_idle + dt
+        local playing = net.match and net.match.playing
+        if ui.say_idle > 4 or not playing or menu.open or watching then
+            ui.say_open = false
+        end
     end
 
     kb_locked = frame.sample(self, dt, net, html5, kb_locked)
@@ -2434,6 +2491,10 @@ function update(self, dt)
             -- on it is what travels, and the table is what the zone has said
             -- since the whistle.
             sayings = net.SAYINGS, said = net.said,
+            -- The calls, and whether the list of them is up. The list is the
+            -- wire's own for the reason above; the picker draws its rows and
+            -- numbers them from `call_first`.
+            calls = net.CALLS, call_first = net.CALL_FIRST, say = ui.say_open,
             -- Whether that box should also offer to invite whoever it is
             -- describing, and who has already been asked. Both are the
             -- connection's business, so they are read here rather than in the
@@ -3449,15 +3510,13 @@ function on_input(self, action_id, action)
                 sfx.ui("ui_move")
                 return true
             end
-            -- One of the fixed phrases, off the card between matches. The
-            -- room refuses it while a match is running, so a press that
-            -- lands late is a press that does nothing rather than one the
-            -- client has to guard.
-            -- Nothing publishes this box any more: the phrase chips went
-            -- with the ending's card, and the key meant to replace them is
-            -- not here yet. The send stays wired so that key is a binding
-            -- rather than a rebuild. See `M.SAY_LIFE` in ui.lua.
+            -- A row of the calls list, pressed with a pointer rather than a
+            -- digit. The room refuses a call it does not want, so a press
+            -- that lands late is a press that does nothing rather than one
+            -- the client has to guard. The podium's six phrases send through
+            -- the same box and nothing publishes one for them yet.
             if r.action == "say" then
+                ui.say_open = false
                 net.say(r.value)
                 sfx.ui("ui_go")
                 return true

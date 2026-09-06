@@ -184,6 +184,14 @@ closed list, one byte on the wire, refused while a match is running and
 throttled to one every two seconds, which is what makes it cost nothing to
 moderate. See [decision
 51](../architecture/decisions.md#51-six-phrases-and-no-way-to-add-a-seventh).
+The chips went with the ending's page and nothing sends the six today.
+
+**And five calls during a match**, to your own side only: "follow me",
+"help!", "retreat!", "attack!", "hold here". The `S` key lists them under the
+scoreboard, a digit says one, and the words stand under the caller's plate
+for three seconds. The same wire and the same throttle; the other side never
+receives one. See [decision
+167](../architecture/decisions.md#167-five-calls-to-your-own-side-under-the-scoreboard).
 
 **The arena empties at that whistle, and the next map goes down under it.** A
 podium drawn over the fight you have just finished, with the wrecks and the

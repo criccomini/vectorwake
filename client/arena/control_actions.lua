@@ -8,7 +8,7 @@
 
 local M = {}
 
-local PANEL_ORDER = {"menu", "details", "map", "help"}
+local PANEL_ORDER = {"menu", "details", "map", "help", "say"}
 
 -- Deliver every panel action through one seam, in the order the frame loop
 -- has always used, so simultaneous presses resolve the same way every time. A
@@ -60,6 +60,7 @@ function M.new(hash_fn, sim)
         details = hash_fn("details"),
         map = hash_fn("map"),
         help = hash_fn("help"),
+        say = hash_fn("say"),
     }
     -- Pointer actions are engine inputs, not controls the bindings page
     -- offers. They still land in the same simulation button map.

@@ -56,8 +56,15 @@ return {
     -- reads it in a fight, and the ship page says which key each row is on.
     {id = "charge_1", name = "charge 1", cat = "charge", keys = {"w"},
      what = "Spends the first charge on your ship."},
-    {id = "charge_2", name = "charge 2", cat = "charge", keys = {"s"},
+    -- Q rather than S, which the calls took (decision 167). W and Q are the
+    -- pair the charges were first dealt to, read across under the left hand.
+    {id = "charge_2", name = "charge 2", cat = "charge", keys = {"q"},
      what = "Spends the second charge on your ship."},
+    -- The calls: five things to say to your own side during a match, listed
+    -- under the scoreboard while the key is down, and a digit says one. See
+    -- decision 167.
+    {id = "say", name = "call", cat = "say", keys = {"s"},
+     what = "Lists the calls; a digit says one to your side."},
     {id = "multi", name = "multifire", cat = "multi", keys = {"tick"},
      what = "Fans your gun wider for more energy per shot."},
     {id = "map", name = "map", cat = "map", keys = {"m"},

@@ -147,6 +147,10 @@ local function frame(o)
         match = o.match,
         side_names = o.side_names,
         feed = o.feed or {},
+        -- The calls: whether the list is up, what it lists, and who has
+        -- just said one.
+        say = o.say, calls = o.calls, call_first = o.call_first,
+        said = o.said,
         hurt = 0,
         charges = {},
         cam_x = sim.ship_x(0), cam_y = sim.ship_y(0),
@@ -509,6 +513,58 @@ do
            match = {playing = true, left = 107, score = {[0] = 10, [1] = 7}},
            side_names = SIDES})
     check("and it shows through an open menu", says("1:47"))
+end
+
+-- --- the calls hang under the row ----------------------------------------
+
+-- Decision 167: the call key lists five things to say to your own side in a
+-- board under the scoreboard, a digit says one, and what was said stands
+-- under the plate of whoever said it. The rows are boxes so a pointer can
+-- press them too, which is what this section holds.
+do
+    ui.debug = false
+    local CALLS = {"follow me", "help!", "retreat!", "attack!", "hold here"}
+    local MATCH = {playing = true, left = 107, score = {[0] = 10, [1] = 7}}
+    local SIDES = {[0] = "Pylon", [1] = "Caisson"}
+    frame({match = MATCH, side_names = SIDES})
+    check("with the key up there is no calls box", box("say") == nil)
+    check("and none of the calls is written", not says("follow me"))
+
+    frame({match = MATCH, side_names = SIDES,
+           say = true, calls = CALLS, call_first = 6})
+    local rows = {}
+    for _, r in ipairs(ui.hits) do
+        if r.action == "say" then rows[#rows + 1] = r end
+    end
+    check("the list publishes a box a call", #rows == 5, tostring(#rows))
+    local numbered = #rows == 5
+    for i, r in ipairs(rows) do
+        if r.value ~= 5 + i then numbered = false end
+    end
+    check("numbered from the wire's first call", numbered)
+    if #rows == 5 then
+        check("hanging under the row rather than over it",
+              rows[1].y > 14 + 26 and rows[1].y < 80, tostring(rows[1].y))
+        check("centered on the window",
+              math.abs(rows[1].x + rows[1].w / 2 - W / 2) < 2,
+              tostring(rows[1].x + rows[1].w / 2))
+        check("and stacked in order",
+              rows[2].y > rows[1].y and rows[5].y > rows[4].y)
+        local a, v = press(rows[2].x + 20, rows[2].y + rows[2].h / 2)
+        check("a press on the second row says help!",
+              a == "say" and v == 7, tostring(a) .. "/" .. tostring(v))
+    end
+    check("every call is written", says("follow me") and says("hold here"),
+          drawn())
+    check("and numbered", says("1") and says("5"))
+
+    frame({match = MATCH, side_names = SIDES,
+           said = {[1] = {phrase = "help!", n = 7, t = 0}}})
+    check("a call stands under the caller's plate", says("help!"), drawn())
+    frame({match = MATCH, side_names = SIDES,
+           said = {[0] = {phrase = "retreat!", n = 8, t = 0}}})
+    check("and your own under your own hull, which wears no plate",
+          says("retreat!"), drawn())
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

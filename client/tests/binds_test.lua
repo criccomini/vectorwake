@@ -155,7 +155,7 @@ do
     local tapped, delivered = {}, {}
     for _, action in pairs(route.panel) do tapped[action] = true end
     local handlers = {}
-    for _, id in ipairs({"menu", "details", "map", "help"}) do
+    for _, id in ipairs({"menu", "details", "map", "help", "say"}) do
         local name = id
         handlers[name] = function() delivered[#delivered + 1] = name end
     end
@@ -164,7 +164,7 @@ do
           next(tapped) == nil,
           next(tapped) and tostring(next(tapped)) or nil)
     check("and preserves panel action order",
-          table.concat(delivered, ",") == "menu,details,map,help",
+          table.concat(delivered, ",") == "menu,details,map,help,say",
           table.concat(delivered, ","))
 
     tapped[route.panel.menu] = true

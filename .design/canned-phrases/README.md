@@ -3,7 +3,10 @@
 Chris's ask: a way for a pilot to say a canned phrase, drawn near their
 ship for a short time; the house bots saying them too, and acting on
 "follow me", "help!" and "retreat!". This is the brainstorm and the
-mocks. Nothing here is built.
+mocks. The first five phrases, the calls, are built as
+[decision 167](../../docs/architecture/decisions.md#167-five-calls-to-your-own-side-under-the-scoreboard),
+on the `S` key, with no head on the board; the answers, the reports and
+everything about the bots are not.
 
 Two records already stand on this ground. [Decision
 51](../../docs/architecture/decisions.md#51-six-phrases-and-no-way-to-add-a-seventh)

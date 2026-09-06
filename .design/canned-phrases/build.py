@@ -101,8 +101,7 @@ PODIUM = ["gg", "nice shot", "close one", "good luck", "thanks", "sorry"]
 # During a match, to your side only. Nine so a digit picks each. The wire
 # numbers them after the six; "sorry" is the one shared with the podium and
 # keeps its index there.
-MATCH = ["follow me", "help!", "retreat!", "attack!", "hold here",
-         "on it", "can't", "falling back", "sorry"]
+MATCH = ["follow me", "help!", "retreat!", "attack!", "hold here"]
 
 # Everything considered, with the verdict and the reason, for the sheet.
 BRAINSTORM = [
@@ -507,14 +506,15 @@ def board_head(word, key):
 
 
 def picker(phrases, cursor=0, width=BOARD_W, key="C"):
-    """The board: a head naming it and the key that opened it, the tick
-    rule, then a row a phrase. No wash on the fight behind it, since it is
-    up for a second and the fight is what you are reading."""
+    """The board: a row a phrase and nothing else. Chris cut the head, and
+    the key is not named since the rows are the whole of what there is to
+    read. No wash on the fight behind it, since it is up for a second and
+    the fight is what you are reading."""
     rows = "".join(board_row(i + 1, p, i == cursor)
                    for i, p in enumerate(phrases))
     return (f'<div style="width:{width}px;background:rgba(5,7,12,.62);'
             f'box-shadow:inset 1.5px 0 0 rgba(63,88,120,.7);padding:6px 0 8px">'
-            f'{board_head("Call", key)}{ticks()}{rows}</div>')
+            f'{rows}</div>')
 
 
 def picker_under_band(w, phrases, cursor=0, width=BOARD_W):
@@ -699,12 +699,12 @@ def main_sheet():
             "was to replace them never came. This is that key, and the other "
             "half of decision 28's reconsider clause with it: a bounded set of "
             "signals to your own side during a match, drawn for three seconds "
-            "under the plate of whoever said them. The house bots say them "
-            "when their state changes in a way a wingman would call out, and "
-            "act on the three Chris named. The wire is decision 51's unchanged: "
-            "one byte, an index into a list the client holds, side-only while "
-            "a match runs, one every two seconds a seat. Nothing here is built.",
-            900),
+            "under the plate of whoever said them. The wire is decision 51's "
+            "unchanged: one byte, an index into a list the client holds, "
+            "side-only while a match runs, one every two seconds a seat. The "
+            "first five, the calls, are built as decision 167 on the S key. "
+            "The answers and reports below, and the bots saying and obeying "
+            "any of it, are not.", 900),
         gap(26),
         h2("The picker"),
         gap(6),
@@ -723,7 +723,7 @@ def main_sheet():
             "same board lists decision 51's six instead, since that is what "
             "the moment allows.", 900),
         gap(12),
-        flow([cell(picker(MATCH, 1), "During a match, nine, to your side"),
+        flow([cell(picker(MATCH, 1), "During a match, five, to your side"),
               cell(picker(PODIUM, 0), "Between matches, the six, to the room")],
              w=900),
         gap(18),

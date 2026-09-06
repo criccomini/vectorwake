@@ -79,7 +79,17 @@ local C2S_SAY = 11
 -- The fixed things, in the order the wire numbers them. Short, positive, and
 -- few: this is not chat and it does not become chat by growing, so anything
 -- that could be aimed at somebody is not on it.
-M.SAYINGS = {"gg", "nice shot", "close one", "good luck", "thanks", "sorry"}
+--
+-- Two lists in one range. The first six are the podium's, said to the room
+-- between matches. From `CALL_FIRST` up are the calls, said to your own side
+-- while a match runs (decision 167): the room refuses each at the other time.
+M.SAYINGS = {"gg", "nice shot", "close one", "good luck", "thanks", "sorry",
+             "follow me", "help!", "retreat!", "attack!", "hold here"}
+M.CALL_FIRST = 6
+-- The calls alone, in the order the picker lists them; the wire index of the
+-- first is `CALL_FIRST` and each after it is one more.
+M.CALLS = {}
+for i = M.CALL_FIRST + 1, #M.SAYINGS do M.CALLS[#M.CALLS + 1] = M.SAYINGS[i] end
 
 -- Why a side was refused, by the byte the room sends, in the register the
 -- menu's other refusals are written in: what stopped it, not what to do about
@@ -111,14 +121,18 @@ M.NO_SHIP = {
     [5] = "a hit landed while that was on its way",
 }
 
--- Who said what, and when, keyed by ship. The podium reads it and lets a line
--- go after a few seconds; nothing here is a log.
+-- Who said what, and when, keyed by ship. The plate under a hull reads it and
+-- lets a line go after a few seconds; nothing here is a log.
 M.said = {}
+-- The calls that arrived since the frame last looked, as {ship, phrase}. A
+-- feed line is written once per arrival, and `said` cannot say which of its
+-- entries are new.
+M.calls = {}
 
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 40
+local CLIENT_PROTOCOL = 41
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -1606,6 +1620,9 @@ local function on_message(s)
             -- this draws them, and `t` from zero because the frame ages it the
             -- way it ages a kill line rather than against a wall clock.
             M.said[ship] = {phrase = M.SAYINGS[phrase + 1], n = phrase, t = 0}
+            if phrase >= M.CALL_FIRST then
+                M.calls[#M.calls + 1] = {ship = ship, phrase = M.SAYINGS[phrase + 1]}
+            end
         end
     elseif kind == S2C_NOTEAM then
         -- The words are here rather than on the wire, for the reason the
@@ -1810,6 +1827,7 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room, instance)
     -- are per room, so a line left over from the last one would land on
     -- whoever inherits that seat here.
     M.said = {}
+    M.calls = {}
     M.snap_deaths = {}
     M.snap_blasts = {}
     -- Built whole rather than cleared field by field, so a field added above
