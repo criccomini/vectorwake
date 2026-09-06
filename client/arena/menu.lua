@@ -35,6 +35,7 @@ local install = require("arena.install")
 local sfx = require("arena.sfx")
 local binds = require("arena.binds")
 local keyset = require("arena.keys")
+local pad = require("arena.pad")
 
 local M = {}
 
@@ -1403,8 +1404,9 @@ local NODES = {
         -- key to bind, so the page it opened was a list of the pads already
         -- drawn around the ship, describing controls a thumb is holding while
         -- it reads about them. The board is a keyboard's page and it is
-        -- offered where there is a keyboard.
-        if not M.touching then
+        -- offered where there is a keyboard, or a gamepad: its buttons cannot
+        -- be moved, and the page is where they are written down.
+        if not M.touching or pad.seen then
             rows[#rows + 1] = {label = "controls",
                                detail = "keys", go = "controls",
                                help = "Review or change every input."}
@@ -1442,10 +1444,14 @@ local NODES = {
     -- one column at a phone's measure now, and a board drawn across it comes
     -- out with 15-point keys, so what a phone always had is what every device
     -- gets. See .design/menu-unify.
+    --
+    -- Once a gamepad has spoken, its button follows the key on every row it
+    -- has one for, written by `pad.label` so the table under H says the same.
+    -- The pad's layout is fixed, so a row still binds a key and nothing else.
     controls = {rows = function()
         local rows = {}
         for i, c in ipairs(binds.rows()) do
-            rows[i] = {label = c.name, detail = c.show,
+            rows[i] = {label = c.name, detail = pad.label(c),
                        control = c.id, fixed = c.fixed,
                        arming = M.arming == c.id,
                        act = "bind", pick = true}
@@ -1526,6 +1532,17 @@ local NODES = {
                     return "not in a game, quic did not answer for that zone"
                 end
                 return "not in a game, webtransport first when you join"
+            end},
+            -- Whether a pad is here. A browser reports none until a button
+            -- on it is pressed, so a pad that is plugged in and untouched
+            -- reads as none, and the line says what to do about that.
+            {label = "gamepad", detail = function()
+                local n = pad.count()
+                if n == 0 then
+                    return pad.seen and "none now" or "none, press a button on it"
+                end
+                if pad.unknown then return "connected, layout unknown" end
+                return n == 1 and "connected" or (n .. " connected")
             end},
             {label = "protocol", detail = function()
                 return tostring(net.PROTOCOL)

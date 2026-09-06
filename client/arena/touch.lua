@@ -84,6 +84,7 @@ local M = {}
 
 local marks = require("arena.marks")
 local pal = require("arena.palette")
+local course = require("arena.course")
 
 local DEAD_PX = 14        -- ignore a thumb that has barely moved
 local THRUST_PX = 46      -- push past this and the engine lights
@@ -513,39 +514,17 @@ function M.bits(heading)
     if bombs then out[#out + 1] = sim.BTN_BOMB end
     if not stick then return out end
 
+    -- The thumb names the course either way; arena/course.lua turns it into
+    -- rudder and engine, the same way it does for a gamepad's stick. Reversed
+    -- is the stance this file keeps, and the reason the argument exists.
     local dx, dy = stick.x - stick.ox, stick.y - stick.oy
-    local mag = math.sqrt(dx * dx + dy * dy)
-    if mag < DEAD_PX * M.scale then return out end
-
-    -- Screen +y is up and the simulation's +y is down, which is why this is
-    -- atan2(x, y) rather than the atan2(dx, -dy) the AI uses on sim vectors.
-    local want = math.atan2(dx, dy)
-    -- The thumb names the course either way. Reversed, the engine pushes out
-    -- of the tail, so the nose that serves that course is the one half a turn
-    -- from it, and that is what the rudder is given to chase. Everything below
-    -- is then the forward case unchanged, the thrust gate included: the nose
-    -- still has to be roughly where it is wanted before the engine lights.
-    if reversed then want = want + math.pi end
-    local head = (heading / 65536) * math.pi * 2
-    local diff = want - head
-    while diff > math.pi do diff = diff - math.pi * 2 end
-    while diff < -math.pi do diff = diff + math.pi * 2 end
-
-    -- The nose, always: the stick points where the nose should go, so a push
-    -- behind you is a turn like any other rather than an order to back up.
-    if diff > 0.06 then out[#out + 1] = sim.BTN_RIGHT
-    elseif diff < -0.06 then out[#out + 1] = sim.BTN_LEFT end
-
-    -- The engine once the thumb is committed and the nose is roughly there,
-    -- so a hard turn does not fling the ship the way it used to be facing.
-    if mag > THRUST_PX * M.scale and math.abs(diff) < 1.0 then
-        out[#out + 1] = reversed and sim.BTN_REVERSE or sim.BTN_THRUST
+    for _, bit in ipairs(course.bits(dx, dy, DEAD_PX * M.scale,
+                                     THRUST_PX * M.scale, heading, reversed)) do
+        out[#out + 1] = bit
     end
     return out
 end
 
--- True while the stick is steering, so the caller can drop keyboard steering
--- rather than let two sources fight over the rudder.
 function M.steering()
     return stick ~= nil
 end

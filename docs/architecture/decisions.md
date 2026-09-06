@@ -9379,3 +9379,72 @@ whose roster carries no bands drawing every mark in the mute; its counts of
 corner's copy going. `client/tools/hud_svg.lua` draws the marks in their bands
 in every scenario, working the band out from each pilot's rating rather than
 writing it down beside it. Client suite and luacheck are clean.
+
+## 167. A gamepad is the third hand
+
+**Status:** accepted
+
+**What:** the web client reads a gamepad. The browser's Gamepad API reaches
+the engine as its standard layout, two sticks, a d-pad, four face buttons, two
+shoulders and two triggers, and `client/arena/pad.lua` says what each of them
+does in the terms the keyboard and the thumb already use: a control from
+`arena/controls.lua`, latched by the frame loop under the control's own name.
+Nothing past the latch knows which hand pressed it, which is the arrangement
+rebinding put in place for keys and the reason a third hand costs the rest of
+the client nothing.
+
+The layout is fixed. The d-pad is the arrow keys: left and right turn, up
+thrusts, down backs up. The left stick points where the nose should go, the
+way the thumb does on glass, and the engine lights once the push is committed
+and the nose is roughly there. The arithmetic that turns a push into rudder
+and engine moved out of `arena/touch.lua` into `arena/course.lua` so both
+sticks read it and neither can drift. The pad's stick sets no reverse stance:
+the pad has a key for backing up, and holding it while the stick points at
+what you are backing away from is the one move the thumb on glass never had.
+The right trigger and A fire, the left trigger and X bomb, the shoulders spend
+the two charges, Y fans the gun, Back is the map and Start is the menu key. B
+opens the players sheet while flying and is the way back while the column is
+up. With the column up, the d-pad, the stick and A walk it, latched under nav
+names of their own rather than under the arrow keys, so a control waiting for
+a chord on the controls page cannot read a d-pad press as the up arrow. The
+controls table under H is the one control with no button.
+
+Once a pad has spoken, every row of the controls page and of the table under H
+writes the pad's button after the key, and the controls page is offered on
+glass as well as beside a keyboard. The about page says whether a pad is
+connected. A browser reports no pad until a button on it is pressed, so with
+none seen the line says to press one.
+
+**Why:** asked for. The rest is how, and two choices in it are worth writing
+down.
+
+The layout is fixed rather than bindable. Keys can be moved because a keyboard
+has sixty of them and a pilot's hand may sit anywhere on it. A pad has one
+place for each finger, every game of this shape puts the same things in the
+same places, and a rebinding page for it would be a second catalog, a second
+column and a second swap rule for a layout nobody would move. What is fixed is
+at least written down where the keys are, on the same rows.
+
+The face buttons change meaning with the column up, which nothing else in the
+client does. A pad's convention is that the bottom button chooses and the
+right one goes back, and a pilot who has held a pad expects both. Flying, the
+same two buttons are the gun and the players sheet, because a button that did
+nothing in a fight would be a thumb's reach wasted. The split is decided at
+the press, from whether the column is up, and remembered until the release,
+the same way a chord's modifier is.
+
+**Cost:** one more mapping the controls page writes and a pilot cannot change.
+Walking the column with the stick wants a full push, since the engine marks a
+press on an axis at nine tenths of its travel. And the feel of it is unproven:
+the routing, the stick's arithmetic and the binding file are held by tests,
+and nobody has yet flown a match with a pad in hand.
+
+**Verified:** `pad_test` holds the binding file against the catalog both ways,
+every button against a control the game offers, the one control with no
+button, the face buttons' two meanings, the stick's course in each direction
+with a push behind the nose read as a turn and a half push steering without
+lighting the engine, a direction the engine stops mentioning reading as rest,
+the pad count across connect and disconnect, and the row label with and
+without a pad seen. `touch_test` is unchanged through the shared course
+module. `first_tap_test` stubs the pad beside the bindings it already stubbed.
+Client suite, browser page tests and luacheck are clean.

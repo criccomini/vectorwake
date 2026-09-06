@@ -21,6 +21,7 @@ local frame = require("arena.frame")
 local binds = require("arena.binds")
 local keys = require("arena.keys")
 local touch = require("arena.touch")
+local pad = require("arena.pad")
 local account = require("arena.account")
 local directory = require("arena.directory")
 local menu = require("arena.menu")
@@ -46,6 +47,9 @@ local vec = require("render.vec")
 -- reads it. This is only the namespace they share.
 local TUNE = {}
 TUNE.CONTROL = require("arena.control_actions").new(hash, sim)
+-- The menu's five inputs as a gamepad sends them, read beside the arrow
+-- keys wherever the frame loop walks the column. See arena/pad.lua.
+TUNE.NAV = pad.NAV
 
 TUNE.TICK_HZ = 100
 TUNE.DT = 1 / TUNE.TICK_HZ
@@ -399,7 +403,7 @@ local function my_buttons()
     -- HTML5 builds run Lua 5.1, which has no bitwise operators, and a bit
     -- contributed by both the keyboard and the stick must still count once.
     local bits = {}
-    local steering = touch.steering()
+    local steering = touch.steering() or pad.steering()
     for action, down in pairs(held) do
         -- Defold raises a mouse action for every touch as well as the touch
         -- itself. On a phone that made the whole screen a trigger: putting a
@@ -414,18 +418,20 @@ local function my_buttons()
         -- nothing.
         local unlocked_ctrl = action == hash("guns_ctrl") and not kb_locked
         if down and not emulated and not unlocked_ctrl then
-            -- Two sources on the rudder would fight; the stick wins while it
-            -- is down, and the keys keep everything else.
+            -- Two sources on the rudder would fight; a stick wins while it
+            -- is down, whichever hand it is under, and the keys keep
+            -- everything else.
             local bit = bit_for(action)
             local rudder = bit == sim.BTN_LEFT or bit == sim.BTN_RIGHT
             if not (steering and rudder) then bits[bit] = true end
         end
     end
-    -- Raw: the stick compares the swipe against where the nose actually is,
-    -- and a heading eased for the screen is not a fact about the ship.
-    for _, bit in ipairs(touch.bits(sim.ship_heading_raw(me))) do
-        bits[bit] = true
-    end
+    -- Raw: a stick compares its push against where the nose actually is,
+    -- and a heading eased for the screen is not a fact about the ship. The
+    -- thumb on glass and the gamepad's stick name a course the same way.
+    local heading = sim.ship_heading_raw(me)
+    for _, bit in ipairs(touch.bits(heading)) do bits[bit] = true end
+    for _, bit in ipairs(pad.bits(heading)) do bits[bit] = true end
     -- A spend names its own slot, whichever control asked: a pad's tap and a
     -- key's press land in the same latch, so there is no selection anywhere
     -- to read back or to have forgotten to move. The control you pressed is
@@ -1569,6 +1575,10 @@ local function ship_roll(i, heading, dt)
 end
 
 function update(self, dt)
+    -- The engine has delivered this frame's input by now. A stick direction
+    -- it did not mention is at rest, and the pad is told so before anything
+    -- reads it.
+    pad.begin_frame()
     local ww, wh, density, live = frame.begin(self, dt, net, sfx, menu, sim)
     if not ww then return end
 
@@ -1780,9 +1790,11 @@ function update(self, dt)
         -- trigger goes into the line rather than answering the card partway
         -- through a name.
         local act, moved = menu.step({
-            left = tapped[hash("k_left")], right = tapped[hash("k_right")],
-            up = tapped[hash("k_up")], down = tapped[hash("k_down")],
-            go = tapped[hash("select")],
+            left = tapped[hash("k_left")] or tapped[TUNE.NAV.left],
+            right = tapped[hash("k_right")] or tapped[TUNE.NAV.right],
+            up = tapped[hash("k_up")] or tapped[TUNE.NAV.up],
+            down = tapped[hash("k_down")] or tapped[TUNE.NAV.down],
+            go = tapped[hash("select")] or tapped[TUNE.NAV.go],
             back = tapped[TUNE.CONTROL.panel.menu],
             rub = tapped[hash("backspace")],
         })
@@ -1800,11 +1812,14 @@ function update(self, dt)
         -- Left and right are read where a row holds a value: the ship panel's
         -- credits, and the settings panel's ranges. `ui.col_side` is what
         -- knows which, so this stays one branch.
-        local dir = (tapped[hash("k_down")] and 1)
-            or (tapped[hash("k_up")] and -1) or 0
+        --
+        -- A gamepad's d-pad and stick arrive under nav names of their own
+        -- beside the keys, and mean the same five things. See arena/pad.lua.
+        local dir = ((tapped[hash("k_down")] or tapped[TUNE.NAV.down]) and 1)
+            or ((tapped[hash("k_up")] or tapped[TUNE.NAV.up]) and -1) or 0
         if dir ~= 0 and ui.col_step(dir) then sfx.ui("ui_move") end
-        local side = (tapped[hash("k_right")] and 1)
-            or (tapped[hash("k_left")] and -1) or 0
+        local side = ((tapped[hash("k_right")] or tapped[TUNE.NAV.right]) and 1)
+            or ((tapped[hash("k_left")] or tapped[TUNE.NAV.left]) and -1) or 0
         if side ~= 0 then
             local action, value = ui.col_side(side)
             if action then menu_act(self, action, value) end
@@ -1817,7 +1832,8 @@ function update(self, dt)
         --
         -- Not while a card is taking type, which is the branch above: a call
         -- sign has a space in it, and the trigger belongs to the line.
-        if tapped[hash("select")] or tapped[hash("k_space")] then
+        if tapped[hash("select")] or tapped[hash("k_space")]
+           or tapped[TUNE.NAV.go] then
             local action, value = ui.col_go()
             if action then menu_act(self, action, value) end
         end
@@ -3734,11 +3750,22 @@ function on_input(self, action_id, action)
     -- up. Deciding again on the release would let a modifier lifted early hand
     -- the press to the barer binding halfway through, which is a bomb thrown
     -- by letting go of shift.
+    --
+    -- A gamepad's press goes the same way, under the control its button is
+    -- while the column is up or down, which is the pad's to say. The stick
+    -- is not a press at all: it is a value the pad keeps every frame and
+    -- `my_buttons` reads as a course, the way it reads the thumb's.
     local name = action_id
+    local from_pad = pad.on_action(name, action)
     if action.pressed then
         held[name] = true
         tapped[name] = true
-        local did = binds.on_press(name, held)
+        local did
+        if from_pad then
+            did = pad.on_press(name, menu.open)
+        else
+            did = binds.on_press(name, held)
+        end
         if did then
             owner[name] = did
             held[did] = true

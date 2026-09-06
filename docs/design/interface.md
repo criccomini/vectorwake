@@ -549,7 +549,9 @@ plain, behind the link bars over the dial.
 ## Pressing things
 
 Five inputs drive everything: up, down, left, right, enter. That is a d-pad,
-four drawn arrows and a button on glass, and what a keyboard already sends.
+four drawn arrows and a button on glass, and what a keyboard already sends. A
+gamepad's d-pad, left stick and A are those five, and B is the way back
+(decision 167).
 Left and right walk the tab row and set a row's value; down enters the page;
 a grid is the one place arrows mean rows and columns. A pointer is additive:
 resting on a row moves the same cursor the arrows move, and lights it the
@@ -633,6 +635,7 @@ after next is news every pilot steers by.
 | `client/arena/menu.lua` | the pages' contents and words |
 | `client/arena/menu_face.lua` | the menu face's measured advances (generated) |
 | `client/arena/touch.lua` | the thumb controls, drawing the shared marks |
+| `client/arena/pad.lua` | the gamepad: a fixed layout, and the stick |
 | `.design/rethink/` | the mocks several of these pages were redrawn to |
 
 The mocks are where the language was last argued about in pictures; when a

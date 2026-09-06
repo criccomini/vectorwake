@@ -73,6 +73,8 @@ local function session(forgiving)
         net = {watching = false},
         sfx = {ui = function() end},
         binds = {on_press = function() return nil end},
+        -- No gamepad in this session either: nothing here is a pad action.
+        pad = {on_action = function() return false end},
         held = {}, tapped = {}, owner = {}, lifted = {},
         -- The menu's own handler. Whether it recognized the action is all
         -- the press path reads back; the count is the question here.

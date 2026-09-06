@@ -13,6 +13,7 @@
 package.path = "client/?.lua;" .. package.path
 
 local keys = require("arena.keys")
+local pad = require("arena.pad")
 
 local out = {}
 local function trigger(kind, input, action)
@@ -41,6 +42,11 @@ trigger("mouse", "MOUSE_BUTTON_RIGHT", "pointer_alt")
 trigger("mouse", "MOUSE_WHEEL_UP", "wheel_up")
 trigger("mouse", "MOUSE_WHEEL_DOWN", "wheel_down")
 trigger("touch", "TOUCH_MULTI", "touch")
+-- A gamepad's inputs, one action each, named for the input the same way
+-- the keys are. What each does lives in arena/pad.lua.
+for _, p in ipairs(pad.list) do
+    trigger("gamepad", p.input, p.action)
+end
 trigger("text", "TEXT", "text")
 
 print(table.concat(out, "\n"))

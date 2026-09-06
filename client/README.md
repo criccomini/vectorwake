@@ -54,6 +54,8 @@ in `sim/`.
 | `arena/arena.script` | The frame loop: input, stepping, drawing |
 | `arena/net.lua` | Connect, predict, reconcile. Decides nothing |
 | `arena/touch.lua` | Thumbstick and weapon pads; emits the same button bits |
+| `arena/pad.lua` | A gamepad: what each button is, and its stick; the same bits again |
+| `arena/course.lua` | A stick's push turned into rudder and engine, shared by both sticks |
 | `arena/marks.lua` | Every weapon mark, add-ons and all, for the corner and the pads |
 | `arena/menu.lua` | The menu tree and the settings it saves |
 | `arena/directory.lua` | Asks a directory what games are running |
@@ -63,6 +65,7 @@ in `sim/`.
 | `tests/sfx_test.lua` | Which sound each weapon rung reaches |
 | `tests/rung_test.lua` | That a rung's color is legible and unlike anything else |
 | `tests/pad_layout_test.lua` | Where a thumb's controls are, and what they draw |
+| `tests/pad_test.lua` | What a gamepad's buttons are, and what its stick asks for |
 | `tests/overview_test.lua` | The map view's rectangles, against the maps the fleet serves |
 | `tests/impact_test.lua` | Muzzles, impact marks and hurt hulls, measured in lit pixels |
 | `tests/podium_test.lua` | What the ending says: who took it, who the mvp was, what it paid |
@@ -625,6 +628,28 @@ want.
 Only where a finger has been, which is `touch.used`. On a desktop the window is
 the player's to size, and taking the whole screen because they clicked a game
 is the rudeness this is meant to undo.
+
+## What a gamepad gets
+
+A browser hands the engine a pad on its standard layout, and `arena/pad.lua`
+says what each input is in the same terms as the keys: a control id, latched
+by the frame loop under the control's name. The layout is fixed and the
+controls page writes each button after the key on the row it belongs to, once
+a pad has spoken; a browser reports no pad until a button on it is pressed.
+
+The d-pad is the arrow keys and the left stick points the nose, through the
+same arithmetic as the thumb on glass (`arena/course.lua`). The pad's stick
+sets no reverse stance: hold down on the d-pad and point the stick at what
+you are backing away from. Triggers fire and bomb, shoulders spend the
+charges, Start is the menu key, Back is the map. With the column up, the
+d-pad, the stick and A walk it and B is the way back; flying, A fires and B
+opens the players sheet. Which of the two a press is gets decided at the
+press and held to the release, the way a chord's modifier is. See decision
+167.
+
+`lua5.1 client/tests/pad_test.lua` holds the binding file against the
+catalog, every button against a control, the two meanings of the face
+buttons, and the stick's course in each direction.
 
 ## The screen naming its own parts
 

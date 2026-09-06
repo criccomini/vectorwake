@@ -19,6 +19,7 @@
 
 local pal = require("arena.palette")
 local marks = require("arena.marks")
+local gamepad = require("arena.pad")
 -- How wide each letter of the menu's face draws, generated from the file it
 -- draws with. See `text_w`.
 local menu_face = require("arena.menu_face")
@@ -2459,9 +2460,13 @@ local function help_table()
     -- Three columns, measured off the widest thing each has to hold rather
     -- than guessed, since the sentences are what decides the width and they
     -- are the one column that cannot be allowed to wrap.
+    --
+    -- The key column carries the gamepad's button after the key once a pad
+    -- has spoken, and `gamepad.label` is what writes both here and on the
+    -- controls page, so the two cannot disagree about one button.
     local kw, nw, dw = 0, 0, 0
     for _, r in ipairs(bound) do
-        kw = math.max(kw, glyph_w(r.show, fs))
+        kw = math.max(kw, glyph_w(gamepad.label(r), fs))
         nw = math.max(nw, glyph_w(r.name, fs))
         dw = math.max(dw, glyph_w(r.what, fs))
     end
@@ -2501,7 +2506,7 @@ local function help_table()
         -- ink, and the sentence dimmer than both: three weights so the eye can
         -- run down one column without reading the other two.
         F.case = "upper"
-        txt(r.show, kx, ty, fs, pal.a(pal.FRIEND, 0.95))
+        txt(gamepad.label(r), kx, ty, fs, pal.a(pal.FRIEND, 0.95))
         txt(r.name, nx, ty, fs, pal.a(pal.INK, 0.92))
         -- Prose, and set as prose. The rest of the interface shouts.
         F.case = "sentence"
