@@ -296,10 +296,11 @@ pub fn exists(name: &str) -> bool {
 }
 
 /// Everything a mode is built from, which is all of it a zone's own. A
-/// two-team flag game with three flags, or a four-a-side melee on a two
-/// minute clock, is configuration rather than a rebuild.
+/// two-team flag game, or a four-a-side melee on a two minute clock, is
+/// configuration rather than a rebuild. How many flags there are is the
+/// room's: a flag game reads the count off the map the room placed them on,
+/// since a rotation can change it.
 pub struct Setup {
-    pub flags: u8,
     pub teams: u8,
     /// Ticks a match runs, and ticks of podium between two of them. A flag
     /// game reads only the second: its match has no length.
@@ -327,9 +328,9 @@ pub const ROUND_CLOSE_TICKS: u32 = 2 * TICKS_PER_SECOND;
 
 /// Build the mode a zone asked for.
 pub fn build(name: &str, s: &Setup) -> Box<dyn Mode> {
-    let (flags, teams) = (s.flags.max(1), s.teams.max(1));
+    let teams = s.teams.max(1);
     match name {
-        "flags" => Box::new(Flags::new(flags, teams, s.intermission_ticks.max(1))),
+        "flags" => Box::new(Flags::new(teams, s.intermission_ticks.max(1))),
         "melee" => Box::new(Melee::new(
             teams,
             s.match_ticks.max(1),
@@ -352,6 +353,9 @@ pub trait Mode: Send {
     fn tick(&mut self, ctx: &mut ModeCtx);
     /// One death, in the order the tick that produced it emitted them.
     fn on_death(&mut self, ctx: &mut ModeCtx, victim: u8, killer: u8);
+    /// A pilot left the field mid-match, taking a hull whose tallies the
+    /// score was being read off. What they scored stays with their side.
+    fn departed(&mut self, _team: u8, _kills: i16, _deaths: u16) {}
     /// What the zone file calls this mode. Read by the tests that build one
     /// from a name, which is the only caller that has to check it came back
     /// with what it asked for.
@@ -400,6 +404,11 @@ pub struct Melee {
     clock: Clock,
     /// The score, live while playing and held through the intermission.
     score: Vec<u16>,
+    /// Kills scored by pilots who have since left the field, per side. The
+    /// score is read off the hulls on the field, and a hull that emptied
+    /// took its kills off the board with it: every mid-match join into a
+    /// full room evicts a bot, and that bot's side lost what it had taken.
+    banked: Vec<i32>,
 }
 
 impl Melee {
@@ -408,6 +417,7 @@ impl Melee {
             teams,
             clock: Clock::new(match_ticks, intermission_ticks),
             score: vec![0; teams as usize],
+            banked: vec![0; teams as usize],
         }
     }
 
@@ -422,7 +432,7 @@ impl Melee {
     /// nothing at all to reach the floor, so the clamp is a guard rather than
     /// a rule anybody will play against.
     fn tally(&self, ctx: &ModeCtx) -> Vec<u16> {
-        let mut score = vec![0i32; self.teams as usize];
+        let mut score = self.banked.clone();
         for sh in ctx.world.state.ships.iter() {
             if sh.active == 0 {
                 continue;
@@ -444,7 +454,10 @@ impl Mode for Melee {
             // A fresh match counts from nothing. The kills on the field are
             // the score and `sim_restart` zeroes them, so all this has to do
             // is forget the match just played.
-            Beat::Opening => self.score = vec![0; self.teams as usize],
+            Beat::Opening => {
+                self.score = vec![0; self.teams as usize];
+                self.banked = vec![0; self.teams as usize];
+            }
             // The whistle tick is still part of the match it ended, which is
             // what makes a bomb already in the air count.
             Beat::Playing | Beat::Ending => self.score = self.tally(ctx),
@@ -459,6 +472,12 @@ impl Mode for Melee {
     }
 
     fn on_death(&mut self, _ctx: &mut ModeCtx, _victim: u8, _killer: u8) {}
+
+    fn departed(&mut self, team: u8, kills: i16, _deaths: u16) {
+        if let Some(n) = self.banked.get_mut(team as usize) {
+            *n += kills as i32;
+        }
+    }
 
     #[cfg(test)]
     fn name(&self) -> &'static str {
@@ -508,6 +527,10 @@ pub struct Duel {
     from: Vec<u16>,
     /// Ticks left in the window a death opened, and `None` between rounds.
     closing: Option<u32>,
+    /// Deaths of pilots who have since left the field, per side, for the
+    /// reason melee banks kills: the rounds are read off the hulls, and a
+    /// hull that emptied took the rounds the other side had won off it.
+    banked: Vec<u32>,
 }
 
 impl Duel {
@@ -521,6 +544,7 @@ impl Duel {
             score: vec![0; teams as usize],
             from: vec![0; teams as usize],
             closing: None,
+            banked: vec![0; teams as usize],
         }
     }
 
@@ -530,7 +554,7 @@ impl Duel {
     /// there is no self-inflicted one that takes a round off somebody. The
     /// worst a pilot can do to their own score here is nothing.
     fn tally(&self, ctx: &ModeCtx) -> Vec<u16> {
-        let mut deaths = vec![0u32; self.teams as usize];
+        let mut deaths = self.banked.clone();
         for sh in ctx.world.state.ships.iter() {
             if sh.active == 0 {
                 continue;
@@ -577,6 +601,7 @@ impl Mode for Duel {
                 self.score = vec![0; self.teams as usize];
                 self.from = vec![0; self.teams as usize];
                 self.closing = None;
+                self.banked = vec![0; self.teams as usize];
             }
             // The whistle tick is still part of the match it ended, which is
             // what makes a bomb already in the air count.
@@ -637,6 +662,12 @@ impl Mode for Duel {
         "duel"
     }
 
+    fn departed(&mut self, team: u8, _kills: i16, deaths: u16) {
+        if let Some(n) = self.banked.get_mut(team as usize) {
+            *n += deaths as u32;
+        }
+    }
+
     fn reopen(&mut self) {
         self.clock.reopen();
     }
@@ -670,7 +701,6 @@ impl Mode for Duel {
 /// different rule about winning. See decision 165, which replaced Turf's
 /// payout and Capture the Flag's rounds with this.
 pub struct Flags {
-    flags: u8,
     /// How many sides there are to win. Four was hardcoded in the leader
     /// search, in the win tally and in the banner, which is fine for the two
     /// the shipped zones have and silently wrong for anything else: a side
@@ -697,9 +727,8 @@ pub struct Flags {
 pub const HOLD_SECONDS: u32 = 15;
 
 impl Flags {
-    pub fn new(flags: u8, teams: u8, intermission_ticks: u32) -> Self {
+    pub fn new(teams: u8, intermission_ticks: u32) -> Self {
         Flags {
-            flags,
             teams,
             clock: Clock::open_ended(intermission_ticks),
             hold: None,
@@ -709,11 +738,18 @@ impl Flags {
     }
 
     /// The side holding every flag, if there is one.
+    ///
+    /// Every flag the room placed, read off the room each tick rather than
+    /// off the count this was built with. The room places the stands afresh
+    /// on each rotated map, and a rotation onto a map with more stands than
+    /// the first could never be held in full, or with fewer was held by
+    /// whoever took the partial set.
     fn holder(&self, ctx: &ModeCtx) -> Option<u8> {
-        if self.flags == 0 {
+        let flags = ctx.world.state.flag_count;
+        if flags == 0 {
             return None;
         }
-        (0..self.teams).find(|&team| ctx.world.flags_held(team) as u8 == self.flags)
+        (0..self.teams).find(|&team| ctx.world.flags_held(team) as u8 == flags)
     }
 
     /// One tick of the hold: who has the set, how long they have had it, and
@@ -741,7 +777,11 @@ impl Flags {
             ctx.banner = won_banner(ctx, self.winner);
             return;
         }
-        ctx.banner = format!("{} holds all {} flags", ctx.team_name(team), self.flags);
+        ctx.banner = format!(
+            "{} holds all {} flags",
+            ctx.team_name(team),
+            ctx.world.state.flag_count
+        );
     }
 
     /// Seconds left on the hold, which is the only clock this game has and is
@@ -1002,7 +1042,7 @@ mod melee_tests {
         assert!(FreeForAll.match_state().is_none());
         assert!(Melee::new(2, 300, 100).match_state().is_some());
         assert!(Duel::new(2, 2, 300, 100).match_state().is_some());
-        let flags = Flags::new(4, 2, 1_500).match_state().expect("a match");
+        let flags = Flags::new(2, 1_500).match_state().expect("a match");
         assert!(flags.playing);
         assert_eq!(flags.seconds_left, None, "and no clock on it");
     }
@@ -1010,7 +1050,6 @@ mod melee_tests {
     #[test]
     fn a_zone_names_the_mode_and_gets_it() {
         let setup = Setup {
-            flags: 0,
             teams: 2,
             match_ticks: 18_000,
             intermission_ticks: 2_500,
@@ -1315,8 +1354,8 @@ mod flag_tests {
 
     /// A game with a short podium, so a test can run through one and into the
     /// match after it without a thousand ticks of waiting.
-    fn game(flags: u8, teams: u8) -> Flags {
-        Flags::new(flags, teams, 100)
+    fn game(teams: u8) -> Flags {
+        Flags::new(teams, 100)
     }
 
     fn ctx<'a>(world: &'a mut World, names: &'a [String]) -> ModeCtx<'a> {
@@ -1350,7 +1389,7 @@ mod flag_tests {
     fn a_match_has_no_clock_until_somebody_holds_the_set() {
         let names = sides();
         let mut w = stands(3);
-        let mut m = game(3, 2);
+        let mut m = game(2);
         for _ in 0..1_000 {
             m.tick(&mut ctx(&mut w, &names));
         }
@@ -1364,7 +1403,7 @@ mod flag_tests {
     fn holding_every_flag_for_fifteen_seconds_takes_the_match() {
         let names = sides();
         let mut w = stands(3);
-        let mut m = game(3, 2);
+        let mut m = game(2);
         open(&mut m, &mut w, &names);
         for i in 0..3 {
             w.state.flags[i].team = 1;
@@ -1390,7 +1429,7 @@ mod flag_tests {
     fn the_countdown_starts_at_fifteen_and_runs_out() {
         let names = sides();
         let mut w = stands(2);
-        let mut m = game(2, 2);
+        let mut m = game(2);
         open(&mut m, &mut w, &names);
         for i in 0..2 {
             w.state.flags[i].team = 0;
@@ -1412,7 +1451,7 @@ mod flag_tests {
     fn losing_one_flag_stops_the_countdown() {
         let names = sides();
         let mut w = stands(3);
-        let mut m = game(3, 2);
+        let mut m = game(2);
         for i in 0..3 {
             w.state.flags[i].team = 0;
         }
@@ -1447,7 +1486,7 @@ mod flag_tests {
     fn a_simultaneous_change_of_flag_owner_restarts_the_hold() {
         let names = sides();
         let mut w = stands(2);
-        let mut m = game(2, 2);
+        let mut m = game(2);
         for i in 0..2 {
             w.state.flags[i].team = 0;
         }
@@ -1474,7 +1513,7 @@ mod flag_tests {
         // and a win by ship five was tallied against ship one's row.
         let names = sides();
         let mut w = stands(2);
-        let mut m = game(2, 8);
+        let mut m = game(8);
         open(&mut m, &mut w, &names);
         for i in 0..2 {
             w.state.flags[i].team = 5;
@@ -1503,7 +1542,7 @@ mod flag_tests {
         w.state.ships[0].active = 0;
 
         w.step(&[]);
-        let mut m = game(1, 2);
+        let mut m = game(2);
         open(&mut m, &mut w, &names);
         m.tick(&mut ctx(&mut w, &names));
 
@@ -1521,7 +1560,7 @@ mod flag_tests {
     fn the_podium_counts_itself_down_and_nothing_else() {
         let names = sides();
         let mut w = stands(2);
-        let mut m = game(2, 2);
+        let mut m = game(2);
         open(&mut m, &mut w, &names);
         for i in 0..2 {
             w.state.flags[i].team = 1;
@@ -1540,7 +1579,7 @@ mod flag_tests {
     fn the_next_match_starts_from_nothing() {
         let names = sides();
         let mut w = stands(2);
-        let mut m = game(2, 2);
+        let mut m = game(2);
         for i in 0..2 {
             w.state.flags[i].team = 1;
         }
@@ -1569,7 +1608,7 @@ mod flag_tests {
     fn the_banner_names_the_side_holding_the_set_and_the_one_that_took_it() {
         let names = sides();
         let mut w = stands(2);
-        let mut m = game(2, 2);
+        let mut m = game(2);
         let mut c = ctx(&mut w, &names);
         m.tick(&mut c);
         assert_eq!(c.banner, "", "nothing to say while the set is loose");

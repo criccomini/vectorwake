@@ -147,8 +147,13 @@ impl RatedLease {
         .map(|(claimed, _)| claimed)
     }
 
-    pub(crate) async fn release(self) {
-        self.release_after_settlement().await;
+    /// Give the seat back. The settlement it waits on retries until the
+    /// meta-layer answers, so it runs beside the session rather than in
+    /// front of it: awaited inline, a bench or a sit-out during an outage
+    /// stopped the session loop reading its socket at all, and the pilot
+    /// could neither fly again nor leave until the outage ended.
+    pub(crate) fn release(self) {
+        tokio::spawn(self.release_after_settlement());
     }
 
     pub(crate) async fn release_after_settlement(mut self) {
@@ -1190,6 +1195,12 @@ impl ArenaServer {
         // its own timeout rather than reconnecting into the new game.
         for r in self.rooms.iter_mut() {
             r.evict_all_bots();
+            // And the watchers, who are not players and did not stop the
+            // change: their rooms are about to stop existing, and a watcher
+            // whose room went under them sat on a socket that had gone quiet
+            // until the client's own timeout named the wrong reason. The
+            // drain path yields them for the same reason.
+            r.drop_watchers();
         }
         // A change of zone replaces every room: they all served the old game.
         self.rooms = vec![room];

@@ -7999,6 +7999,98 @@ mod tests {
             );
         }
     }
+
+    /// A seat taken back from a bot is spawned into, so nothing of the bot
+    /// stays on it: not its assists, not the damage it had taken, not its
+    /// build. It used to be taken over as it stood, and every mid-match
+    /// join into a full room goes through this path.
+    #[test]
+    fn a_seat_taken_from_a_bot_carries_nothing_of_the_bot() {
+        let mut a = room_with_teams("teams = [\"Pylon\", \"Caisson\"]\nmax_ships = 2\n");
+        let bots = seat_bots(&mut a, 2);
+        assert_eq!(a.world.state.ship_count, 2, "every seat taken by a bot");
+        let victim = bots[0];
+        let other = bots[1];
+        let tick = a.world.state.tick;
+        {
+            let sh = &mut a.world.state.ships[victim as usize];
+            sh.assists = 5;
+            sh.hurt_by[0] = other;
+            sh.hurt_at[0] = tick;
+            sh.kit = [0; sim::SLOT_COUNT];
+            sh.kit[sim::slot_stat(sim::UP_SPEED) as usize] = 7;
+            // Dead, so `evict_bot` picks this one first.
+            sh.alive = 0;
+        }
+        let human = seat_human(&mut a, "human");
+        assert_eq!(human, victim, "the human took the bot's seat");
+        let sh = a.world.state.ships[human as usize];
+        assert_eq!(sh.assists, 0, "the bot's assists are not theirs");
+        assert_eq!(sh.hurt_by[0], 255, "nor the damage it had taken");
+        assert_eq!(sh.kit, a.world.default_kit(sh.cls), "nor its build");
+        assert_eq!(sh.active, 1);
+        assert_eq!(sh.alive, 1);
+    }
+
+    /// A melee side keeps the kills a departed pilot scored. The score is
+    /// read off the hulls on the field, and an emptied hull used to take its
+    /// kills off the board with it.
+    #[test]
+    fn a_side_keeps_what_a_departed_pilot_scored() {
+        let mut def = wire_zone(1, 16, 32);
+        def.mode = "melee".into();
+        def.zone_toml = "teams = [\"Pylon\", \"Caisson\"]\n[arena]\nmatch_seconds = 180\n\
+                         intermission_seconds = 1\n"
+            .into();
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
+        z.serve_zone(&def).expect("a room");
+        let mut a = z.rooms.remove(0);
+        let (s1, id1, _rx1) = seat_rx(&mut a, "one");
+        let (_s2, _id2, _rx2) = seat_rx(&mut a, "two");
+        a.tick(); // the opening whistle, which zeroes every tally
+        assert!(a.mode.match_state().unwrap().playing);
+        let side = a.world.state.ships[s1 as usize].team as usize;
+        a.world.state.ships[s1 as usize].kills = 3;
+        a.tick();
+        assert_eq!(a.mode.match_state().unwrap().score[side], 3);
+        assert!(a.leave(id1, pilot::why::LEFT));
+        a.tick();
+        let after = a.mode.match_state().unwrap().score;
+        assert_eq!(after[side], 3, "the kills stay with the side: {after:?}");
+    }
+
+    /// A watcher keeps the byte of the side they sat out from. In a room
+    /// with private sides the reaper frees it and the next founder is dealt
+    /// it, and honored on the byte alone the returning watcher landed on a
+    /// stranger's private side uninvited.
+    #[test]
+    fn a_returning_watcher_does_not_land_on_a_reissued_private_side() {
+        let mut a = room_with_teams("label = \"ffa\"\n");
+        assert_eq!(a.public_teams, 0, "no named sides: a free-for-all");
+        let (sa, ida, _rxa) = seat_rx(&mut a, "alpha");
+        let team_a = a.world.state.ships[sa as usize].team;
+        assert!(a.sit_out(ida, false), "a whole pilot may sit out");
+        assert!(
+            !a.teams.contains_key(&team_a),
+            "the side of one was reaped when its pilot sat out"
+        );
+        assert_eq!(
+            a.watchers[&ida].team,
+            Some(team_a),
+            "but the watcher remembers it"
+        );
+        let sc = seat_human(&mut a, "newcomer");
+        let team_c = a.world.state.ships[sc as usize].team;
+        assert_eq!(team_c, team_a, "the freed byte is reissued to the newcomer");
+        let back = a.fly(ida, 0, 32).expect("a seat was free");
+        let sa2 = a.players[&back].ship;
+        assert_ne!(sa2, sc);
+        assert_ne!(
+            a.world.state.ships[sa2 as usize].team, team_c,
+            "the returning watcher is not on the newcomer's private side"
+        );
+    }
 }
 
 #[cfg(test)]

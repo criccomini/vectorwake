@@ -1091,7 +1091,6 @@ impl Room {
     /// zone file is written by a person.
     pub(crate) fn mode_setup(&self, c: &config::ArenaConfig) -> modes::Setup {
         modes::Setup {
-            flags: self.world.state.flag_count,
             teams: self.public_teams,
             match_ticks: c.match_seconds.unwrap_or(180) as u32 * 100,
             intermission_ticks: c.intermission_seconds.unwrap_or(25) as u32 * 100,
@@ -1367,7 +1366,6 @@ impl Room {
         // The built-in arena's own defaults, which a catalog zone replaces
         // the moment it names its clocks.
         a.mode = Box::new(modes::Flags::new(
-            4,
             a.public_teams,
             15 * modes::TICKS_PER_SECOND,
         ));
@@ -1705,8 +1703,12 @@ impl Room {
             // Refusing here instead would be the arena telling a player that a
             // room full of AI has no space for them, which is the one refusal
             // this design must never produce.
-            if let Some(freed) = self.evict_bot() {
-                ship = freed as i32;
+            // Spawned into, once the eviction has emptied it, rather than
+            // taken over as it stands: a spawn clears the whole seat, and
+            // taking it over left the bot's assists, its build, its heading
+            // and the damage it had taken on the pilot who sat down.
+            if self.evict_bot().is_some() {
+                ship = self.world.spawn_on_map(class, 0, nth, 0);
             }
         }
         if ship < 0 {
@@ -1721,8 +1723,19 @@ impl Room {
         // emptiest of the zone's own that has room, or a side of their own
         // where the zone names none. Moving is then one selection away in the
         // team list, and only a full side can refuse it.
+        // A remembered side only where a fresh arrival could ask for it: a
+        // watcher keeps the byte of the side they sat out from, the reaper
+        // frees a private side of one, and the next founder is dealt the
+        // same byte. Honored on the byte alone, the returning watcher landed
+        // on a stranger's private side uninvited.
         let team = match prefer {
-            Some(t) if self.teams.contains_key(&t) && self.team_has_room(t, bot, Some(ship)) => t,
+            Some(t)
+                if self.teams.get(&t).is_some_and(|side| {
+                    side.public || self.invites.get(&ship).is_some_and(|s| s.contains(&t))
+                }) && self.team_has_room(t, bot, Some(ship)) =>
+            {
+                t
+            }
             _ => self.seat_team(ship, &seat),
         };
         // Where a fresh pilot starts, worked out before anything about them is
@@ -1742,13 +1755,12 @@ impl Room {
             // was right for eight hulls and one past the end for seven.
             sh.cls = class;
             sh.team = team;
-            // Occupied, as well as alive. A seat taken back from a bot arrives
-            // here inactive, because handing it over is `leave` followed by
-            // this rather than a spawn, and `leave` is what empties a seat.
-            // Only `alive` was set, so the new pilot sat in a chair the
-            // simulation considered nobody's: the core skips an inactive ship,
-            // and `sim_spawn` hands the first one it finds to the next arrival.
-            // Two people, one seat, and neither of them flying.
+            // Occupied, as well as alive. A seat taken back from a bot used
+            // to arrive here inactive, because handing it over was `leave`
+            // followed by this rather than a spawn, and only `alive` was
+            // set, so the new pilot sat in a chair the simulation considered
+            // nobody's. It is spawned into now, like any other, and this is
+            // what a spawn already wrote.
             sh.active = 1;
             sh.alive = 1;
             // Everything a pilot carries, cleared. This was `up` alone, so a
@@ -2801,6 +2813,14 @@ impl Room {
                         "quit_loss": rated.is_some(),
                     }),
                 );
+            }
+            // What they scored stays on their side's board. The mode reads
+            // the score off the hulls on the field, and an emptied hull took
+            // its tallies off the board with it, which every mid-match join
+            // into a full room did to the side of the bot it evicted.
+            {
+                let sh = &self.world.state.ships[p.ship as usize];
+                self.mode.departed(sh.team, sh.kills, sh.deaths);
             }
             // The core vacates the seat, because rounds in flight, fuses and
             // the assist ledger all name it by index, and writing `active = 0`

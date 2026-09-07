@@ -87,7 +87,7 @@ pub(crate) async fn serve_client(
                 };
                 if event.release_rated_lease {
                     if let Some(lease) = rated_lease.take() {
-                        lease.release().await;
+                        lease.release();
                     }
                 }
                 if event.connection_closed {
@@ -113,7 +113,7 @@ pub(crate) async fn serve_client(
         // dispatching the watcher's next message.
         if matches!(presence.current(), Presence::Watching { .. }) {
             if let Some(lease) = rated_lease.take() {
-                lease.release().await;
+                lease.release();
             }
         }
         if rated_lease
@@ -754,14 +754,14 @@ pub(crate) async fn serve_client(
                         let Presence::Watching { room, member } = presence.current() else {
                             drop(z);
                             if let Some(lease) = candidate {
-                                lease.release().await;
+                                lease.release();
                             }
                             continue;
                         };
                         let Some(index) = z.rooms.iter().position(|a| a.number == room) else {
                             drop(z);
                             if let Some(lease) = candidate {
-                                lease.release().await;
+                                lease.release();
                             }
                             continue;
                         };
@@ -788,14 +788,14 @@ pub(crate) async fn serve_client(
                                 rated_lease = candidate;
                             }
                         } else if let Some(lease) = candidate {
-                            lease.release().await;
+                            lease.release();
                         } else if let Some(lease) = rated_lease.take() {
                             // The only watcher that can arrive here still
                             // holding a lease was swept out of a safe zone and
                             // immediately asked to fly again. If the room has
                             // filled in the meantime, it stays in the stands
                             // and must stop excluding this account elsewhere.
-                            lease.release().await;
+                            lease.release();
                         }
                     }
                 }
@@ -825,7 +825,7 @@ pub(crate) async fn serve_client(
                 drop(z);
                 if release {
                     if let Some(lease) = rated_lease.take() {
-                        lease.release().await;
+                        lease.release();
                     }
                 }
             }
@@ -871,7 +871,7 @@ pub(crate) async fn serve_client(
     drop(z);
 
     if let Some(lease) = rated_lease {
-        lease.release().await;
+        lease.release();
     }
 }
 
