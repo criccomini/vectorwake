@@ -1487,6 +1487,7 @@ function init(self)
         self.online = true
         self.joining = 0
         self.join_progress = net.join_progress
+        self.was_playing = nil
         return
     end
 
@@ -2653,6 +2654,9 @@ function session.enter(self, address, zone_name, wt, room, watch, instance)
     self.online = true
     self.joining = 0
     self.join_progress = net.join_progress
+    -- What the clock said belongs to the room it said it in. Carried over,
+    -- a match that ended there made arriving mid-match here a start.
+    self.was_playing = nil
     return true
 end
 
@@ -2756,6 +2760,9 @@ function session.seek_tick(self, dt)
     self.online = true
     self.joining = 0
     self.join_progress = net.join_progress
+    -- What the clock said belongs to the room it said it in. Carried over,
+    -- a match that ended there made arriving mid-match here a start.
+    self.was_playing = nil
     -- The game this client is on, watching or flying: one question with one
     -- answer, so the games list opens on the room already in the glass rather
     -- than on whichever one was last deployed into, and coming back tomorrow

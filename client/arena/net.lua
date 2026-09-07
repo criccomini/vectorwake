@@ -643,7 +643,13 @@ local function on_roster(s)
         -- taken mid-match has nothing latched at the whistle, and a line
         -- reading from zero would claim the whole of somebody's career as
         -- this match's work.
-        if M.rated_from[ship] == nil then M.rated_from[ship] = rating end
+        -- And a seat is not a pilot: dealt again to somebody else, it
+        -- starts from their rating, or the column would read the newcomer's
+        -- whole standing against a stranger's.
+        local before = M.pilots[ship]
+        if M.rated_from[ship] == nil or (before and before.name ~= pilots[ship].name) then
+            M.rated_from[ship] = rating
+        end
         o = o + 13 + len
     end
     -- The watchers, after the ships: count, then label and name per row. No
@@ -1146,11 +1152,19 @@ end
 -- supposed to prevent, wearing the one disguise it cannot catch.
 local SNAP_UNREADABLE = "the zone sent a snapshot this client cannot read"
 
+local hull_taken = false
+
 local function adopt_lifecycle(epoch, watching, subject)
     if lifecycle ~= 0 and epoch ~= lifecycle and not serial_after(epoch, lifecycle) then
         return false
     end
     if epoch ~= lifecycle then
+        -- Whether this life is the one that took the hull away, noted here
+        -- because the welcome that says why is not always the first to
+        -- carry the new epoch: over WebTransport a watcher's snapshot rides
+        -- a datagram and beats the stream, and by the time the welcome read
+        -- `M.watching` the switch had already happened.
+        hull_taken = not M.watching and watching
         lifecycle = epoch
         input_log = {}
         receipts:reset()
@@ -1480,13 +1494,20 @@ local function on_snapshot(s)
 end
 
 local function on_message(s)
-    transport:progress()
     M.stats.rx = M.stats.rx + #s
     M.stats.msgs = M.stats.msgs + 1
     local kind = string.byte(s, 1)
+    -- Progress is a step of the join: the map, the settings, the welcome.
+    -- The snapshot that completes it proves the wire in its own handler.
+    -- Nothing else counts, because a room sends every seat a roster every
+    -- two seconds whether or not its snapshots are getting through, and a
+    -- session that reset the clock on those never gave up: a wedged
+    -- reliable lane held the join at "joining" for as long as the tab was
+    -- open, and so did a dead snapshot lane under a healthy welcome.
     if kind == S2C_MAP then
         local r = sim.apply_map(string.sub(s, 2))
         if r == 0 then
+            transport:progress()
             M.map_epoch = M.map_epoch + 1
             map_wants_settings = true
         else
@@ -1497,6 +1518,7 @@ local function on_message(s)
                  or "the zone sent a map this client cannot read")
         end
     elseif kind == S2C_SETTINGS then
+        transport:progress()
         -- The zone's numbers, over this client's compiled defaults. Refusing
         -- them would mean predicting a different game, so a message we
         -- cannot read is worth losing the connection over -- the same call
@@ -1533,6 +1555,7 @@ local function on_message(s)
             confirmed = {}
         end
     elseif kind == S2C_WELCOME then
+        transport:progress()
         -- Which of this connection's two lives it is in: a ship, or 255 for
         -- watching. Sitting out and flying again arrive as fresh welcomes on
         -- the same socket, so this is also the view switch, and it gets the
@@ -1543,19 +1566,18 @@ local function on_message(s)
         local seat = string.byte(s, 2)
         local epoch = u32(string.byte(s, 3), string.byte(s, 4),
                           string.byte(s, 5), string.byte(s, 6))
-        -- Read before the switch below moves it. What makes this welcome worth
-        -- a line is that it takes a hull away, and afterwards there is nothing
-        -- left on the client saying there was one.
-        local was_flying = not M.watching
         if not adopt_lifecycle(epoch, seat == 255, seat) then return end
-        -- Why the room did that, when it was not asked. Gated on the pilot
-        -- having been flying a moment ago rather than on the byte alone, so a
-        -- welcome delivered twice cannot say it twice.
+        -- Why the room did that, when it was not asked. What makes this
+        -- welcome worth a line is that its life took a hull away, and
+        -- afterwards there is nothing left on the client saying there was
+        -- one. Gated on that rather than on the byte alone, and spent here,
+        -- so a welcome delivered twice cannot say it twice.
         local why = string.byte(s, 17)
-        if seat == 255 and was_flying
+        if seat == 255 and hull_taken
             and (why == M.WHY_LAG or why == M.WHY_SAFE) then
             M.benched = why
         end
+        hull_taken = false
         -- Which room this is, as the server numbered it. Never what was asked
         -- for: a room can fill between a list being read and a key landing,
         -- and the corner of the screen is the one place that must not be
@@ -1793,6 +1815,7 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room, instance)
     M.room = nil
     M.pilots = {}
     M.ratings = {}
+    M.rated_from = {}
     M.kills = {}
     M.charge_events = {}
     M.streaks = {}
@@ -1993,7 +2016,10 @@ function M.step(buttons)
     if not M.connected or not transport:has_wire() then return false end
     -- The welcome arrives before the first snapshot. Until one lands there is
     -- no ship to predict, so hold the frame rather than step an empty world.
-    if not have_snapshot then return true end
+    -- Held is not stepped: answering true here had the caller drain the
+    -- core's event list, which still held the last world's final tick, once
+    -- per catch-up step until the snapshot came.
+    if not have_snapshot then return false end
     -- Watching: no input log, no send, no replay of a ship this connection
     -- does not have. The world still steps, with nobody's hands on anything,
     -- because `sim.replay` is the step in this client and skipping it froze

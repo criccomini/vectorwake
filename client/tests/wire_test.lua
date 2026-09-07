@@ -721,6 +721,38 @@ for _ = 1, 6 do net.tick(1) end
 check("a welcome without snapshots still loses the join", ws.dialled == 1,
       "dialled " .. ws.dialled)
 
+-- Nor is a roster. The room sends one to every seat every two seconds
+-- whether or not its snapshots are getting through, and a join that read
+-- those as progress never gave up on a snapshot lane that was dead.
+net = fresh_net()
+net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
+            "https://zone:9443")
+wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = welcome(3)})
+for _ = 1, 4 do
+    wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = string.char(3, 0)})
+    wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = string.char(4, 0, 0)})
+    net.tick(1)
+    net.tick(1)
+end
+check("a roster every two seconds does not keep a snapshotless join alive",
+      ws.dialled == 1, "dialled " .. ws.dialled)
+
+-- Snapshots that arrive before the welcome are dropped, and a dropped one
+-- is not progress either: the lane that is wedged is the one the welcome
+-- rides, and a session that counted the datagrams stayed on it.
+net = fresh_net()
+net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
+            "https://zone:9443")
+wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
+for _ = 1, 8 do
+    wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5000)})
+    net.tick(1)
+end
+check("snapshots dropped before the welcome do not hold the wire open",
+      ws.dialled == 1 and net.stats.snaps == 0, "dialled " .. ws.dialled)
+
 -- And one snapshot settles the wire for good: the clock stops, and six quiet
 -- seconds later the session is still the one that was joined.
 net = fresh_net()
