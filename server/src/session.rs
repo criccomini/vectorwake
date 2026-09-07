@@ -15,6 +15,27 @@ mod commands;
 /// seconds, so this leaves one half-interval of scheduling slack.
 pub(crate) const SESSION_QUIET: std::time::Duration = std::time::Duration::from_secs(45);
 
+/// Whether every rated seat this connection gave back has been settled and
+/// its row deleted. A release runs beside the session rather than in front
+/// of it, so that a bench during a meta outage does not stop the socket being
+/// read; but its delete is keyed by the same session a fresh claim would
+/// write, and a claim that got in first was deleted behind it. So a claim
+/// waits here, briefly, and gives up rather than hold the socket through an
+/// outage: a claim the meta-layer could not answer anyway.
+async fn releases_settled(pending: &mut Vec<tokio::task::JoinHandle<()>>) -> bool {
+    for handle in pending.iter_mut() {
+        if handle.is_finished() {
+            continue;
+        }
+        let wait = std::time::Duration::from_secs(10);
+        if tokio::time::timeout(wait, &mut *handle).await.is_err() {
+            return false;
+        }
+    }
+    pending.clear();
+    true
+}
+
 fn complete_join_payload(data: &[u8]) -> bool {
     if data.len() < C2S_JOIN_HEADER {
         return false;
@@ -50,6 +71,9 @@ pub(crate) async fn serve_client(
     // instead of keeping its own seat and watcher flags.
     let (presence, mut presence_events) = PresenceHandle::connected();
     let mut rated_lease: Option<RatedLease> = None;
+    // Seats given back whose settlement is still running. See
+    // `releases_settled`.
+    let mut pending_releases: Vec<tokio::task::JoinHandle<()>> = Vec::new();
     let mut standing_check: Option<StandingCheck> = None;
     let mut credential_expires: Option<u64> = None;
     // A connection that says nothing for this long is gone. A joined
@@ -87,7 +111,7 @@ pub(crate) async fn serve_client(
                 };
                 if event.release_rated_lease {
                     if let Some(lease) = rated_lease.take() {
-                        lease.release();
+                        pending_releases.push(lease.release());
                     }
                 }
                 if event.connection_closed {
@@ -113,7 +137,7 @@ pub(crate) async fn serve_client(
         // dispatching the watcher's next message.
         if matches!(presence.current(), Presence::Watching { .. }) {
             if let Some(lease) = rated_lease.take() {
-                lease.release();
+                pending_releases.push(lease.release());
             }
         }
         if rated_lease
@@ -351,15 +375,19 @@ pub(crate) async fn serve_client(
                         };
                         let spools = z.spools.clone();
                         drop(z);
-                        let claimed = RatedLease::claim(
-                            base,
-                            pool_token,
-                            instance,
-                            account,
-                            session.id.clone(),
-                            spools,
-                        )
-                        .await;
+                        let claimed = if releases_settled(&mut pending_releases).await {
+                            RatedLease::claim(
+                                base,
+                                pool_token,
+                                instance,
+                                account,
+                                session.id.clone(),
+                                spools,
+                            )
+                            .await
+                        } else {
+                            Err("a rated seat is still being given back".to_string())
+                        };
                         let lease = match claimed {
                             Ok(Some((lease, ratings))) => {
                                 // The signed token is an admission credential,
@@ -717,16 +745,20 @@ pub(crate) async fn serve_client(
                             }
                         } {
                             let account = carried.as_ref().and_then(|s| s.account).unwrap();
-                            match RatedLease::claim(
-                                base,
-                                pool_token,
-                                instance,
-                                account,
-                                session.id.clone(),
-                                spools,
-                            )
-                            .await
-                            {
+                            let claimed = if releases_settled(&mut pending_releases).await {
+                                RatedLease::claim(
+                                    base,
+                                    pool_token,
+                                    instance,
+                                    account,
+                                    session.id.clone(),
+                                    spools,
+                                )
+                                .await
+                            } else {
+                                Err("a rated seat is still being given back".to_string())
+                            };
+                            match claimed {
                                 Ok(Some((lease, ratings))) => {
                                     candidate = Some(lease);
                                     standing = Some(ratings);
@@ -754,14 +786,14 @@ pub(crate) async fn serve_client(
                         let Presence::Watching { room, member } = presence.current() else {
                             drop(z);
                             if let Some(lease) = candidate {
-                                lease.release();
+                                pending_releases.push(lease.release());
                             }
                             continue;
                         };
                         let Some(index) = z.rooms.iter().position(|a| a.number == room) else {
                             drop(z);
                             if let Some(lease) = candidate {
-                                lease.release();
+                                pending_releases.push(lease.release());
                             }
                             continue;
                         };
@@ -788,14 +820,14 @@ pub(crate) async fn serve_client(
                                 rated_lease = candidate;
                             }
                         } else if let Some(lease) = candidate {
-                            lease.release();
+                            pending_releases.push(lease.release());
                         } else if let Some(lease) = rated_lease.take() {
                             // The only watcher that can arrive here still
                             // holding a lease was swept out of a safe zone and
                             // immediately asked to fly again. If the room has
                             // filled in the meantime, it stays in the stands
                             // and must stop excluding this account elsewhere.
-                            lease.release();
+                            pending_releases.push(lease.release());
                         }
                     }
                 }
@@ -825,7 +857,7 @@ pub(crate) async fn serve_client(
                 drop(z);
                 if release {
                     if let Some(lease) = rated_lease.take() {
-                        lease.release();
+                        pending_releases.push(lease.release());
                     }
                 }
             }
@@ -871,7 +903,9 @@ pub(crate) async fn serve_client(
     drop(z);
 
     if let Some(lease) = rated_lease {
-        lease.release();
+        // The connection is over, so nothing here will claim again: the
+        // handle is dropped and the settlement runs to its end on its own.
+        drop(lease.release());
     }
 }
 

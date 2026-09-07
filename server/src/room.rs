@@ -189,6 +189,9 @@ pub(crate) struct Watcher {
     /// again. None until the room seats them, which `watch_join` does at the
     /// door for somebody who arrived watching.
     pub(crate) team: Option<u8>,
+    /// Which founding of that side, so a byte reaped and dealt again to a
+    /// stranger is not mistaken for the side they sat out from.
+    pub(crate) side_born: u32,
     pub(crate) tx: mpsc::Sender<Message>,
     pub(crate) presence: PresenceHandle,
 }
@@ -491,6 +494,11 @@ pub(crate) fn ingest_damage(
 pub(crate) struct Team {
     pub(crate) name: String,
     pub(crate) public: bool,
+    /// Which founding this is. A private side of one is reaped when its
+    /// pilot sits out and its byte is dealt to the next founder, so a byte
+    /// alone cannot say whether the side a watcher remembers is the one
+    /// they left or a stranger's. The zone's own sides are founded once.
+    pub(crate) born: u32,
 }
 
 /// roster is allowed to say they are, and what their rating belongs to.
@@ -719,6 +727,8 @@ pub(crate) struct Room {
     /// admits nobody else. Cleared with the seat, because a seat is furniture
     /// and the next occupant was invited to nothing.
     pub(crate) invites: HashMap<u8, std::collections::HashSet<u8>>,
+    /// Sides founded so far, which stamps each with its `born`.
+    pub(crate) sides_founded: u32,
     /// Where the next founded side takes its name from. It only moves forward,
     /// so leaving a side and starting another hands out a different word rather
     /// than the one the reaper just freed.
@@ -1415,6 +1425,7 @@ impl Room {
             lag_policy: Default::default(),
             settings_generation: 1,
             invites: HashMap::new(),
+            sides_founded: 0,
             name_cursor: 0,
             tuning: Default::default(),
             last_match: None,
@@ -1622,7 +1633,7 @@ impl Room {
         presence: PresenceHandle,
     ) -> Option<u64> {
         let logged = seat.clone();
-        let id = self.join_on(seat, class, max_players, None, tx, None, presence)?;
+        let id = self.join_on(seat, class, max_players, None, false, tx, None, presence)?;
         // After the seat is real, so the log never claims an arrival the caps
         // refused. The hull is read back rather than echoed: the core clamps a
         // class it does not have, and what the pilot is flying is the useful
@@ -1658,6 +1669,7 @@ impl Room {
         class: u8,
         max_players: usize,
         prefer: Option<u8>,
+        returning: bool,
         tx: mpsc::Sender<Message>,
         member: Option<u64>,
         presence: PresenceHandle,
@@ -1723,15 +1735,20 @@ impl Room {
         // emptiest of the zone's own that has room, or a side of their own
         // where the zone names none. Moving is then one selection away in the
         // team list, and only a full side can refuse it.
-        // A remembered side only where a fresh arrival could ask for it: a
-        // watcher keeps the byte of the side they sat out from, the reaper
-        // frees a private side of one, and the next founder is dealt the
-        // same byte. Honored on the byte alone, the returning watcher landed
-        // on a stranger's private side uninvited.
+        // A remembered side where it is the side they left, or where a fresh
+        // arrival could ask for it: a watcher keeps the byte of the side they
+        // sat out from, the reaper frees a private side of one, and the next
+        // founder is dealt the same byte. Honored on the byte alone, the
+        // returning watcher landed on a stranger's private side uninvited.
+        // `returning` is the caller's word that the side is the same
+        // founding, which a benched member of a private side needs, since
+        // their seat's invitations went with the seat.
         let team = match prefer {
             Some(t)
                 if self.teams.get(&t).is_some_and(|side| {
-                    side.public || self.invites.get(&ship).is_some_and(|s| s.contains(&t))
+                    side.public
+                        || returning
+                        || self.invites.get(&ship).is_some_and(|s| s.contains(&t))
                 }) && self.team_has_room(t, bot, Some(ship)) =>
             {
                 t
@@ -2154,11 +2171,13 @@ impl Room {
     pub(crate) fn set_teams(&mut self, def: &catalog::ZoneDef) {
         self.teams.clear();
         for (i, name) in def.teams.iter().take(254).enumerate() {
+            self.sides_founded += 1;
             self.teams.insert(
                 i as u8,
                 Team {
                     name: name.clone(),
                     public: true,
+                    born: self.sides_founded,
                 },
             );
         }
@@ -2289,11 +2308,13 @@ impl Room {
     pub(crate) fn found_team(&mut self, founder: u8) -> Option<u8> {
         let byte = self.free_team_byte()?;
         let name = self.fresh_team_name();
+        self.sides_founded += 1;
         self.teams.insert(
             byte,
             Team {
                 name,
                 public: false,
+                born: self.sides_founded,
             },
         );
         // The founder is invited to their own team, which is what makes the
@@ -2917,6 +2938,7 @@ impl Room {
                 lifecycle,
                 seat,
                 team: Some(team),
+                side_born: self.teams.get(&team).map_or(0, |t| t.born),
                 tx: tx.clone(),
                 presence,
             },
@@ -3003,6 +3025,7 @@ impl Room {
                 lifecycle: 1,
                 seat,
                 team,
+                side_born: team.and_then(|t| self.teams.get(&t)).map_or(0, |t| t.born),
                 tx,
                 presence,
             },
@@ -3028,6 +3051,11 @@ impl Room {
         let seat = self.watchers.get(&id)?.seat.clone();
         let tx = self.watchers.get(&id)?.tx.clone();
         let back = self.watchers.get(&id)?.team;
+        let side_born = self.watchers.get(&id)?.side_born;
+        // The same founding of the side they left, not a byte reissued since.
+        let returning = back
+            .and_then(|t| self.teams.get(&t))
+            .is_some_and(|side| side.born == side_born);
         let presence = self.watchers.get(&id)?.presence.clone();
         let logged = seat.clone();
         let new_id = self.join_on(
@@ -3035,6 +3063,7 @@ impl Room {
             class,
             max_players,
             back,
+            returning,
             tx.clone(),
             Some(id),
             presence,

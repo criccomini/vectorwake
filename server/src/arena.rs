@@ -152,8 +152,12 @@ impl RatedLease {
     /// front of it: awaited inline, a bench or a sit-out during an outage
     /// stopped the session loop reading its socket at all, and the pilot
     /// could neither fly again nor leave until the outage ended.
-    pub(crate) fn release(self) {
-        tokio::spawn(self.release_after_settlement());
+    ///
+    /// The handle is the session's to keep: a claim made while a release is
+    /// still in flight would be deleted by it, since both are keyed by the
+    /// same session, so a session waits on its own releases before it claims.
+    pub(crate) fn release(self) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(self.release_after_settlement())
     }
 
     pub(crate) async fn release_after_settlement(mut self) {

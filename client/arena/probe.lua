@@ -154,6 +154,10 @@ local function boxes(ui, density, touching)
     local hits = ui.hits or {}
     for i = 1, #hits do
         local b = hits[i]
+        -- A row under the fold has no box: it is on the list for the
+        -- keyboard's walk and nothing else, and measured it would read as
+        -- covered by whatever sits at the origin.
+        if not b.off then
         local cx, cy = b.x + b.w / 2, b.y + b.h / 2
         -- `ui.pick` answers with the winning box, not with its action, and the
         -- winner may well be a different box than the one being measured.
@@ -173,6 +177,7 @@ local function boxes(ui, density, touching)
             hits = won and won.action or nil,
             hits_value = won and won.value or nil,
         }
+        end
     end
     return list(out)
 end

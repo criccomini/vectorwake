@@ -1023,11 +1023,17 @@ end
 -- it: who was flying, how fast they were going, and every round in the air.
 local function capture_world()
     local alive, deaths, vx, vy, x, y, heading = {}, {}, {}, {}, {}, {}, {}
+    local active, kills = {}, {}
     for i = 0, sim.ship_count() - 1 do
         alive[i] = sim.ship_alive(i)
+        active[i] = sim.ship_active(i)
         -- What tells a kill from the room putting a hull down. See
         -- `harvest_world`.
         deaths[i] = sim.ship_deaths(i)
+        -- Guarded because the tests stub the core one accessor at a time,
+        -- and this one is a hint about a seat rather than a fact the frame
+        -- needs.
+        kills[i] = sim.ship_kills and sim.ship_kills(i) or 0
         vx[i], vy[i] = sim.ship_vel(i)
         if alive[i] == 1 and sim.ship_active(i) == 1 then
             x[i], y[i] = sim.ship_x_raw(i), sim.ship_y_raw(i)
@@ -1041,8 +1047,22 @@ local function capture_world()
         flying[id] = {x = wx, y = wy, vx = wvx, vy = wvy, spec = spec,
                       life = life, owner = owner}
     end
-    return {alive = alive, deaths = deaths, vx = vx, vy = vy, x = x, y = y,
+    return {alive = alive, active = active, deaths = deaths, kills = kills,
+            vx = vx, vy = vy, x = x, y = y,
             heading = heading, flying = flying, tick = sim.tick()}
+end
+
+-- Whether a seat still holds the pilot it held before the snapshot. A seat
+-- that emptied is obvious; one dealt straight on to somebody else is not,
+-- and what gives it away is a tally that went back to nothing.
+local function same_pilot(before, i)
+    if not i or i >= sim.ship_count() then return false end
+    if before.active[i] ~= 1 or sim.ship_active(i) ~= 1 then return false end
+    if before.deaths[i] > 0 and sim.ship_deaths(i) == 0 then return false end
+    if before.kills[i] > 0 and (sim.ship_kills and sim.ship_kills(i) or 0) == 0 then
+        return false
+    end
+    return true
 end
 
 local function measure_remote_corrections(before)
@@ -1135,7 +1155,13 @@ local function harvest_world(before)
     end
     local back = math.max(0, serial_delta(before.tick, snap_tick))
     for k, w in pairs(flying) do
-        if w.life > 20 and sim.spec_blast(w.spec) > 0 and confirmed[k] then
+        -- A round that went with its owner is not a blast. The core takes a
+        -- departed pilot's rounds down with the seat, and the seat may be
+        -- dealt on in the same tick, which every join into a full room does
+        -- to the bot it evicts; drawn as an ending, a bomb in flight then
+        -- burst mid-air on every client in range each time somebody joined.
+        if w.life > 20 and sim.spec_blast(w.spec) > 0 and confirmed[k]
+           and same_pilot(before, w.owner) then
             w.x = w.x - w.vx * back
             w.y = w.y - w.vy * back
             M.snap_blasts[#M.snap_blasts + 1] = w

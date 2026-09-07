@@ -4433,8 +4433,10 @@ local function land_panel(kx, kw, top, bottom, panel, drh)
         if y >= top - 0.5 and y + rh <= bottom + 0.5 then
             land_row(kx, kw, y, rh, r)
         else
+            -- Only what would be pressable on the glass: a dim reset row
+            -- publishes no box, so it is not walked to either.
             local act, value = land_row_at(r)
-            if act then hit_off(act, value) end
+            if act and (r.kind ~= "reset" or r.on) then hit_off(act, value) end
         end
         y = y + rh
     end
