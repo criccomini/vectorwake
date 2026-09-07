@@ -36,9 +36,13 @@ local seed = 20260801
 -- A deterministic-enough generator of our own. math.random is shared state,
 -- and the bots draw from it on the same frames; a renderer must never be able
 -- to move the simulation's dice.
+-- Lehmer, with the multiplier world.lua explains: Lua has no integers here,
+-- and 1103515245 on a 31-bit seed overflows a double's exact range and
+-- throws the low bits away. That generator fell into a cycle of ten
+-- thousand draws with twenty distinct low bytes. 48271 stays exact.
 local function rnd()
-    seed = (seed * 1103515245 + 12345) % 2147483648
-    return seed / 2147483648
+    seed = (seed * 48271) % 2147483647
+    return seed / 2147483647
 end
 
 function M.reset()

@@ -27,9 +27,13 @@ local DEFAULT_BUDGET = 1
 
 local spent = {}
 local seed = 991
+-- Lehmer, with the multiplier world.lua explains: Lua has no integers here,
+-- and 1103515245 on a 31-bit seed overflows a double's exact range and
+-- throws the low bits away. That generator fell into a cycle of ten
+-- thousand draws with twenty distinct low bytes. 48271 stays exact.
 local function rnd()
-    seed = (seed * 1103515245 + 12345) % 2147483648
-    return seed / 2147483648
+    seed = (seed * 48271) % 2147483647
+    return seed / 2147483647
 end
 
 -- The highest variant each family of sounds has, learned from the kit rather

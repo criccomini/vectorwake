@@ -23,15 +23,22 @@ local WORDS = {
 -- Its own generator rather than math.random, which the arena seeds to a fixed
 -- value. A name has to differ between two tabs opened a second apart, and
 -- anything drawn from a fixed seed is the same name every time.
-local seed = 0
+local seed = 1
 
+-- Lehmer, with the multiplier world.lua explains: Lua has no integers here,
+-- and 1103515245 on a 31-bit seed overflows a double's exact range and
+-- throws the low bits away. That generator fell into a cycle of ten
+-- thousand draws with twenty distinct low bytes. 48271 stays exact.
 local function next_rand()
-    seed = (seed * 1103515245 + 12345) % 2147483648
-    return seed / 2147483648
+    seed = (seed * 48271) % 2147483647
+    return seed / 2147483647
 end
 
 function M.seed(n)
-    seed = math.floor(n) % 2147483648
+    seed = math.floor(n) % 2147483647
+    -- Zero is Lehmer's fixed point, and a name is owed whatever the clock
+    -- said.
+    if seed == 0 then seed = 1 end
     next_rand()
 end
 

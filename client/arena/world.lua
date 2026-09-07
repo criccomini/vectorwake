@@ -2040,9 +2040,14 @@ function M.build_static(bg, glow, x0, y0, x1, y1)
             end
             local out = (best == 1 and rt) or (best == 2 and rs)
                 or (best == 3 and rd)
+            -- The middle of the two-by-two the sample stands for. The blip
+            -- is drawn two tiles wide about this point, and recorded at the
+            -- sample's corner it sat a tile toward the origin of the ground
+            -- it marked: a hull hugging a wall's west face read as inside
+            -- the wall, one on its east face read as a tile clear of it.
             if out then
-                out[#out + 1] = tx * TILE
-                out[#out + 1] = ty * TILE
+                out[#out + 1] = (tx + 1) * TILE
+                out[#out + 1] = (ty + 1) * TILE
             end
         end
     end
@@ -3662,6 +3667,7 @@ end
 
 -- Scratch, so a frame with four flags on one hull allocates nothing.
 local carriers, carried_n, carried_left = {}, {}, {}
+local carrier_x, carrier_y = {}, {}
 
 function M.flags(fill, glow, my_team, t)
     local n = sim.flag_count()
@@ -3680,6 +3686,13 @@ function M.flags(fill, glow, my_team, t)
         if carried then
             carriers[carrier] = col
             carried_n[carrier] = (carried_n[carrier] or 0) + 1
+            -- The flag's own position, for a carrier this snapshot does not
+            -- carry. Snapshots are cut to what a pilot could lawfully see
+            -- and a seat past that radius is left empty, at the origin, so
+            -- a flag drawn where its carrier's hull is was drawn in the
+            -- void off the map's top-left corner. The flag itself always
+            -- travels, and its position follows the carrier.
+            carrier_x[carrier], carrier_y[carrier] = x, y
             if limit > 0 then
                 local row = carried_left[carrier]
                 if not row then row = {} carried_left[carrier] = row end
@@ -3693,8 +3706,9 @@ function M.flags(fill, glow, my_team, t)
         local left = carried_left[who]
         -- Longest first, so the rim about to expire lands outermost.
         if left then table.sort(left, function(a, b) return a > b end) end
-        flag_held(glow, sim.ship_x(who), sim.ship_y(who), col, t,
-                  carried_n[who], left)
+        local hx, hy = carrier_x[who], carrier_y[who]
+        if sim.ship_active(who) == 1 then hx, hy = sim.ship_x(who), sim.ship_y(who) end
+        flag_held(glow, hx, hy, col, t, carried_n[who], left)
     end
 end
 

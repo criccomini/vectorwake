@@ -162,9 +162,25 @@ local function draw_frost(self, w, h)
     render.enable_state(graphics.STATE_BLEND)
 end
 
+-- How often the browser is asked for its pixel ratio again, in frames. It
+-- was read once at boot, while the page's own reconciler follows it every
+-- quarter second and resizes the drawable to match: a browser zoom, or a
+-- window moved between a 1x and a 2x monitor, doubled the drawable and left
+-- the projection on the boot value, so the whole game drew at half size.
+local DPR_EVERY = 30
+
 function update(self)
     local w, h = render.get_window_width(), render.get_window_height()
     if w == 0 or h == 0 then return end
+    if html5 then
+        self.dpr_frame = (self.dpr_frame or 0) + 1
+        if self.dpr_frame >= DPR_EVERY then
+            self.dpr_frame = 0
+            local ok, v = pcall(html5.run, "window.devicePixelRatio")
+            local n = ok and tonumber(v)
+            if n and n > 0.5 then self.dpr = n end
+        end
+    end
 
     -- A shader cannot read the screen it is writing to, so a frame with frost
     -- in it is drawn into a texture and put back afterwards. See `draw_frost`.
