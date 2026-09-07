@@ -275,7 +275,9 @@ pub fn to_hex(bytes: &[u8]) -> String {
 }
 
 pub fn from_hex(s: &str) -> Option<Vec<u8>> {
-    if !s.len().is_multiple_of(2) {
+    // Sliced two bytes at a time below, which a multi-byte character would
+    // split and panic on. Hex is ASCII or it is not hex.
+    if !s.is_ascii() || !s.len().is_multiple_of(2) {
         return None;
     }
     (0..s.len())

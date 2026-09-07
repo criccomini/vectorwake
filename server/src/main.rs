@@ -755,10 +755,15 @@ spawn radius {spawn_radius}"
 }
 
 /// Where the directories are. `VW_DIRECTORY` names a host, which is resolved,
-/// so one hostname with several records is a whole deployment and a directory can
-/// be added or moved without touching an arena server. That is the DNS decision
-/// in docs/architecture/discovery.md: `directory.vectorwake.net` resolves to
-/// every directory of this deployment.
+/// so a directory can be added or moved without touching an arena server. That
+/// is the DNS decision in docs/architecture/discovery.md.
+///
+/// What resolving buys is less than it reads: a real hostname is dialled by
+/// name so TLS verifies, and every record of it becomes the same URL, so an
+/// arena holds one registration per name and the round-robin picks which
+/// directory answers it. Only loopback records, which are dialled by address,
+/// come out one apiece. Several directories behind one name are therefore not
+/// several registrations; several names are.
 ///
 /// An explicit `ws://` or `wss://` URL is taken as given, which is what a
 /// developer running one of each on a laptop wants.
@@ -773,8 +778,8 @@ async fn directory_urls() -> Vec<String> {
             out.push(part.to_string());
             continue;
         }
-        // A bare host, optionally with a port. Resolve it and take every record,
-        // so a round-robin name is a list of directories.
+        // A bare host, optionally with a port. Resolved, so that a name with
+        // no records at all is said out loud here rather than at the dial.
         let (host, port) = match part.rsplit_once(':') {
             Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) => (h, p.to_string()),
             _ => (part, "9000".to_string()),
