@@ -43,12 +43,12 @@ const TRIES = 4
 // How long to give a press before deciding the row went out from under it,
 // and how long to keep working through the sheet before giving up on the room.
 //
-// A row is numbered by where it sits this frame and the sheet re-sorts every
-// frame it is drawn, so a row number ages: a pilot leaving takes theirs with
-// them, and a press carrying it arrives about nobody. The client answers that
-// with nothing, which is the only honest answer available, so what a reader
-// has to do is notice and take the next row rather than wait out a card that
-// is never coming.
+// A row is published under the seat it is about, which outlives the sort the
+// sheet runs every frame it is drawn, but a seat ages too: a pilot leaving
+// takes theirs with them, and a press carrying it arrives about nobody. The
+// client answers that with nothing, which is the only honest answer
+// available, so what a reader has to do is notice and take the next row
+// rather than wait out a card that is never coming.
 //
 // Twelve seconds rather than the four this first carried. Four was measured
 // off a desktop and a landscape phone reads slower than that: every row timed
