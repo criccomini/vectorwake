@@ -1012,7 +1012,13 @@ async fn main() {
                     Err(_) => return,
                 };
             term.recv().await;
-            zone.lock().await.file_departures();
+            {
+                let mut z = zone.lock().await;
+                z.file_departures();
+                // Filed means on disk. The spools write from their own threads,
+                // and the exit below runs no destructors.
+                z.spools.flush_all();
+            }
             // The WebTransport goodbye. TCP players get theirs from the
             // kernel the moment this process dies; QUIC players get only
             // what is said before it does, and an unclosed session leaves

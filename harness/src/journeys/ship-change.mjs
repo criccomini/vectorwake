@@ -40,6 +40,48 @@ const whole = (pilot, log) => pilot.until('a full bar to spend on a ship',
   s => s.me && s.me.alive && s.me.energy >= s.me.max_energy,
   { timeout: 90000 })
 
+// Open the column at the ship stop, from wherever the screen is.
+//
+// A loop that reads, takes one step, and reads again, for the reason the
+// join-side journey walks to its sheet that way: nothing pauses behind the
+// column, and a whistle raises the players sheet by itself. A try that began
+// on that sheet, or on a card a press meant for the column key had opened
+// on it, asked for the ship stop and waited on a control the panel had
+// taken off the glass. The way off a card or a panel is the way off any
+// level: back, until the bare column is there to press a stop on.
+const OPEN_MS = 30000
+
+const settle = async (pilot, what, want) => {
+  try {
+    await pilot.until(what, want, { timeout: 5000 })
+  } catch { /* it did not take; the next turn of the loop presses again */ }
+}
+
+async function openShip (pilot) {
+  const deadline = Date.now() + OPEN_MS
+  while (Date.now() < deadline) {
+    const up = await pilot.read()
+    if (up.screen.page === 'ship') return up
+    if (!up.screen.menu_open) {
+      await pilot.tap('open')
+      await settle(pilot, 'the column',
+        s => s.screen.menu_open && s.boxes.length > 0)
+      continue
+    }
+    if (up.screen.panel) {
+      await pilot.tap('menu_back')
+      await settle(pilot, 'the way off the panel', s => !s.screen.panel)
+      continue
+    }
+    await pilot.tap('menu_stop', { value: 'ship' })
+    await settle(pilot, 'the ship panel', s => s.screen.page === 'ship')
+  }
+  throw new Error(
+    'the ship panel never came up. The column opens at its stop and back ' +
+    'steps off any panel, so neither the stop nor the way off a panel is ' +
+    'answering.')
+}
+
 export async function run (pilot, { log = () => {} } = {}) {
   const first = (await arrive(pilot, { log })).me.class
   let was = first
@@ -55,16 +97,7 @@ export async function run (pilot, { log = () => {} } = {}) {
     was = (await pilot.read()).me.class
     log(`asking for a ship, try ${go}, flying hull ${was}`)
 
-    const up = await pilot.read()
-    if (!up.screen.menu_open) {
-      await pilot.tap('open')
-      await pilot.until('the column',
-        s => s.screen.menu_open && s.boxes.length > 0)
-    }
-    if (up.screen.page !== 'ship') {
-      await pilot.tap('menu_stop', { value: 'ship' })
-      await pilot.until('the ship panel', s => s.screen.page === 'ship')
-    }
+    await openShip(pilot)
 
     log('opening the body')
     await pilot.tap('land_sect', { value: 'body' })

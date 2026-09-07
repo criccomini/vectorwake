@@ -247,18 +247,58 @@ M.STREAK_HI = rgb(0xfff3c4)
 
 -- A copy at a different alpha. Draw code asks for these constantly and must
 -- never mutate the shared table to get one.
-function M.a(col, alpha)
-    return {col[1], col[2], col[3], alpha}
+-- Answered out of a cache rather than made fresh. A hull is drawn from
+-- thirty to seventy of these a frame and a busy frame held a thousand, which
+-- on the Lua 5.1 web build is a thousand tables for a collector with no
+-- generational anything to walk, six megabytes of garbage a second at sixty
+-- frames. The palette is a few dozen colors and an alpha quantized to a
+-- step of one in 256 is not a step anybody sees, so the set of answers is
+-- small and every one of them is handed out again. What is handed out is
+-- shared, and nothing writes into a color it was given; the one place that
+-- adjusts a color, the stroke's dimming in vec.lua, writes into a table of
+-- its own. The outer key is the color table itself, held weakly, so a color
+-- made on the fly does not pin its answers for the life of the process.
+--
+-- The step is one in 4096 rather than one in 256: a hurt rim and a well one
+-- sit a few thousandths apart in alpha, and the tests read that order.
+local STEP = 4096
+local cached = setmetatable({}, {__mode = "k"})
+
+local function quantized(alpha)
+    return math.floor(alpha * STEP + 0.5)
 end
 
--- A copy scaled toward white, for the hot core of a bright thing.
+function M.a(col, alpha)
+    local row = cached[col]
+    if not row then row = {} cached[col] = row end
+    local q = quantized(alpha)
+    local out = row[q]
+    if not out then
+        out = {col[1], col[2], col[3], q / STEP}
+        row[q] = out
+    end
+    return out
+end
+
+-- A copy scaled toward white, for the hot core of a bright thing. Cached
+-- the same way, under the color and then under the two amounts together.
+local hots = setmetatable({}, {__mode = "k"})
+
 function M.hot(col, k, alpha)
-    return {
-        col[1] + (1 - col[1]) * k,
-        col[2] + (1 - col[2]) * k,
-        col[3] + (1 - col[3]) * k,
-        alpha or col[4],
-    }
+    local row = hots[col]
+    if not row then row = {} hots[col] = row end
+    local key = math.floor(k * STEP + 0.5) * (STEP * 2) + quantized(alpha or col[4])
+    local out = row[key]
+    if not out then
+        out = {
+            col[1] + (1 - col[1]) * k,
+            col[2] + (1 - col[2]) * k,
+            col[3] + (1 - col[3]) * k,
+            quantized(alpha or col[4]) / STEP,
+        }
+        row[key] = out
+    end
+    return out
 end
 
 -- The shimmer itself: gold that travels between its two ends and back on a
@@ -272,15 +312,27 @@ end
 -- `t` is seconds and needs no origin: any two callers a fraction apart are a
 -- shimmer that is not quite in step, which is what a room full of them should
 -- look like. `speed` is cycles a second.
+local gleams = {}
+
 function M.gleam(t, alpha, speed)
     local x = math.cos(t * (speed or 1.6) * 2 * math.pi)
     local k = x * x * (x > 0 and 1 or 0.55)
-    return {
-        M.STREAK[1] + (M.STREAK_HI[1] - M.STREAK[1]) * k,
-        M.STREAK[2] + (M.STREAK_HI[2] - M.STREAK[2]) * k,
-        M.STREAK[3] + (M.STREAK_HI[3] - M.STREAK[3]) * k,
-        alpha or 1,
-    }
+    -- Cached under the two amounts, quantized; the shimmer is a clock read
+    -- at a few hundred steps and nothing finer shows.
+    local qk = math.floor(k * STEP + 0.5)
+    local key = qk * (STEP * 2) + quantized(alpha or 1)
+    local out = gleams[key]
+    if not out then
+        k = qk / STEP
+        out = {
+            M.STREAK[1] + (M.STREAK_HI[1] - M.STREAK[1]) * k,
+            M.STREAK[2] + (M.STREAK_HI[2] - M.STREAK[2]) * k,
+            M.STREAK[3] + (M.STREAK_HI[3] - M.STREAK[3]) * k,
+            quantized(alpha or 1) / STEP,
+        }
+        gleams[key] = out
+    end
+    return out
 end
 
 -- --- a color a side ---------------------------------------------------------

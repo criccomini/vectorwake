@@ -2262,9 +2262,22 @@ end
 -- Doors and the tiles that mark a place rather than block one. These cannot
 -- go in the static mesh: a door is a wall on a clock, and a wall nobody can
 -- see is the worst thing in the game.
+-- Whether a tile continues a door of this variant. A function of the map
+-- and the variant, so it is one function rather than a closure made per
+-- door per frame.
+local function same_door(px, py, variant)
+    local cls, var = sim.tile(px, py)
+    return cls == sim.T_DOOR and var == variant
+end
+
+-- The tiles already drawn as part of a run this frame. Cleared rather than
+-- made fresh, for the reason the flag scratch is.
+local door_seen = {}
+
 function M.draw_tiles(fill, glow, now, cull)
     local list = M.moving_tiles
-    local seen = {}
+    local seen = door_seen
+    for k in pairs(seen) do seen[k] = nil end
     for n = 1, #list do
         local t = list[n]
         local wx, wy = t.tx * TILE, t.ty * TILE
@@ -2281,14 +2294,12 @@ function M.draw_tiles(fill, glow, now, cull)
                 -- lay either of them out along either axis: the reference map
                 -- lays its "vertical" doors in a row. Asking the neighbours is
                 -- the only answer that is right for both.
-                local function same(px, py)
-                    local cls, var = sim.tile(px, py)
-                    return cls == sim.T_DOOR and var == t.variant
-                end
-                local across = same(t.tx + 1, t.ty) or same(t.tx - 1, t.ty)
+                local variant = t.variant
+                local across = same_door(t.tx + 1, t.ty, variant)
+                    or same_door(t.tx - 1, t.ty, variant)
                 local dx, dy = across and 1 or 0, across and 0 or 1
                 local ex, ey = t.tx, t.ty
-                while same(ex + dx, ey + dy) do
+                while same_door(ex + dx, ey + dy, variant) do
                     ex, ey = ex + dx, ey + dy
                     seen[ey * 1024 + ex] = true
                 end
@@ -2305,7 +2316,7 @@ function M.draw_tiles(fill, glow, now, cull)
                 -- furniture a tile at a time and re-wrapped the pulse. The
                 -- ends are the map's, not the camera's.
                 local sx, sy = t.tx, t.ty
-                while same(sx - dx, sy - dy) do
+                while same_door(sx - dx, sy - dy, variant) do
                     sx, sy = sx - dx, sy - dy
                     seen[sy * 1024 + sx] = true
                 end
@@ -2438,13 +2449,55 @@ end
 -- `thrusting` draws the flame, which is the only thing on screen that says a
 -- pilot is accelerating rather than coasting. `far` drops the detail that only
 -- reads up close; see M.DETAIL_RANGE.
--- One hull's color, warmed by whatever is burning next to it. Held as a
--- module scratch rather than made per ship per frame, and only ever read
--- inside the call that filled it.
-local lit_col = {0, 0, 0, 1}
--- The hot edge, graded. Same bargain as lit_col: read during the call and
--- never kept, so one table serves every hull in the room.
-local edge_col = {0, 0, 0, 1}
+-- A hull's color under a blast's light, and its rim under hurt and flare,
+-- out of caches keyed by what went into them. Each was one scratch table
+-- written in place per ship, and the palette hands out colors from a cache
+-- keyed by the table it was given, so a scratch table handed on answered
+-- with whatever it held the first time: every hurt hull wore the first hurt
+-- hull's rim. The amounts are quantized to a step nobody sees, so the set of
+-- tables stays small and every one of them is handed out again.
+local lits = setmetatable({}, {__mode = "k"})
+local function lit_of(col, lr, lg, lb, lw)
+    local qw = math.floor(lw * 32 + 0.5)
+    if qw == 0 then return col end
+    local qr = math.floor(lr * 32 + 0.5)
+    local qg = math.floor(lg * 32 + 0.5)
+    local qb = math.floor(lb * 32 + 0.5)
+    local at = ((qr * 64 + qg) * 64 + qb) * 64 + qw
+    local row = lits[col]
+    if not row then row = {} lits[col] = row end
+    local out = row[at]
+    if not out then
+        local k = qw / 32 * 0.5
+        out = {col[1] + (qr / 32 - col[1]) * k,
+               col[2] + (qg / 32 - col[2]) * k,
+               col[3] + (qb / 32 - col[3]) * k, col[4]}
+        row[at] = out
+    end
+    return out
+end
+
+local edges = setmetatable({}, {__mode = "k"})
+local function edge_of(col, mine, hurt, flare)
+    local base = pal.hot(col, mine and 0.62 or 0.34, 1)
+    local qh = math.floor(hurt * 64 + 0.5)
+    local qf = math.floor(flare * 64 + 0.5)
+    if qh == 0 and qf == 0 then return base end
+    local at = ((mine and 1 or 0) * 128 + qh) * 128 + qf
+    local row = edges[col]
+    if not row then row = {} edges[col] = row end
+    local out = row[at]
+    if not out then
+        local k, f = qh / 64 * 0.7, qf / 64 * 0.8
+        out = {0, 0, 0, 1}
+        for c = 1, 3 do
+            local v = base[c] + (pal.HURT[c] - base[c]) * k
+            out[c] = v + (1 - v) * f
+        end
+        row[at] = out
+    end
+    return out
+end
 
 -- How far a bank takes the two wings apart. The dropped one turns away from
 -- the light and loses most of what it had; the raised one tips into it and
@@ -2461,6 +2514,24 @@ local edge_col = {0, 0, 0, 1}
 -- room, on a phone.
 local BANK_DIM, BANK_LIFT = 0.82, 0.30
 
+-- The base a hull is drawn on, for a color and a dimming, out of a cache:
+-- one table per ship per frame was the largest single allocation in the
+-- draw, and the dimming takes a handful of values.
+local bodies = setmetatable({}, {__mode = "k"})
+local function body_of(col, dim)
+    local row = bodies[col]
+    if not row then row = {} bodies[col] = row end
+    local q = math.floor(dim * 64 + 0.5)
+    local out = row[q]
+    if not out then
+        local d = q / 64
+        out = {col[1] * 0.055 + 0.018, col[2] * 0.055 + 0.026,
+               col[3] * 0.055 + 0.042, 0.95 * d}
+        row[q] = out
+    end
+    return out
+end
+
 function M.ship(fill, glow, cls, x, y, heading, col, opts)
     local h = M.HULLS[cls + 1] or M.HULLS[1]
     -- A blast beside a hull throws its color onto it. Half weight at most, so
@@ -2468,14 +2539,7 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- the team read lives on this color, and a pink Apex nobody can place is
     -- a worse bug than a flat one.
     local lr, lg, lb, lw = M.light_at(x, y)
-    if lw > 0.02 then
-        local k = lw * 0.5
-        lit_col[1] = col[1] + (lr - col[1]) * k
-        lit_col[2] = col[2] + (lg - col[2]) * k
-        lit_col[3] = col[3] + (lb - col[3]) * k
-        lit_col[4] = col[4]
-        col = lit_col
-    end
+    if lw > 0.02 then col = lit_of(col, lr, lg, lb, lw) end
     local a = heading / 65536 * TAU
     local ca, sa = math.cos(a), math.sin(a)
     -- Roll, handed in as radians of bank. Everything below that speaks a
@@ -2584,8 +2648,7 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- The bank rides on the wash and not on the base. The base is a hole in
     -- the starfield, and a hole does not have a lit side; the wash is the
     -- light on the hull, so that is where a wing turning away loses it.
-    local body = {col[1] * 0.055 + 0.018, col[2] * 0.055 + 0.026,
-                  col[3] * 0.055 + 0.042, 0.95 * dim}
+    local body = body_of(col, dim)
     local tris, lit = h.tris, h.lit
     local wash = 0.20 * dim
     for i = 1, #tris, 3 do
@@ -2699,16 +2762,7 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- squash, and it is safe to touch for the same reason the hurt grade is:
     -- it changes how bright the rim is, never what color, so the side a hull
     -- is on survives a hard turn intact.
-    local edge = pal.hot(col, mine and 0.62 or 0.34, 1)
-    if hurt > 0 or flare > 0 then
-        local k = hurt * 0.7
-        for c = 1, 3 do
-            local v = edge[c] + (pal.HURT[c] - edge[c]) * k
-            edge_col[c] = v + (1 - v) * flare * 0.8
-        end
-        edge_col[4] = 1
-        edge = edge_col
-    end
+    local edge = edge_of(col, mine, hurt, flare)
     local ea = dim * (1 + flare * 0.9)
     local n = #pts
     local e = 1
@@ -2981,7 +3035,10 @@ function M.charges(me, sfx)
         if not seen then seen = {} charge_seen[i] = seen end
         local alive = sim.ship_alive(i) == 1
         if sim.ship_private and not sim.ship_private(i) then
-            charge_seen[i] = {alive = alive}
+            -- Emptied in place rather than replaced, since this runs for
+            -- every seat this client cannot read, every frame.
+            for k in pairs(seen) do seen[k] = nil end
+            seen.alive = alive
         else
         for k = 0, sim.MAX_CHARGES - 1 do
             local held = sim.ship_charge(i, k)
@@ -3665,9 +3722,13 @@ local function flag_held(glow, x, y, col, t, n, left)
     glow:bloom(x, y, outer + 12, 0.09, col)
 end
 
--- Scratch, so a frame with four flags on one hull allocates nothing.
+-- Scratch, so a frame with four flags on one hull allocates nothing. The
+-- rows under `carried_left` are kept and emptied rather than dropped, and
+-- the order they are sorted into is one function rather than a closure per
+-- carrier per frame.
 local carriers, carried_n, carried_left = {}, {}, {}
 local carrier_x, carrier_y = {}, {}
+local function longest_first(a, b) return a > b end
 
 function M.flags(fill, glow, my_team, t)
     local n = sim.flag_count()
@@ -3678,7 +3739,9 @@ function M.flags(fill, glow, my_team, t)
     -- place, and in Capture the Flag holding the set is the whole round.
     for k in pairs(carriers) do carriers[k] = nil end
     for k in pairs(carried_n) do carried_n[k] = nil end
-    for k in pairs(carried_left) do carried_left[k] = nil end
+    for _, row in pairs(carried_left) do
+        for i = #row, 1, -1 do row[i] = nil end
+    end
     for i = 0, n - 1 do
         local x, y, team, carried, carrier, held = sim.flag_at(i)
         local col = (team == 255) and pal.INK
@@ -3704,8 +3767,9 @@ function M.flags(fill, glow, my_team, t)
     end
     for who, col in pairs(carriers) do
         local left = carried_left[who]
+        if left and #left == 0 then left = nil end
         -- Longest first, so the rim about to expire lands outermost.
-        if left then table.sort(left, function(a, b) return a > b end) end
+        if left then table.sort(left, longest_first) end
         local hx, hy = carrier_x[who], carrier_y[who]
         if sim.ship_active(who) == 1 then hx, hy = sim.ship_x(who), sim.ship_y(who) end
         flag_held(glow, hx, hy, col, t, carried_n[who], left)
@@ -3723,6 +3787,10 @@ end
 -- Culled, unlike the flags. There are two dozen of these against four of
 -- those, and everything on the glow layer competes for the same bounded
 -- geometry: a field of greens off screen must not cost a shot on it.
+-- The diamond, written into one table a frame at a time: the layer reads
+-- it during the call and keeps nothing.
+local green_pts = {0, 0, 0, 0, 0, 0, 0, 0}
+
 function M.greens(fill, glow, t, cull)
     local col = pal.GREEN
     for i = 0, sim.green_count() - 1 do
@@ -3732,7 +3800,9 @@ function M.greens(fill, glow, t, cull)
             -- pulse in unison.
             local a = t * 0.9 + i * 0.7
             local c, s = math.cos(a) * 7, math.sin(a) * 7
-            local pts = {x + c, y + s, x - s, y + c, x - c, y - s, x + s, y - c}
+            local pts = green_pts
+            pts[1], pts[2], pts[3], pts[4] = x + c, y + s, x - s, y + c
+            pts[5], pts[6], pts[7], pts[8] = x - c, y - s, x + s, y - c
             fill:fan(pts, pal.a(col, 0.30))
             glow:outline(pts, 1.2, pal.a(col, 0.85))
             glow:halo(x, y, 13, 10, pal.a(col, 0.16))

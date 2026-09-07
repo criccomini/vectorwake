@@ -61,7 +61,9 @@ function M:begin(layer, w, h, density, now, frost)
     self.now = now or 0
     self.text = self.state.text
     self.text_count = 0
-    self.zones = {}
+    -- Emptied rather than replaced, once a frame for the life of the client.
+    local zones = self.zones
+    for i = #zones, 1, -1 do zones[i] = nil end
     layer:reset()
     if frost then frost:reset() end
     -- Nothing is cut until something asks. The reset above uncovers the

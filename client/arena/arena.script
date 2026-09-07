@@ -2306,10 +2306,10 @@ function update(self, dt)
         -- hand. The pads are built from this, so a hull with none draws none
         -- and a zone that fills all four gets four.
         touch.charges = my_slots()
-        touch.counts = {}
-        touch.maxes = {}
-        touch.waits = {}
-        touch.delays = {}
+        -- Emptied rather than replaced: four tables a frame, every frame.
+        for _, t in ipairs({touch.counts, touch.maxes, touch.waits, touch.delays}) do
+            for k in pairs(t) do t[k] = nil end
+        end
         for _, k in ipairs(touch.charges) do
             touch.counts[k] = held_kit and held_kit.charge[k]
                 or sim.ship_charge(me, k)

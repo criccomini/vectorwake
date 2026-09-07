@@ -107,6 +107,13 @@ const IDLE_SECS: u64 = 5;
 pub struct Spool<T> {
     path: PathBuf,
     pending: Vec<Pending<T>>,
+    /// The thread that puts lines on disk, fed one serialized record at a
+    /// time. `push` runs on the room tick under the zone lock, and it used
+    /// to open, write, flush and fsync there, so every death and departure
+    /// cost the tick a disk sync while its own comment promised a buffered
+    /// write. The record is owed from the moment it is pushed; the disk copy
+    /// lands a moment later, and `flush` waits for it where that matters.
+    writer: std::sync::mpsc::Sender<Job>,
     /// The route these records are posted to. Two kinds travel this way and
     /// they land in different tables, so the kind is carried by the address
     /// rather than by a field inside the batch.
@@ -121,6 +128,84 @@ pub struct Spool<T> {
     zone: String,
     class: String,
     instance: String,
+}
+
+/// What the writer thread is handed: a line to append, or a request to say
+/// when everything handed over so far is on disk.
+enum Job {
+    Line(String),
+    Flush(std::sync::mpsc::SyncSender<()>),
+}
+
+/// Append every line handed over, in one open and one sync, so a burst of
+/// events at a whistle costs one fsync rather than one apiece.
+fn append(path: &std::path::Path, lines: &[String]) -> std::io::Result<()> {
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .append(true)
+        .open(path)?;
+    // A write that failed partway left a fragment with no line end, and the
+    // next record appended straight onto it. On the next open the two read
+    // as one unparseable line and went aside together, and the second was
+    // an event whose push had answered success. The fragment is given its
+    // own line end first, so it goes aside alone.
+    if file.metadata()?.len() > 0 {
+        use std::io::{Read, Seek, SeekFrom};
+        let mut last = [0u8; 1];
+        file.seek(SeekFrom::End(-1))?;
+        file.read_exact(&mut last)?;
+        if last[0] != b'\n' {
+            file.write_all(b"\n")?;
+        }
+    }
+    for line in lines {
+        writeln!(file, "{line}")?;
+    }
+    file.flush()?;
+    file.sync_data()
+}
+
+fn writer_thread(path: PathBuf, noun: &'static str, jobs: std::sync::mpsc::Receiver<Job>) {
+    while let Ok(first) = jobs.recv() {
+        let mut lines: Vec<String> = Vec::new();
+        let mut acks: Vec<std::sync::mpsc::SyncSender<()>> = Vec::new();
+        let mut take = |job: Job| match job {
+            Job::Line(line) => lines.push(line),
+            Job::Flush(ack) => acks.push(ack),
+        };
+        take(first);
+        while let Ok(job) = jobs.try_recv() {
+            take(job);
+        }
+        if !lines.is_empty() {
+            if let Err(error) = append(&path, &lines) {
+                println!("spool: could not file {} {noun}(s): {error}", lines.len());
+            }
+        }
+        for ack in acks {
+            let _ = ack.send(());
+        }
+    }
+}
+
+impl<T> Spool<T> {
+    /// Wait until every line handed to the writer so far is on disk. Before
+    /// the file is rewritten, and before the process ends, since a line still
+    /// in the writer's hands at either moment would be lost; bounded, so a
+    /// disk that has stopped answering cannot hold a shutdown.
+    pub fn flush(&self) {
+        let (ack, done) = std::sync::mpsc::sync_channel(0);
+        if self.writer.send(Job::Flush(ack)).is_ok() {
+            let _ = done.recv_timeout(std::time::Duration::from_secs(5));
+        }
+    }
+}
+
+impl<T> Drop for Spool<T> {
+    fn drop(&mut self) {
+        self.flush();
+    }
 }
 
 /// The destination is captured with each record. An arena can switch zones
@@ -192,6 +277,24 @@ impl Spools {
 
     /// Aim both at the same meta-layer. They post to different routes, which
     /// each spool carries itself.
+    /// Every line every spool has been handed, on disk. The stop signal
+    /// calls this after filing the departures and before the process exits,
+    /// since an exit runs no destructors.
+    pub fn flush_all(&self) {
+        if let Ok(s) = self.rated.lock() {
+            s.flush();
+        }
+        if let Ok(s) = self.pilots.lock() {
+            s.flush();
+        }
+        if let Ok(s) = self.matches.lock() {
+            s.flush();
+        }
+        if let Ok(s) = self.results.lock() {
+            s.flush();
+        }
+    }
+
     pub fn aim(&self, url: &str, token: &str, zone: &str, class: &str, instance: &str) {
         if let Ok(mut s) = self.rated.lock() {
             s.aim(url, token, zone, class, instance);
@@ -329,9 +432,18 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
                 pending.len()
             );
         }
+        let (writer, jobs) = std::sync::mpsc::channel();
+        {
+            let path = path.clone();
+            std::thread::Builder::new()
+                .name(format!("spool {noun}"))
+                .spawn(move || writer_thread(path, noun, jobs))
+                .expect("a thread for the spool");
+        }
         Spool {
             path,
             pending,
+            writer,
             route,
             noun,
             url: String::new(),
@@ -359,6 +471,7 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
                     record.instance = self.instance.clone();
                 }
             }
+            self.flush();
             match rewrite(&self.path, &migrated) {
                 Ok(()) => self.pending = migrated,
                 Err(error) => println!("spool: could not migrate old {}s: {error}", self.noun),
@@ -412,9 +525,10 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
         batches
     }
 
-    /// Called from a tick. Appends and returns; it never blocks on anything
-    /// slower than a buffered write to a local file, and drops the event
-    /// entirely when there is nowhere for it to go.
+    /// Called from a tick. Serializes, hands the line to the writer thread
+    /// and returns; nothing here waits on the disk. The event is owed from
+    /// now whatever the disk does, and is dropped entirely when there is
+    /// nowhere for it to go.
     pub fn push(&mut self, ev: T) {
         if !self.armed() {
             return;
@@ -425,38 +539,12 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
             instance: self.instance.clone(),
             event: ev,
         };
-        let result = std::fs::OpenOptions::new()
-            .create(true)
-            .read(true)
-            .append(true)
-            .open(&self.path)
-            .and_then(|mut file| {
-                // A write that failed partway left a fragment with no line
-                // end, and the next record appended straight onto it. On the
-                // next open the two read as one unparseable line and went
-                // aside together, and the second was an event whose push
-                // had answered success. The fragment is given its own line
-                // end first, so it goes aside alone.
-                if file.metadata()?.len() > 0 {
-                    use std::io::{Read, Seek, SeekFrom};
-                    let mut last = [0u8; 1];
-                    file.seek(SeekFrom::End(-1))?;
-                    file.read_exact(&mut last)?;
-                    if last[0] != b'\n' {
-                        file.write_all(b"\n")?;
-                    }
-                }
-                let line = serde_json::to_string(&record)
-                    .map_err(|error| std::io::Error::other(error.to_string()))?;
-                writeln!(file, "{line}")?;
-                file.flush()?;
-                file.sync_data()
-            });
-        match result {
-            Ok(()) => self.pending.push(record),
-            Err(error) => {
-                println!("spool: could not file {}: {error}", self.noun);
+        match serde_json::to_string(&record) {
+            Ok(line) => {
+                let _ = self.writer.send(Job::Line(line));
+                self.pending.push(record);
             }
+            Err(error) => println!("spool: could not file {}: {error}", self.noun),
         }
     }
 
@@ -495,6 +583,7 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
     /// that did not fit in the batch are still owed.
     fn confirm(&mut self, n: usize) -> std::io::Result<()> {
         let keep = self.pending[n.min(self.pending.len())..].to_vec();
+        self.flush();
         rewrite(&self.path, &keep)?;
         self.pending = keep;
         Ok(())
@@ -947,6 +1036,8 @@ mod tests {
         });
         assert_eq!(rated.len(), 1);
         assert_eq!(pilots.len(), 1);
+        rated.flush();
+        pilots.flush();
         assert_eq!(
             Spool::rated(d.to_str().unwrap()).len(),
             1,
@@ -1123,6 +1214,7 @@ mod tests {
         s.aim("http://127.0.0.1:1", "tok", "chaos", "arena", "i1");
         s.push(ev(9, 4));
         assert_eq!(s.len(), 1);
+        s.flush();
         let again = Spool::rated(d.to_str().unwrap());
         assert_eq!(again.len(), 1, "the pushed event survives the tear");
         assert_eq!(again.last().unwrap().tick, 9);
