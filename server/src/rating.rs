@@ -290,6 +290,13 @@ impl Rating {
             // Repeat dampening: killing the same opponent again soon is worth
             // progressively less, which is what stops spawn camping and
             // kill trading from inflating anybody.
+            //
+            // The window runs from the first kill of a series, and a series
+            // ends five minutes after it began. It used to run from the last
+            // kill, so a pair that kept fighting never left the series: by
+            // the fortieth kill of an evening the underdog was being paid a
+            // quarter of a point, and a whole night against one rival moved
+            // nobody. The design says "within a few minutes", which is this.
             let entry = self
                 .repeats
                 .entry((attacker.clone(), victim.to_string()))
@@ -299,7 +306,6 @@ impl Rating {
             }
             let damp = 1.0 / (1.0 + entry.0 as f64);
             entry.0 += 1;
-            entry.1 = tick;
 
             // K differs per side, so the exchange is not strictly zero-sum:
             // a placing human moves further than the settled bot that killed
@@ -686,6 +692,35 @@ mod tests {
         assert!(
             second < first,
             "the second kill on the same victim pays less"
+        );
+    }
+
+    #[test]
+    fn a_series_of_repeats_ends_a_few_minutes_after_it_began() {
+        // Measured from the first kill, not the last: a pair that keeps
+        // fighting is not in one endless series. Two rooms run the same
+        // eight kills and differ only in when the ninth lands, inside the
+        // window from the first or past it.
+        let series = |ninth_at: u32| {
+            let mut r = Rating::new();
+            for i in 0..8u32 {
+                let at = 11 + i * 4_000;
+                r.damage(at, "v", "k", 1000, false);
+                r.death(at + 1, "v").unwrap();
+            }
+            let was = r.rating_of("k");
+            r.damage(ninth_at, "v", "k", 1000, false);
+            r.death(ninth_at + 1, "v").unwrap();
+            r.rating_of("k") - was
+        };
+        // 29 s short of the fifth minute from the first kill, and 12 s past
+        // it. The last of the eight landed 28 s in, so a window measured
+        // from the last kill would treat both the same.
+        let inside = series(11 + 29_000);
+        let outside = series(11 + 42_000);
+        assert!(
+            outside > inside * 4.0,
+            "a kill past the window pays afresh: inside {inside}, outside {outside}"
         );
     }
 

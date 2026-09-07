@@ -416,6 +416,20 @@ pub(super) async fn route(
 /// The arena-minted id is the umbrella: the receipt table refuses the second
 /// copy, and a refused copy must not touch the projection, or every retry would
 /// bend somebody's rating by the same delta.
+/// When the arena says this happened, in seconds for `to_timestamp`, or
+/// None for an event from an arena too old to say, which files at the
+/// moment it lands. The pilot log has always carried its own stamp for the
+/// reason its schema gives; a rated event did not, so a spool draining after
+/// a week boundary put a death's kill in one week and its rating swing in
+/// the next.
+fn stamped_at(event: &serde_json::Value) -> Option<f64> {
+    let ms = event.get("at").and_then(|value| value.as_u64())?;
+    if ms == 0 {
+        return None;
+    }
+    Some(ms as f64 / 1000.0)
+}
+
 pub(super) fn validate_rated_event(event: &serde_json::Value) -> Result<(), String> {
     let victim = event
         .get("victim")
@@ -533,6 +547,7 @@ pub(super) async fn ingest(
         .get("tick")
         .and_then(|value| value.as_i64())
         .unwrap_or(0);
+    let at = stamped_at(event);
     let victim_kind = event
         .get("victim_kind")
         .and_then(|value| value.as_i64())
@@ -596,8 +611,9 @@ pub(super) async fn ingest(
         db.execute(
             "insert into rated_events
                (event_id, class, zone, instance, tick, victim, victim_kind,
-                victim_before, victim_after, credits, bots_only, killer)
-             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,false,$11)",
+                victim_before, victim_after, credits, bots_only, killer, at)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,false,$11,
+                     coalesce(to_timestamp($12::float8), now()))",
             &[
                 &event_id,
                 &class,
@@ -610,6 +626,7 @@ pub(super) async fn ingest(
                 &after,
                 &serde_json::Value::Array(credits.clone()),
                 &killer,
+                &at,
             ],
         )
         .await
@@ -770,6 +787,7 @@ pub(super) async fn ingest_match(
         .get("tick")
         .and_then(|value| value.as_i64())
         .unwrap_or(0);
+    let at = stamped_at(event);
     let bots_only = event
         .get("bots_only")
         .and_then(|value| value.as_bool())
@@ -806,8 +824,9 @@ pub(super) async fn ingest_match(
     if !bots_only {
         db.execute(
             "insert into rated_matches
-               (event_id, class, zone, instance, tick, score, standings)
-             values ($1,$2,$3,$4,$5,$6,$7)",
+               (event_id, class, zone, instance, tick, score, standings, at)
+             values ($1,$2,$3,$4,$5,$6,$7,
+                     coalesce(to_timestamp($8::float8), now()))",
             &[
                 &event_id,
                 &class,
@@ -816,6 +835,7 @@ pub(super) async fn ingest_match(
                 &tick,
                 &score,
                 &serde_json::Value::Array(standings.clone()),
+                &at,
             ],
         )
         .await

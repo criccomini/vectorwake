@@ -164,13 +164,20 @@ pub(super) async fn route(
                 .unwrap_or(0);
             let pilot = db
                 .query_opt(
+                    // The same pilots the ladder lists and no other. Account
+                    // ids are dealt in order, so a card that answered for any
+                    // unbanned id handed out every guest's and bot's call
+                    // sign, record and rating to whoever counted upward.
                     "select a.id, n.call_sign, a.kind,
                             coalesce(ps.kills, 0), coalesce(ps.deaths, 0),
                             coalesce(ps.assists, 0)
                      from accounts a join names n on n.account = a.id
                      left join pilot_stats ps on ps.account = a.id
-                     where a.id = $1 and not a.banned",
-                    &[&account],
+                     where a.id = $1 and not a.banned and a.kind = $2
+                       and exists (select 1 from credentials c
+                                   where c.account = a.id
+                                     and c.method = 'password')",
+                    &[&account, &KIND_HUMAN],
                 )
                 .await;
             let pilot = match pilot {

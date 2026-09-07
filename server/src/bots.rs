@@ -123,11 +123,22 @@ impl Maps {
                 MapEntry::Building(_) => true,
                 MapEntry::Ready(map, route) => map.strong_count() > 0 && route.strong_count() > 0,
             });
-            match maps.get(&key) {
-                Some(MapEntry::Ready(map, route)) => {
-                    return Some((map.upgrade()?, route.upgrade()?));
-                }
-                Some(MapEntry::Building(cell)) => Arc::clone(cell),
+            let building = match maps.get(&key) {
+                Some(MapEntry::Ready(map, route)) => match (map.upgrade(), route.upgrade()) {
+                    (Some(map), Some(route)) => return Some((map, route)),
+                    // Ready a moment ago and gone now: the last flight holding
+                    // it ended between the sweep above and this read, since a
+                    // flight drops its map without taking this lock. Not an
+                    // answer of "no map", which the caller reads as a protocol
+                    // fault and puts the whole instance into backoff over; it
+                    // is built again below.
+                    _ => None,
+                },
+                Some(MapEntry::Building(cell)) => Some(Arc::clone(cell)),
+                None => None,
+            };
+            match building {
+                Some(cell) => cell,
                 None => {
                     let cell = Arc::new(tokio::sync::OnceCell::new());
                     maps.insert(key, MapEntry::Building(Arc::clone(&cell)));

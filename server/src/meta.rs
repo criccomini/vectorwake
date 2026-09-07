@@ -1300,16 +1300,28 @@ async fn route(
                             and at < bound.until
                             and ($3 = '' or zone = $3)
                      ),
+                     -- One row per pilot, not per call sign. An account
+                     -- that changed its name mid-week was two rows, each
+                     -- carrying the whole week's swing and assists, since
+                     -- those are joined by account below. A guest has no
+                     -- account and is their name.
+                     keyed as (
+                         select wk.*, coalesce('#' || pilot::text, name) as who
+                           from wk
+                     ),
                      sess as (
-                         select name, session, max(at) - min(at) as span
-                           from wk where session is not null
-                          group by name, session
+                         select who, session, max(at) - min(at) as span
+                           from keyed where session is not null
+                          group by who, session
                      ),
                      played as (
-                         select name, sum(span) as span from sess group by name
+                         select who, sum(span) as span from sess group by who
                      ),
                      tally as (
-                         select name, max(pilot) as account,
+                         select who, max(pilot) as account,
+                                -- The name they wear now, which is the one
+                                -- their last row of the week carried.
+                                (array_agg(name order by at desc))[1] as name,
                                 -- Kills, less the ones aimed at themselves or
                                 -- their own side. The arena takes one off the
                                 -- board for a misfire and this is the same
@@ -1328,7 +1340,7 @@ async fn route(
                                          filter (where kind = 'died'), 0) as run,
                                 count(*) filter (where kind = 'match'
                                        and (detail->>'won')::boolean) as wins
-                           from wk group by name
+                           from keyed group by who
                      ),
                      rating_participants as (
                          select party.account, re.class, party.delta,
@@ -1407,7 +1419,7 @@ async fn route(
                             coalesce(g.rating, 0)::double precision,
                             coalesce(s.n, 0)::bigint
                        from tally t
-                       left join played p on p.name = t.name
+                       left join played p on p.who = t.who
                        left join moved m on m.account = t.account
                        left join flew f on f.account = t.account
                        left join assisted s on s.account = t.account

@@ -3542,6 +3542,7 @@ impl Room {
         }
         let ev = spool::MatchEvent {
             id: rand::random(),
+            at: fleet::now_ms(),
             tick: r.tick,
             score: r.score.clone(),
             standings,
@@ -3990,6 +3991,7 @@ impl Room {
             // enough to derive from: ticks restart with the process, so a
             // key built on them would recur across two lives of one instance.
             id: rand::random(),
+            at: fleet::now_ms(),
             tick: r.tick,
             victim,
             killer: killer.and_then(|who| self.accounts.get(who)).copied(),

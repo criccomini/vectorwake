@@ -592,13 +592,22 @@ impl ArenaServer {
     /// The token seeds a pilot this room has never seen. It is not a checkpoint:
     /// a reconnect or a return from watching must keep the movement already
     /// recorded in the room instead of restoring an older token over it.
+    ///
+    /// Unless the token is the newer record. A room lives for as long as bots
+    /// fill it, and a pilot who left it, played an hour elsewhere and came
+    /// back arrives with a token minted after that hour, while the room still
+    /// holds the number they left with. The game count says which is newer,
+    /// since it only ever rises: a token that has seen more games than the
+    /// room has replaces the room's copy, and one that has not is the stale
+    /// reconnect the rule above is about.
     pub(crate) fn restore_pilot(&mut self, room: usize, seat: &Seat) {
         let class = self.rating_class();
         let Some((saved, played)) = self.token_rating(seat, &class) else {
             return;
         };
         if let Some(a) = self.rooms.get_mut(room) {
-            if !a.rating.score.contains_key(&seat.rid) {
+            let known = a.rating.games_of(&seat.rid);
+            if !a.rating.score.contains_key(&seat.rid) || played > known {
                 a.rating.score.insert(seat.rid.clone(), saved);
                 a.rating.games.insert(seat.rid.clone(), played);
             }

@@ -32,6 +32,12 @@ pub struct Event {
     /// Delivery is at-least-once: a batch that half-lands is posted again
     /// whole, and this is what lets the meta-layer refuse the half it kept.
     pub id: i64,
+    /// Wall clock at the arena, in milliseconds, for the reason the pilot
+    /// log carries one: filed with the meta-layer's own clock, a spool that
+    /// drained after Monday midnight put last week's kills in last week and
+    /// their rating swing in this one, and the week table read both.
+    #[serde(default)]
+    pub at: u64,
     pub tick: u32,
     pub victim: u64,
     /// The account that landed the final blow. None for a combat quit or when
@@ -67,6 +73,9 @@ pub struct Credit {
 pub struct MatchEvent {
     /// Minted once when filed and carried through every retry, as on a death.
     pub id: i64,
+    /// Wall clock at the arena, in milliseconds, as on a death.
+    #[serde(default)]
+    pub at: u64,
     pub tick: u32,
     /// The final score per public side, in the zone's order.
     pub score: Vec<u16>,
@@ -702,6 +711,7 @@ mod tests {
     fn ev(tick: u32, victim: u64) -> Event {
         Event {
             id: (tick as i64) << 32 | victim as i64,
+            at: 1_750_000_000_000 + tick as u64,
             tick,
             victim,
             killer: Some(7),
