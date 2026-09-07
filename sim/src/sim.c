@@ -1064,6 +1064,40 @@ static void kill_weapon(sim_state *s, uint16_t i) {
 static void drop_flags(sim_state *s, const sim_settings *cfg, uint8_t ship,
                        sim_events *ev);
 
+static void clear_hurt(sim_ship *sh);
+
+/* Take a seat out of play. See the header. */
+void sim_leave(sim_state *s, uint8_t i) {
+    if (i >= s->ship_count) return;
+    sim_ship *sh = &s->ships[i];
+    sh->active = 0;
+    sh->alive = 0;
+    /* Rounds name their owner by seat, and a bomb fused to a hull names that
+     * by seat too. Both would otherwise land on whoever sits here next: the
+     * kill on their tally, the blast on their hull. */
+    for (uint16_t wi = 0; wi < s->weapon_count;) {
+        sim_weapon *w = &s->weapons[wi];
+        if (w->owner == i) {
+            kill_weapon(s, wi);
+            continue;
+        }
+        if (w->fuse_target == i) w->fuse_target = 255;
+        wi++;
+    }
+    /* Damage this pilot landed is an assist waiting in every hull they hit.
+     * The assist check skips an inactive seat, but not a reoccupied one. */
+    for (int k = 0; k < s->ship_count; k++) {
+        sim_ship *v = &s->ships[k];
+        for (int a = 0; a < SIM_ASSIST_SLOTS; a++) {
+            if (v->hurt_by[a] == i) {
+                v->hurt_by[a] = 255;
+                v->hurt_at[a] = 0;
+            }
+        }
+    }
+    clear_hurt(sh);
+}
+
 int sim_on_streak(const sim_settings *cfg, const sim_ship *sh) {
     return cfg->streak_kills && sh->streak >= cfg->streak_kills;
 }
@@ -1139,7 +1173,9 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
         v->energy = 0;
         v->alive = 0;
         v->deaths++;
-        v->respawn_at = cfg->respawn_delay;
+        /* At least one tick, since zero on the counter is "not waiting":
+         * a zone that sets no delay gets the next tick rather than never. */
+        v->respawn_at = cfg->respawn_delay ? cfg->respawn_delay : 1;
         v->vx = v->vy = 0;
         /* A kill pays nothing, because there is nothing left to pay in.
          * Bounty priced one and points banked it, and both are gone: what a
@@ -2207,8 +2243,15 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                      * pilot's gun rung, and whether their bullets bounce.
                      * Taken here, at the throw, so it is what they were
                      * carrying then and not what they hold when it lands. */
+                    /* Eight bits for the seat, since it runs 1..255. Packed
+                     * into seven, seat 128 and up spilled their top bit
+                     * into the tick, and two pilots 128 seats apart firing
+                     * a tick apart shared a volley: the first round of
+                     * either to land erased the other's. Twenty-four bits
+                     * of tick is 46 hours, against a round that lives five
+                     * seconds. */
                     uint32_t link = trig == SIM_TRIG_GUN
-                        ? ((next->tick & 0x01ffffffu) << 7)
+                        ? ((next->tick & 0x00ffffffu) << 8)
                               | ((uint32_t)i + 1u)
                         : 0;
                     spawn_pattern(next, cfg, pat, (uint8_t)i, sh->team, mx, my,
@@ -2331,8 +2374,13 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         {
             int32_t dox, doy, dhx, dhy;
             hull_box(cls, sh->heading, &dox, &doy, &dhx, &dhy);
-            if (box_shut_door(cfg->map, cfg, next->tick, sh->x + dox,
-                              sh->y + doy, dhx, dhy)) {
+            /* Not on a public-only record: a remote hull's spawn is in the
+             * owner tail this record does not carry, so the warp would put
+             * it at the map's corner until the next snapshot. The authority
+             * moves it; this side waits to be told where. */
+            if (!sh->public_only
+                && box_shut_door(cfg->map, cfg, next->tick, sh->x + dox,
+                                 sh->y + doy, dhx, dhy)) {
                 sh->x = sh->spawn_x;
                 sh->y = sh->spawn_y;
                 sh->vx = 0;
@@ -2697,8 +2745,20 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             int32_t px = w->x, py = w->y;
             w->x = x0 + (int32_t)((int64_t)dx * si / sweep);
             w->y = y0 + (int32_t)((int64_t)dy * si / sweep);
-            if (spec->on_wall != SIM_WALL_PASS
-                && box_hits(cfg->map, cfg, next->tick, w->x, w->y, 0, 0)) {
+            if (spec->on_wall == SIM_WALL_PASS) {
+                /* Nothing stops a pass-through round, the border included,
+                 * so the map's edge has to. Past it the round is at a
+                 * position no snapshot may carry, and every client in range
+                 * refused the whole snapshot for as long as it lived. */
+                if (w->x < 0 || w->y < 0
+                    || w->x >= ((int32_t)cfg->map->w << 12)
+                    || w->y >= ((int32_t)cfg->map->h << 12)) {
+                    w->x = px;
+                    w->y = py;
+                    ended = 1;
+                    break;
+                }
+            } else if (box_hits(cfg->map, cfg, next->tick, w->x, w->y, 0, 0)) {
                 if (spec->on_wall == SIM_WALL_BOUNCE && w->left > 0) {
                     w->left--;
                     int32_t depth, sxq, syq;
@@ -2895,6 +2955,9 @@ uint64_t sim_hash(const sim_state *s) {
         h = hash_u32(h, (uint32_t)sh->vx);
         h = hash_u32(h, (uint32_t)sh->vy);
         h = hash_u32(h, sh->heading);
+        h = hash_u32(h, (uint32_t)sh->repel | ((uint32_t)sh->repel_speed << 16));
+        h = hash_u32(h, (uint32_t)sh->spawn_x);
+        h = hash_u32(h, (uint32_t)sh->spawn_y);
         h = hash_u32(h, (uint32_t)sh->energy);
         h = hash_u32(h, (uint32_t)sh->fire_cooldown[SIM_TRIG_GUN]
                             | ((uint32_t)sh->fire_cooldown[SIM_TRIG_BOMB] << 16));
@@ -2909,6 +2972,7 @@ uint64_t sim_hash(const sim_state *s) {
         for (int k = 0; k < SIM_MAX_CHARGES; k++) h = hash_u32(h, sh->charge[k]);
         for (int k = 0; k < SIM_MAX_CHARGES; k++)
             h = hash_u32(h, sh->charge_cooldown[k]);
+        for (int k = 0; k < SIM_SLOT_COUNT; k++) h = hash_u32(h, sh->kit[k]);
         /* What the next shot will be, and what the last press was. Both are
          * state: the second decides whether the next tick sees an edge, and a
          * client that guessed at it would toggle when the server did not. */

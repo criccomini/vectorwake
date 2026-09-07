@@ -1299,6 +1299,16 @@ void sim_restart(sim_state *s, const sim_settings *cfg);
 int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
               int32_t y_px, uint16_t heading, const sim_settings *cfg);
 
+/* The pilot in seat `i` has gone, and `sim_spawn` will hand the seat to the
+ * next arrival. Everything that names a seat by its index goes with them:
+ * their rounds still in flight, any bomb fused to their hull, and the damage
+ * they landed that a later death would have counted as an assist. A seat used
+ * to be vacated by a server writing `active = 0` and nothing else, and a burst
+ * fired a moment before leaving stayed in the air for five seconds under the
+ * next occupant's name, scoring kills they never made and a team kill when it
+ * hit the side they had joined on. */
+void sim_leave(sim_state *s, uint8_t i);
+
 /* Where to put a ship of this team now, as a Q8 world position, honouring
  * `spawn_radius`. `nth` walks the map's spawn tiles when the setting is zero
  * and is ignored when it is not; a caller that wants a random tile rather than

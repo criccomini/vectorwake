@@ -602,6 +602,10 @@ extern "C" {
         heading: u16,
         cfg: *const sim_settings,
     ) -> c_int;
+    /// The pilot in seat `i` has gone. The core drops their rounds, the
+    /// fuses set on their hull and the damage they landed, so none of it is
+    /// charged to whoever takes the seat next.
+    pub fn sim_leave(s: *mut sim_state, i: u8);
     pub fn sim_step(
         next: *mut sim_state,
         prev: *const sim_state,
@@ -1151,6 +1155,13 @@ impl World {
                 &*self.cfg,
             )
         }
+    }
+
+    /// Vacate a seat. The core does the tearing down, since rounds, fuses
+    /// and the assist ledger all name a seat by index and every one of them
+    /// would otherwise land on the next occupant.
+    pub fn leave(&mut self, i: u8) {
+        unsafe { sim_leave(&mut *self.state, i) }
     }
 
     /// Put a pilot in a different hull, keeping their team and their seat.

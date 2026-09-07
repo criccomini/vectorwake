@@ -2802,9 +2802,11 @@ impl Room {
                     }),
                 );
             }
-            let sh = &mut self.world.state.ships[p.ship as usize];
-            sh.active = 0;
-            sh.alive = 0;
+            // The core vacates the seat, because rounds in flight, fuses and
+            // the assist ledger all name it by index, and writing `active = 0`
+            // here left a departed pilot's burst scoring under the name of
+            // whoever sat down next.
+            self.world.leave(p.ship);
             self.names.remove(&p.ship);
             // Invitations belong to the pilot, not the seat: the next occupant
             // of this one was invited nowhere. And a private side whose last

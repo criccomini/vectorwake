@@ -1826,6 +1826,43 @@ static void test_maps(const sim_settings *base) {
 static void test_lifecycle(sim_map *m, const sim_settings *base) {
     sim_settings cfg = *base;
 
+    /* A pilot who leaves takes their rounds with them. The seat is handed to
+     * the next arrival, and a round still names its owner by seat, so
+     * without this a burst fired on the way out scored under the newcomer's
+     * name, and as a team kill when it hit the side they had joined. */
+    {
+        static sim_state s;
+        sim_init(&s, 1);
+        /* Seat 0 on team 0, a target on team 1 well down the range, and a
+         * third hull that will take seat 0. */
+        sim_spawn(&s, APEX, 0, 8192 - 96, 8192, 0, &cfg);
+        sim_spawn(&s, APEX, 1, 8192 + 96, 8192, 0, &cfg);
+        s.ships[0].heading = 0;
+        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == 1 && s.weapons[0].owner == 0,
+              "the departing pilot fired");
+        /* Their damage is in the target's ledger too. */
+        s.ships[1].hurt_by[0] = 0;
+        s.ships[1].hurt_at[0] = s.tick;
+        /* And the target's own bomb is fused to their hull. */
+        s.weapons[1] = s.weapons[0];
+        s.weapons[1].owner = 1;
+        s.weapons[1].fuse_target = 0;
+        s.weapon_count = 2;
+        sim_leave(&s, 0);
+        CHECK(!s.ships[0].active, "the seat is vacant");
+        CHECK(s.weapon_count == 1 && s.weapons[0].owner == 1,
+              "their rounds are gone and nobody else's is");
+        CHECK(s.weapons[0].fuse_target == 255,
+              "a bomb fused to their hull is no longer fused to the seat");
+        CHECK(s.ships[1].hurt_by[0] == 255,
+              "the damage they landed is out of the ledger");
+        CHECK(sim_spawn(&s, APEX, 1, 8192, 8192, 0, &cfg) == 0,
+              "the next arrival takes the seat");
+        CHECK(s.ships[0].kills == 0 && s.weapon_count == 1,
+              "and inherits nothing");
+    }
+
     /* The room size is the zone's, and the array bound is only the ceiling. */
     {
         sim_settings small = cfg;
@@ -2400,11 +2437,18 @@ static void test_weapon_model(sim_map *m, const sim_settings *base) {
 
         static sim_state s;
         sim_init(&s, 1);
-        sim_spawn(&s, APEX, 0, 8192, 40, 0, &w);
+        sim_spawn(&s, APEX, 0, 8192, 120, 0, &w);
         step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
-        step_n(&s, &w, 0, 0, 40);
-        CHECK(s.weapon_count == 1, "a wall is not an ending for everything");
-        CHECK(s.weapons[0].y < 0, "and it is on the other side of it");
+        /* Watched tick by tick: inside the border wall and still flying,
+         * and then gone at the map's edge rather than past it, where no
+         * snapshot could carry it. */
+        int in_wall = 0;
+        for (int t = 0; t < 60 && s.weapon_count == 1; t++) {
+            if (s.weapons[0].y >= 0 && s.weapons[0].y < 64 << 8) in_wall = 1;
+            step_n(&s, &w, 0, 0, 1);
+        }
+        CHECK(in_wall, "a wall is not an ending for everything");
+        CHECK(s.weapon_count == 0, "but the edge of the map is");
     }
 
     {
@@ -3713,6 +3757,26 @@ static void test_tech_tree(const sim_settings *base) {
         step_n(&s, &cfg, rep, 0, 1);
         CHECK(s.ships[0].charge[SIM_CHARGE_REPEL] == 0,
               "a burst leaves the repel alone");
+
+        /* No delay is the next tick, not never. Zero on the counter means
+         * nobody is waiting, so a zone that set zero used to leave every
+         * dead pilot dead. */
+        {
+            sim_settings nd = cfg;
+            nd.respawn_delay = 0;
+            sim_init(&s, 1);
+            sim_spawn(&s, APEX, 0, 8192, 8192, 0, &nd);
+            sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 0, &nd);
+            s.ships[1].energy = 1;
+            int died = 0;
+            for (int t = 0; t < 150 && !died; t++) {
+                step_n(&s, &nd, SIM_BTN_FIRE, 0, 1);
+                died = s.ships[1].deaths == 1;
+            }
+            CHECK(died, "the pilot died");
+            step_n(&s, &nd, 0, 0, 2);
+            CHECK(s.ships[1].alive, "and with no delay set is back at once");
+        }
 
         /* The clock belongs to the ammunition, which is the one thing a death
          * does not give back, so a death does not hand the next burst over
