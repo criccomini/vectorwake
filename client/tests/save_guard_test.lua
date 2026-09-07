@@ -89,6 +89,23 @@ local function load_with(d, name)
     return drawn
 end
 
+-- A file with no name in it is a pilot who logged off, waiting on the
+-- account layer for a new one. Everything else in the file is theirs and
+-- stays: a boot used to gate the whole file on the name and write the
+-- defaults over it, so a log-off with the meta-layer down came back a stock
+-- client.
+if load_with({name = "", volume = 2, wake = 1, zone = "war", class = 3,
+              help_prompt_seen = true},
+             "a save with the name blanked") then
+    check("keeps the settings beside the blank",
+          menu.volume == 2 and menu.wake == 1 and menu.zone == "war"
+          and menu.class == 3 and menu.help_prompt_seen == true,
+          table.concat({tostring(menu.volume), tostring(menu.wake),
+                        tostring(menu.zone), tostring(menu.class)}, " "))
+    check("and deals a name to fly under until one arrives",
+          type(menu.name) == "string" and menu.name ~= "", tostring(menu.name))
+end
+
 -- The hull. 7 is the value the old modulo-eight guard let through against a
 -- seven-hull table, and it is what an unvalidated wire byte could put in a
 -- save by way of the seat the zone dealt.

@@ -146,16 +146,31 @@ check("it dials again a couple of seconds later", #dials == 2,
 connected(last())
 local live = last()
 died(ghost)
--- Twenty seconds of frames on a socket that is perfectly healthy. If the
--- ghost's event were allowed through, this is where it would show: the
--- connection would read as gone and the backoff would start dialling over the
--- top of a working one.
-run(20)
+-- Twenty seconds of frames on a socket that is perfectly healthy, which is
+-- to say one that answers what it is asked. If the ghost's event were
+-- allowed through, this is where it would show: the connection would read
+-- as gone and the backoff would start dialling over the top of a working
+-- one.
+for _ = 1, 4 do
+    run(5)
+    message(live, "chaos war alpha")
+end
 check("a ghost's disconnect cannot kill the socket that replaced it",
       #dials == 2, "dials: " .. #dials)
 message(live, "chaos war alpha")
 check("and the socket it tried to kill still answers", #dir.rows == 3,
       "rows: " .. tostring(#dir.rows))
+
+-- A socket that is up and says nothing is not healthy. It used to be asked
+-- every three seconds for the life of the process, the loading screen on
+-- "looking for games" throughout, since only a socket that had gone was
+-- ever dialled again.
+run(20)
+check("a socket that never answers is hung up on and dialled again",
+      #dials == 3, "dials: " .. #dials)
+connected(last())
+live = last()
+message(live, "chaos war alpha")
 
 -- --- the list comes back on its own ----------------------------------------
 

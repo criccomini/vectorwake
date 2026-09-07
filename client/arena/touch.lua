@@ -167,8 +167,8 @@ local last_tap = nil
 -- thumbs are busy elsewhere, and a reverse you have to keep pressing is one
 -- you cannot shoot through.
 local reversed = false
-local guns = nil          -- touch id holding the guns pad
-local bombs = nil
+local guns = {}           -- every touch id holding the guns pad
+local bombs = {}
 -- Which charge a tap asked for, latched and read once.
 --
 -- One pad per kind rather than a use pad and a swap pad. The simulation takes
@@ -434,10 +434,12 @@ function M.on_touch(action, w, h, s, claimed)
                 end
                 stick = {id = t.id, ox = tx, oy = ty, x = tx, y = ty,
                          t0 = M.now, still = true, flipped = flip}
+            -- Every finger on a pad, not the last one down: a second finger
+            -- lifting used to release a pad the first was still holding.
             elseif z == "guns" then
-                guns = t.id
+                guns[t.id] = true
             elseif z == "bombs" then
-                bombs = t.id
+                bombs[t.id] = true
             elseif type(z) == "number" then
                 fired = z
             end
@@ -479,14 +481,14 @@ function M.release(id)
         end
         stick = nil
     end
-    if guns == id then guns = nil end
-    if bombs == id then bombs = nil end
+    guns[id] = nil
+    bombs[id] = nil
 end
 
 -- Lifting a finger outside the window does not always produce a release, so
 -- a lost touch has to be forgettable.
 function M.release_all()
-    stick, guns, bombs = nil, nil, nil
+    stick, guns, bombs = nil, {}, {}
     last_tap = nil
     -- The stance goes with them. This is called when the cockpit went away:
     -- focus lost, a watch taken, the client shutting down. Coming back to a
@@ -510,8 +512,8 @@ end
 -- set of distinct bits is exact and needs no library.
 function M.bits(heading)
     local out = {}
-    if guns then out[#out + 1] = sim.BTN_FIRE end
-    if bombs then out[#out + 1] = sim.BTN_BOMB end
+    if next(guns) then out[#out + 1] = sim.BTN_FIRE end
+    if next(bombs) then out[#out + 1] = sim.BTN_BOMB end
     if not stick then return out end
 
     -- The thumb names the course either way; arena/course.lua turns it into
@@ -681,8 +683,8 @@ function M.draw(u, w, h, s)
     -- player who has learned one has learned the other, and the keys tell each
     -- other apart by their marks now rather than by their color.
     local gcol = pal.rung(marks.level(M.me, sim.TRIG_GUN))
-    key_ground(L.guns, gcol, guns)
-    trig_ring(L.guns, gcol, sim.TRIG_GUN, guns)
+    key_ground(L.guns, gcol, next(guns) ~= nil)
+    trig_ring(L.guns, gcol, sim.TRIG_GUN, next(guns) ~= nil)
     pad_mark(L.guns, sim.TRIG_GUN)
     -- The gun wore its energy on a second arc outside the rim for a while.
     -- Every hull in the game already carries a bar above it saying the same
@@ -699,8 +701,8 @@ function M.draw(u, w, h, s)
     -- hold and the other is a thing you have three of.
     if M.has_bomb then
         local bcol = pal.rung(marks.level(M.me, sim.TRIG_BOMB))
-        key_ground(L.bombs, bcol, bombs)
-        trig_ring(L.bombs, bcol, sim.TRIG_BOMB, bombs)
+        key_ground(L.bombs, bcol, next(bombs) ~= nil)
+        trig_ring(L.bombs, bcol, sim.TRIG_BOMB, next(bombs) ~= nil)
         pad_mark(L.bombs, sim.TRIG_BOMB)
     end
 

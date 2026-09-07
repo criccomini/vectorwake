@@ -167,6 +167,21 @@ check("lifting after it releases the gun",
       not has(touch.bits(0), sim.BTN_FIRE))
 touch.release_all()
 
+-- Two fingers on the pad hold it, and the pad stays held until both are
+-- off: the second finger lifting used to release a pad the first was still
+-- pressing.
+L = touch.layout(W, H, 1)
+touch.on_touch({touch = {{id = 11, pressed = true,
+                          screen_x = L.guns.x, screen_y = L.guns.y}}}, W, H, 1)
+touch.on_touch({touch = {{id = 12, pressed = true,
+                          screen_x = L.guns.x + 6, screen_y = L.guns.y}}}, W, H, 1)
+touch.release(12)
+check("lifting the second finger leaves the first one's trigger held",
+      has(touch.bits(0), sim.BTN_FIRE))
+touch.release(11)
+check("and lifting the first releases it", not has(touch.bits(0), sim.BTN_FIRE))
+touch.release_all()
+
 -- A UI press can consume a whole multitouch batch. The arena forwards releases
 -- through this narrow path first, so the pad held by another finger still lets
 -- go even when the rest of the action belongs to the panel.

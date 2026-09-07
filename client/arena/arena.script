@@ -64,6 +64,13 @@ TUNE.CLASS_NAMES = {"Apex", "Wedge", "Chord", "Anvil",
                      "Cipher", "Facet", "Lattice"}
 
 local held = {}
+-- The finger currently dragging the player list, if there is one: which touch
+-- it is, where it went down, and what the list was scrolled to then, so the
+-- scroll follows the whole gesture rather than accumulating rounding from
+-- each frame's step. Declared up here with the rest of what a lost focus has
+-- to forget: a drag that outlived the window losing focus claimed the next
+-- press wearing its id, which on Android is the next press.
+local list_drag = nil
 -- A tap can go down and up inside one frame, so the frame loop never sees it
 -- in `held`. Presses are latched here and consumed by whatever reads them,
 -- which is how the menu gets a keystroke that flight does not need.
@@ -704,14 +711,18 @@ TUNE.PANEL_HANDLERS = {
         sfx.ui("ui_move")
         return true
     end,
+    -- Not while a card is taking type, like the help key below: every key
+    -- press is latched under its control whether or not a field has it, and
+    -- a call sign with a p or an m in it opened the players sheet over the
+    -- log-in card and toggled the map under it.
     details = function(_, live)
-        if live then
+        if live and not menu.typing() then
             toggle_players()
             sfx.ui("ui_move")
         end
     end,
     map = function(_, live)
-        if live then
+        if live and not menu.typing() then
             toggle_map()
             sfx.ui("ui_move")
         end
@@ -1372,6 +1383,7 @@ function init(self)
             held = {}
             tapped = {}
             owner = {}
+            list_drag = nil
             touch.release_all()
         end
     end)
@@ -1696,6 +1708,12 @@ function update(self, dt)
     -- fresh: a zone that comes up or goes down while somebody is reading it
     -- changes under them rather than sitting at whatever the first ask
     -- returned.
+    -- The session token, kept fresh on its own clock. It used to be renewed
+    -- only on a directory reply, and the directory is idle for as long as a
+    -- pilot is in a room with the menu shut, so a token that lives fifteen
+    -- minutes was expired by the time a long session left for another room,
+    -- and every claimed pilot was told to log in again on every deploy.
+    account.keep_fresh()
     if menu.open and menu.stop_open() == "zone" then
         directory.tick(dt)
     elseif not live then
@@ -3030,12 +3048,6 @@ function on_message(self, message_id, message)
         end
     end
 end
-
--- The finger currently dragging the player list, if there is one: which touch
--- it is, where it went down, and what the list was scrolled to then, so the
--- scroll follows the whole gesture rather than accumulating rounding from
--- each frame's step.
-local list_drag = nil
 
 -- Whether a press landed on the player list. The panel publishes one box over
 -- its whole area for exactly this, and it is the last of its boxes, so the row

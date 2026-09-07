@@ -68,6 +68,13 @@ local url = nil
 -- The redial timer: how long since the socket went, and how long to wait.
 local down_for = 0
 local retry_in = RETRY_FIRST
+-- How long the socket has been up without a word from the far end. A socket
+-- that connects and never answers used to be asked every three seconds for
+-- the life of the process, with the loading screen on "looking for games"
+-- and nothing ever dialling again, since only a socket that had gone was
+-- redialled. Past this it is hung up on, and the retry clock takes over.
+local MUTE = 12
+local quiet = 0
 -- Which dial a callback belongs to. A socket that has been replaced can still
 -- deliver its own disconnect afterwards, and without this that event clears
 -- `conn` for the socket that replaced it: the list would then dial, come up,
@@ -280,6 +287,7 @@ local function dial()
     generation = generation + 1
     local mine = generation
     down_for = 0
+    quiet = 0
     local ok = pcall(function()
         conn = websocket.connect(url, {}, function(self, cid, data)
             -- A reply from a socket we have already given up on. It may not
@@ -295,6 +303,7 @@ local function dial()
                 -- A directory that is answering is a directory worth dialling
                 -- straight away next time it is not.
                 retry_in = RETRY_FIRST
+                quiet = 0
                 on_message(data.message)
             elseif data.event == websocket.EVENT_DISCONNECTED
                 or data.event == websocket.EVENT_ERROR then
@@ -381,6 +390,18 @@ function M.tick(dt)
             -- refuses instantly cannot be dialled every frame.
             retry_in = math.min(retry_in * 2, RETRY_MAX)
             dial()
+        end
+        return
+    end
+    quiet = quiet + dt
+    if quiet >= MUTE then
+        -- Hung up on rather than asked again. The generation moves so a late
+        -- reply cannot speak for the socket that replaces this one.
+        M.close()
+        if #M.rows == 0 then
+            M.note = "no servers found"
+            M.answered = true
+            M.why = "retrying"
         end
         return
     end

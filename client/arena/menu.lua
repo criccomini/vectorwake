@@ -236,7 +236,13 @@ function M.save_identity()
     -- pressing one of those rows halfway through drafting a ship would write
     -- a hull the pilot may yet back out of, and they would boot into it.
     local class = M.draft and M.draft.class or M.class
-    local kit = M.draft and M.draft.kit or M.kit
+    -- Spelled out rather than as `and ... or`, because the draft's kit is nil
+    -- for a pilot on the default build, and the idiom then fell through to
+    -- the kit being drafted: a repel traded and then backed out of was on
+    -- the disk the moment a wake row was pressed, and the pilot booted into
+    -- the build they had refused.
+    local kit
+    if M.draft then kit = M.draft.kit else kit = M.kit end
     pcall(sys.save, SAVE, {
         name = M.name, class = class, volume = M.volume, music = M.music,
         cap = M.cap, zone = M.zone,
@@ -263,8 +269,18 @@ function M.load_identity()
     callsign.seed(os.time() + math.floor(os.clock() * 100000))
     M.help_prompt_seen = false
     local ok, d = pcall(sys.load, SAVE)
-    if ok and type(d) == "table" and type(d.name) == "string" and d.name ~= "" then
-        M.name = d.name
+    -- The settings are read whether or not the file names a pilot. Logging
+    -- off blanks the name and saves, and the fresh guest's name arrives on
+    -- the account layer's schedule; a boot that gated the whole file on the
+    -- name rewrote it with the defaults in the meantime, so a log-off with
+    -- the meta-layer down was a stock client on the next launch: volume,
+    -- keys, wake, zone and build all gone.
+    local named = false
+    if ok and type(d) == "table" then
+        if type(d.name) == "string" and d.name ~= "" then
+            M.name = d.name
+            named = true
+        end
         -- The hull is a zero-based index, so it is checked one off from the
         -- rest. It used to be taken modulo eight against seven hulls, which
         -- let a class of 7 through to be read as HULLS[8].
@@ -312,7 +328,8 @@ function M.load_identity()
         -- missing table is a stock keyboard, which is what `load` does with
         -- nothing.
         binds.load(d.keys)
-    else
+    end
+    if not named then
         M.name = callsign.generate()
         M.save_identity()
     end
@@ -537,10 +554,29 @@ function M.build_of(cls)
     local out = {}
     local n = simn("SLOT_COUNT", 23)
     local mine = M.kit or default_kit()
+    local total = 0
     for slot = 0, n - 1 do
         local want = mine[slot] or 0
         local cap = slot_cap(cls, slot)
         out[slot] = want < cap and want or cap
+        total = total + out[slot]
+    end
+    -- Then the overspend bought back, the tallest slot first and the first
+    -- of a tie, which is the rule `sim_kit_fit` applies on the other side.
+    -- Applied here too so what the panel draws and the wire carries is the
+    -- build the arena will seat the pilot in: a save from a build with a
+    -- deeper ceiling drew a level the pilot was not flying.
+    local budget = credits()
+    while total > budget do
+        local at = nil
+        for slot = 0, n - 1 do
+            if out[slot] > 0 and (at == nil or out[slot] > out[at]) then
+                at = slot
+            end
+        end
+        if at == nil then break end
+        out[at] = out[at] - 1
+        total = total - 1
     end
     return out
 end

@@ -210,6 +210,14 @@ function M.aim(base)
     end
 end
 
+-- Renew the session before the token it carries runs out, wherever the
+-- client is standing. `aim` does the same on a directory reply, and a pilot
+-- in a room with the menu shut gets none of those.
+function M.keep_fresh()
+    if M.base == "" or secret == "" or signing_in then return end
+    if now() - refreshed_at > REFRESH then session() end
+end
+
 function M.load()
     load()
 end

@@ -1437,6 +1437,7 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_MOD_COUNT);    lua_setfield(L, -2, "MOD_COUNT");
     lua_pushnumber(L, SIM_MOD_MULTI);    lua_setfield(L, -2, "MOD_MULTI");
     lua_pushnumber(L, SIM_SLOT_COUNT);   lua_setfield(L, -2, "SLOT_COUNT");
+    lua_pushnumber(L, SIM_KIT_CREDITS);  lua_setfield(L, -2, "KIT_CREDITS");
     lua_pushnumber(L, SIM_SLOT_LEVEL(0)); lua_setfield(L, -2, "SLOT_LEVEL0");
     lua_pushnumber(L, SIM_SLOT_MOD(0, 0)); lua_setfield(L, -2, "SLOT_MOD0");
     lua_pushnumber(L, SIM_SLOT_CHARGE(0)); lua_setfield(L, -2, "SLOT_CHARGE0");

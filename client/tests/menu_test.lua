@@ -1638,6 +1638,21 @@ do
           and menu.build_of(0)[16] == 1
           and menu.build_of(0)[19] == 1 and menu.build_of(0)[20] == 1
           and menu.build_cost(0) == 7)
+
+    -- A build over the purse, which a save from another build can carry, is
+    -- brought back the way the arena brings it back, tallest slot first, so
+    -- the panel draws the ship the pilot will be seated in rather than one
+    -- the wire trims on the way.
+    do
+        local kept = menu.kit
+        menu.kit = {[5] = 3, [19] = 3, [20] = 2}
+        local b = menu.build_of(0)
+        check("an over-budget build is fitted to the purse before it is drawn",
+              b[5] + b[19] + b[20] == 7 and b[5] == 2 and b[19] == 3
+              and b[20] == 2,
+              b[5] .. " " .. b[19] .. " " .. b[20])
+        menu.kit = kept
+    end
     check("and it spends the whole purse", menu.build_free(0) == 0)
     check("so nothing goes up until something comes down",
           menu.build_step(0, 7, 1) == false)
@@ -1803,6 +1818,14 @@ do
           menu.build_of(3)[19] == 0 and menu.build_edited())
     check("but nothing has been asked of the room yet",
           #net.kits == 0, #net.kits .. " sent")
+    -- And the build under it, not the one being spent: a pilot on the
+    -- default build had no kit for the draft to remember, and the save
+    -- wrote the draft's spending in its place.
+    saved = nil
+    menu.save_identity()
+    check("a save while a draft stands writes the build under it too",
+          saved ~= nil and (saved.kit == nil or next(saved.kit) == nil),
+          saved and saved.kit and "kit saved" or "no kit")
 
     -- Backing out puts the ship back the way the draft found it, hull and
     -- row together: a pilot who never got the ship they were building must
