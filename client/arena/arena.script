@@ -2307,9 +2307,10 @@ function update(self, dt)
         -- and a zone that fills all four gets four.
         touch.charges = my_slots()
         -- Emptied rather than replaced: four tables a frame, every frame.
-        for _, t in ipairs({touch.counts, touch.maxes, touch.waits, touch.delays}) do
-            for k in pairs(t) do t[k] = nil end
-        end
+        for k in pairs(touch.counts) do touch.counts[k] = nil end
+        for k in pairs(touch.maxes) do touch.maxes[k] = nil end
+        for k in pairs(touch.waits) do touch.waits[k] = nil end
+        for k in pairs(touch.delays) do touch.delays[k] = nil end
         for _, k in ipairs(touch.charges) do
             touch.counts[k] = held_kit and held_kit.charge[k]
                 or sim.ship_charge(me, k)
