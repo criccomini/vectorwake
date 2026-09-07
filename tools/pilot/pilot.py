@@ -24,8 +24,10 @@ SO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "libvwprobe.so")
 
 C2S_JOIN, C2S_INPUT = 1, 2
 # The client wire's version, checked by the zone before it reads anything else
-# in a join. Bumped whenever the wire or shared simulation meaning changes.
-PROTOCOL = 24
+# in a join. Bumped whenever the wire or shared simulation meaning changes, and
+# the test beside this file reads the number off server/src/protocol.rs so a
+# bump that forgot this tool fails there rather than as a refusal at the door.
+PROTOCOL = 40
 (S2C_WELCOME, S2C_SNAPSHOT, S2C_ROSTER, S2C_KILL, S2C_BANNER,
  S2C_ZONE, S2C_DENIED, S2C_MAP, S2C_SETTINGS) = 1, 2, 3, 4, 5, 6, 7, 9, 10
 S2C_MATCH = 14
@@ -308,15 +310,17 @@ class Pilot:
         async with ws:
             z = self.zone.encode()
             n = self.name.encode()
-            # Tag, hull, protocol, flags, then the lengths of the zone, name,
-            # and bot build. A person sends an empty build. The session token
-            # runs to the end and is empty here: a pilot with no token is
-            # seated as an unknown guest, which is exactly what this harness
-            # wants to be.
+            # Tag, hull, protocol, flags, the lengths of the zone and the name,
+            # then the room: seven bytes, the same header the client and the
+            # bot server send. This carried an eighth for a bot build length
+            # the wire dropped long ago, which put a zero byte at the head of
+            # the zone name. The session token runs to the end and is empty
+            # here: a pilot with no token is seated as an unknown guest, which
+            # is exactly what this harness wants to be.
             # Room zero: whichever the fill ladder picks, which is what a
             # pilot that never read a room list asks for.
             await ws.send(bytes([C2S_JOIN, self.rng.randrange(HULL_CLASSES), PROTOCOL, 0,
-                                 len(z), len(n), self.room or 0, 0]) + z + n)
+                                 len(z), len(n), self.room or 0]) + z + n)
 
             async def drive():
                 # Real flight: hold a turn for a while, thrust, and fire in
