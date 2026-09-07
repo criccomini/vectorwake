@@ -805,6 +805,7 @@ impl ArenaServer {
         } else {
             Vec::new()
         };
+        room.map_name = room.map_names.first().cloned().unwrap_or_default();
         room.maps = maps;
         for w in room.retune(&def.arena) {
             println!("zone {}: {w}", z.name);

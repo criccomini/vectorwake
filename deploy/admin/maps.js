@@ -321,7 +321,12 @@ function stamp(x, y, p) {
   if (!symmetric()) return;
   // The half-turn of a block is the block itself, so the anchor is mirrored
   // whole rather than tile by tile. A rock has no handedness to turn.
-  const mx = doc.w - ax - p.size, my = doc.h - ay - p.size;
+  // And snapped again. The mirror of a grid position is on the grid only
+  // when the map's size divides by the block's, and the default map is 160
+  // wide against six-wide stations: unsnapped, every mirrored station sat
+  // off the grid, and a flood of them left body tiles no corner drew.
+  const mx = Math.floor((doc.w - ax - p.size) / p.size) * p.size;
+  const my = Math.floor((doc.h - ay - p.size) / p.size) * p.size;
   if (mx !== ax || my !== ay) block(mx, my, p);
 }
 
@@ -468,6 +473,23 @@ function fnv(doc) {
     h = Math.imul(h ^ doc.tiles[i], 16777619) >>> 0;
   }
   return h >>> 0;
+}
+
+// The four-tile ring the core walls over when it indexes a map, laid here
+// before the bytes leave so what is checked and saved is what is played. It
+// was left as drawn: a start in the ring hash-verified, then vanished when
+// the core enclosed it, reading as a start in the panel that no side was
+// ever dealt, and the hash the meta-layer stored for the indexed map no
+// longer matched the header of the bytes it held.
+function enclosed(doc) {
+  const tiles = Uint8Array.from(doc.tiles);
+  const edge = T_SOLID | (S_BORDER << 4);
+  for (let y = 0; y < doc.h; y++) {
+    for (let x = 0; x < doc.w; x++) {
+      if (x < 4 || y < 4 || x >= doc.w - 4 || y >= doc.h - 4) tiles[y * doc.w + x] = edge;
+    }
+  }
+  return { ...doc, tiles };
 }
 
 function pack(doc) {
@@ -919,7 +941,7 @@ function verdict() {
     try {
       const r = await post("/v1/admin/map/check", {
         secret: shared.secret,
-        bytes: b64(pack(doc)),
+        bytes: b64(pack(enclosed(doc))),
       });
       const rep = r.report || {};
       const per = rep.spawns_team || [0, 0];
@@ -1114,7 +1136,7 @@ async function save() {
     const r = await post("/v1/admin/map/save", {
       secret: shared.secret,
       name,
-      bytes: b64(pack(doc)),
+      bytes: b64(pack(enclosed(doc))),
     });
     doc.name = name;
     doc.dirty = false;

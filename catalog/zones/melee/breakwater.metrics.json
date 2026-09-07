@@ -5,7 +5,7 @@
   "height": 160,
   "accepted": true,
   "gates": [],
-  "quality": 85.38259067646926,
+  "quality": 84.34340998181766,
   "core": {
     "regions": 1,
     "regions_shut": 1,
@@ -28,7 +28,7 @@
     169.0
   ],
   "route_balance": 0.9171597633136095,
-  "contact_seconds": 12.33834217738201,
+  "contact_seconds": 9.661135350413124,
   "min_opening_tiles": 7,
   "spawn_exit_directions": [
     3,

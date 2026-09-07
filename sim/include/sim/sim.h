@@ -244,6 +244,11 @@ typedef struct {
     int32_t spawns_stranded; /* starts a ship could not leave */
     int32_t solid;           /* wall, slopes counted whole */
     int32_t open;            /* everything a ship flies through */
+    /* Feature tiles past what the index holds. The table stops filling at
+     * SIM_MAX_FEATURES in scan order, so these are drawn and not in it: a
+     * start no side is dealt, a wormhole that pulls nothing. A map with any
+     * is refused rather than played by half. */
+    int32_t features_dropped;
 } sim_map_report;
 
 typedef struct {

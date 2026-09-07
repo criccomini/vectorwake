@@ -583,6 +583,24 @@ int main(int argc, char **argv) {
     }
     free(buf);
 
+    /* The verdict is the core's, as it is for the generator. This tool's
+     * own placement reads the map one tile at a time, and a map it was
+     * happy with, with starts in pockets behind one-tile doors, was one the
+     * meta-layer refused on arrival. */
+    {
+        sim_map_scratch *scratch = calloc(1, sizeof *scratch);
+        if (!scratch) return 1;
+        sim_map_report verdict;
+        char why[256];
+        sim_map_index(m);
+        sim_map_check(m, scratch, &verdict);
+        free(scratch);
+        if (!sim_map_playable(&verdict, why, (int)sizeof why)) {
+            fprintf(stderr, "%s: the core refuses this map: %s\n", argv[2], why);
+            return 1;
+        }
+    }
+
     uint8_t *out = malloc(SIM_MAP_PACK_MAX);
     if (!out) return 1;
     int n = sim_map_pack(m, out, SIM_MAP_PACK_MAX);

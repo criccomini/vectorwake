@@ -755,6 +755,11 @@ pub(crate) struct Room {
     /// only: the client captions its map panel with it, and a room built
     /// without names (tests, the built-in arena) sends none.
     pub(crate) map_names: Vec<String>,
+    /// The name of the ground the room is on now. Read off `map_names` at
+    /// `map_at` it named whatever the rotation held at that index, and a
+    /// rotation changed mid-match captioned the old ground with the new list
+    /// until the whistle.
+    pub(crate) map_name: String,
     pub(crate) map_at: usize,
     /// Matches this room has opened, so the one being played is number one.
     /// Zero is a room that has not started yet, which is the difference
@@ -1354,6 +1359,7 @@ impl Room {
         };
         let mut room = Room::with_world(sim::World::on_map(0x5eed, first.clone()));
         room.maps = maps;
+        room.map_name = names.first().cloned().unwrap_or_default();
         room.map_names = names;
         room
     }
@@ -1431,6 +1437,7 @@ impl Room {
             last_match: None,
             maps: Vec::new(),
             map_names: Vec::new(),
+            map_name: String::new(),
             map_at: 0,
             match_no: 0,
             match_opened_at: 0,
@@ -3334,6 +3341,7 @@ impl Room {
             // `[arena]` block this puts back on.
             let seats = self.world.cfg.max_ships;
             self.world.set_map(self.maps[self.map_at].clone());
+            self.map_name = self.map_names.get(self.map_at).cloned().unwrap_or_default();
             let tuning = self.tuning.clone();
             for w in Room::apply_config(&mut self.world, &tuning) {
                 println!("room {}: {w}", self.number);
@@ -3512,7 +3520,7 @@ impl Room {
             id,
             room: self.number,
             match_no: self.match_no,
-            map: self.map_names.get(self.map_at).cloned().unwrap_or_default(),
+            map: self.map_name.clone(),
             teams: self.public_team_names(),
             score: state.score,
             pilots,
@@ -3711,12 +3719,11 @@ impl Room {
     /// What the rotation calls the ground the room is standing on, ready to
     /// send, or nothing from a room whose maps arrived without names.
     pub(crate) fn map_name_msg(&self) -> Option<Vec<u8>> {
-        let name = self.map_names.get(self.map_at)?;
-        if name.is_empty() {
+        if self.map_name.is_empty() {
             return None;
         }
         let mut m = vec![S2C_MAPNAME];
-        m.extend_from_slice(name.as_bytes());
+        m.extend_from_slice(self.map_name.as_bytes());
         Some(m)
     }
 

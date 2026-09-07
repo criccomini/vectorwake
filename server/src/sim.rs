@@ -168,6 +168,8 @@ pub struct sim_map_report {
     pub spawns_stranded: i32,
     pub solid: i32,
     pub open: i32,
+    /// Feature tiles past what the index holds, which is a refusal.
+    pub features_dropped: i32,
 }
 
 /// The working set a check needs. Nine megabytes, which is why it is boxed at

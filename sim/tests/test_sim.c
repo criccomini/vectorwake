@@ -1546,6 +1546,7 @@ static void test_maps(const sim_settings *base) {
         CHECK(rep.spawns_stranded == 0, "and neither is walled in by it");
         CHECK(rep.regions == 1 && rep.regions_shut == 2,
               "one room through the door, two without it");
+
         CHECK(sim_map_playable(&rep, why, sizeof why),
               "so a pocket gated by a door is playable");
 
@@ -1558,6 +1559,35 @@ static void test_maps(const sim_settings *base) {
         CHECK(rep.regions == 2, "walling the door up is two rooms");
         CHECK(!sim_map_playable(&rep, why, sizeof why),
               "and that is still refused");
+
+        /* A start drawn against a wall. A hull is put down centered on its
+         * start, so the start has to be a tile a hull fits on; asked of the
+         * eight around it as well, this passed, and every pilot dealt it
+         * spawned with the hull inside the wall face. */
+        sim_map_size(room, 40, 40);
+        for (int ty = 8; ty <= 32; ty++) SIM_MAP_AT(room, 10, ty) = SIM_TILE_SOLID;
+        SIM_MAP_AT(room, 11, 20) = SIM_TILE(SIM_TILE_SPAWN, 0);
+        SIM_MAP_AT(room, 25, 20) = SIM_TILE(SIM_TILE_SPAWN, 1);
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.spawns_stranded == 1, "a start against a wall is a start walled in");
+        CHECK(!sim_map_playable(&rep, why, sizeof why), "and is refused");
+
+        /* More feature tiles than the index holds. The table stops filling
+         * in scan order, so the last of them are drawn and not in it: a
+         * side's starts gone, a wormhole that pulls nothing. Refused rather
+         * than played by half. */
+        sim_map_size(room, 60, 60);
+        SIM_MAP_AT(room, 10, 10) = SIM_TILE(SIM_TILE_SPAWN, 0);
+        for (int ty = 20; ty < 40; ty++)
+            for (int tx = 10; tx < 30; tx++) SIM_MAP_AT(room, tx, ty) = SIM_TILE(SIM_TILE_TURF, 0);
+        SIM_MAP_AT(room, 50, 50) = SIM_TILE(SIM_TILE_SPAWN, 1);
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.features_dropped == 1 + 400 + 1 - SIM_MAX_FEATURES,
+              "the tiles past the table's ceiling are counted");
+        CHECK(!sim_map_playable(&rep, why, sizeof why),
+              "and a map the index cannot hold whole is refused");
 
         free(room);
         free(sc);

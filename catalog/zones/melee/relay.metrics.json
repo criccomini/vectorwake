@@ -5,7 +5,7 @@
   "height": 160,
   "accepted": true,
   "gates": [],
-  "quality": 78.87733905890181,
+  "quality": 79.06671685562033,
   "core": {
     "regions": 1,
     "regions_shut": 1,
@@ -28,7 +28,7 @@
     219.0
   ],
   "route_balance": 0.5707762557077626,
-  "contact_seconds": 9.95027594950162,
+  "contact_seconds": 7.791238185817036,
   "min_opening_tiles": 7,
   "spawn_exit_directions": [
     2,
@@ -40,7 +40,7 @@
     402
   ],
   "dead_ends": 5,
-  "wall_percent": 3.358725761772853,
+  "wall_percent": 3.5405124653739612,
   "thick_generic_wall_tiles": 0,
   "landmark_count": 6,
   "cover_quadrants_percent": [

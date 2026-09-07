@@ -1197,13 +1197,28 @@ static int arena_lo, arena_hi, arena_cx, arena_cy;
  * a shape. Without this a mirrored diagonal comes out inside out, its open half
  * where its wall should be. */
 static uint8_t half_turn(uint8_t t) {
-    if (SIM_TILE_CLASS(t) != SIM_TILE_SLOPE) return t;
-    return SIM_TILE(SIM_TILE_SLOPE, SIM_TILE_VARIANT(t) ^ 2);
+    if (SIM_TILE_CLASS(t) == SIM_TILE_SLOPE)
+        return SIM_TILE(SIM_TILE_SLOPE, SIM_TILE_VARIANT(t) ^ 2);
+    /* A notch is a wedge with a side, and its opposite is the notch the
+     * other way: turned unturned, a crossing's waist wedges pointed into
+     * the crossing on the mirrored copy. Same rule as the panel's. */
+    if (SIM_TILE_CLASS(t) == SIM_TILE_SOLID && SIM_TILE_VARIANT(t) >= SIM_SOLID_NOTCH_W
+        && SIM_TILE_VARIANT(t) <= SIM_SOLID_NOTCH_S)
+        return SIM_TILE(SIM_TILE_SOLID, SIM_TILE_VARIANT(t) ^ 1);
+    return t;
 }
+
+/* The tile opposite, through the arena's own middle. The arena runs
+ * arena_lo..arena_hi inclusive, so its middle is half a tile off a whole
+ * one and the twin of x is (lo + hi) - x. Mirrored through the tile at the
+ * map's center instead, the lowest row and column of the arena had no twin,
+ * since theirs fell one past the far edge. */
+#define MIRROR_X(x) (arena_lo + arena_hi - (x))
+#define MIRROR_Y(y) (arena_lo + arena_hi - (y))
 
 static void sym_put(int x, int y, uint8_t t) {
     put(x, y, t);
-    put(arena_cx * 2 - x, arena_cy * 2 - y, half_turn(t));
+    put(MIRROR_X(x), MIRROR_Y(y), half_turn(t));
 }
 
 static void sym_rect(int x, int y, int w, int h, uint8_t t) {
@@ -1246,7 +1261,7 @@ static void sym_room(int x, int y, int w, int h) {
 static int pocket_x, pocket_y;
 
 static int in_pocket(int x, int y, int pad) {
-    int ox = arena_cx * 2 - pocket_x, oy = arena_cy * 2 - pocket_y;
+    int ox = MIRROR_X(pocket_x), oy = MIRROR_Y(pocket_y);
     int dx = x - pocket_x, dy = y - pocket_y;
     if (dx * dx + dy * dy < pad * pad) return 1;
     dx = x - ox; dy = y - oy;
@@ -1313,7 +1328,7 @@ static void sym_slope_step(int x, int y, int lean) {
     for (int i = 0; i < 2; i++) {
         int sx = x + i, sy = y;
         if (sx < EDGE || sy < EDGE || sx >= MW - EDGE || sy >= MH - EDGE) continue;
-        put(arena_cx * 2 - sx, arena_cy * 2 - sy,
+        put(MIRROR_X(sx), MIRROR_Y(sy),
             half_turn(T[(size_t)sy * TILES + sx]));
     }
 }
@@ -1344,7 +1359,7 @@ static void sym_motif(int x, int y, int w, int h) {
         for (int i = -pad; i < w + pad; i++) {
             int sx = x + i, sy = y + j;
             if (sx < EDGE || sy < EDGE || sx >= MW - EDGE || sy >= MH - EDGE) continue;
-            int dx = arena_cx * 2 - sx, dy = arena_cy * 2 - sy;
+            int dx = MIRROR_X(sx), dy = MIRROR_Y(sy);
             /* A shape that reaches its own mirror would be copying over itself
              * half way through. Nothing is placed near the middle, so this
              * only ever declines the case that would corrupt. */
@@ -1528,7 +1543,7 @@ static int generate_match(sim_map *m, uint32_t s, match_layout layout, int quiet
     }
 
     int spawns = match_spawns(main_c, px, py, 0);
-    spawns += match_spawns(main_c, arena_cx * 2 - px, arena_cy * 2 - py, 1);
+    spawns += match_spawns(main_c, MIRROR_X(px), MIRROR_Y(py), 1);
 
     /* The verdict is the core's, not this file's. Everything above decides
      * where to dig; whether digging worked is the same question the meta-layer

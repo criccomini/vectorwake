@@ -167,7 +167,31 @@ void sim_map_check(const sim_map *m, sim_map_scratch *s, sim_map_report *r) {
         if (ft->kind != SIM_TILE_SPAWN) continue;
         r->spawns++;
         if (ft->variant < SIM_SIDES) r->spawns_team[ft->variant]++;
-        if (!served_by(m, s, ft->tx, ft->ty, main)) r->spawns_stranded++;
+        /* The start's own tile, not its neighborhood: a hull is put down
+         * centered on it, so the tile has to be one a hull fits on. Asked
+         * of the eight around it as well, a start drawn against a wall
+         * passed, and every pilot dealt it spawned with the hull inside the
+         * wall face, unable to move until they thrust straight away. */
+        if (s->comp[(size_t)ft->ty * m->w + (size_t)ft->tx] != main)
+            r->spawns_stranded++;
+    }
+
+    /* Feature tiles the index could not hold. The table has a ceiling and
+     * the index stops at it in scan order, so a map with too many stands,
+     * starts, goals and wormholes keeps the tiles and loses the last of them
+     * from the table: a side's starts gone, a drawn wormhole that pulls
+     * nothing. The panel's fill tool lays hundreds in one click. */
+    {
+        int32_t drawn = 0;
+        for (int32_t y = 0; y < (int32_t)m->h; y++)
+            for (int32_t x = 0; x < (int32_t)m->w; x++) {
+                uint8_t c = SIM_TILE_CLASS(SIM_MAP_AT(m, x, y));
+                if (c == SIM_TILE_WORMHOLE || c == SIM_TILE_GOAL || c == SIM_TILE_TURF
+                    || c == SIM_TILE_SPAWN)
+                    drawn++;
+            }
+        r->features_dropped = drawn - (int32_t)m->feature_count;
+        if (r->features_dropped < 0) r->features_dropped = 0;
     }
 
     /* Ground nobody can reach: a place behind a wall is a trap. A ship shoved
@@ -219,7 +243,13 @@ int sim_map_stranded(const sim_map *m, sim_map_scratch *s, uint32_t *out, int ca
 int sim_map_playable(const sim_map_report *r, char *why, int cap) {
     const char *fault = 0;
     char line[160];
-    if (r->spawns == 0) {
+    if (r->features_dropped > 0) {
+        snprintf(line, sizeof line,
+                 "it has more starts, stands, goals and wormholes than the core "
+                 "can index: %d past the %d it holds",
+                 r->features_dropped, SIM_MAX_FEATURES);
+        fault = line;
+    } else if (r->spawns == 0) {
         fault = "it names no start, so a zone would put every ship on its own tiles";
     } else if (r->spawns_stranded > 0) {
         fault = "a start is walled in";
