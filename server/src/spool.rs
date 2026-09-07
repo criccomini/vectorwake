@@ -427,9 +427,25 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
         };
         let result = std::fs::OpenOptions::new()
             .create(true)
+            .read(true)
             .append(true)
             .open(&self.path)
             .and_then(|mut file| {
+                // A write that failed partway left a fragment with no line
+                // end, and the next record appended straight onto it. On the
+                // next open the two read as one unparseable line and went
+                // aside together, and the second was an event whose push
+                // had answered success. The fragment is given its own line
+                // end first, so it goes aside alone.
+                if file.metadata()?.len() > 0 {
+                    use std::io::{Read, Seek, SeekFrom};
+                    let mut last = [0u8; 1];
+                    file.seek(SeekFrom::End(-1))?;
+                    file.read_exact(&mut last)?;
+                    if last[0] != b'\n' {
+                        file.write_all(b"\n")?;
+                    }
+                }
                 let line = serde_json::to_string(&record)
                     .map_err(|error| std::io::Error::other(error.to_string()))?;
                 writeln!(file, "{line}")?;
@@ -1090,6 +1106,29 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(d.join("spool.jsonl.corrupt")).unwrap(),
             "not json\n"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_torn_tail_does_not_take_the_next_record_with_it() {
+        // A write that failed partway left a fragment with no line end, and
+        // the next push appended onto it: on the next open the two read as
+        // one corrupt line, and an event whose push had answered success was
+        // gone. The fragment goes aside alone now.
+        let d = tmp("torn");
+        let path = d.join("spool.jsonl");
+        std::fs::write(&path, "{\"zone\":\"chaos\",\"cla").unwrap();
+        let mut s = Spool::rated(d.to_str().unwrap());
+        s.aim("http://127.0.0.1:1", "tok", "chaos", "arena", "i1");
+        s.push(ev(9, 4));
+        assert_eq!(s.len(), 1);
+        let again = Spool::rated(d.to_str().unwrap());
+        assert_eq!(again.len(), 1, "the pushed event survives the tear");
+        assert_eq!(again.last().unwrap().tick, 9);
+        assert_eq!(
+            std::fs::read_to_string(d.join("spool.jsonl.corrupt")).unwrap(),
+            "{\"zone\":\"chaos\",\"cla\n"
         );
         let _ = std::fs::remove_dir_all(&d);
     }

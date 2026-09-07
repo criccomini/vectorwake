@@ -1235,13 +1235,18 @@ async fn main() {
                         println!("drain complete");
                         z.draining = false;
                         if let Some((want, who, _)) = z.pinned.clone() {
-                            if let Some(def) =
-                                z.catalog.as_ref().and_then(|c| c.zone(&want)).cloned()
-                            {
-                                match z.serve_zone(&def) {
+                            match z.catalog.as_ref().and_then(|c| c.zone(&want)).cloned() {
+                                Some(def) => match z.serve_zone(&def) {
                                     Ok(()) => println!("pinned to {want:?} by {who}"),
                                     Err(e) => println!("cannot serve pinned {want:?}: {e}"),
-                                }
+                                },
+                                // Said, since a pin holds the selector off
+                                // for as long as it stands, and one naming a
+                                // zone the catalog dropped was honored in
+                                // silence by serving nothing new.
+                                None => println!(
+                                    "pinned to {want:?} by {who}, which the catalog no longer has"
+                                ),
                             }
                         }
                         z.push_status();
@@ -1252,7 +1257,20 @@ async fn main() {
     }
 
     let pending_handshakes = Arc::new(tokio::sync::Semaphore::new(MAX_PENDING_HANDSHAKES));
-    while let Ok((stream, _)) = listener.accept().await {
+    loop {
+        // An accept that fails is not the end of the arena. This loop is the
+        // last thing in main, and ending it on the first error, which a
+        // peer resetting before accept or a table full of idle sockets can
+        // produce, returned from main with every seated pilot's departure
+        // unfiled and the signal handler never run.
+        let (stream, _) = match listener.accept().await {
+            Ok(accepted) => accepted,
+            Err(e) => {
+                println!("accept failed, still listening: {e}");
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                continue;
+            }
+        };
         let Ok(handshake_permit) = pending_handshakes.clone().try_acquire_owned() else {
             continue;
         };

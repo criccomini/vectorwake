@@ -721,6 +721,9 @@ async fn run_one(
                     fleet::parse::<fleet::Rejected>(&data, fleet::D2A_REJECTED).unwrap_or_default();
                 // A rejection is terminal for this attempt and never for the
                 // process: an arena keeps serving whoever already reached it.
+                // The attempt's own tasks go with it, as on every other exit.
+                pump.abort();
+                writer.abort();
                 return Err(format!("rejected: {} {}", r.reason, r.detail));
             }
             Some(fleet::D2A_VIEW) => {

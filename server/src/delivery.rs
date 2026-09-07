@@ -329,6 +329,14 @@ impl LagTracker {
         if ack == 0 || snapshot_after(ack, self.snapshot_seq) {
             return;
         }
+        // Inputs ride datagrams and arrive out of order, so an ack older
+        // than the last one is a packet the next had already superseded.
+        // Taken as new it measured the retained window from its own stale
+        // number, which wrapped for every snapshot in it, and the whole
+        // window was popped and counted lost.
+        if self.last_snapshot_ack != 0 && snapshot_after(self.last_snapshot_ack, ack) {
+            return;
+        }
         if self.last_snapshot_ack == 0 {
             // The oldest set bit is the first snapshot the client can prove it
             // saw. Anything earlier may have arrived before the welcome, so it

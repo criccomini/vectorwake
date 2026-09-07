@@ -966,6 +966,11 @@ pub struct Bot {
     shelter: Option<(f32, f32)>,
     retreat_started: u32,
     retreat_completed: u32,
+    /// Ticks spent recovered and still sheltering because somebody is near.
+    /// A bot waited in a safe zone for as long as any hostile stood within
+    /// the disengage distance, which a pilot parked outside the edge could
+    /// make forever. Nothing sweeps a bot out of a safe zone.
+    recovered_held: u32,
     retreat_ticks: u64,
     seed: u32,
     /// The last look around, and the tick it was taken on. Refreshed on this
@@ -1265,6 +1270,7 @@ impl Bot {
             shelter: None,
             retreat_started: 0,
             retreat_completed: 0,
+            recovered_held: 0,
             retreat_ticks: 0,
             seed: 0x9e3779b9 ^ config.configuration_seed ^ ((ship as u32) << 16),
             seen: Scan::default(),
@@ -2327,9 +2333,20 @@ impl Bot {
             .seen
             .threat
             .is_some_and(|t| t.eta < 65.0 && t.miss < t.blast + o.radius);
-        if o.energy >= self.recovered_at(o) && close > 420.0 && !immediate {
+        let recovered = o.energy >= self.recovered_at(o);
+        // Five seconds of standing recovered with company outside is
+        // enough: the fight is out there, and a pilot waiting at the edge
+        // of a safe zone is waiting for exactly this.
+        self.recovered_held = if recovered {
+            self.recovered_held.saturating_add(1)
+        } else {
+            0
+        };
+        let waited_out = self.recovered_held >= 500;
+        if recovered && (close > 420.0 || waited_out) && !immediate {
             self.posture = Posture::Normal;
             self.retreat_completed += 1;
+            self.recovered_held = 0;
             self.shelter = None;
             self.goal = None;
             self.drop_route();

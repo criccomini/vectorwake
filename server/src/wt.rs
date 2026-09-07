@@ -267,10 +267,18 @@ async fn load_identity(cert_pat: &str, key_pat: &str) -> Option<(CertStamp, Iden
 /// task: readers feed bytes to `serve_client`, a writer carries its replies,
 /// and when the handler returns the transport is torn down around it.
 async fn session(incoming: IncomingSession, zone: Arc<Mutex<ArenaServer>>) {
-    let Ok(request) = incoming.await else { return };
+    // Under the same deadline as the first stream. Awaiting the session
+    // drives the HTTP/3 handshake, which waits on the peer's settings and
+    // its CONNECT, and a peer that finished the QUIC handshake and sent
+    // neither pinned this task for as long as its stack kept answering the
+    // keep-alives, which is forever. The guard below covered only what came
+    // after.
+    let Ok(Ok(request)) = tokio::time::timeout(HELLO, incoming).await else {
+        return;
+    };
     // Any path on this authority is this arena; the address a client dials
     // already picked the process, the same way the WebSocket port does.
-    let Ok(conn) = request.accept().await else {
+    let Ok(Ok(conn)) = tokio::time::timeout(HELLO, request.accept()).await else {
         return;
     };
     // Counted here rather than at the handshake: a session is a client that

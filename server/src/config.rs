@@ -384,6 +384,13 @@ impl ConfigWatcher {
 
 fn read(path: &Path) -> (ZoneConfig, Option<String>) {
     match std::fs::read_to_string(path) {
+        // An editor that writes in place truncates first, and a poll that
+        // lands between the truncation and the write read an empty file as
+        // a valid one: every setting back to its default, the bans with
+        // them, until the next edit. Empty is refused like a broken edit.
+        Ok(text) if text.trim().is_empty() => {
+            (ZoneConfig::default(), Some("the file is empty".into()))
+        }
         Ok(text) => match toml::from_str::<ZoneConfig>(&text) {
             Ok(c) => (c, None),
             Err(e) => (ZoneConfig::default(), Some(e.to_string())),

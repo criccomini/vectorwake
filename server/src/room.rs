@@ -4607,6 +4607,14 @@ impl Room {
         if !self.players.values().any(|p| p.owes_map) {
             return;
         }
+        // Twice a second, not every tick. The map is packed afresh for each
+        // retry, which is a three megabyte buffer and a walk of every tile
+        // under the room lock, and a pilot who kept sending buttons while
+        // draining nothing had the room doing that a hundred times a second
+        // for as long as they stayed.
+        if !self.world.state.tick.is_multiple_of(50) {
+            return;
+        }
         let m = self.map_msg();
         let name = self.map_name_msg();
         let settings = self.settings_msg();

@@ -261,6 +261,39 @@ fn rtt_windows_measure_ticks_instead_of_snapshot_count() {
 }
 
 #[test]
+fn an_ack_older_than_the_last_is_a_reordered_packet() {
+    // Inputs ride datagrams and arrive out of order. An older ack taken as
+    // new measured the retained window from its own stale number, which
+    // wrapped for every snapshot in it, and the whole window was popped and
+    // counted lost.
+    let mut lag = LagTracker::default();
+    let mut seqs = Vec::new();
+    for tick in 1..=40 {
+        seqs.push(lag.sent_snapshot(tick * 5, false, 500));
+    }
+    // Everything seen so far, which sets the baseline and keeps 32 in hand.
+    lag.acknowledge_snapshots(seqs[39], u32::MAX, 210, 500);
+    for tick in 41..=45 {
+        seqs.push(lag.sent_snapshot(tick * 5, false, 500));
+    }
+    lag.acknowledge_snapshots(seqs[44], 1, 240, 500);
+    let retained = lag.snapshots.len();
+    assert!(
+        retained >= 30,
+        "recent sends are still in flight: {retained}"
+    );
+    assert_eq!(lag.down_loss.percent(), 0);
+    // A datagram from before the window, arriving late.
+    lag.acknowledge_snapshots(seqs[5], 1, 241, 500);
+    assert_eq!(
+        lag.snapshots.len(),
+        retained,
+        "a stale ack leaves the window alone"
+    );
+    assert_eq!(lag.down_loss.percent(), 0, "and counts nothing lost");
+}
+
+#[test]
 fn first_snapshot_receipt_establishes_the_loss_baseline() {
     let mut lag = LagTracker::default();
     let mut last = 0;
