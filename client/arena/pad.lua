@@ -226,9 +226,21 @@ end
 
 -- The bits the stick holds this frame, given where the ship is pointing. A
 -- list rather than a bitfield, for the same reason touch.bits is.
-function M.bits(heading)
+--
+-- `backing` says a reverse key is held, the d-pad's or the keyboard's. The
+-- gesture in the head of this file is that key plus the stick pointed at
+-- what you are backing away from, so the stick keeps the nose on it and
+-- leaves the engine to the key: merged with the stick's own thrust bit, the
+-- core read thrust over reverse and drove the ship at the thing.
+function M.bits(heading, backing)
     local dx, dy = push()
-    return course.bits(dx, dy, DEAD, FULL, heading, false)
+    local out = course.bits(dx, dy, DEAD, FULL, heading, false)
+    if backing then
+        for i = #out, 1, -1 do
+            if out[i] == sim.BTN_THRUST then table.remove(out, i) end
+        end
+    end
+    return out
 end
 
 function M.count()

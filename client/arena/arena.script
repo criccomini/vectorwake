@@ -431,7 +431,9 @@ local function my_buttons()
     -- thumb on glass and the gamepad's stick name a course the same way.
     local heading = sim.ship_heading_raw(me)
     for _, bit in ipairs(touch.bits(heading)) do bits[bit] = true end
-    for _, bit in ipairs(pad.bits(heading)) do bits[bit] = true end
+    for _, bit in ipairs(pad.bits(heading, bits[sim.BTN_REVERSE])) do
+        bits[bit] = true
+    end
     -- A spend names its own slot, whichever control asked: a pad's tap and a
     -- key's press land in the same latch, so there is no selection anywhere
     -- to read back or to have forgotten to move. The control you pressed is
@@ -594,7 +596,7 @@ local function ship_sect_back()
     if menu.stop_open() ~= "ship" or not ui.col_sect then return false end
     ui.col_sel, ui.col_sel_value = "land_sect", ui.col_sect
     ui.col_sect, ui.col_hull = nil, nil
-    ui.col_scroll = 0
+    ui.page_scroll = 0
     return true
 end
 
@@ -3188,7 +3190,6 @@ function menu_act(self, action, value)
         -- stop opens where the pilot is rather than where they last read to.
         if value == "ship" then
             ui.col_sect, ui.col_hull = nil, nil
-            ui.col_scroll = 0
         end
         -- And the players stop opens on the sheet rather than on a card left
         -- open the last time somebody read one.
@@ -3323,7 +3324,7 @@ function menu_act(self, action, value)
         ui.col_hull = value == "body" and menu.panel_home() or nil
         -- Standing on the head of what it opened.
         menu_cursor()
-        ui.col_scroll = 0
+        ui.page_scroll = 0
         sfx.ui("ui_go")
         return true
     end

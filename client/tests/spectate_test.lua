@@ -1964,14 +1964,14 @@ do
     -- the carousel is taller than the glass and can be scrolled clean off it.
     ui.col_sel, ui.col_sel_value = nil, nil
     frame(844, 390, {land = land_in(BODY), col_open = "ship", keep = true})
-    ui.col_scroll = 400
+    ui.page_scroll = 400
     ui.col_sel, ui.col_sel_value = "land_pick_ship", nil
     frame(844, 390, {land = land_in(BODY), col_open = "ship", keep = true})
     check("walking to a row off the panel brings it back",
-          box("land_pick_ship") ~= nil and ui.col_scroll == 0,
-          "scrolled to " .. tostring(ui.col_scroll))
+          box("land_pick_ship") ~= nil and ui.page_scroll == 0,
+          "scrolled to " .. tostring(ui.page_scroll))
     ui.col_sel, ui.col_sel_value = nil, nil
-    ui.col_scroll = 0
+    ui.page_scroll = 0
 end
 
 -- --- a phone's top row -----------------------------------------------------

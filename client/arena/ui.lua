@@ -297,6 +297,18 @@ local function hit(x, y, w, h, action, value, level, pri)
                            pri = pri}
 end
 
+-- A row that is under the fold. It has no pixels for a hand to press, but
+-- the keyboard and the pad walk the published list in its order, and a row
+-- that was not on it could not be walked to: the walk wrapped at the last
+-- row on the glass, the panel follows the cursor, and so the rows below the
+-- fold were reachable by a wheel or a thumb and by nothing else. Published
+-- with no box, so `M.pick` never answers it, and the follow scrolls it into
+-- view on the frame the cursor lands on it.
+local function hit_off(action, value)
+    M.hits[#M.hits + 1] = {x = 0, y = 0, w = 0, h = 0, off = true,
+                           action = action, value = value}
+end
+
 -- The touch target floor, in points: what every platform's own ruler says a
 -- fingertip is. Nothing here draws at that size, deliberately, and nothing
 -- has to: a control keeps the shape the design gives it and makes up the
@@ -324,7 +336,7 @@ M.TARGET = 44
 function M.pick(px, py, touching)
     local best, bestpri
     for _, r in ipairs(M.hits) do
-        if px >= r.x and px <= r.x + r.w
+        if not r.off and px >= r.x and px <= r.x + r.w
            and py >= r.y and py <= r.y + r.h then
             local pri = r.pri or 0
             if not best or pri > bestpri then best, bestpri = r, pri end
@@ -334,7 +346,7 @@ function M.pick(px, py, touching)
     local floor = M.TARGET * F.scale
     local near, dist
     for _, r in ipairs(M.hits) do
-        if (r.pri or 0) >= 0 then
+        if not r.off and (r.pri or 0) >= 0 then
             local gx = math.max(0, (floor - r.w) / 2)
             local gy = math.max(0, (floor - r.h) / 2)
             local dx = math.max(r.x - px, px - r.x - r.w, 0)
@@ -1150,6 +1162,11 @@ function M.begin(layer, w, h, density, touching, now, frost_layer)
     marks.begin(layer, density)
     M.touching = touching or false
     M.hits = {}
+    -- And where a page was drawn, for the same reason: a panel that closed
+    -- left its span behind, and a thumb put down on the bare column where
+    -- the settings had been was read as a drag on a page rather than as the
+    -- push that dismisses the column.
+    M.page_x, M.page_y, M.page_w, M.page_h = nil, nil, nil, nil
     -- The lines the page is asked to hold, if any card raised this frame
     -- asks for typing. Cleared here rather than by whoever raised it, for
     -- the reason the hit list is: a card that is no longer drawn has no
@@ -4345,10 +4362,13 @@ local function land_row_at(r)
     return nil, nil
 end
 
--- How far the ship panel has been scrolled, in points. Kept apart from the
--- settings panel's own scroll because the two are different surfaces and a
--- position carried between them would open one where the other was left.
-M.col_scroll = 0
+-- The ship panel scrolls on `M.page_scroll`, the same number the settings
+-- and the players sheet scroll on. It had one of its own, on the argument
+-- that a position carried between two surfaces would open one where the
+-- other was left, and every stop already opens its page at the top. What the
+-- separate number cost was every way of moving it: the wheel and a dragging
+-- thumb both write the shared one, so the ship panel could be scrolled by
+-- nothing but its own cursor follow.
 
 -- The row the panel last scrolled itself to. Without it the panel would haul
 -- itself back to the lit row on every frame, which is a finger dragging a page
@@ -4380,7 +4400,9 @@ local function land_panel(kx, kw, top, bottom, panel, drh)
         content = content + pages.land_row_h(r, drh)
     end
     local over = math.max(0, content - (bottom - top))
-    M.col_scroll = math.max(0, math.min(M.col_scroll, over))
+    M.page_scroll = math.max(0, math.min(M.page_scroll, over))
+    -- Where the rows are, for a wheel and a dragging thumb.
+    M.page_x, M.page_y, M.page_w, M.page_h = kx, top, kw, bottom - top
     -- The panel follows the cursor, since walking it with a pad or the arrows
     -- is how it is read without a pointer: a row lit under the fold is a row
     -- nobody can see themselves spending on. On the frame the cursor moved
@@ -4394,22 +4416,25 @@ local function land_panel(kx, kw, top, bottom, panel, drh)
             local rh = pages.land_row_h(r, drh)
             local act, value = land_row_at(r)
             if act and act == M.col_sel and value == M.col_sel_value then
-                if at < M.col_scroll then
-                    M.col_scroll = at
-                elseif at + rh > M.col_scroll + (bottom - top) then
-                    M.col_scroll = at + rh - (bottom - top)
+                if at < M.page_scroll then
+                    M.page_scroll = at
+                elseif at + rh > M.page_scroll + (bottom - top) then
+                    M.page_scroll = at + rh - (bottom - top)
                 end
                 break
             end
             at = at + rh
         end
-        M.col_scroll = math.max(0, math.min(M.col_scroll, over))
+        M.page_scroll = math.max(0, math.min(M.page_scroll, over))
     end
-    local y = top - M.col_scroll
+    local y = top - M.page_scroll
     for _, r in ipairs(list) do
         local rh = pages.land_row_h(r, drh)
         if y >= top - 0.5 and y + rh <= bottom + 0.5 then
             land_row(kx, kw, y, rh, r)
+        else
+            local act, value = land_row_at(r)
+            if act then hit_off(act, value) end
         end
         y = y + rh
     end
@@ -4419,7 +4444,7 @@ local function land_panel(kx, kw, top, bottom, panel, drh)
     if over > 0 then
         local run = bottom - top
         local thumb = math.max(20 * F.scale, run * run / content)
-        local at = top + (run - thumb) * (M.col_scroll / over)
+        local at = top + (run - thumb) * (M.page_scroll / over)
         rect(kx + kw - 3 * F.scale, top, 2 * F.scale, run, pal.a(pal.DIM, 0.2))
         rect(kx + kw - 3 * F.scale, at, 2 * F.scale, thumb,
              pal.a(pal.DIM, 0.7))
@@ -6290,6 +6315,8 @@ function pages.board_list(kx, kw, top, bottom, rowh)
     for i = 1, n do
         if y >= top - 0.5 and y + rowh <= top + view_h + 0.5 then
             sheet_row(kx, kw, y, rowh, rows[i], cols, i)
+        elseif rows[i].i ~= nil then
+            hit_off("board_row", i)
         end
         y = y + rowh
     end
@@ -6499,6 +6526,8 @@ function M.menu_panel(kx, kw, top, bottom, v)
             if r.pick then
                 hit(kx, y, kw, rh, "menu_row", i, nil, 1)
             end
+        elseif r.pick then
+            hit_off("menu_row", i)
         end
         y = y + rh
     end

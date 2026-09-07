@@ -1122,11 +1122,11 @@ do
                 return nil, true
             end
             ui_stub.col_sect, ui_stub.col_hull = "bombs", 4
-            ui_stub.col_scroll = 220
+            ui_stub.page_scroll = 220
             stop2(nil, "menu_stop", "ship")
             check("the ship stop opens on its own menu",
                   ui_stub.col_sect == nil and ui_stub.col_hull == nil
-                  and ui_stub.col_scroll == 0,
+                  and ui_stub.page_scroll == 0,
                   tostring(ui_stub.col_sect))
         end
     end

@@ -209,6 +209,18 @@ do
     check("a half push steers without lighting the engine",
           pad.steering() and not has(b, sim.BTN_THRUST))
 
+    -- Backing away: the reverse key held and the stick pointed at what you
+    -- are backing from. The stick keeps the nose on it and leaves the engine
+    -- to the key, since the core reads thrust over reverse and a full push
+    -- used to drive the ship at the thing.
+    push({right = 1})
+    b = pad.bits(16384, true)
+    check("with a reverse key held a full push does not thrust",
+          not has(b, sim.BTN_THRUST))
+    push({up = 1})
+    b = pad.bits(16384, true)
+    check("and still turns the nose to it", has(b, sim.BTN_LEFT))
+
     push({up = 0.1})
     check("a hair off center is rest", not pad.steering())
 
