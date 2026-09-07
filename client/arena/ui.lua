@@ -6124,9 +6124,9 @@ end
 -- Your own row keeps the wash it wears everywhere in this interface. A row
 -- under a hand lights edge to edge like every other row, and a press on it
 -- opens that pilot's card.
-local function sheet_row(kx, kw, y, h, r, cols, i)
+local function sheet_row(kx, kw, y, h, r, cols)
     local pad = M.ROW_INSET * F.scale
-    local hot = M.col_sel == "board_row" and M.col_sel_value == i
+    local hot = M.col_sel == "board_row" and M.col_sel_value == r.i
     LIT.state(kx, y, kw, h, hot, r.self)
     local _, col = pages.sheet_side(r)
     if r.watch then col = pal.READ end
@@ -6207,7 +6207,12 @@ local function sheet_row(kx, kw, y, h, r, cols, i)
     -- rather than presses, which is a row the cursor steps over and a hand
     -- gets no light from. A press drawn over nothing is worse than no press,
     -- since the one answer it can give is silence.
-    if r.i ~= nil then hit(kx, y, kw, h, "board_row", i, nil, 1) end
+    --
+    -- The seat and not the row number. The list re-sorts every frame it is
+    -- drawn, so a row number names whoever sits there by the time the press
+    -- is read, a frame or more after the draw, and a cursor left on a row
+    -- number slid onto the next pilot up whenever somebody scored.
+    if r.i ~= nil then hit(kx, y, kw, h, "board_row", r.i, nil, 1) end
 end
 
 -- How tall the sheet wants to be: a heading and a row per body in the room.
@@ -6278,9 +6283,10 @@ function pages.board_list(kx, kw, top, bottom, rowh)
     if M.page_scroll < 0 then M.page_scroll = 0 end
     -- And it follows the cursor, the way every panel in this menu does: a row
     -- lit under the fold is a row nobody can see themselves pressing.
-    if M.col_sel == "board_row" and page_followed ~= M.col_sel_value then
+    local followed = M.col_sel == "board_row" and pages.board_at(M.col_sel_value)
+    if followed and page_followed ~= M.col_sel_value then
         page_followed = M.col_sel_value
-        local at = heads + (M.col_sel_value - 1) * rowh
+        local at = heads + (followed - 1) * rowh
         if at < M.page_scroll then
             M.page_scroll = at
         elseif at + rowh > M.page_scroll + view_h then
@@ -6314,9 +6320,9 @@ function pages.board_list(kx, kw, top, bottom, rowh)
     -- and the thumb on the panel's edge is what says there is more.
     for i = 1, n do
         if y >= top - 0.5 and y + rowh <= top + view_h + 0.5 then
-            sheet_row(kx, kw, y, rowh, rows[i], cols, i)
+            sheet_row(kx, kw, y, rowh, rows[i], cols)
         elseif rows[i].i ~= nil then
-            hit_off("board_row", i)
+            hit_off("board_row", rows[i].i)
         end
         y = y + rowh
     end
@@ -6347,18 +6353,19 @@ end
 --
 -- A row's number is where it sits on the screen this frame and a seat is who
 -- it is about, and the two part company the moment somebody joins or dies:
--- the list re-sorts every frame it is drawn. So a press is answered as a
--- seat, which outlives the sort, and a cursor is put back on a row by looking
--- the seat up again.
+-- the list re-sorts every frame it is drawn. So a row is published under
+-- its seat, which outlives the sort, and both of these answer the seat when
+-- the sheet still has a row for it. They used to translate between the two,
+-- and the translation ran a frame or more after the draw, against a list
+-- that had been sorted again in between.
 --
 -- A watcher has no seat and no card, which is what the nil says.
-function M.board_seat_of(row)
-    local r = row and rows[row]
-    return r and r.i or nil
+function M.board_seat_of(seat)
+    return pages.board_at(seat) and seat or nil
 end
 
 function M.board_row_of(seat)
-    return (pages.board_at(seat))
+    return pages.board_at(seat) and seat or nil
 end
 
 -- The card a pressed row opens: one pilot, and the one act the sheet offers.

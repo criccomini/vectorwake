@@ -361,6 +361,34 @@ do
     end
     check("only the seated rows are pressable", n == 4, n .. " presses")
 end
+-- A row is published under its seat and not its row number. The list
+-- re-sorts every frame it is drawn, so a row number names whoever sits there
+-- by the time a press is read, a frame later, and a cursor left on one slid
+-- onto the next pilot up whenever somebody scored. Seats run 0 to 3 here and
+-- rows 1 to 4, which is how the two are told apart.
+do
+    local function values()
+        local out = {}
+        for _, r in ipairs(ui.hits) do
+            if r.action == "board_row" then out[r.value] = true end
+        end
+        return out
+    end
+    local v = values()
+    check("a row's value is a seat", v[0] and not v[4],
+          tostring(v[0]) .. " " .. tostring(v[4]))
+    local kept = room.kills[3]
+    room.kills[3] = 9
+    sheet()
+    v = values()
+    check("and stays one after the rows re-sort", v[0] and v[1] and not v[4])
+    check("which a press and the cursor both read as the seat",
+          ui.board_seat_of(1) == 1 and ui.board_row_of(1) == 1
+          and ui.board_seat_of(9) == nil,
+          tostring(ui.board_seat_of(1)))
+    room.kills[3] = kept
+    sheet()
+end
 -- And the two words the interface supplies take the interface's case, where
 -- a side's own name keeps the one the zone gave it.
 check("the interface's own words are said, not quoted",
