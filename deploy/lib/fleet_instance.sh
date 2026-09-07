@@ -88,29 +88,36 @@ render() {
 	# base64 without line breaks, which cloud-init needs and which `base64 -w0`
 	# only spells that way on GNU.
 	b64() { base64 < "$1" | tr -d '\n'; }
+	# A value is replacement text to sed, where `&` stands for the match, `|`
+	# is the delimiter used below and `\` escapes. A database URL with a
+	# second query parameter carries an `&`, and unescaped it rendered as the
+	# placeholder it was replacing, which the guard further down then
+	# reported as never substituted. Escape all three so a value lands as
+	# typed.
+	esc() { printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'; }
 
 	prov=$(mktemp) || die "no temporary file"
 	# The fetched deploy key too, when the bucket supplied one.
 	trap 'rm -f "$prov" "${SECRET_KEY_FILE:-}"' EXIT
 	trap 'rm -f "$prov" "${SECRET_KEY_FILE:-}"; exit 1' HUP INT TERM
 	sed \
-		-e "s|__POOL_TOKEN__|$VW_POOL_TOKEN|g" \
-		-e "s|__ROLE__|$role|g" \
-		-e "s|__HOST__|$(serves "$role" "$name")|g" \
-		-e "s|__SITE_HOST__|$site_host|g" \
-		-e "s|__ADMIN_HOST__|$admin_host|g" \
-		-e "s|__FRONT__|$FRONT|g" \
-		-e "s|__BRANCH__|$BRANCH|g" \
-		-e "s|__STATUS_TOPIC__|$topic|g" \
-		-e "s|__CERT_MOUNT_ID__|$mount_id|g" \
-		-e "s|__REGISTRY_USER__|${VW_REGISTRY_USER:-}|g" \
-		-e "s|__REGISTRY_TOKEN__|${VW_REGISTRY_TOKEN:-}|g" \
-		-e "s|__META_DATABASE__|$meta_db|g" \
-		-e "s|__META_KEY__|$meta_key|g" \
-		-e "s|__POOL_DIGEST__|$digest|g" \
-		-e "s|__META_VERIFY__|$verify|g" \
-		-e "s|__ACCOUNTS__|$accounts|g" \
-		-e "s|__REGION__|$region|g" \
+		-e "s|__POOL_TOKEN__|$(esc "$VW_POOL_TOKEN")|g" \
+		-e "s|__ROLE__|$(esc "$role")|g" \
+		-e "s|__HOST__|$(esc "$(serves "$role" "$name")")|g" \
+		-e "s|__SITE_HOST__|$(esc "$site_host")|g" \
+		-e "s|__ADMIN_HOST__|$(esc "$admin_host")|g" \
+		-e "s|__FRONT__|$(esc "$FRONT")|g" \
+		-e "s|__BRANCH__|$(esc "$BRANCH")|g" \
+		-e "s|__STATUS_TOPIC__|$(esc "$topic")|g" \
+		-e "s|__CERT_MOUNT_ID__|$(esc "$mount_id")|g" \
+		-e "s|__REGISTRY_USER__|$(esc "${VW_REGISTRY_USER:-}")|g" \
+		-e "s|__REGISTRY_TOKEN__|$(esc "${VW_REGISTRY_TOKEN:-}")|g" \
+		-e "s|__META_DATABASE__|$(esc "$meta_db")|g" \
+		-e "s|__META_KEY__|$(esc "$meta_key")|g" \
+		-e "s|__POOL_DIGEST__|$(esc "$digest")|g" \
+		-e "s|__META_VERIFY__|$(esc "$verify")|g" \
+		-e "s|__ACCOUNTS__|$(esc "$accounts")|g" \
+		-e "s|__REGION__|$(esc "$region")|g" \
 		-e "s|__DEPLOY_KEY_B64__|$(b64 "$VW_DEPLOY_KEY")|g" \
 		"$HERE/provision.sh" > "$prov"
 

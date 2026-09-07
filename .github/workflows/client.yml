@@ -26,6 +26,13 @@ on:
       # Caddy serves, and this is the one thing about it a machine can check.
       - "deploy/admin/**"
       - "harness/**"
+      # The client tests read the server's protocol, delivery, AI and rating
+      # sources to check the two sides agree on every constant, and the
+      # overview test reads the shipped maps. A pull request that moves only
+      # one of those has to run the job, or the drift it introduces is first
+      # seen on main.
+      - "server/**"
+      - "catalog/**"
       - ".github/workflows/client.yml"
   workflow_dispatch:
 
@@ -281,7 +288,10 @@ jobs:
           # layer that holds the page, manifest, and icons.
           context: page
           file: ./deploy/Dockerfile.client
-          push: ${{ github.event_name != 'pull_request' }}
+          # Only main publishes. A manual run on any other branch still builds
+          # and packages, as a check, but must not move the prod tag to a page
+          # the server image on main was never built beside.
+          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
           tags: |
             ghcr.io/${{ github.repository }}-client:sha-${{ steps.rev.outputs.short }}
             ghcr.io/${{ github.repository }}-client:prod

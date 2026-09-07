@@ -63,18 +63,23 @@ services:
       - client-page:/srv/play
     # Publish icons before the manifest, then replace the page last. Each
     # rename is atomic, so Caddy never serves a partially copied file.
+    #
+    # The icons and the manifest are copied only when the image carries them.
+    # A page built before they existed does not reference them, and a rollback
+    # to such an image must still land its page rather than die at the first
+    # copy and leave the volume on whatever was there before.
     command:
       - /bin/sh
-      - -c
-      - cp -a /page/icon-192.png /srv/play/.icon-192.png.new
-        && mv -f /srv/play/.icon-192.png.new /srv/play/icon-192.png
-        && cp -a /page/icon-512.png /srv/play/.icon-512.png.new
-        && mv -f /srv/play/.icon-512.png.new /srv/play/icon-512.png
-        && cp -a /page/manifest.webmanifest /srv/play/.manifest.webmanifest.new
-        && mv -f /srv/play/.manifest.webmanifest.new /srv/play/manifest.webmanifest
-        && cp -a /page/index.html /srv/play/.index.html.new
-        && mv -f /srv/play/.index.html.new /srv/play/index.html
-        && ls -l /srv/play/index.html
+      - -ec
+      - |
+        for f in icon-192.png icon-512.png manifest.webmanifest; do
+          [ -e "/page/$$f" ] || continue
+          cp -a "/page/$$f" "/srv/play/.$$f.new"
+          mv -f "/srv/play/.$$f.new" "/srv/play/$$f"
+        done
+        cp -a /page/index.html /srv/play/.index.html.new
+        mv -f /srv/play/.index.html.new /srv/play/index.html
+        ls -l /srv/play/index.html
 
   directory:
     <<: *central

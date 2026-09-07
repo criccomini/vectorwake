@@ -87,6 +87,11 @@ int Init(lua_State* L) {
     sim_settings_baseline(&g_cfg, &g_map);
     ReapplyMortal();
     sim_init(g_cur, seed);
+    // The last world's final tick left its events here, and the next world
+    // reads the list before it has stepped once: between the welcome and the
+    // first snapshot there is nothing to step, and the frame loop drained
+    // the old fires and hits again at the empty world's origin.
+    memset(&g_ev, 0, sizeof g_ev);
     return 0;
 }
 
@@ -885,6 +890,9 @@ int WeaponCount(lua_State* L) {
 
 int WeaponAt(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
+    if (i < 0 || i >= g_cur->weapon_count) {
+        return luaL_error(L, "weapon index %d out of range", i);
+    }
     const sim_weapon* w = &g_cur->weapons[i];
     // Walked back along its own flight rather than interpolated against
     // whatever last held this slot. See flight.h for why a slot is not a name.
@@ -1004,6 +1012,9 @@ int EventCount(lua_State* L) {
 
 int EventAt(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
+    if (i < 0 || i >= g_ev.count) {
+        return luaL_error(L, "event index %d out of range", i);
+    }
     lua_pushnumber(L, g_ev.e[i].type);
     lua_pushnumber(L, g_ev.e[i].a);
     lua_pushnumber(L, g_ev.e[i].b);
@@ -1032,6 +1043,9 @@ int FlagCount(lua_State* L) {
 
 int FlagAt(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
+    if (i < 0 || i >= g_cur->flag_count) {
+        return luaL_error(L, "flag index %d out of range", i);
+    }
     const sim_flag* f = &g_cur->flags[i];
     const sim_flag* p = &g_nxt->flags[i];
     // A carried flag is wherever its carrier is, so it has to move the way the

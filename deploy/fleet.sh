@@ -134,7 +134,17 @@ for a in "$@"; do
 	[ "$a" = --dry-run ] && DRY=1
 done
 if [ "$DRY" = 1 ]; then
-	set -- $(for a in "$@"; do [ "$a" = --dry-run ] || printf '%s ' "$a"; done)
+	# Rebuild the argument list without the flag, one argument at a time, so
+	# the dry run hands each command exactly the words the real run would.
+	# Rebuilding it through a command substitution split every word again
+	# and expanded any glob in it.
+	n=$#
+	while [ "$n" -gt 0 ]; do
+		a=$1
+		shift
+		[ "$a" = --dry-run ] || set -- "$@" "$a"
+		n=$((n - 1))
+	done
 	echo "fleet: dry run. Reads happen; nothing is created, moved or destroyed." >&2
 fi
 
